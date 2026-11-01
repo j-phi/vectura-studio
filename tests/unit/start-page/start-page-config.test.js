@@ -36,6 +36,7 @@ describe('START_PAGE config', () => {
       motionStill: false, railCollapsed: false, visiblePlates: 5, showExamples: true, animateIn: 'plot', hover: 'default',
       colorMode: 'curated', seed: null, coverWord: 'vectura', customWord: '',
       name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '', communityNotify: false,
+      coverArt: { mosaic: [], word: '', band: '' }, coverColors: { mosaic: [], word: null, band: null },
     });
   });
 
@@ -156,6 +157,40 @@ describe('START_PAGE config', () => {
 
     it('is idempotent', () => {
       const once = SP.sanitize({ name: 'A <> B', coverStyle: 'band', visiblePlates: '3', seed: 'zz9z9' });
+      expect(SP.sanitize(once)).toEqual(once);
+    });
+  });
+  describe('coverArt / coverColors', () => {
+    const cw = { key: 'a:b', paper: '#FFFFFF', ink: '#112233', ink2: '#445566', paperName: 'Paper', penName: 'Ink' };
+    it('defaults are fresh objects', () => {
+      const a = SP.sanitize({}); const b = SP.sanitize({});
+      expect(a.coverArt).toEqual({ mosaic: [], word: '', band: '' });
+      expect(a.coverColors).toEqual({ mosaic: [], word: null, band: null });
+      expect(a.coverArt).not.toBe(SP.DEFAULTS.coverArt);
+      expect(a.coverArt.mosaic).not.toBe(b.coverArt.mosaic);
+    });
+    it('garbage falls back to defaults', () => {
+      [5, 'x', [], null].forEach((v) => {
+        const o = SP.sanitize({ coverArt: v, coverColors: v });
+        expect(o.coverArt).toEqual({ mosaic: [], word: '', band: '' });
+        expect(o.coverColors).toEqual({ mosaic: [], word: null, band: null });
+      });
+    });
+    it('keeps valid ids, blanks invalid ones, trims trailing blanks and caps length', () => {
+      const o = SP.sanitize({ coverArt: { mosaic: ['', 'work-1', 'bad id!', '', ''], word: 'pick:abc', band: '<x>' } });
+      expect(o.coverArt).toEqual({ mosaic: ['', 'work-1'], word: 'pick:abc', band: '' });
+      expect(SP.sanitize({ coverArt: { mosaic: Array(60).fill('w') } }).coverArt.mosaic).toHaveLength(40);
+    });
+    it('sanitizes colorways', () => {
+      const o = SP.sanitize({ coverColors: { word: cw, band: { ...cw, paper: 'red' }, mosaic: [null, cw, { ...cw, key: '!!', ink2: 'zz', textInk: '#000000', penName: 'P<>en' }, null] } });
+      expect(o.coverColors.word).toEqual({ key: 'a:b', paper: '#ffffff', ink: '#112233', ink2: '#445566', textInk: '#112233', paperName: 'Paper', penName: 'Ink' });
+      expect(o.coverColors.band).toBeNull();
+      expect(o.coverColors.mosaic).toHaveLength(3);
+      expect(o.coverColors.mosaic[0]).toBeNull();
+      expect(o.coverColors.mosaic[2]).toMatchObject({ key: 'custom', ink2: null, textInk: '#000000', penName: 'Pen' });
+    });
+    it('is idempotent', () => {
+      const once = SP.sanitize({ coverArt: { mosaic: ['', 'w1'], word: 'p', band: '' }, coverColors: { word: cw, mosaic: [null, cw] } });
       expect(SP.sanitize(once)).toEqual(once);
     });
   });

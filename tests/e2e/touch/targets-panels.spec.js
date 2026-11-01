@@ -323,7 +323,7 @@ test.describe('TUX-041 B4 side panels', () => {
     await boot(page, baseURL);
     await runState(page, 'right-pane-layers');
     const bad = [];
-    for (const sel of ['#draw-order-settings', '.draw-order-overlay-toggle']) {
+    for (const sel of ['#draw-order-play', '.draw-order-overlay-toggle', '#draw-order-color-settings', '#draw-order-settings']) {
       const loc = page.locator(sel).first();
       if (!(await loc.count())) continue;
       await loc.evaluate((e) => { e.scrollIntoView({ block: 'center', inline: 'nearest' }); for (let a = e.parentElement; a; a = a.parentElement) if (a.scrollLeft) a.scrollLeft = 0; }); // vertical scroll only: a control that overflows the pane sideways must not be rescued

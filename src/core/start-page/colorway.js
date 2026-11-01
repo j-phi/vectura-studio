@@ -428,7 +428,12 @@
     return bad;
   };
 
+  // A catalogue pairing by ids (paper id, pen id, optional second pen id) as a curated colorway; null when an id is unknown.
+  const fromCatalogue = (paperId, penId, penId2) => {
+    try { return fromIds(paperId, penId, penId2 || null, 'curated'); } catch (_) { return null; }
+  };
+
   Vectura.StartPageColorway = {
-    MODES, SEED_ALPHABET, newSeed, contrast, ensureContrast, near, colorwayFor, sequence, alternates, audit, validateCatalogue,
+    fromCatalogue, MODES, SEED_ALPHABET, newSeed, contrast, ensureContrast, near, colorwayFor, sequence, alternates, audit, validateCatalogue,
   };
 })();

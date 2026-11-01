@@ -9,6 +9,13 @@
     // DPR 3 phones would allocate 2.25x the pixels of DPR 2; fine pointers are never capped.
     TOUCH_CANVAS_MAX_DPR: 2,
 
+    // Paint bucket wheel scope stepping: accumulated vertical delta (px) needed per rung.
+    // A mouse notch (~100px) is one rung; trackpad streams of tiny deltas accumulate.
+    PAINT_BUCKET_WHEEL_STEP_PX: 50,
+    // deltaMode normalisation to px for the same accumulator (lines / pages).
+    PAINT_BUCKET_WHEEL_LINE_PX: 20,
+    PAINT_BUCKET_WHEEL_PAGE_PX: 400,
+
     // Minimum pixels of space above a trigger before a popover flips upward.
     COLOR_PICKER_POPOVER_THRESHOLD_PX: 220,
 

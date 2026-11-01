@@ -15,6 +15,31 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **Catalogue fixes.** Corrected laid widths and ink behavior for the Micron, Stabilo, Gelly Roll, Gelly Roll Metallic and Signo UM-153 models; each model now names where its nib sizes come from (`sizesSource`).
 - **Start Page open keeps pen names.** Opening a plate keeps the plate's pen names instead of the generic ones when the colors are unchanged.
 
+### Changed: Vectura cover word: tighter letters, larger type, hand-set art and colors
+- **Tighter spacing.** Every letter of the **Name in Ink** cover sits closer to its neighbor, and the **V-e** and **u-r** pairs tuck in a little further (`TRACK` / `KERN` in `src/ui/start-page/cover.js`, in em, so they scale with the type).
+- **Larger type.** The word now fills 98.5% of the column (was 95.5%) and may grow to 40% of the window height, capped at 420 px (was 30%, 300 px). At 1440x900 the type grows from 269 px to 311 px.
+- **V e c t u r a set in the pictured pieces.** While there are no saved works, the default word **Vectura** (and **Vectura Studio**) carries High Sierra, Alpine Ridge, Cybersigil, River Current, Dahlia 'Cornel', Downpour and Old Growth Oak, in that order, each on its own paper and pen (blue wash + blue, newsprint + black, black stock + white gel, blue wash + blue, rose + wine, hot press + teal, kraft + sepia). The pairing is pinned in the Curated color mode; the other modes recolor the letters as usual, and saved works replace the run.
+- New config `COVER_WORD_PICKS` (`src/config/start-page-picks.js`), `StartPageArtSource.coverPicks()`, `StartPageColorway.fromCatalogue()`, and `coverSlot` support in `StartPageCoverWords.assignArts`. `npm run start-page:picks` now also pre-renders River Current and Dahlia 'Cornel'.
+
+### Fixed: Duplicating a mask dropped its masked content
+- Cmd/Ctrl+D (and Option+D, the context-menu Duplicate and the panel's Duplicate selected) on a clipping mask, or on a group containing one, now copies the masked content with it — nested masks and groups come through intact, with the copy's mask clipping its own copied content. Duplicating a Unite shape keeps its compound data, the copy's layer order mirrors the original, and selecting a mask together with its content no longer copies the content twice. One undo removes the whole duplicate.
+
+### Fixed: Paint bucket scope wheel
+- The scope ladder no longer repeats the outermost ring when another, smaller closed shape sits elsewhere on the page, and only offers rings that actually contain the cursor. A sideways (horizontal-only) scroll no longer changes the scope, and trackpad scrolls now accumulate so one step takes about one mouse-wheel notch instead of every tiny trackpad event jumping a step. When a mask and its content share the same outline, the fill goes to the masked content.
+
+### Fixed: United shapes snapped back when dragged
+- Dragging a Pathfinder shape (Unite and the other shape modes) with the Selection tool, or nudging it with the arrow keys, now moves it — before, it followed the mouse and then snapped back on release. Resize and rotate work the same way, the outline no longer lags behind after a move, and a drag that changes nothing no longer adds an empty undo step.
+
+### Added: Cover art and colorway choices in Start Page settings
+- **Settings > Cover > Cover art.** A new block under Cover style lets you choose the piece and the colorway for every cover style. **Name in Ink** gets one row per letter, and **Cover Specimen** and **Portfolio band** get one row each.
+- **Pieces.** Each picker lists **Automatic** (the current behavior), then **Your pieces** (saved and opened works), then **Templates** (the studio picks).
+- **Colorways.** A row of swatches: **Page colorway** (the default, follows Curated / Mono / Basic / Wildcard / Random), **Its own colors** (your own pieces only), and six alternates. A chosen colorway stays when the page colorway mode changes.
+- **Saved per style.** Choices are kept separately for each cover style (`startPage.coverArt` and `startPage.coverColors`, sanitized in `src/config/start-page.js`). **Reset cover art** clears the current style. **Use as cover** on a plate replaces the current style's first slot, so the newest choice wins. A chosen piece that no longer exists falls back to Automatic.
+- New module `src/ui/start-page/cover-art-controls.js` (`Vectura.UI.StartPageCoverArtControls`); the cover exposes `slots()`.
+
+### Fixed: Nested clipping masks dropped a level
+- Masking a mask with a shape that only partly covered it silently dropped the lower mask, so content spilled outside it (level 2 showed all of the upper shape; level 3 ignored the bottom mask). A mask's clip region now comes from its own unclipped closed shape, and every mask above is intersected, so each nesting level shows exactly the overlap of all its masks — on screen and in SVG export.
+
 ### Fixed: Start Page name and practice line keep symbols
 - Typing "Line + Design" no longer drops the `+`. The name, practice line and custom cover word now keep any letter, number, punctuation or symbol; only control characters and `<` `>` are removed.
 
@@ -24,6 +49,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Added: Play buttons for the plot order
 - **Draw Order pane.** A Play button now sits right of the % readout. At 100% it replays the reveal from the start; below 100% it plays on from the handle; while playing it shows Pause. Shift-click plays at 1/10 speed, like Shift-clicking the slider.
 - **Export SVG ▸ Line Sort Print Order.** The legend has a Play/Pause button next to its gear. It draws the preview path by path in print order over a faint ghost of the whole plot, with a playhead on the gradient, then returns to the full preview. Closing the modal stops it.
+- **Touch layout (fix).** The fourth Draw Order icon squeezed the 44 px touch hit areas, which turned the touch nightly red. On touch, the Draw Order head now sets the label and % on one row and the four icons spread across the row below. Landscape phones keep a single row with the label visually hidden. On touch the export legend reads Play · title · gear, so the two 44 px hit areas never meet and a pan started over the legend's middle still moves the preview.
 
 ### Changed: Start Page examples note, cover Colorways button, Back to canvas, New blank canvas
 - **Examples note moves into an (i).** The always-on "These are examples…" box under Plates is gone. Its text now sits in a note behind an **(i)** right after the **10 EXAMPLES** count: hover or keyboard focus shows it, a click pins it open, a tap toggles it, and Esc or a press elsewhere closes it. It stays the Plates section's accessible description.

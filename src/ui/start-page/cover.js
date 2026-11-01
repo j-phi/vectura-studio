@@ -94,6 +94,26 @@
     };
     const cwFor = (art, cw) => withFill(art, pinned(art, cw));
 
+    // Start Page settings choices: coverArt (a piece id per slot) and coverColors (a stored colorway per slot).
+    // Precedence per slot: explicit choice > "Use as cover" > automatic. A missing / unknown id is automatic.
+    const choiceArtId = (style, k) => {
+      const c = (ctx.prefs() || {}).coverArt || {};
+      const v = style === 'mosaic' ? (Array.isArray(c.mosaic) ? c.mosaic[k] : '') : c[style];
+      return typeof v === 'string' ? v : '';
+    };
+    const choiceCw = (style, k) => {
+      const c = (ctx.prefs() || {}).coverColors || {};
+      const v = style === 'mosaic' ? (Array.isArray(c.mosaic) ? c.mosaic[k] : null) : c[style];
+      return v && typeof v === 'object' ? v : null;
+    };
+    const choiceArt = (style, k, arts) => { const id = choiceArtId(style, k); return id ? (arts.find((a) => a.id === id) || null) : null; };
+    const slotCw = (style, k, art, base) => { const c = choiceCw(style, k); return c ? withFill(art, c) : cwFor(art, base); };
+    // The art choices that matter to the mounted style (a change rebuilds; colors alone never do).
+    const artChoiceSig = (style) => {
+      const c = (ctx.prefs() || {}).coverArt || {};
+      return style === 'mosaic' ? (Array.isArray(c.mosaic) ? c.mosaic.join(',') : '') : String(c[style] || '');
+    };
+
     /* -------------------------------------------------------------- measuring */
     let mctx = null;
     const measure = (text) => {
@@ -104,7 +124,12 @@
         return mctx.measureText(text).width * 1.06 + 8;
       } catch (_) { return text.length * 62; }
     };
-    const maxFs = () => Math.min(300, Math.max(110, (G.innerHeight || 900) * 0.3));
+    const maxFs = () => Math.min(420, Math.max(110, (G.innerHeight || 900) * 0.4));
+    // Letter spacing: every letter sits TRACK em closer to the one before it, and a few pairs tuck in further (the V's open
+    // lower right over the e, the stems of u and r). Margins are in em, so they scale with the fitted size.
+    const TRACK = -0.045;
+    const KERN = { Ve: -0.075, ur: -0.065 };
+    const gapEm = (prev, ch) => (prev && prev.trim() ? TRACK + (KERN[prev + ch] || 0) : 0);
     const stageWidth = () => Math.max(200, stage.clientWidth || host.clientWidth || 800);
     const splitLines = (word) => {
       const ws = word.trim().split(/\s+/);
@@ -171,7 +196,7 @@
       const w = Math.max(...rows.map((r) => r.getBoundingClientRect().width || 1));
       const two = rows.length > 1;
       const mf = maxFs() * (two ? 0.7 : 1);
-      const fs = Math.max(two ? 44 : 38, Math.min(mf, 100 * stageWidth() / w * 0.955));
+      const fs = Math.max(two ? 44 : 38, Math.min(mf, 100 * stageWidth() / w * 0.985));
       rows.forEach((r) => {
         r.style.fontSize = `${fs}px`;
         const kr = r.nextElementSibling;
@@ -202,22 +227,26 @@
         const at = assigned.findIndex((a) => a.id === override.art.id);
         if (at > 0) { const t = assigned[0]; assigned[0] = assigned[at]; assigned[at] = t; } else if (at < 0) assigned[0] = override.art;
       }
+      assigned.forEach((a, i) => { const c = choiceArt('mosaic', i, arts); if (c) assigned[i] = c; }); // explicit letter choices win (duplicates allowed)
       // Start every piece now, in letter order (the first-run renders queue one after another); each letter fills as its
       // own piece arrives instead of the whole word waiting for the slowest one.
       const svgPromises = assigned.map((a) => a.getSvg().catch(() => ''));
       const cws = ctx.colorwaysFor(assigned);
       if (override && override.colorway && cws.length) cws[0] = override.colorway;
       if (override && cws.length) cws[0] = withFill(assigned[0], cws[0]);
+      cws.forEach((c, i) => { const ch = choiceCw('mosaic', i); if (ch) cws[i] = withFill(assigned[i], ch); });
       const lines = splitLines(word);
       let k = 0;
       stage.append(h('div', { class: `sp-word-wrap${lines.length > 1 ? ' two' : ''}`, role: 'group', 'aria-label': `${word}: each letter opens the piece it carries` },
         lines.map((ln) => h('div', { class: 'sp-wline' },
-          h('div', { class: 'sp-word-row' }, [...ln].map((ch) => {
+          h('div', { class: 'sp-word-row' }, [...ln].map((ch, ci, chs) => {
             if (!ch.trim()) return h('span', { class: 'sp-gap', 'aria-hidden': 'true' });
             const i = k++;
             const a = assigned[i];
             const vw = h('span', { class: 'sp-vw', 'aria-hidden': 'true', 'data-ch': ch, text: ch });
             const btn = h('button', { type: 'button', class: 'sp-lt', 'data-k': String(i), 'data-art-id': a.id, 'aria-label': `${ch}, ${a.name.replace(/\.vectura$/, '')}. Open` }, vw);
+            const em = gapEm(chs[ci - 1], ch);
+            if (em) btn.style.marginLeft = `${em}em`;
             vw.style.setProperty('--sp-ph', cws[i].paper); // the placeholder leans toward its final paper until the art arrives
             tiles.push({ el: vw, art: a, cw: cws[i], k: i, kind: 'word', svg: '', ch });
             return btn;
@@ -266,7 +295,7 @@
       const art = arts[0];
       const svg = await art.getSvg().catch(() => '');
       if (my !== gen) return;
-      const cw = cwFor(art, ctx.colorwaysFor([art])[0]);
+      const cw = slotCw('word', 0, art, ctx.colorwaysFor([art])[0]);
       // The h1 stays the page's heading; the word inside it is a real button that opens the piece.
       const el = h('button', { type: 'button', class: 'sp-xc-word', 'aria-label': `${word}, filled with ${art.name.replace(/\.vectura$/, '')}. Open the piece` }, word);
       const heading = h('h1', { class: 'sp-xc-h' }, el);
@@ -289,7 +318,7 @@
       const art = arts[0];
       const svg = await art.getSvg().catch(() => '');
       if (my !== gen) return;
-      const cw = cwFor(art, ctx.colorwaysFor([art])[0]);
+      const cw = slotCw('band', 0, art, ctx.colorwaysFor([art])[0]);
       const prefs = ctx.prefs();
       const band = h('div', { class: 'sp-pf', 'data-live-hook': 'band-3d', role: 'group', 'aria-label': `Cover band: ${art.name.replace(/\.vectura$/, '')}` });
       const text = h('div', { class: 'sp-pf-in' });
@@ -420,14 +449,16 @@
       try { arts = await ctx.arts(); } catch (_) { arts = []; }
       if (my !== gen) return;
       if (override) arts = [override.art, ...arts.filter((a) => a.id !== override.art.id)];
+      if (style !== 'mosaic') { const chosen = choiceArt(style, 0, arts); if (chosen) arts = [chosen, ...arts.filter((a) => a.id !== chosen.id)]; }
       const usingPicks = arts.length > 0 && arts.every((a) => a.kind === 'pick');
       // Same inputs as the letters on screen (word, style, pieces, chosen cover): nothing is torn down. The mounted letters
       // stay exactly as they are (a re-render must never blank or re-plot them); only colors that changed are re-applied.
-      const sig = [style, word, arts.map((a) => a.id).join('|'), override ? `${override.art.id}${JSON.stringify([override.frame, override.fill])}` : ''].join('~');
+      const sig = [style, word, arts.map((a) => a.id).join('|'), override ? `${override.art.id}${JSON.stringify([override.frame, override.fill])}` : '', artChoiceSig(style)].join('~');
       if (!animate && style === 'mosaic' && builtSig === sig && tiles.length && tiles.every((t) => t.el.isConnected)) {
         const cws = ctx.colorwaysFor(tiles.map((t) => t.art));
         if (override && override.colorway && cws.length) cws[0] = override.colorway;
         if (override && cws.length) cws[0] = withFill(tiles[0].art, cws[0]);
+        cws.forEach((c, i) => { const ch = choiceCw('mosaic', i); if (ch && tiles[i]) cws[i] = withFill(tiles[i].art, ch); });
         tiles.forEach((t, i) => {
           if (!cws[i] || (cws[i].key === t.cw.key && cws[i].paper === t.cw.paper && cws[i].ink === t.cw.ink)) return;
           t.cw = cws[i];
@@ -463,8 +494,10 @@
       if (!tiles.length) return [];
       if (override) override.colorway = null; // the page mode owns the colors again
       const cws = ctx.colorwaysFor(tiles.map((t) => t.art));
+      const style = host.dataset.style;
       tiles.forEach((t, i) => {
-        t.cw = withFill(t.art, cws[i]);
+        const chosen = choiceCw(style, t.k);
+        t.cw = withFill(t.art, chosen || cws[i]);
         const handle = t.el._spWord || t.el._spInk || t.el._sp3d;
         if (handle && handle.setColorway) handle.setColorway(t.cw);
         setCwData(t);
@@ -553,7 +586,12 @@
     const destroy = () => { gen++; teardown(); };
 
     return {
-      render, recolor, refit, destroy,
+      render, recolor, applyColors: recolor, refit, destroy,
+      /** The mounted cover's slots in order: mosaic one per letter, word / band one. chosenId / chosenCw are the saved settings ('' / null = automatic). */
+      slots: () => {
+        const style = host.dataset.style;
+        return tiles.map((t) => ({ k: t.k, ch: style === 'mosaic' ? (t.ch || '') : '', art: t.art, cw: t.cw, chosenId: choiceArtId(style, t.k), chosenCw: choiceCw(style, t.k) }));
+      },
       tiles: () => tiles.map((t) => ({ el: t.el, art: t.art, cw: t.cw, k: t.k })),
       syncWho: () => renderWho(host.dataset.style),
       useAsCover,

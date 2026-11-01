@@ -54,8 +54,29 @@
     return isClosedLoop(path) ? closePolygonIfNeeded(path) : [];
   };
 
-  const buildClosedPathSilhouettes = (layer) => {
-    const source = layer?.displayPaths?.length ? layer.displayPaths : layer?.effectivePaths?.length ? layer.effectivePaths : layer?.paths;
+  // True when an ancestor mask clips this layer's DISPLAYED geometry. Uses the
+  // structural parent chain (not maskCapabilities) so it is valid mid-refresh.
+  const isClippedByAncestorMask = (layer, engine) => {
+    if (!layer?.parentId || !engine?.layers) return false;
+    let current = layer;
+    const seen = new Set();
+    while (current?.parentId && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = engine.layers.find((entry) => entry.id === current.parentId);
+      if (!parent) return false;
+      if (parent.mask?.enabled) return true;
+      current = parent;
+    }
+    return false;
+  };
+
+  // A mask's clip region is its own UNCLIPPED closed geometry. When an ancestor
+  // mask clips the layer, displayPaths are open arcs (no closed silhouette), so
+  // fall back to effectivePaths; ancestors are applied separately by
+  // intersection in buildLayerMaskedPaths.
+  const buildClosedPathSilhouettes = (layer, engine) => {
+    const clipped = isClippedByAncestorMask(layer, engine);
+    const source = (!clipped && layer?.displayPaths?.length) ? layer.displayPaths : layer?.effectivePaths?.length ? layer.effectivePaths : layer?.paths;
     const polygons = [];
     (source || []).forEach((path) => {
       const polygon = pathToPolygon(path);
@@ -67,7 +88,7 @@
   const getLayerSilhouette = (layer, engine, bounds) => {
     if (!layer || layer.visible === false) return [];
     if (layer.isGroup) return getGroupSilhouette(layer, engine, bounds);
-    return buildClosedPathSilhouettes(layer);
+    return buildClosedPathSilhouettes(layer, engine);
   };
 
   const getGroupSilhouette = (groupLayer, engine, bounds) => {
@@ -89,7 +110,7 @@
         ? { canSource: true, reason: '', sourceType: 'group-union' }
         : { canSource: false, reason: 'No visible silhouette-capable descendants', sourceType: null };
     }
-    const polygons = buildClosedPathSilhouettes(layer);
+    const polygons = buildClosedPathSilhouettes(layer, engine);
     return polygons.length
       ? { canSource: true, reason: '', sourceType: 'closed-shape' }
       : { canSource: false, reason: 'This layer has no closed silhouette yet', sourceType: null };

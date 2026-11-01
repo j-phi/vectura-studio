@@ -2148,26 +2148,71 @@
       this.computeAllDisplayGeometry();
     }
 
-    duplicateLayer(id, state = null) {
+    // Duplicates a layer together with its entire parentId subtree (group
+    // children, mask children, nested masks/groups). Copies mirror the
+    // original's array order, are re-parented to the new copies, have internal
+    // id references (compound.childIds, mask.sourceIds) remapped, and are
+    // inserted after the source's whole subtree. Returns the root copy.
+    duplicateLayer(id) {
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
-      const newId = generateId();
-      SETTINGS.globalLayerCount = ++this._layerCounter;
-      const baseName = `${source.name} Copy`;
-      const existing = new Set(this.layers.map((l) => l.name));
-      let dupName = baseName;
-      let count = 2;
-      while (existing.has(dupName)) {
-        dupName = `${baseName} ${count}`;
-        count += 1;
+      const subtreeIds = new Set([source.id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        this.layers.forEach((l) => {
+          if (l.parentId && subtreeIds.has(l.parentId) && !subtreeIds.has(l.id)) {
+            subtreeIds.add(l.id);
+            grew = true;
+          }
+        });
       }
+      const members = this.layers.filter((l) => subtreeIds.has(l.id));
+      let maxIdx = -1;
+      this.layers.forEach((l, i) => {
+        if (subtreeIds.has(l.id)) maxIdx = i;
+      });
+      const existing = new Set(this.layers.map((l) => l.name));
+      const idMap = new Map();
+      const copies = members.map((src) => {
+        const newId = generateId();
+        idMap.set(src.id, newId);
+        SETTINGS.globalLayerCount = ++this._layerCounter;
+        const baseName = `${src.name} Copy`;
+        let dupName = baseName;
+        let count = 2;
+        while (existing.has(dupName)) {
+          dupName = `${baseName} ${count}`;
+          count += 1;
+        }
+        existing.add(dupName);
+        return this._cloneLayerShallow(src, newId, dupName);
+      });
+      copies.forEach((copy, i) => {
+        const src = members[i];
+        copy.parentId = src.id === source.id ? (source.parentId ?? null) : (idMap.get(src.parentId) ?? src.parentId ?? null);
+        if (copy.compound && Array.isArray(copy.compound.childIds)) {
+          copy.compound.childIds = copy.compound.childIds.map((cid) => idMap.get(cid) ?? cid);
+        }
+        if (copy.mask && Array.isArray(copy.mask.sourceIds)) {
+          copy.mask.sourceIds = copy.mask.sourceIds.map((sid) => idMap.get(sid) ?? sid);
+        }
+      });
+      this.layers.splice(maxIdx + 1, 0, ...copies);
+      const root = copies[members.indexOf(source)];
+      this.activeLayerId = root.id;
+      this.computeAllDisplayGeometry();
+      return root;
+    }
+
+    _cloneLayerShallow(source, newId, dupName) {
       const layer = new Layer(newId, source.type, dupName);
       // CONTRACT E: route through cloneLayerParams/cloneParamStates so large
       // shared blobs (importedMesh, scene3d params.assets) are cloned by
       // reference instead of deep-copied into every duplicate.
       layer.params = cloneLayerParams(source.params);
       layer.paramStates = cloneParamStates(source.paramStates || {});
-      layer.parentId = state && state.parentId !== undefined ? state.parentId : (source.parentId ?? null);
+      layer.parentId = source.parentId ?? null;
       layer.isGroup = source.isGroup;
       layer.containerRole = source.containerRole ?? null;
       layer.groupType = source.groupType ?? null;
@@ -2192,53 +2237,13 @@
       layer.effectivePaths = clonePaths(source.effectivePaths || source.paths || []);
       layer.mask = source.mask ? JSON.parse(JSON.stringify(source.mask)) : layer.mask;
 
-      let currentState = state;
-      if (!currentState) {
-        const getDescendantsIds = (parentId) => {
-          const out = [];
-          const visit = (pid) => {
-            this.layers.forEach((l) => {
-              if (l.parentId === pid) {
-                out.push(l.id);
-                visit(l.id);
-              }
-            });
-          };
-          visit(parentId);
-          return out;
+      if (source.compound) {
+        layer.compound = {
+          childIds: Array.isArray(source.compound.childIds) ? source.compound.childIds.slice() : [],
+          opType: source.compound.opType || 'unite',
+          sourceMode: source.compound.sourceMode || 'silhouette',
+          cache: { signature: null, multiPolygon: null },
         };
-        const descIds = source.isGroup ? getDescendantsIds(source.id) : [];
-        const allIds = new Set([source.id, ...descIds]);
-        let maxIdx = -1;
-        this.layers.forEach((l, i) => {
-          if (allIds.has(l.id)) maxIdx = Math.max(maxIdx, i);
-        });
-        currentState = { insertIndex: maxIdx };
-      }
-
-      if (currentState.insertIndex >= 0) {
-        currentState.insertIndex++;
-        this.layers.splice(currentState.insertIndex, 0, layer);
-      } else {
-        this.layers.push(layer);
-        currentState.insertIndex = this.layers.length - 1;
-      }
-
-      if (source.isGroup) {
-        const children = this.layers.filter((l) => l.parentId === source.id && l.id !== newId);
-        children.forEach((child) => {
-          const childState = {
-            insertIndex: currentState.insertIndex,
-            parentId: newId
-          };
-          this.duplicateLayer(child.id, childState);
-          currentState.insertIndex = childState.insertIndex;
-        });
-      }
-
-      if (!state) {
-        this.activeLayerId = newId;
-        this.computeAllDisplayGeometry();
       }
       return layer;
     }
@@ -2657,6 +2662,13 @@
         if (!layer || layer.isGroup) return;
         this.computeLayerDisplayGeometry(layer.id);
       });
+      // Compound silhouettes read their children's DISPLAY geometry, which the
+      // loop above has only just refreshed; the pre-display pass saw the
+      // previous pass's. Re-derive once more (the cache signature carries a
+      // geometry fingerprint, so this is a no-op unless something changed).
+      if (window.Vectura?.PathfinderOps?.refreshAllCompounds) {
+        window.Vectura.PathfinderOps.refreshAllCompounds(this);
+      }
       this._computeMorphGroups();
       this._computeSceneGroups();
       // optimizeLayers ends by recutting stroke divisions (the division stage

@@ -150,8 +150,9 @@ describe('paint-bucket venn faces (overlapping closed rings)', () => {
     const { stack } = globalThis.Vectura.PaintBucketOps.findFillTargetStack(
       engine, 80, 110, { scope: 'all-objects', sensitivity: 5 }
     );
-    // Ladder is exactly: circle A, circle B, doc bounds — no boolean faces.
-    expect(stack.length).toBe(3);
+    // Ladder is exactly: circle A, doc bounds — no boolean faces. Circle B does
+    // not contain the cursor, so it is not a rung (it used to be a phantom one).
+    expect(stack.length).toBe(2);
     expect(stack[0].area).toBeGreaterThan(7500);
     expect(stack[stack.length - 1].isDocBounds).toBe(true);
   });

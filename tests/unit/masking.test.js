@@ -536,4 +536,55 @@ describe('Masking runtime', () => {
       });
     });
   });
+
+  test('nested masks intersect ALL masking ancestors even when masks only partially overlap', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const circle = (cx, cy, r) => {
+      const pts = [];
+      for (let i = 0; i <= 72; i += 1) {
+        const t = (i / 72) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(t) * r, y: cy + Math.sin(t) * r });
+      }
+      return [pts];
+    };
+    const A = new Layer('A', 'shape', 'A');
+    A.paths = circle(100, 120, 70);
+    A.mask.enabled = true;
+    const B = new Layer('B', 'shape', 'B');
+    B.paths = [[{ x: 70, y: 90 }, { x: 200, y: 90 }, { x: 200, y: 200 }, { x: 70, y: 200 }, { x: 70, y: 90 }]];
+    B.mask.enabled = true;
+    B.parentId = 'A';
+    const C = new Layer('C', 'shape', 'C');
+    C.paths = circle(150, 105, 45);
+    C.mask.enabled = true;
+    C.parentId = 'B';
+    const content = new Layer('content', 'shape', 'Content');
+    content.parentId = 'C';
+    const lines = [];
+    for (let y = 0; y <= 220; y += 2) lines.push([{ x: 0, y }, { x: 240, y }]);
+    content.paths = lines;
+    // level-2 content (child of B) as well
+    const content2 = new Layer('content2', 'shape', 'Content2');
+    content2.parentId = 'B';
+    content2.paths = lines.map((l) => l.map((p) => ({ ...p })));
+    engine.layers.push(A, B, C, content, content2);
+    engine.computeAllDisplayGeometry();
+
+    const inCircle = (p, cx, cy, r) => Math.hypot(p.x - cx, p.y - cy) <= r + 0.6;
+    const inRect = (p) => p.x >= 69.4 && p.x <= 200.6 && p.y >= 89.4 && p.y <= 200.6;
+    const pts = (l) => l.displayPaths.flat();
+
+    expect(pts(content2).length).toBeGreaterThan(0);
+    pts(content2).forEach((p) => {
+      expect(inRect(p) && inCircle(p, 100, 120, 70)).toBe(true);
+    });
+    expect(pts(content).length).toBeGreaterThan(0);
+    pts(content).forEach((p) => {
+      expect(inRect(p) && inCircle(p, 100, 120, 70) && inCircle(p, 150, 105, 45)).toBe(true);
+    });
+    expect(A.maskCapabilities.canSource).toBe(true);
+    expect(B.maskCapabilities.canSource).toBe(true);
+  });
 });

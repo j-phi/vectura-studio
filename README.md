@@ -733,10 +733,14 @@ CI lives in `.github/workflows/test.yml`:
 - **Pen Studio.** Pens ⋯ ▸ **Pen Studio…** (or **Open Pen Studio** in the pen picker) opens boxes, a lab and a pair view: keep the pens you own in boxes, test any pen on every paper, tune its ink as a draft and save it (or save it as a new pen), pick a complementary ink and see both woven together. **Use in document** applies it in one undo step.
 - **Pen files are schema v2.** Older versions of Vectura refuse v2 pen files; v1 files still import. Micron size `1` is now `10` (old files still load).
 
+### Unreleased - Cover art in Start Page settings
+- **Pick the cover's art and colors.** Start Page settings > Cover > **Cover art** chooses the piece (Automatic, one of your pieces, or a template) and the colorway (the page colorway, a piece's own colors, or an alternate) for each cover style. Name in Ink gets one choice per letter. **Reset cover art** returns to automatic.
+
 ### Unreleased - Plot-order Play buttons
 - **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
 
 ### Unreleased - Start Page tidy
+- **Vectura cover: tighter letters, bigger type.** The Name in Ink word sits closer together (V-e and u-r a touch more) and grows to fill the column. Until you have saved works, its seven letters carry High Sierra, Alpine Ridge, Cybersigil, River Current, Dahlia 'Cornel', Downpour and Old Growth Oak, each on a fixed paper and pen in the Curated mode.
 - **Examples note behind an (i).** The examples explainer moves from a box under Plates into a note on an **(i)** after the EXAMPLES count (hover, focus or click). The count line drops "your own work will join them".
 - **No cover Colorways button.** The Colorways button at the top of the title section is gone; plates keep theirs.
 - **Back to canvas** now shows (and Esc works) whenever the canvas has unsaved changes, not only when it has layers.
@@ -751,13 +755,13 @@ CI lives in `.github/workflows/test.yml`:
 - **Paper, pens and inks.** Eleven paper types with realistic scale and lighting, a Scale slider, My papers and photo papers; fifteen pen models with ink edge bleed; special inks (metallic, neon, glow-in-the-dark, glitter, opaque white), View ▸ Lights Off, pen files and My pens; a System theme.
 - **Touch and Apple Pencil across the whole app.** Drawers on phones and iPad portrait, 44 px targets, pinch and two-finger pan with every tool, finger-sized handles and iOS file I/O. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
 
+<details>
+<summary>Older releases (1.4.20 and earlier)</summary>
+
 ### 1.4.20 - Touch nightly on Linux
 - **Holds and drags.** A long-press on the canvas no longer opens its menu in the middle of a slow drag and reverts it (gizmo rings, handles, pen anchors, objects).
 - **Touch layout on every OS.** Info buttons, the modifier bar, the right-pane tabs and toasts no longer depend on font metrics. On iOS, the slider value chip and the min/max editor commit when you tap outside them.
 - **Faster, steadier touch nightly.** Timer-dependent touch tests run on a frozen page clock, target sweeps run in one browser call, and the nightly runs in 21 per-project legs (target 25 minutes each). Details: `CHANGELOG.md` and `docs/testing.md`.
-
-<details>
-<summary>Older releases (1.4.18 and earlier)</summary>
 
 ### 1.4.18 - Test and CI overhaul
 - **One required check.** `ci-ok` gates every PR. PRs run the whole Vitest roster in 8 uninstrumented shards, a 4-leg browser smoke, perf and the routed Scene3D audits. Coverage, the full touch roster and linux pixel snapshots run on `main` and nightly, and a red run opens an issue.

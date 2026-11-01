@@ -4,7 +4,7 @@
  *   choices(prefs)          -> [{ id, label, word, disabled, hint, selected }]   (the word picker's rows)
  *   resolve(prefs)          -> { id, word, fellBack }                            (the word the cover sets)
  *   letters(word)           -> [{ ch, k }]                                       (spaces skipped, k = letter index)
- *   assignArts(chars, arts) -> art per letter (works before studio picks; thin letters get the densest unused piece; reuse only when works + picks run out)
+ *   assignArts(chars, arts) -> art per letter (an art with coverSlot n takes letter n; otherwise works before studio picks; thin letters get the densest unused piece; reuse only when works + picks run out)
  *   nameParts(name)         -> { first, last, full }
  *
  * `prefs` is the startPage preference object (coverWord, customWord, name). The name is a preference only.
@@ -70,8 +70,14 @@
     const list = Array.isArray(arts) ? arts : [];
     if (!list.length) return [];
     const used = new Set();
+    // Pieces that carry a coverSlot belong to that letter (the default word's hand-set run) and are not up for grabs earlier.
+    const slotted = list.filter((a) => Number.isInteger(a.coverSlot) && a.coverSlot < (chars || []).length);
+    const reserved = new Set(slotted.map((a) => a.id));
     return (chars || []).map((ch, k) => {
-      let free = list.filter((a) => !used.has(a.id));
+      const own = slotted.find((a) => a.coverSlot === k && !used.has(a.id));
+      if (own) { used.add(own.id); return own; }
+      let free = list.filter((a) => !used.has(a.id) && !reserved.has(a.id));
+      if (!free.length) free = list.filter((a) => !used.has(a.id));
       // Works first, then studio picks top the cover up; a piece is reused only once both run out.
       const works = free.filter((a) => a.kind !== 'pick');
       if (works.length) free = works;

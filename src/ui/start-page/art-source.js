@@ -7,6 +7,7 @@
  *
  *   list()            -> Promise<Art[]>   works in addedAt order (plates), then studio picks
  *   listRecentFirst() -> Promise<Art[]>   works most recently opened first, then studio picks
+ *   coverPicks()      -> Art[]            the default cover word's pieces in letter order (coverSlot, coverColorway); not in list()
  *   examples(list?)   -> Art[]            the first-run example plates (kind 'pick', example:true, exampleMeta); not in list().
  *                                         `list` = Developer Mode's draft entries instead of the shipped EXAMPLE_PLATES
  *   subscribe(fn)     -> unsubscribe      fires when the saved works change ('vectura:recents-changed')
@@ -254,6 +255,16 @@
       }));
     };
 
+    // The default cover word's pieces, one per letter (config COVER_WORD_PICKS): coverSlot is the letter index and
+    // coverColorway the pinned paper + pen ids. They are ordinary picks otherwise (same id as the studio pick when shared).
+    const coverArts = () => {
+      const byId = new Map(presetsList().map((p) => [p.id, p]));
+      return (picksCfg().COVER_WORD_PICKS || []).map((e, i) => {
+        const preset = byId.get(e.presetId);
+        return preset ? presetArt(preset, { coverSlot: i, coverColorway: { paper: e.paper, pen: e.pen, pen2: e.pen2 || null } }) : null;
+      }).filter(Boolean);
+    };
+
     const works = async () => {
       const store = getStore();
       if (!store || typeof store.listWorks !== 'function') return [];
@@ -274,6 +285,7 @@
         return entries.map(workArt).concat(pickArts());
       },
       examples: exampleArts,
+      coverPicks: coverArts,
       subscribe(fn) {
         if (typeof fn !== 'function') return () => {};
         const handler = () => { try { fn(); } catch (_e) { /* subscriber errors stay local */ } };
@@ -296,6 +308,7 @@
     listRecentFirst: () => sharedSource().listRecentFirst(),
     subscribe: (fn) => sharedSource().subscribe(fn),
     examples: (list) => sharedSource().examples(list),
+    coverPicks: () => sharedSource().coverPicks(),
     DB_NAME,
     STORE,
   };
