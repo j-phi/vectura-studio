@@ -123,8 +123,9 @@
     };
     const setCoverArt = (style, k, id) => {
       writeCoverChoice((n) => setSlot(n, 'coverArt', style, k, id || '', ''));
-      if (cover) cover.render({ animate: true });
+      // The swatches follow the piece now on the cover, so they re-sync once the cover has re-rendered.
       syncCoverArt();
+      if (cover) cover.render({ animate: true }).then(syncCoverArt, syncCoverArt);
     };
     const setCoverColor = (style, k, cw) => {
       writeCoverChoice((n) => setSlot(n, 'coverColors', style, k, cw || null, null));
@@ -135,8 +136,9 @@
       writeCoverChoice((n) => {
         if (style === 'mosaic') { n.coverArt.mosaic = []; n.coverColors.mosaic = []; } else { n.coverArt[style] = ''; n.coverColors[style] = null; }
       });
-      if (cover) cover.render({ animate: true });
+      // The swatches follow the piece now on the cover, so they re-sync once the cover has re-rendered.
       syncCoverArt();
+      if (cover) cover.render({ animate: true }).then(syncCoverArt, syncCoverArt);
     };
     // Colorways a cover slot can take: the page colorway it would get, the piece's own colors, then curated alternates.
     const coverColorOptions = (slot) => {
@@ -321,7 +323,7 @@
         }
         p.coverWord = Vectura.START_PAGE.ENUMS.coverWord.includes(id) ? id : 'vectura';
         persist();
-        cover.render({ animate: true });
+        cover.render({ animate: true }).then(syncCoverArt, syncCoverArt); // a new word means new letters (mosaic rows)
       };
 
       cover = UI.StartPageCover.create({

@@ -6,6 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Cover art and colorway choices in Start Page settings
+- **Settings > Cover > Cover art.** A new block under Cover style lets you choose the piece and the colorway for every cover style. **Name in Ink** gets one row per letter, and **Cover Specimen** and **Portfolio band** get one row each.
+- **Pieces.** Each picker lists **Automatic** (the current behavior), then **Your pieces** (saved and opened works), then **Templates** (the studio picks).
+- **Colorways.** A row of swatches: **Page colorway** (the default, follows Curated / Mono / Basic / Wildcard / Random), **Its own colors** (your own pieces only), and six alternates. A chosen colorway stays when the page colorway mode changes.
+- **Saved per style.** Choices are kept separately for each cover style (`startPage.coverArt` and `startPage.coverColors`, sanitized in `src/config/start-page.js`). **Reset cover art** clears the current style. **Use as cover** on a plate replaces the current style's first slot, so the newest choice wins. A chosen piece that no longer exists falls back to Automatic.
+- New module `src/ui/start-page/cover-art-controls.js` (`Vectura.UI.StartPageCoverArtControls`); the cover exposes `slots()`.
+
 ### Changed: Start Page examples note, cover Colorways button, Back to canvas, New blank canvas
 - **Examples note moves into an (i).** The always-on "These are examples…" box under Plates is gone. Its text now sits in a note behind an **(i)** right after the **10 EXAMPLES** count: hover or keyboard focus shows it, a click pins it open, a tap toggles it, and Esc or a press elsewhere closes it. It stays the Plates section's accessible description.
 - **Shorter count line.** The count reads "10 examples"; the "· your own work will join them" tail is removed.
