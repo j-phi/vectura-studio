@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: United shapes snapped back when dragged
+- Dragging a Pathfinder shape (Unite and the other shape modes) with the Selection tool, or nudging it with the arrow keys, now moves it — before, it followed the mouse and then snapped back on release. Resize and rotate work the same way, the outline no longer lags behind after a move, and a drag that changes nothing no longer adds an empty undo step.
+
 ### Fixed: Start Page vertical titles on iPad
 - The vertical word on the Vertical word, Spec sheet and Words both sides plates (for example Downpour and Cybersigil) collapsed to no width on iPad Safari and Brave, so only fragments of the letters showed at the art's left edge. The word column now has a definite width taken from the word's own proportions. Desktop and phone layouts are unchanged.
 
