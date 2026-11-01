@@ -199,7 +199,9 @@
     }
 
     const isSrcNow = !!(layer.mask && layer.mask.enabled);
-    if (isSrcNow || (!masked && layer.maskCapabilities && layer.maskCapabilities.canSource)) {
+    // Masked rows show the toggle too when they can be a mask source (a released middle level
+    // of a nested mask must be re-maskable); non-silhouette rows still hide it.
+    if (isSrcNow || (layer.maskCapabilities && layer.maskCapabilities.canSource)) {
       const isSrc = isSrcNow;
       add('mask-toggle', isSrc ? 'Remove clipping mask' : 'Make clipping mask',
         isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
