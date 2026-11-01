@@ -231,9 +231,14 @@
       const Lab = Vectura.PenStudioLab; const IR = Vectura.InkRenderer;
       if (!IR || !IR.drawSample) return;
       const dpr = Math.min(2, (win.devicePixelRatio || 1));
-      const wCss = Math.round(spec.boxMm.w * pxPerMm); const hCss = Math.round(spec.boxMm.h * pxPerMm);
+      // Fill the element: backing store = laid-out width x dpr (fallback to the
+      // nominal mm size when the element has no layout yet), same aspect ratio.
+      canvas.style.width = '100%';
+      const nominalW = Math.round(spec.boxMm.w * pxPerMm);
+      const wCss = Math.max(1, Math.round(canvas.clientWidth || nominalW));
+      const hCss = Math.max(1, Math.round(wCss * spec.boxMm.h / spec.boxMm.w));
       canvas.width = Math.max(1, Math.round(wCss * dpr)); canvas.height = Math.max(1, Math.round(hCss * dpr));
-      canvas.style.width = wCss + 'px'; canvas.style.height = hCss + 'px';
+      canvas.style.height = hCss + 'px';
       const paths = spec.strokes.map((s) => ({ pts: s.pts, pen: s.pen }));
       IR.drawSample(canvas, docPen, Lab.paperFor(paperType), { paths, paperFill: true, widthMm: spec.boxMm.w });
     };
@@ -394,10 +399,24 @@
     };
 
     update();
+
+    // Re-render (through the same queue) when the lab column changes width so
+    // strips and matrix cells keep filling their space.
+    let ro = null; let lastW = 0;
+    if (typeof win.ResizeObserver === 'function') {
+      ro = new win.ResizeObserver(() => {
+        if (destroyed) return;
+        const w = Math.round(root.clientWidth || 0);
+        if (!w || Math.abs(w - lastW) < 2) return;
+        lastW = w; lastSig = null; update();
+      });
+      ro.observe(root);
+    }
     return {
       update,
       destroy() {
         destroyed = true; q.destroy();
+        if (ro) { ro.disconnect(); ro = null; }
         if (root.parentNode) root.parentNode.removeChild(root);
       },
       _queue: q,

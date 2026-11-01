@@ -127,7 +127,7 @@
       head.appendChild(btn('pen-studio-box-pin', box.pinned ? '★' : '☆', () => ctx.setDoc(store().setPinned(ctx.getDoc(), box.id, !box.pinned)), {
         'aria-label': pinLabel, title: pinLabel, 'aria-pressed': box.pinned ? 'true' : 'false',
       }));
-      head.appendChild(btn('pen-studio-box-export', L().EXPORT || 'Export', () => {
+      head.appendChild(btn('pen-studio-box-export', '⤓', () => {
         const res = store().exportBox(ctx.getDoc(), box.id);
         if (res && res.ok) {
           ctx.set({ overlay: { kind: 'export', title: fmt(L().EXPORT_BOX_TITLE || 'Export box: {name}', { name: box.name }), text: res.text, filename: res.filename } });

@@ -39,7 +39,7 @@
   const cleanName = (v) => cleanText(v, LIM().nameMax);
   const cleanDesc = (v) => cleanText(v, LIM().descMax);
   const cleanBoxName = (v) => cleanText(v, LIM().boxNameMax);
-  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const clone = (o) => Vectura.Utils.clone(o);
   const rnd = () => {
     if (G.crypto && typeof G.crypto.getRandomValues === 'function') { const a = new Uint32Array(1); G.crypto.getRandomValues(a); return a[0]; }
     return Math.floor(Math.random() * 0xffffffff);
