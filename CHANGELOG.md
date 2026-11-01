@@ -6,6 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Cover art and colorway choices in Start Page settings
+- **Settings > Cover > Cover art.** A new block under Cover style lets you choose the piece and the colorway for every cover style. **Name in Ink** gets one row per letter, and **Cover Specimen** and **Portfolio band** get one row each.
+- **Pieces.** Each picker lists **Automatic** (the current behavior), then **Your pieces** (saved and opened works), then **Templates** (the studio picks).
+- **Colorways.** A row of swatches: **Page colorway** (the default, follows Curated / Mono / Basic / Wildcard / Random), **Its own colors** (your own pieces only), and six alternates. A chosen colorway stays when the page colorway mode changes.
+- **Saved per style.** Choices are kept separately for each cover style (`startPage.coverArt` and `startPage.coverColors`, sanitized in `src/config/start-page.js`). **Reset cover art** clears the current style. **Use as cover** on a plate replaces the current style's first slot, so the newest choice wins. A chosen piece that no longer exists falls back to Automatic.
+- New module `src/ui/start-page/cover-art-controls.js` (`Vectura.UI.StartPageCoverArtControls`); the cover exposes `slots()`.
+
 ### Fixed: Nested clipping masks dropped a level
 - Masking a mask with a shape that only partly covered it silently dropped the lower mask, so content spilled outside it (level 2 showed all of the upper shape; level 3 ignored the bottom mask). A mask's clip region now comes from its own unclipped closed shape, and every mask above is intersected, so each nesting level shows exactly the overlap of all its masks — on screen and in SVG export.
 
