@@ -45,6 +45,7 @@ async function probeAll(page, selector) {
 async function disabledBoxes(page) {
   return page.evaluate((MIN) => [...document.querySelectorAll('.top-menu-panel.open .top-menu-item')]
     .filter((e) => e.disabled || e.hasAttribute('disabled'))
+    .filter((e) => e.checkVisibility()) // a disabled item in a closed submenu (Open Recent's "No recent files") has no box
     .map((e) => ({ id: e.id, h: Math.round(e.getBoundingClientRect().height) }))
     .filter((x) => x.h < MIN).map((x) => `${x.id} (disabled) box ${x.h}`), MIN);
 }

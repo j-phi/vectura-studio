@@ -358,7 +358,8 @@ test.describe('TUX-046 modal sheet', () => {
       expect(await page.evaluate(() => !!document.querySelector('#modal-overlay.open')), 'colour picker closed by the backdrop tap').toBe(false);
     }
     await page.evaluate(() => document.getElementById('btn-settings').click());
-    await page.waitForTimeout(400);
+    // The drawer slides in: wait for it to settle (WebKit finishes the transition later than 400 ms) before measuring.
+    await expect.poll(async () => inView(await rectOf(page, '#settings-panel')), { timeout: 5000 }).toBe(true).catch(() => {});
     const panel = await rectOf(page, '#settings-panel');
     const close = await rectOf(page, '#btn-close-settings');
     expect(inView(panel), `settings panel ${fmt(panel)}`).toBe(true);
