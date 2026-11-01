@@ -18781,7 +18781,7 @@ button.sp-cm-card { cursor: pointer; }
   .pen-studio-cols { display: grid; grid-template-columns: minmax(200px, 24cqw) minmax(0, 1fr); grid-template-rows: max-content max-content; overflow: auto; align-items: start; }
   .pen-studio-boxes { grid-column: 1; grid-row: 1 / span 2; width: auto; align-self: stretch; }
   .pen-studio-main { grid-column: 2; grid-row: 1; flex: none; min-height: auto; max-width: none; border-right: 0; border-bottom: 1px solid var(--ui-border); overflow: visible; }
-  .pen-studio-actions { position: static; margin: 0; padding: 0; border: 0; }
+  .pen-studio-actions { bottom: 0; }
   .pen-studio-pair-host { grid-column: 2; grid-row: 2; flex: none; min-height: auto; min-width: 0; overflow: visible; }
 }
 
@@ -18807,7 +18807,8 @@ body.touch-ui .vectura-modal.pen-studio { width: 100%; max-width: 100%; height: 
 body.touch-ui .pen-studio :is(.pen-studio-btn, .pen-studio-box-toggle, .pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add, .pen-studio-row-main, .pen-studio-row-remove, .pen-studio-size, .pen-studio-paper, .pen-studio-view-btn, .pen-studio-weave-btn, .pen-studio-chip, .pen-studio-matrix-row, .pen-studio-editable, .pen-studio-edit, .pen-studio-move, .pen-studio-color, .pen-studio-field :is(input[type="text"], select)) { min-height: var(--touch-target-min); min-width: var(--touch-target-min); }
 body.touch-ui .pen-studio :is(.pen-studio-color) { width: var(--touch-target-min); height: var(--touch-target-min); }
 body.touch-ui .pen-studio input[type="range"] { min-height: var(--touch-target-min); }
-body.touch-ui .pen-studio :is(.pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add) { min-width: 36px; width: 36px; padding: 0; }
+body.touch-ui .pen-studio :is(.pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add) { min-width: 30px; width: 30px; padding: 0; }
+body.touch-ui .pen-studio .pen-studio-box-toggle { min-width: 0; }
 body.touch-ui .pen-studio .pen-studio-box-delete.is-armed { width: auto; padding: 0 6px; }
 body.touch-ui .pen-studio .pen-studio-matrix-row { min-height: calc(var(--touch-target-min) + 4px); }
 
