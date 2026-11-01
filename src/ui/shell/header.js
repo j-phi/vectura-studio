@@ -254,7 +254,8 @@
     // propagation at each panel, so a bubble listener on the bar never ran (TUX-046).
     bar.addEventListener('click', (e) => {
       const item = e.target.closest?.('.top-menu-item');
-      if (item && !item.classList.contains('top-menu-back')) setOpen(false);
+      // A submenu trigger (File > Open Recent) opens its panel; it does not choose a command.
+      if (item && !item.classList.contains('top-menu-back') && !item.hasAttribute('aria-haspopup')) setOpen(false);
     }, true);
     // An outside tap on a non-action area only closes the sheet: it is swallowed so it never reaches the canvas
     // (a Pen tap would add an anchor). Only events tied to that gesture are swallowed: its pointerId,

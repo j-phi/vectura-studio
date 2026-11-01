@@ -1,0 +1,8 @@
+{
+  "arm64": {
+    "rich/sha256": "e5435bf419b909665a2cf7abf38a984f25f746f41b481f2bac286103d8bbb327"
+  },
+  "x64": {
+    "rich/sha256": "e5435bf419b909665a2cf7abf38a984f25f746f41b481f2bac286103d8bbb327"
+  }
+}

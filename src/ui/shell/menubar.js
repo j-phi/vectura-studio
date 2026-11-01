@@ -263,8 +263,9 @@
     });
     this.topMenuTriggers = triggers;
     const getPanel = (trigger) => trigger?.parentElement?.querySelector('[data-top-menu-panel]') || null;
+    // A submenu's rows (File > Open Recent) belong to its own keyboard scope (recents.js), not the parent panel's.
     const getItems = (panel) =>
-      Array.from(panel?.querySelectorAll('.top-menu-item:not([disabled])') || []);
+      Array.from(panel?.querySelectorAll('.top-menu-item:not([disabled])') || []).filter((el) => !el.closest('.top-menu-subpanel'));
     const focusTriggerByDelta = (current, delta) => {
       const index = triggers.indexOf(current);
       if (index < 0) return current;
@@ -351,6 +352,8 @@
         }
       });
       getItems(panel).forEach((item) => {
+        // A submenu trigger opens its panel; it must not close the menu it lives in.
+        if (item.hasAttribute('aria-haspopup')) return;
         item.addEventListener('click', () => {
           this.setTopMenuOpen(null, false);
         });

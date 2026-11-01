@@ -2493,8 +2493,20 @@
     fitMarginMaxFraction: 0.1,
   };
 
+  // Start Page "New blank canvas" paper chips -> machine profile (src/config/machines.js). A size that is
+  // not a machine profile (9 x 12 in) is a custom sheet given in inches.
+  Vectura.NEW_CANVAS_PAPERS = {
+    A4: { machine: 'a4', label: 'A4' },
+    A3: { machine: 'a3', label: 'A3' },
+    Letter: { machine: 'letter', label: 'Letter' },
+    '9x12': { machine: 'custom', label: '9×12', widthIn: 9, heightIn: 12 },
+  };
+
   window.Vectura.SETTINGS = {
     uiTheme: 'dark',
+    // true = the theme follows prefers-color-scheme (the "System" state of the theme rotation); uiTheme then
+    // holds the resolved concrete theme id. New users start on explicit Dark.
+    uiThemeSystem: false,
     margin: 20,
     speedDown: 250,
     speedUp: 300,
@@ -2670,6 +2682,8 @@
     layerBarPaletteId: 'prism',
     showTourOnFirstLaunch: false,
     tourSeen: false,
+    // Start Page preferences (one object, sanitized by START_PAGE.sanitize on every load/save).
+    startPage: Object.assign({}, Vectura.START_PAGE?.DEFAULTS || { showOnLaunch: true, newPaper: 'A3' }),
     toolbarDock: null,
     toolbarX: null,
     toolbarY: null,

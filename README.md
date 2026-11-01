@@ -197,9 +197,27 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a **Pen / Paper** tab with the pen palette (drag-to-assign) and a realistic paper selector, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
 
+**Start Page.** Vectura opens on a Start Page over the editor, with a rail for a new blank canvas (`Cmd/Ctrl+N`), Open file, Resume and Recent files. Return to it from the wordmark or `File → Start Page…` (`Shift+Cmd/Ctrl+H`). The page can be turned off with **Show Start Page on launch**. The main column is a cover: your name set in ink from your own work, with a clean header. The gear opens **Start Page settings**: Cover (the cover word and style), Colorway (page-wide color schemes: Curated, Mono, Basic, Wildcard, Randomize), Plates (**Show example plates**), what shows under the cover, motion and hover, and Show Start Page on launch. Below the cover, your works run as an editorial **Plates** section (on a first run, ten example plates stand in, each with a small **(i)** after its name (hover, focus or tap) saying it is a placeholder and that **Show example plates** in the Start Page settings turns them off, with a note that your own plates appear automatically when you save or open a file; New canvas, export and autosave do not add one), then Studio picks and Community. Art animates in (page default or per plate), reacts to hover, and 3D pieces are live drag-to-rotate models; the **Still** toggle and the system reduced-motion setting stop all of it. The page opens in one step with no editor flash or wrong-theme flash (a boot guard reads the saved preferences before first paint, including the System theme), and cover letters draw in inside the glyphs.
+
 <details>
 <summary>Full UI & workflow feature list</summary>
 
+- **Start Page (phase P0):** on launch the page covers the editor. The rail offers New blank canvas (`Cmd/Ctrl+N`) with paper-size chips A4, A3, Letter and 9×12, Open file (`Cmd/Ctrl+O`), Resume (the current canvas, or the newest recent) and Recent (thumbnails), plus a **Show Start Page on launch** checkbox. The main column is an empty state for now (P1 replaces it with the cover below)
+- **Cover (phase P1):** the main column shows a cover in one of three styles, chosen in Settings: **Name in Ink** (default; each letter is filled with a different piece of your work, topped up with studio picks), **Cover Specimen** and **Portfolio band**
+- **Name and practice line (phase P1):** both are click-to-edit. Settings has **Show name** and **Show practice line** (both off by default). A word picker offers Vectura, Vectura Studio, Last name, First + Last, Studies, Botanicals, Experiments and Custom
+- **Color controls (phase P1):** Curated, Mono, Basic and Wildcard schemes, plus a seeded **Randomize**. Schemes are built on the real paper and pen catalog, hold text at ≥ 4.5:1 and art at ≥ 3:1 contrast, and avoid near-identical neighbors. Resume and Recent thumbnails are tinted to the colorway
+- **Header (phase P1):** the rail collapses into a colophon strip, which is remembered and always used at 900 px or less. The header adds a Settings gear, an animation toggle (**Still**) and the theme toggle. Turning Still on persists the choice and auto-enables cookie saving, with Undo
+- **Plates (phase P2):** your work set as an editorial run, one plate per work, in 16 layouts on a named palette of 32 plate colorways (12 light papers, 10 color grounds, 10 darks). A rhythm keeps two darks from being adjacent and keeps near-identical neighbors apart. **Show** (default 5) limits the run and reads "Showing x of N". Plates persist in IndexedDB
+- **Plate editor (phase P2):** words and title and description with suggestions; a layout picker with a suggested layout; a grouped colorway picker plus **the file's own colors**; manual Artwork, Text (small captions), Background colors, plus **Title** (the big display word) and **Band** (the solid bar behind it) on the layouts that draw them, each with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); picking a colorway clears every custom color (Undo brings them back); contrast warnings; **Frame art** (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. **Edit** appears only in Curated and Basic; other modes keep saved edits hidden but intact
+- **Arrange, cover and colorways (phase P2):** Arrange reorders plates by pointer, touch or keyboard (`Alt/Option+Up/Down`), with announcements, Undo and Reset to suggested order. **Use as cover** is remembered across reloads. A Colorways fan shows alternates for a plate
+- **Open in the colors shown (phase P2):** opening any art opens it in exactly the colors on the page, as an unsaved copy named "<name> (colorway)". Save uses that name
+- **Motion, 3D, picks and Community (phase P3):** Settings has **Art animates in** (Plot, Sweep, Fade up, Ink bleed, Stroke cascade, Scan lines, Iris, None, with Preview) and **Hover effect** (Default, None, Re-trigger animation, Lift & tilt, Glare sweep, Re-plot, Hologram Foil, Pressure Ripple, Stipple Weather, Paper Breeze, Gravity Well, Light Current); a plate can override both in its editor, which also has **Replay animation**. **Still** and the system reduced-motion setting stop all of it. 3D pieces are live drag-to-rotate models on the Portfolio band and on plates. **Studio picks** (Open, Open as template) and **Community** (coming later, with a Notify toggle) follow the plates
+- **Crisp art (phase P1):** heavy pieces draw on a device-pixel canvas, re-rasterized on zoom, resize and device-pixel-ratio change. **Studio picks** are rendered offscreen from the bundled presets and cached in IndexedDB
+- **Developer Mode: curating the example plates.** The Document Setup ▸ Contributor / Presets **Developer mode** switch (the same one that adds the preset authoring controls; shown on `file://` and localhost only) also makes the Start Page's shipped example plates editable. **Edit Start Page plates…** (next to the switch, visible only while it is on) opens the Start Page on them, even if you have saved works. The Plates section then edits a draft of the examples with the plate editor (word, title, layout, colorway pin and manual colors; Pins in Curated mode), Arrange for order, **Add from preset** (any bundled preset), Remove and **Reset to shipped**. A "Developer Mode" badge in the header and a bar above the plates (with **Exit Developer Mode**, which clears the same switch) show the state. The draft lives in `localStorage` and survives a reload. **Export defaults…** generates the exact `EXAMPLE_PLATES` block; in Chrome **Write to start-page-picks.js** replaces the region between the `<example-plates:begin>` and `<example-plates:end>` marker comments in the file you pick, otherwise Download or Copy. Afterwards run `npm run start-page:picks` to regenerate the thumbnails (plates without one render live meanwhile; plate colors are applied at runtime, so changing `colors` alone needs no regeneration). With the switch off none of this exists. **Format:** each `EXAMPLE_PLATES` entry is `{ presetId, title, word, layout, pin, colors, hover }`; `colors` is optional, uses the plate editor's roles (`art`, `text`, `background`, `title`, `band`) and holds a hex or a special-fill id (`iridescent`, `iridescent-animated`, `duotone`, `metallic-gold`, `metallic-silver`, `sunset`), written as `colors: Object.freeze({ title: Object.freeze({ fill: 'sunset' }), band: '#c0392b' })`; omitted roles are Auto, and malformed values are ignored. Colors override the pin per role; a user's own edits on an example plate win over the shipped colors. `hover` is also optional: a hover effect id (`holo` is Hologram Foil; the same ids as the plate editor's Hover list except None, Default and Re-trigger), written after `colors` as `hover: 'holo'`. Precedence is the plate's own Hover choice, then the shipped `hover`, then the page's Hover effect in Settings (a page-wide None silences it). Plate 7 (Contour Survey No. 3) ships iridescent artwork and title on black stock with the Hologram Foil hover. A plate's top meta line and PAPER / PEN rows name the colors shown: a manual Artwork or Background uses the matching pen or paper name, else "Custom ink #hex" / "Custom paper #hex", or the special fill ("Iridescent ink").
+- **Show Start Page on launch** also lives in Document Setup (`Cmd/Ctrl+K`) ▸ History & Preferences. Turning it off while cookie saving is off turns on **Save preferences in cookie**, with a toast and Undo
+- **Recent files:** every Open and Save records a recent with a stored copy of the document in browser storage (IndexedDB). Chromium also remembers the file handle and reopens the real file; other browsers use the stored copy. `File → Open Recent ▸` lists thumbnail, name, algorithm and time, reopens with `Alt/Option+Cmd/Ctrl+1` to `8`, and offers **Clear Recent** with Undo
+- Under browser automation (`navigator.webdriver`) the Start Page does not open on its own unless the URL has `?startPage=launch`
+- Some browsers reserve `Cmd+N` and `Shift+Cmd+H` in a normal tab, so those shortcuts may not reach the page there
 - Desktop menu bar beside `VECTURA.STUDIO` with shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers
 - Top menu dropdowns render as overlays above the canvas/panes so they're never clipped by the header
 - Multi-skin theme system: Classic Dark, Classic Light, Lark, **Meridian Blue · Dark**, **Meridian Blue · Light**, and **Meridian Blue · Lark**. Switching skin restyles the full shell, flips the document background default, and swaps `Pen 1` to a contrast-appropriate color. New skins can be authored without JavaScript edits — see [`docs/skin-authoring.md`](docs/skin-authoring.md) and run `npm run skin:new -- <id>` to scaffold one from the template.
@@ -361,7 +379,7 @@ In overlay view, clicking the visible inactive silhouette selects that shape dir
 
 `File > Document Setup` (`Cmd/Ctrl+K`) covers: machine size, the document-level Metric/Imperial switch, optional blueprint-style dimension labels outside the canvas, margin, on-canvas crop, margin guides, the **Default paper** (Paper & Selection: a paper type or *No default (follow theme)*, its colour, and *Apply to this document*), selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`.
 
-The sun/moon toggle in the upper-right header switches the full UI between dark and light themes. A theme change recolours the sheet only while the document is on a plain (None) sheet in the theme's own colour and no default paper is set; an untouched Pen 1 always stays legible on the paper.
+The theme button in the upper-right header (and the matching toggle on the Start Page) rotates **Dark, Lark, Light, System** within the active skin family. **System** (the Lucide sun-moon icon) follows the operating system's light or dark setting live and is remembered across reloads; new users start on Dark. Its tooltip and label name the current and the next state. A theme change recolours the sheet only while the document is on a plain (None) sheet in the theme's own colour and no default paper is set; an untouched Pen 1 always stays legible on the paper.
 
 </details>
 
@@ -438,6 +456,12 @@ Click `Export SVG` to download.
 | **UI** | |
 | Lights Off (glow-in-the-dark inks emit; view only) | `Shift+Alt+L` |
 | Document Setup | `Cmd/Ctrl+K` |
+| Start Page (show, or leave when a canvas is open) | `Shift+Cmd/Ctrl+H` |
+| New canvas | `Cmd/Ctrl+N` |
+| Reopen recent 1–8 | `Alt/Option+Cmd/Ctrl+1` to `8` |
+| Move plate (Start Page, Arrange mode) | `Alt/Option+Up` / `Alt/Option+Down` |
+| Leave the Start Page (when a canvas is open) | `Esc` |
+| Rotate a 3D piece (Start Page) | Drag it, or focus it and use the arrow keys (`Shift` for bigger turns) |
 | Help / shortcuts | `?` |
 
 </details>
@@ -541,6 +565,7 @@ graphify update .
 - `CHANGELOG.md` is intentionally human-curated. Keep `Unreleased` current during development and cut versioned entries when shipping.
 - Architecture documentation uses Mermaid diagrams-as-code. Update diagrams whenever the system structure materially changes.
 - The universal multi-engine noise system is called `Noise Rack`; all future noise-capable algorithms should converge on that shared model.
+- `npm run start-page:picks` pre-renders the Start Page studio picks to `assets/start-page/picks/<id>.svg` plus the `src/config/start-page-picks-art.js` manifest; run it after changing a pick's preset, `START_PAGE_PICKS` or the example plates (Developer Mode > Export defaults edits the marker-delimited `EXAMPLE_PLATES` region) (a unit test fails when the files are stale; `-- --check` reports without writing).
 - `npm run profiles:bundle` rebuilds `src/config/petal-profiles/library.js` from `index.json` + profile JSON files for `file://` local runs; run this after editing profile JSON files.
 
 ### Deployment (GitHub Pages)
@@ -613,6 +638,35 @@ flowchart TD
   Harness --> PR[".github/pull_request_template.md"]
 ```
 
+```mermaid
+flowchart LR
+  App[App] <--> SP[StartPage controller]
+  SP --> Cover[cover]
+  SP --> Colors[color controls]
+  SP --> Plates["plates section: layouts, editor, arrange, fan"]
+  SP --> Picks[studio picks]
+  SP --> Community[community]
+  SP --> Rail[rail + recents]
+
+  Rail --> Recents[(RecentsStore, IndexedDB)]
+  Plates --> PlatesDb[(PlatesStore, IndexedDB)]
+  Cover --> Thumbs[(art thumbs cache, IndexedDB)]
+  SP --> Prefs[(startPage prefs, cookie / localStorage snapshot)]
+
+  Source[ArtSource] --> Renderer["ArtRenderer (offscreen VectorEngine)"]
+  Renderer --> Builder[ExportSvgBuilder]
+  Builder --> Ink["StartPageInk (sanitized SVG / DPR canvas)"]
+  Ink --> Cover
+  Ink --> Plates
+  Ink --> Picks
+
+  Cover --> OpenArt[OpenArt]
+  Plates --> OpenArt
+  Picks --> OpenArt
+  OpenArt --> Apply[App.applyState]
+  Apply --> App
+```
+
 </details>
 
 <details>
@@ -673,40 +727,14 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### Unreleased - Harmonograph curve fix and Trinodal preset (v1.4.37)
-- **Harmonograph curves stay on the figure.** With Curves on, a long figure could draw a stray arc that disappeared while dragging; the curve fit now always stays within tolerance.
-- **Trinodal preset** added to Harmonograph (Geometric).
-
-### Unreleased - Realistic paper scale and lighting (v1.4.34)
-- **Paper looks like paper at fit-to-screen.** Grain sizes recalibrated against real hot / cold / rough watercolour sheets; default Texture tuned so cold press and rough show about half the tooth contrast of a raking-light photo of the real sheets; tooth fades smoothly as it nears pixel size and returns as you zoom (no jumps at zoom or Scale steps); fibres stay visible on kraft, rag and newsprint, and a fibre mat appears at deep zoom.
-- **No more grey sheets.** The surface is lit around the paper colour: lit facets brighten and shadows darken, so the sheet's average colour is the colour you picked; white and saturated stock keep visible tooth (soft highlight roll-off).
-- **Scale slider** (Pen / Paper ▸ Paper, 25–300 %): grain size per document, saved in the file and in custom papers; it also scales a photo paper's tile. Saved Texture values are kept.
-
-### Unreleased - Special inks, Lights off, pen files (v1.4.32–v1.4.33)
-- **Special inks.** Metallic, neon, glow-in-the-dark, glitter and opaque white inks on any pen; metallic and glitter sparkle at every zoom and their glints move as you pan and zoom. Preview only: the SVG still plots the pen colour at the pen width.
-- **Lights off.** View ▸ Lights Off (`Shift+Alt+L`) darkens the sheet so glow-in-the-dark inks emit.
-- **Pen files and My pens.** Export / import pens as `.json`; save pens to My pens in this browser and reuse them.
-
-### Unreleased - Pen models and ink edge bleed (v1.4.31)
-- **Pen models.** Pick a real plotter pen and size per pen (15 models); width becomes the pen's laid width, and the preview draws its ink: bleed edges, blobs, pools, skips, opacity and overlap darkening. Plain pens stay the default and unchanged on paper None.
-- **Ink settings.** Bleed, Edge roughness, Opacity, Blobs & pools, Skips and Width jitter per pen, one undo step per drag, Reset to model defaults.
-- **Ink edge bleed on realistic paper**, plain pens included; mm-locked, deterministic, cached with level of detail. SVG export unchanged.
-
-### Unreleased - Custom papers (v1.4.30)
-- **My papers.** Save any paper as a custom paper in your browser, tune its realism under Advanced, rename/delete/export it, export all or import a papers file, and use it as the default paper. Documents embed their custom paper, so they open the same on any machine.
-- **Photo papers.** Make a paper from a photo/scan or an open-licence texture found in the app (Openverse, ambientCG, Wikimedia Commons; Pexels/Unsplash with your key), sized in real millimetres with its attribution kept.
-
-### Unreleased - Paper selector (v1.4.28)
-- **Pen / Paper tab.** The Pens tab is now Pen / Paper with a Paper section on top: 11 paper types (None plus ten realistic stocks), any colour, Texture and Ink bleed sliders, Set as default / Use default.
-- **Realistic paper preview.** Seeded tooth, fibres, speckles and mottling sized in real millimetres; ink multiplies into the sheet, skips tooth valleys, and bleeds/feathers on absorbent stock. None is pixel-identical to before. SVG export is unchanged (no paper).
-- **Saved per project, one default.** Paper is stored in the `.vectura` file (`settings.paper`); the default paper lives in Document Setup ▸ Paper & Selection, replacing the Background colour picker.
-
-### Unreleased - Touch support
-- **Touch and Apple Pencil across the whole app.** Phones and iPad portrait open panels as drawers. The tool rail is one row. A canvas HUD gives Undo, Redo, Zoom and Fit. Pinch and two-finger pan work with every tool. A two-finger tap undoes and a three-finger tap redoes. The modifier bar replaces Shift, Option and Cmd (Multi-select, Constrain, Duplicate, Pan). Hold a layer row or the canvas for its menu, hold a label to reset, tap a value chip to type.
-- **Finger-sized controls.** Every control has a 44 px hit area, sliders move only on a sideways drag, inputs are 16 px so iOS does not zoom, and fields stay above the keyboard. Handles, anchors, the pen, the Direct tool, the 3D gizmo and the Petal Designer use a 22 px grab radius.
-- **Help and hints.** Help has a Touch tab and a Touch toggle. Status hints use touch words after touch input. See the Touch gestures table under How to Use.
-- **iOS files.** Open `.vectura` from the Files app, save through the share sheet, and import large photos safely.
-- **Test and release gates.** Touch target audit, finger-only journeys, static touch guard and a real-device checklist. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+### 1.5.0 - Start Page
+- **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup). The page opens without an editor flash or late layout.
+- **Plates.** Your work set as an editorial run: a plate editor with manual colors (now including Title and Band), Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown. Ten example plates fill the page on a first run; the **Show example plates** switch in Start Page settings hides them, and Developer Mode lets contributors edit them.
+- **Motion.** Seven animate-in styles, twelve hover effects, live drag-to-rotate 3D models, and a **Still** toggle that stops it all.
+- **File > Close** closes the current project (with a discard prompt when it has unsaved changes) and returns to the Start Page.
+- **Harmonograph curves stay on the figure** (no stray arc with Curves on), and a **Trinodal** preset joins Harmonograph (Geometric).
+- **Paper, pens and inks.** Eleven paper types with realistic scale and lighting, a Scale slider, My papers and photo papers; fifteen pen models with ink edge bleed; special inks (metallic, neon, glow-in-the-dark, glitter, opaque white), View ▸ Lights Off, pen files and My pens; a System theme.
+- **Touch and Apple Pencil across the whole app.** Drawers on phones and iPad portrait, 44 px targets, pinch and two-finger pan with every tool, finger-sized handles and iOS file I/O. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
 
 ### 1.4.20 - Touch nightly on Linux
 - **Holds and drags.** A long-press on the canvas no longer opens its menu in the middle of a slow drag and reverts it (gizmo rings, handles, pen anchors, objects).
@@ -718,6 +746,9 @@ CI lives in `.github/workflows/test.yml`:
 - **New canaries.** Every bundled preset, 13 legacy saved files, every algorithm in a real browser, SVG goldens for 11 more algorithms and 35 canonical 3D scenes. They found 6 product defects (PRH-029 to PRH-034), logged in `plans.md`.
 - **Leaner suite.** Tests no longer read git history; golden values regenerate with `npm run test:update`. Duplicate Scene3D tests were cut with mutation proofs.
 - **Timing.** PR wall time is projected at about 6 minutes (from about 17). This is not yet measured on hosted runners. Details: `docs/testing.md`.
+
+<details>
+<summary>Older releases (1.4.15 and earlier)</summary>
 
 ### 1.4.15
 - **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now
@@ -780,6 +811,8 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** Whether to retune the crosshatch cap's onset — measured infeasible without a
   different mechanism this round — and whether the tick fills' residual gap is acceptable, are
   both open product decisions not settled by this release.
+
+</details>
 
 <details>
 <summary>Older releases (1.4.2 and earlier)</summary>

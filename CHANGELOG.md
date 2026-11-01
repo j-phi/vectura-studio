@@ -6,6 +6,122 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 1.5.0 - 2026-10-31
+
+Headlines since 1.4.0:
+- **Start Page.** A launch page over the editor: a cover set in your own work, plates (16 layouts, 32 colorways with an automatic rhythm), animate-in motion, hover effects and live 3D models, Studio picks and Community, ten example plates on first run, and Developer Mode plate editing (including Title and Band colors). The launch-flicker fix removes the editor flash and late layout.
+- **File > Close.** Drops the current project (asking first on unsaved changes), shows a blank canvas and the Start Page; plates follow Recent live.
+- **Harmonograph fix and Trinodal preset.** Stray curve arcs on long figures are gone; Trinodal joins the Geometric presets.
+- **Paper, pens and inks.** Realistic paper stocks with My papers and photo papers, pen models with ink edge bleed, special inks, Lights off, pen files and My pens, plus a System theme.
+- **Touch and CI.** Touch and Apple Pencil support across the app (real-device results pending), a rebuilt CI with one required check, and SVG sanitizer security hardening.
+
+### Changed: Start Page controls move into the settings gear
+- **Removed** the pencil above the cover word and the **Colorway** row under it. The cover word (with Custom…) now sits under **Cover** in Start Page settings (the gear), next to Cover style; mode (Curated, Mono, Basic, Wildcard), the Randomize dice with its seed and the swatch preview live under **Colorway**.
+- **Show example plates** is now a switch under **Plates** in Start Page settings (same preference); it is disabled while Developer Mode edits the example plates. The cover's **Colorways** button (the fan for one piece) stays where it is.
+- The horizontal rule under the letters stays; the cover simply ends there.
+
+### Changed: Start Page example plates, plate 7 and live color names (1.5.0)
+- The dashed **EXAMPLE** badge is gone. Each example plate has a small **(i)** after its name; hover, keyboard focus or a tap shows "This is a placeholder example plate, shipped with Vectura Studio. Turn example plates off with "Show example plates" in Start Page settings (gear)", and Esc or a press elsewhere closes it. User plates have none.
+- **Plate 7 (Contour Survey No. 3)** now ships iridescent artwork and an iridescent title on a dark ground, and shows the **Hologram Foil** hover. Example entries accept an optional `hover` effect id (validated against the hover effects; round-trips through Developer Mode and Export defaults, byte-identical for entries without it). A plate's own Hover choice wins, then the shipped one, then the page default (a page-wide None still silences it).
+- A plate's top meta line and PAPER / PEN rows now name the colors shown: a manual Artwork or Background gives the matching pen or paper name, else "Custom ink #hex" / "Custom paper #hex" or the special fill ("Iridescent ink"), and they follow colorway picks, mode changes and manual colors live.
+
+### Fixed: Cybersigil example plate description (v1.4.51)
+- The **Cybersigil** Start Page plate now has its own description (hard-edged stepped rings, not tree rings); example plates accept an optional `description`, and Developer Mode export keeps it. Other Rings plates are unchanged.
+
+### Changed: quieter Start Page cover header (v1.4.49)
+- **Removed** the "Set in your work" kicker, the "Each letter carries one of your pieces · N letters" / "Set in pieces from the Vectura studio…" line, and the resting numbers and ticks under each cover letter. The band cover drops its "Set in your work" eyebrow (it keeps "Studio of" when your name is shown).
+- **Kept** the horizontal rule under the letters and the hover/focus label (swatch, number, piece name, algorithm and pen, with the accent bar).
+- The color controls label now reads **Colorway** (was "Colorway · whole page").
+
+### Fixed: dragging a Start Page 3D object no longer opens the art (v1.4.46)
+- **Only a fast single click opens art.** Releasing an orbit drag (or any press that moves more than 5 px, 10 px for touch/pen, or lasts longer than 350 ms) no longer opens the piece; the `click` the browser fires on release is swallowed. Keyboard Enter/Space and screen-reader activation still open it. One shared helper, `StartPageDom.onOpenClick`, now guards every open-on-click site: plates, cover letters, the word cover, the band caption, studio pick cards and the Community card. Thresholds live in `START_PAGE.CLICK` (`src/config/start-page.js`).
+- Plate art also resolves its entry by plate id when opened, so a re-sync that rebuilt the entry objects can no longer leave the art click a silent no-op.
+
+### Added: Title and Band manual colors for plates; a colorway pick clears the custom palette (v1.4.47)
+- **Plate editor ▸ Manual colors gains Title and Band rows** where the plate's layout draws them. **Title** is the big display word (vertical-word, spec-sheet, waterfall, full-sheet, full-bleed-band, diptych, big-numeral, words-both-sides, knockout-title); **Band** is the solid secondary ground (full-bleed-band, knockout, knockout-title). Before, the band took the pen ink and the word followed the art fill, so a flat mint band and an iridescent word could not be set apart from the artwork. Each row has Auto (today's look, unchanged), the same swatches, custom color and six special fills as Artwork. **Text** stays the small caption and spec text; every row now carries a one-line hint.
+- A Title below 3:1 against what it sits on (the band on band layouts, else the ground) gets a contrast warning; text on a manual Band is nudged to stay readable. Saved plates without the new fields stay on Auto. Example plates in Developer Mode hid manual colors at this point; the next entry lets the example config carry them.
+- **Fixed: picking a colorway left custom colors in place.** Choosing a named colorway, Auto · rhythm, "Use the rhythm's color" or the file's own colors now clears all five custom colors so the colorway applies in full, and Undo restores them together with the previous pin. The role table is `StartPagePlateType.COLOR_ROLES` / `rolesFor`.
+
+### Added: example plates can carry custom colors (v1.4.48)
+- **`EXAMPLE_PLATES` entries take an optional `colors` field**, the plates store's own shape: roles `art`, `text`, `background`, `title`, `band`; each a hex (`'#c0392b'`, `'#abc'`) or a special fill (`{ fill: 'iridescent' | 'iridescent-animated' | 'duotone' | 'metallic-gold' | 'metallic-silver' | 'sunset' }`). A missing or null role (or no `colors`) is Auto. Canonical form, emitted by the exporter in a fixed role order and byte-stable on a second export: `Object.freeze({ presetId: 'spiral-galaxy', title: 'Spiral Galaxy', word: 'Spiral', layout: 'full-bleed-band', pin: 'sky-prussian', colors: Object.freeze({ title: Object.freeze({ fill: 'sunset' }), band: '#c0392b' }) }),`. Entries without colors are unchanged byte for byte.
+- **Validated on load** (`StartPageExamplePlates.sanitizeColors`): unknown roles, malformed hex, unknown fill ids and wrong types are dropped, never thrown, and the survivors are frozen. Hostile strings cannot reach the exporter.
+- **Rendering and precedence.** Shipped colors resolve through the same `StartPagePlateColors.resolve` as a user's manual colors (contrast safeguards included, Curated mode only). Per role they override the `pin`; roles left Auto keep the pin's colorway. The user's layer wins over the shipped one: shipped colors apply only while the plate has no colorway pick and no colors record of its own. The first color edit copies the shipped set into the user's record (untouched roles keep their shipped value); a colorway pick, Auto · rhythm or the file's own colors clears it, as for any plate, and it stays cleared; Reset colors / Reset plate return to the shipped colors. Shipped config is never mutated.
+- **Developer Mode un-hides Manual colors** for example plates. Edits go to the draft (`colors` in the `localStorage` record), show in Export defaults, and a colorway pick clears them. Framing, motion and description stay hidden: the config has no fields for them (adding frame/motion would be a new field each; description is a one-line text field, so all three would be small follow-ups).
+- **Thumbnails are unaffected.** `npm run start-page:picks` renders the preset's own line art (hash of the preset only); plate colors are applied at runtime, so `colors` never needs a regeneration.
+
+### Added: Developer Mode edits the Start Page example plates
+- **The existing Developer Mode switch (Document Setup ▸ Contributor / Presets, `SETTINGS.devMode`) now also opens the shipped example plates for curation.** No second flag: `Vectura.DevMode` (`src/core/dev-mode.js`) wraps that one setting and announces changes, so the Start Page reacts live. With it off nothing is built.
+- **Document Setup ▸ Contributor / Presets ▸ "Edit Start Page plates…"** (visible only with Developer Mode on) closes the panel and opens the Start Page through `startPage.show({ editPlates: true })`, scrolled to the Plates section. The examples show and are editable even when you have saved works of your own.
+- **Same tools as your plates:** the plate editor (word, title, layout, colorway pin), Arrange for order, plus **Add from preset** (a filterable picker over `Vectura.PRESETS`), **Remove** and **Reset to shipped** (with Undo). Controls the example config cannot carry (manual colors, framing, motion, description) are hidden. A persistent Developer Mode badge in the header and a bar above the plates (with **Exit Developer Mode**) show the state. Pins are edited in Curated mode.
+- **Local draft:** edits preview live and are held in `localStorage` (`vectura_start_page_example_draft`), so a reload keeps them (`src/core/start-page/example-plates-draft.js`). A plate with no pre-rendered thumbnail renders live, so the preview is honest.
+- **Export defaults:** generates the exact `EXAMPLE_PLATES` block. In Chrome, "Write to start-page-picks.js" replaces the region between the new `<example-plates:begin>` / `<example-plates:end>` marker comments in the file you pick (File System Access API); otherwise Download or Copy. Then run `npm run start-page:picks` to pre-render the thumbnails.
+
+### Changed: Show example plates checkbox (replaces the automatic hide) (v1.4.43)
+- **A "Show example plates" checkbox in the Plates header** (default on, saved as the `showExamples` Start Page preference). Checked, the example plates sit after your own works in your saved order; unchecked, they are hidden (with no works, the empty state shows). They no longer step aside on their own. The Show count applies to your works only.
+- **Example plates are editable and removable like works.** Edit (layout, text, colors, framing, motion) and Remove work on an example, edits are saved per example id (the bundled definitions are never changed), and a removed example comes back from the Add plate menu under Removed.
+- A lone work cleared from Recent still leaves only the examples showing while the box is checked.
+
+### Added: File > Close and plates that follow Recent
+- **File > Close** drops the current project (asking first when it has unsaved changes), leaves a blank canvas and shows the Start Page. A project that was never saved or opened from a file was never a plate, so the example plates are back.
+- **Clear in Recent re-syncs the plates live.** With only one opened file in Recent, pressing Clear next to it leaves just the example plates (while "Show example plates" is checked); Undo brings the file's plate back. The Plates section now refreshes on every works change, not only when the set of art ids changes.
+
+### Added: Start Page example plates (first run)
+- **Ten example plates fill the Plates section while you have no works of your own** (Old Growth Oak, Cybersigil on black stock, Downpour, Coiled Sphere as a live 3D disc, High Sierra, Torus Contours as a live 3D specimen, Contour Survey No. 3, Spiral Galaxy, Rolling Hills, Pebble Beach), in the mockup's layouts and colorways. Each is marked **Example** in its plate header, has Open and Open as template (a new unsaved document in the colors shown, never overwriting anything) and the Colorways fan, and has no Edit, Remove, Arrange, Add plate or Use as cover. They live in memory only, so nothing is saved to the plates store. As soon as you open or save a piece they are replaced by your own plates. A short note under the Plates heading says so: your own plates appear automatically when you save or open a file (New canvas, export and autosave do not add one), and opening an example starts a new document that becomes a plate once you save it.
+- Their art is pre-rendered with the studio picks (`npm run start-page:picks` now also covers `EXAMPLE_PLATES` in `src/config/start-page-picks.js`), so a first run does no live engine renders.
+
+### Changed: Start Page example plates use the mockup's curated colors
+- **The last five examples are recolored**: Torus Contours on pale kraft with sepia, Contour Survey No. 3 on black with silver, Spiral Galaxy on sky with Prussian (it was black and white), Rolling Hills on an ochre wash with sepia, Pebble Beach on lavender with violet. Three new **pin-only** colorways (`kraft-sepia`, `sky-prussian`, `ochre-umber`) back them: you can pin them in the plate editor, but the automatic rhythm never places them, so nobody's Auto colors change. Closest real papers and pens stand in for the mockup's (Micron Sepia for umber, a lightened kraft so sepia stays readable).
+
+### Fixed: Start Page launch flicker
+- **No editor flash, no late layout.** A small synchronous boot guard (`src/ui/start-page/boot.js`) reads the saved Start Page and theme preferences before first paint, so the editor never shows ahead of the page and a saved skin (including System, resolved from the OS setting) is applied before the page ground paints: no light-to-dark flash. The page stays blank until the cover letters, plates and sections are laid out, then reveals in one step. A 6 s watchdog releases it if the page never opens.
+- **Letters draw in inside the glyphs.** Each cover letter starts as a hairline outline and fills left to right while the pen plots the artwork, clipped to the letter. There is no solid placeholder and no blanking between letters. Still shows the final art at once.
+- **Stable re-render.** A cover re-render with the same inputs keeps the mounted letters instead of replacing them.
+
+### Added: System theme in the theme selector
+- **System state.** The theme rotation is now Dark, Lark, Light, **System**, then Dark again (within the active Modern/Classic family), on both the editor header button and the Start Page toggle, which always show the same state. System uses Lucide's sun-moon icon and follows the operating system's light or dark setting live: Light or Dark of the current family, switching as the OS does. The button's label and tooltip name the current and the next state ("Theme: System (Light). Switch to Dark theme.").
+- **Remembered.** The choice (System versus an explicit theme) is saved with the other preferences, so a reload keeps it; it is applied before first paint, so there is no flash of the wrong theme. New users still start on Dark. The paper theme-sync rule is unchanged: when the OS flips, a plain sheet in the theme's own color follows, while a default paper, a textured sheet or a custom color stays put.
+
+### Changed: Start Page help guide and shortcut list (phase P4)
+- **Help guide.** The File & Export tab's shortcut list now has a "Start Page" section with `Esc` (leave the page when a canvas is open) and the 3D gestures (drag to rotate, arrow keys on a focused piece), beside the existing Start Page, New canvas, Open recent and "Arrange plates" (`Alt/Option+Up/Down`) rows. Each is listed once, with Mac and non-Mac keys. A new unit test pins the rows.
+- **US spelling.** "colour" became "color" in the help guide and the Hologram Foil hover blurb, and "catalogue" became "catalog" in the Start Page notes.
+
+### Added: Start Page motion, hover effects, live 3D, studio picks and community (phase P3)
+- **Art animates in.** Settings picks the page default: Plot, Sweep, Fade up, Ink bleed, Stroke cascade, Scan lines, Iris or None, with a Preview that replays the cover. It applies to the cover, plates (each plate can set its own in its editor) and the Studio picks. The plate editor has a **Replay animation** button.
+- **Hover effect.** Settings picks the page default: Default (plates draw themselves in again, cards lift and tilt), None, Re-trigger animation, Lift & tilt, Glare sweep, Re-plot, Hologram Foil, Pressure Ripple, Stipple Weather, Paper Breeze, Gravity Well, Light Current. Effects load only on first use and touch only the art, never the text.
+- **Still stops everything.** The animation toggle, and the system's reduced-motion setting, now stop draw-ins, hover effects, lift cards and the 3D sway and inertia together (one source of truth, announced on `vectura:start-page-motion`).
+- **Live 3D.** A Topoform, Spiralizer, Terrain or Polyhedron piece is a live, drag-to-rotate model (idle sway, arrow keys) on the Portfolio band and on plates; Plate 4 shows it on a lighter disc with no ring and a "Drag to rotate" hint. Opening such a piece still opens the document in the colors shown.
+- **Studio picks** (Open and Open as template, in the colors shown) and **Community** (one honest line that sharing comes later, a Notify toggle saved on this device, no feed) sit under the plates.
+
+### Fixed: Start Page review fixes (phase P3)
+- **Recents thumbnails keep their ink.** The rail, colophon and Resume thumbnails of stored SVG thumbnails are drawn at 512 px from the viewBox (they were rasterized at the browser's 194 x 150 default, hairlines under a pixel), and a file whose thumbnail is a PNG (over 250 KB) now shows in its own paper and ink: recents store the document's paper and primary ink at record time.
+- **Studio picks, Resume and the Community card fill their frame.** A new "object" fit scales the piece's ink box up to the frame (with a small pad) instead of containing the whole paper sheet.
+- **Idle CPU with a live 3D model.** The sway redraws at about 24 fps (was every frame), parks after about 20 seconds without interaction and resumes on pointer enter, focus or scrolling back into view; the z-buffer is reused while the view has not changed. Models that scroll out of view are paused, not destroyed. The 3D canvas is now an `application` whose name states the arrow keys.
+- **Plate editor Hover list** is Settings' list (Re-trigger animation included, same labels). A hover effect now attaches when a pointer arrives before the art has finished parsing (on the next move or when ready).
+
+### Added: Start Page plates (phase P2)
+- **Plates.** Your work set as an editorial run in 16 layouts on a named palette of 32 plate colorways (12 light papers, 10 color grounds, 10 darks). A rhythm keeps two darks from being adjacent and near-identical neighbors apart. **Show** (default 5) with "Showing x of N". Plates persist in IndexedDB.
+- **Plate editor.** Words and title and description with suggestions; layout picker with a suggested layout; grouped colorway picker plus "the file's own colors"; manual Artwork, Text and Background colors with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); contrast warnings; Frame art (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. Edit appears only in Curated and Basic.
+- **Arrange.** Reorder by pointer, touch or keyboard (`Alt/Option+Up/Down`) with announcements, Undo, and Reset to suggested order.
+- **Use as cover and Colorways fan.** Use as cover is remembered across reloads.
+- **Open in the colors shown.** Opening any art opens it in exactly the colors shown, as an unsaved copy named "<name> (colorway)"; Save uses that name.
+
+### Added: Start Page cover and shell (phase P1)
+- **Cover.** The main column shows a cover in place of the P0 empty state, in three styles chosen in Settings: **Name in Ink** (default; each letter is filled with a different piece of your work, topped up with studio picks), **Cover Specimen** and **Portfolio band**.
+- **Name and practice line.** Both are click-to-edit. Settings adds **Show name** and **Show practice line** (both off by default) and a word picker: Vectura, Vectura Studio, Last name, First + Last, Studies, Botanicals, Experiments or Custom.
+- **Color controls.** Page-wide Curated, Mono, Basic and Wildcard schemes, plus a seeded **Randomize**. Schemes are built on the real paper and pen catalog, with contrast floors of 4.5:1 for text and 3:1 for art, and no near-identical neighbors. Resume and Recent thumbnails are tinted to the colorway.
+- **Header.** The rail collapses into a colophon strip, remembered and always used at 900 px or less. The header adds a Settings gear, an animation toggle (**Still**) and the theme toggle. Turning Still on persists the choice and auto-enables cookie saving, with Undo.
+- **Crisp art.** Heavy pieces draw on a device-pixel canvas, re-rasterized on zoom, resize and device-pixel-ratio change.
+- **Studio picks.** Rendered offscreen from the bundled presets and cached in IndexedDB.
+
+### Changed: Start Page SVG export builder (phase P1)
+- SVG string-building moved into `ExportSvgBuilder`. The output is byte-identical, so exported files do not change.
+
+### Added: Start Page (phase P0)
+- **Start Page on launch.** A Start Page opens over the editor with a rail for New blank canvas (`Cmd/Ctrl+N`, paper chips A4 / A3 / Letter / 9×12), Open file (`Cmd/Ctrl+O`), Resume and Recent thumbnails, plus a "Show Start Page on launch" checkbox. The main column is an empty state until the later phases land.
+- **Return paths.** The wordmark and `File → Start Page…` (`Shift+Cmd/Ctrl+H`) reopen the page; `File → New Canvas` (`Cmd/Ctrl+N`) starts a blank canvas.
+- **Recent files.** Every Open and Save records a recent with a stored copy in IndexedDB; Chromium reopens the real file through its remembered handle. `File → Open Recent ▸` shows thumbnail, name, algorithm and time, reopens with `Alt/Option+Cmd/Ctrl+1–8`, and offers Clear Recent with Undo.
+- **Preference.** Document Setup ▸ History & Preferences carries the same launch toggle. Turning it off while cookie saving is off enables "Save preferences in cookie", with a toast and Undo.
+- **Automation.** Under `navigator.webdriver` the page opens only with `?startPage=launch`.
 ### Harmonograph: stray curve arc fixed; Trinodal preset (v1.4.37)
 - **No more "loose" line with Curves on.** The curve fit (`GeometryUtils` `_fitCubic`, used by `reduceAnchors` for algorithm output) split a failing span at its worst-error point and recursed, with a `depth > 48` backstop that emitted the un-fitted cubic as-is. Harmonograph emits its whole figure as one long self-crossing path, so the splits landed near run ends and nesting grew with path length; on the Trinodal figure the backstop fired twice and drew a ~5 mm arc outside the lobes. It vanished during a drag (the preview draws differently) and came back on mouse-up. The fit is now iterative on an explicit stack with no depth cap; every split is strictly interior, so it always terminates, and no span is accepted out of tolerance. Output is unchanged for paths that never reached the cap.
 - **Trinodal preset** (Harmonograph ▸ Geometric): three pendulums (3 : 2 : 3), 48 s, paper rotation 0.34 Hz.

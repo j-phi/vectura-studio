@@ -362,6 +362,7 @@
             ${swToggle('set-cookie-preferences', 'Save preferences in cookie')}
             <button id="btn-clear-preferences" type="button" class="hdr-btn">Clear saved preferences</button>
             ${swToggle('set-show-tour', 'Show tour on first launch')}
+            ${swToggle('set-show-start-page', 'Show Start Page on launch')}
             ${swToggle('set-show-crystallographic-names', 'Show crystallographic group names (p4m, p3m1…)')}
           </div>
         </div>
@@ -384,7 +385,11 @@ ${isDevEligible() ? `
           </button>
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             ${swToggle('set-dev-mode', 'Developer mode')}
-            <p class="ctrl-hint">When on, the preset Save dialog can download a bundler-ready .vectura into the project's user-presets/ workflow.</p>
+            <p class="ctrl-hint">When on, the preset Save dialog can download a bundler-ready .vectura into the project's user-presets/ workflow, and the Start Page's example plates become editable.</p>
+            <div data-dev-only ${Vectura.SETTINGS && Vectura.SETTINGS.devMode === true ? '' : 'hidden'}>
+              <button id="btn-edit-start-page-plates" type="button" class="hdr-btn">Edit Start Page plates…</button>
+              <p class="ctrl-hint">Opens the Start Page on the example plates that ship with the app, with editing, Arrange, Add from preset and Export defaults. Works even when you have saved pieces of your own.</p>
+            </div>
           </div>
         </div>
 ` : ''}
@@ -1302,6 +1307,14 @@ ${isDevEligible() ? `
         this.app?.persistPreferences?.();
       };
     }
+    // Start Page: same setting as the Start Page's own checkbox. Turning it off keeps it across reloads by
+    // enabling "Save preferences in cookie" (with a toast and Undo) — see App#setShowStartPageOnLaunch.
+    const setShowStartPage = getEl('set-show-start-page', { silent: true });
+    if (setShowStartPage) {
+      setShowStartPage.onchange = (e) => {
+        this.app?.setShowStartPageOnLaunch?.(e.target.checked);
+      };
+    }
     const setShowCrystallographicNames = getEl('set-show-crystallographic-names', { silent: true });
     if (setShowCrystallographicNames) {
       setShowCrystallographicNames.onchange = (e) => {
@@ -1314,8 +1327,17 @@ ${isDevEligible() ? `
     const setDevMode = getEl('set-dev-mode', { silent: true });
     if (setDevMode) {
       setDevMode.onchange = (e) => {
-        SETTINGS.devMode = e.target.checked;
-        this.app?.persistPreferences?.();
+        if (Vectura.DevMode && Vectura.DevMode.set) Vectura.DevMode.set(e.target.checked, { app: this.app });
+        else { SETTINGS.devMode = e.target.checked; this.app?.persistPreferences?.(); }
+      };
+    }
+    const btnEditPlates = getEl('btn-edit-start-page-plates', { silent: true });
+    if (btnEditPlates) {
+      // Developer Mode only: open the Start Page in plate-edit mode through the one show() path, from the editor.
+      btnEditPlates.onclick = () => {
+        if (!(Vectura.DevMode && Vectura.DevMode.isOn())) return;
+        this.toggleSettingsPanel?.(false);
+        this.app?.startPage?.show({ editPlates: true });
       };
     }
     // Preset Storage section is rendered dynamically (async folder status).

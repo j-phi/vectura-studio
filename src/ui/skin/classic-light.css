@@ -86,3 +86,6 @@
   --plotter-path-base: rgba(82, 82, 91, 0.35);
   --plotter-head: var(--ui-accent);
 }
+
+/* Danger as text on the light panels (3.9:1 for the fill color). */
+[data-ui-skin="classic-light"] { --ui-danger-text: #b91c1c; }

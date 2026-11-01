@@ -580,11 +580,11 @@ test.describe('Vectura smoke interactions', () => {
         themeColor: '#efefef',
       });
 
-    await expect(themeToggle).toHaveAttribute('aria-label', /dark theme/i);
+    await expect(themeToggle).toHaveAttribute('aria-label', /system theme/i);
     expect(pageErrors).toEqual([]);
   });
 
-  test('canvas workspace pixel matches after dark → lark → light → dark cycle', async ({ page }) => {
+  test('canvas workspace pixel matches after dark → lark → light → system → dark cycle', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -617,7 +617,11 @@ test.describe('Vectura smoke interactions', () => {
     await themeToggle.click();
     await expect.poll(() => page.evaluate(() => window.Vectura?.SETTINGS?.uiTheme), { timeout: 5000 }).toBe('light');
 
-    // Click 3: light → dark
+    // Click 3: light → system (follows the OS; Playwright's default scheme is light, so the sheet stays light)
+    await themeToggle.click();
+    await expect.poll(() => page.evaluate(() => window.Vectura?.SETTINGS?.uiThemeSystem), { timeout: 5000 }).toBe(true);
+
+    // Click 4: system → dark
     await themeToggle.click();
     await expect.poll(() => page.evaluate(() => window.Vectura?.SETTINGS?.uiTheme), { timeout: 5000 }).toBe('dark');
 
@@ -1622,6 +1626,11 @@ test.describe('Vectura smoke interactions', () => {
     });
     await ensurePaneOpen(page, 'left');
 
+    // scrollTop clamps to the scrollable range, so wait until the freshly built pane is tall enough to reach 600.
+    await page.waitForFunction(() => {
+      const el = document.getElementById('left-panel-content');
+      return el && el.scrollHeight - el.clientHeight >= 600;
+    });
     await page.evaluate(() => {
       document.getElementById('left-panel-content').scrollTop = 600;
     });

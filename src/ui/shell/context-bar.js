@@ -3356,6 +3356,7 @@
   };
 
   const tick = () => {
+    if (Vectura.UI?.utils?.parkTicker?.(tick)) return; // Start Page open: park until it closes
     refresh();
     syncRotateAffordance();
     state.raf = typeof G.requestAnimationFrame === 'function'

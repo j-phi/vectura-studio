@@ -85,7 +85,7 @@
         { name: 'Yellow', hex: '#e9c21c', effect: 'plain' },
         { name: 'Fresh Green', hex: '#5aa83a', effect: 'plain' },
         { name: 'Royal Blue', hex: '#2a4fc4', effect: 'plain' },
-        { name: 'Grey (cool)', hex: '#7a7f86', effect: 'plain' },
+        { name: 'Gray (cool)', hex: '#7a7f86', effect: 'plain' },
       ],
     },
     'rotring-isograph': {

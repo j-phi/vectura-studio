@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Start Page hover effects host</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/src/ui/skin/tokens.css">
+<link rel="stylesheet" href="/src/ui/skin/components.css">
+<link rel="stylesheet" href="/src/ui/skin/motion.css">
+<style>
+  body { margin: 0; padding: 16px; background: #d8d4cc; font: 14px/1.4 system-ui, sans-serif; }
+  .row { display: flex; gap: 20px; align-items: flex-start; }
+  #tile { position: relative; width: var(--tile, 740px); height: var(--tile, 740px); flex: none; overflow: hidden; background: var(--sp-paper, #f4efe4); }
+  #cap { margin: 0; max-width: 220px; }
+</style>
+</head>
+<body>
+<div class="row">
+  <div id="tile"></div>
+  <p id="cap">Caption beside the art. Effects must never touch this text.</p>
+</div>
+<script src="/src/core/start-page/art-geometry.js"></script>
+<script src="/src/ui/start-page/ink.js"></script>
+<script src="/src/ui/start-page/hover-fx/index.js"></script>
+</body>
+</html>

@@ -17,6 +17,61 @@
       .map((c) => `${c}`.toLowerCase()),
   );
   const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
+  // Start Page preferences always pass through START_PAGE.sanitize (enum / length / character allowlists).
+  const sanitizeStartPage = (value) => {
+    const SP = window.Vectura.START_PAGE;
+    return SP && typeof SP.sanitize === 'function' ? SP.sanitize(value) : { showOnLaunch: value?.showOnLaunch !== false };
+  };
+  // Only NON-DEFAULT startPage keys are stored in the snapshot (localStorage and cookie alike): the preference
+  // cookie is capped at 4 KB, and sanitize() restores every missing key from START_PAGE.DEFAULTS on load.
+  const compactStartPage = (full) => {
+    const defaults = window.Vectura.START_PAGE?.DEFAULTS || {};
+    const out = {};
+    Object.keys(full || {}).forEach((key) => {
+      if (!(key in defaults) || full[key] !== defaults[key]) out[key] = full[key];
+    });
+    return out;
+  };
+  // Cookie payload: UTF-8 safe base64 (btoa alone throws on text like "José’s"). Legacy cookies were plain
+  // btoa of ASCII/Latin-1 JSON; decoding falls back to the raw atob() string for those.
+  const encodePrefsCookie = (json) => btoa(
+    encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))),
+  );
+  const decodePrefsCookie = (raw) => {
+    const bin = atob(raw);
+    try {
+      return decodeURIComponent(Array.from(bin, (c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''));
+    } catch (_) { return bin; }
+  };
+  // localStorage keeps the full snapshot; the cookie mirror must stay under the ~4 KB browser limit, so past
+  // this encoded size it is trimmed: Start Page text fields first, then other bulky optional keys.
+  // cookiePreferencesEnabled and startPage.showOnLaunch / motionStill are never dropped.
+  const PREFERENCE_COOKIE_BUDGET = 3900;
+  const COOKIE_TRIM_STARTPAGE_TEXT = ['name', 'practiceLine', 'customWord'];
+  const COOKIE_TRIM_KEYS = ['uiSections', 'autoColorization', 'contextBar', 'pens'];
+  const buildPreferenceCookieValue = (snapshot) => {
+    const wrap = (data) => encodePrefsCookie(JSON.stringify({ version: 1, data }));
+    let value = wrap(snapshot);
+    if (value.length <= PREFERENCE_COOKIE_BUDGET) return value;
+    const trimmed = { ...snapshot };
+    if (trimmed.startPage && typeof trimmed.startPage === 'object') {
+      trimmed.startPage = { ...trimmed.startPage };
+      COOKIE_TRIM_STARTPAGE_TEXT.forEach((k) => { delete trimmed.startPage[k]; });
+      value = wrap(trimmed);
+    }
+    for (let i = 0; i < COOKIE_TRIM_KEYS.length && value.length > PREFERENCE_COOKIE_BUDGET; i += 1) {
+      delete trimmed[COOKIE_TRIM_KEYS[i]];
+      value = wrap(trimmed);
+    }
+    if (value.length > PREFERENCE_COOKIE_BUDGET) {
+      // Still too big for a cookie (the browser would reject it whole): keep only the keys that must survive.
+      const sp = snapshot.startPage && typeof snapshot.startPage === 'object' ? snapshot.startPage : {};
+      const startPage = {};
+      ['showOnLaunch', 'motionStill'].forEach((k) => { if (k in sp) startPage[k] = sp[k]; });
+      value = wrap({ cookiePreferencesEnabled: snapshot.cookiePreferencesEnabled, startPage });
+    }
+    return value;
+  };
   const normalizeThemeName = (theme) => {
     const key = `${theme || ''}`.trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME;
@@ -47,6 +102,24 @@
     const fam = normalizeThemeFamily(family);
     const candidate = fam === 'classic' ? `classic-${slot}` : slot;
     return Object.prototype.hasOwnProperty.call(THEMES, candidate) ? candidate : null;
+  };
+  // Theme rotation (the header button and the Start Page toggle both walk it): the three explicit brightness
+  // slots of the active skin family, then "system". System is not a skin: SETTINGS.uiTheme always holds the
+  // concrete theme id in use (so every consumer keeps working) and SETTINGS.uiThemeSystem says that id follows
+  // prefers-color-scheme (dark OS -> the family's dark theme, light OS -> its light theme).
+  const THEME_MODES = [...BRIGHTNESS_ORDER, 'system'];
+  const THEME_MODE_LABELS = { dark: 'Dark', lark: 'Lark', light: 'Light', system: 'System' };
+  const SCHEME_QUERY = '(prefers-color-scheme: dark)';
+  const systemPrefersDark = () => {
+    try {
+      if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true;
+      const mql = window.matchMedia(SCHEME_QUERY);
+      return mql && typeof mql.matches === 'boolean' ? mql.matches : true;
+    } catch (_) { return true; }
+  };
+  const resolveSystemThemeId = (themeId) => {
+    const family = getThemeFamily(themeId);
+    return getThemeIdForFamilySlot(family, systemPrefersDark() ? 'dark' : 'light') || normalizeThemeName(themeId);
   };
   // Union of every cssVar key any theme pushes inline. Used by applyTheme to clear
   // stale inline values left by a previously-active theme: themes that set a smaller
@@ -137,6 +210,7 @@
         refreshUi: false,
         render: false,
       });
+      this.watchSystemScheme();
       this.initDocumentPaper();
       this.engine = new VectorEngine();
       this.renderer = new Renderer('main-canvas', this.engine);
@@ -296,6 +370,17 @@
       this.isRestoring = false;
       this.pushHistory();
       this._notifyHistory();
+      this.markDocumentClean();
+      // Start Page + recents (File > Open Recent). The launch decision itself is made by main.js.
+      const uiNs = window.Vectura.UI || {};
+      this.recents = uiNs.RecentsController?.create ? uiNs.RecentsController.create(this) : null;
+      this.startPage = uiNs.StartPage?.create ? uiNs.StartPage.create(this) : null;
+      this.recents?.bindMenu();
+      // The editor wordmark is the way back to the Start Page.
+      if (typeof document !== 'undefined') {
+        document.querySelector('#app-header h1')?.addEventListener('click', () => this.startPage?.show());
+      }
+      this.recents?.refresh();
 
       this.render();
       this.persistPreferencesDebounced(0);
@@ -470,6 +555,7 @@
     getPreferenceSnapshot() {
       return {
         uiTheme: SETTINGS.uiTheme || DEFAULT_THEME,
+        uiThemeSystem: SETTINGS.uiThemeSystem === true,
         cookiePreferencesEnabled: SETTINGS.cookiePreferencesEnabled === true,
         showCrystallographicNames: SETTINGS.showCrystallographicNames === true,
         devMode: SETTINGS.devMode === true,
@@ -549,6 +635,7 @@
         paneRightWidth: SETTINGS.paneRightWidth,
         showTourOnFirstLaunch: SETTINGS.showTourOnFirstLaunch === true,
         tourSeen: SETTINGS.tourSeen === true,
+        startPage: compactStartPage(sanitizeStartPage(SETTINGS.startPage)),
         toolbarDock: SETTINGS.toolbarDock ?? null,
         toolbarX: SETTINGS.toolbarX ?? null,
         toolbarY: SETTINGS.toolbarY ?? null,
@@ -627,7 +714,10 @@
         return out;
       };
 
+      SETTINGS.uiThemeSystem = snapshot.uiThemeSystem === true;
       SETTINGS.uiTheme = normalizeThemeName(snapshot.uiTheme ?? SETTINGS.uiTheme);
+      // System follows the OS: the saved id only supplies the skin family.
+      if (SETTINGS.uiThemeSystem) SETTINGS.uiTheme = resolveSystemThemeId(SETTINGS.uiTheme);
       SETTINGS.cookiePreferencesEnabled = snapshot.cookiePreferencesEnabled === true;
       SETTINGS.showCrystallographicNames = snapshot.showCrystallographicNames === true;
       SETTINGS.devMode = snapshot.devMode === true;
@@ -791,6 +881,8 @@
       }
       SETTINGS.showTourOnFirstLaunch = snapshot.showTourOnFirstLaunch === true;
       SETTINGS.tourSeen = snapshot.tourSeen === true;
+      // A snapshot written before the Start Page (or a partial one) carries no startPage: keep what is set.
+      if ('startPage' in snapshot) SETTINGS.startPage = sanitizeStartPage(snapshot.startPage);
       // toolbarDock: null is the canonical "no dock" sentinel; otherwise enum.
       if ('toolbarDock' in snapshot) {
         if (snapshot.toolbarDock == null) {
@@ -841,7 +933,7 @@
       // Try base64 first; fall back to URL-decode for cookies written by older builds.
       let decodedCookie = null;
       if (cookieRaw) {
-        try { decodedCookie = atob(cookieRaw); } catch (_) {
+        try { decodedCookie = decodePrefsCookie(cookieRaw); } catch (_) {
           try { decodedCookie = decodeURIComponent(cookieRaw); } catch (_2) { /* ignore */ }
         }
       }
@@ -873,9 +965,9 @@
       if (!force && json === this.lastPreferenceHash) return;
       this.lastPreferenceHash = json;
       this.writeLocalStorage(PREFERENCE_STORAGE_KEY, json);
-      // btoa reduces cookie size vs encodeURIComponent (~33% vs ~45% overhead),
-      // keeping the value under the 4096-byte browser limit.
-      this.writeCookie(this.preferenceCookieName, btoa(json), PREFERENCE_COOKIE_MAX_AGE);
+      // base64 reduces cookie size vs encodeURIComponent (~33% vs ~45% overhead); the value is trimmed to
+      // PREFERENCE_COOKIE_BUDGET (localStorage above keeps the full snapshot).
+      this.writeCookie(this.preferenceCookieName, buildPreferenceCookieValue(snapshot), PREFERENCE_COOKIE_MAX_AGE);
     }
 
     persistPreferencesDebounced(delay = 280) {
@@ -886,6 +978,203 @@
         this.preferencePersistTimer = null;
         this.persistPreferences();
       }, Math.max(0, delay));
+    }
+
+    // ---- Start Page ----------------------------------------------------------------------------------
+    // Launch rule. AUTOMATION RULE: under automation (navigator.webdriver) the page does not open on launch
+    // unless the URL carries ?startPage=launch, so the existing specs keep booting into the editor.
+    shouldShowStartPageOnLaunch(opts = {}) {
+      const webdriver = 'webdriver' in opts ? opts.webdriver === true : (typeof navigator !== 'undefined' && navigator.webdriver === true);
+      const search = 'search' in opts ? `${opts.search || ''}` : (typeof location !== 'undefined' ? location.search : '');
+      if (SETTINGS.startPage?.showOnLaunch === false) return false;
+      if (webdriver && !/[?&]startPage=launch(&|$)/.test(search)) return false;
+      return true;
+    }
+
+    showStartPageOnLaunchIfWanted(opts = {}) {
+      if (!this.startPage || !this.shouldShowStartPageOnLaunch(opts)) return false;
+      this.startPage.show();
+      return true;
+    }
+
+    openStartPage() {
+      this.startPage?.show();
+    }
+
+    _toast(message, variant = 'info', action = null, duration = null) {
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (!T || typeof T.show !== 'function') return null;
+      try {
+        return T.show({ message, variant, duration: duration || (action ? 8000 : 3500), ...(action ? { action } : {}) });
+      } catch (_) { return null; }
+    }
+
+    _syncStartPagePrefs() {
+      const box = typeof document !== 'undefined' ? document.getElementById('set-show-start-page') : null;
+      if (box) box.checked = SETTINGS.startPage?.showOnLaunch !== false;
+      const cookie = typeof document !== 'undefined' ? document.getElementById('set-cookie-preferences') : null;
+      if (cookie) cookie.checked = SETTINGS.cookiePreferencesEnabled === true;
+      this.startPage?.syncPrefs?.();
+    }
+
+    /**
+     * A setting that only survives if preferences are saved asks for that. When "Save preferences in cookie" is
+     * off, it is turned on and persisted, and a toast says so with an Undo that restores BOTH the cookie setting
+     * and (through `undo`) the caller's own setting. Returns { changed } (true when it flipped the cookie setting).
+     */
+    ensurePreferencePersistence({ message, undo } = {}) {
+      if (SETTINGS.cookiePreferencesEnabled === true) {
+        this.persistPreferences({ force: true });
+        return { changed: false };
+      }
+      SETTINGS.cookiePreferencesEnabled = true;
+      this.persistPreferences({ force: true });
+      this._syncStartPagePrefs();
+      this._toast(message || 'Saving preferences in a cookie was turned on so this is remembered.', 'info', {
+        label: 'Undo',
+        onAction: () => {
+          SETTINGS.cookiePreferencesEnabled = false;
+          try { if (typeof undo === 'function') undo(); } finally {
+            this.clearPreferenceCookie();
+            this._syncStartPagePrefs();
+          }
+        },
+      });
+      return { changed: true };
+    }
+
+    setShowStartPageOnLaunch(on) {
+      const sp = SETTINGS.startPage || (SETTINGS.startPage = sanitizeStartPage({}));
+      const next = on !== false && on !== 0;
+      const prev = sp.showOnLaunch !== false;
+      if (prev === next) { this._syncStartPagePrefs(); return; }
+      sp.showOnLaunch = next;
+      if (next) {
+        this.persistPreferences();
+      } else {
+        const mod = /mac|iphone|ipad|ipod/i.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`) ? '⌘' : 'Ctrl+';
+        this.ensurePreferencePersistence({
+          message: `The Start Page will not open on launch. Save preferences in cookie was turned on so this sticks. Re-enable it in Document Setup (${mod}K), History & Preferences.`,
+          undo: () => {
+            sp.showOnLaunch = prev;
+            this.persistPreferences();
+          },
+        });
+      }
+      this._syncStartPagePrefs();
+    }
+
+    // ---- unsaved changes + New Canvas ----------------------------------------------------------------
+    _documentFingerprint() {
+      try {
+        return JSON.stringify([
+          this.engine.exportState(), SETTINGS.pens, SETTINGS.paper,
+          SETTINGS.paperSize, SETTINGS.paperWidth, SETTINGS.paperHeight, SETTINGS.paperOrientation,
+        ]);
+      } catch (_) { return `${Math.random()}`; }
+    }
+
+    markDocumentClean() {
+      this._cleanFingerprint = this._documentFingerprint();
+    }
+
+    isDocumentDirty() {
+      return this._documentFingerprint() !== this._cleanFingerprint;
+    }
+
+    // Resolves true when it is fine to replace the document: nothing unsaved, or the user chose to discard.
+    confirmDiscardChanges({ title = 'Discard unsaved changes?', message, confirmLabel = 'Discard' } = {}) {
+      if (!this.isDocumentDirty()) return Promise.resolve(true);
+      const Dialog = window.Vectura?.UI?.overlays?.Dialog;
+      if (typeof Dialog !== 'function') return Promise.resolve(true);
+      return new Promise((resolve) => {
+        let dlg = null;
+        let settled = false;
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+          setTimeout(() => { try { dlg?.destroy(); } catch (_) { /* noop */ } }, 0);
+        };
+        dlg = Dialog(document.body, {
+          title,
+          message: message || 'The canvas has changes that are not saved to a file. Replacing it cannot be undone.',
+          confirmLabel, cancelLabel: 'Keep editing', destructive: true,
+          onConfirm: () => settle(true),
+          onCancel: () => settle(false),
+        });
+        dlg.open();
+      });
+    }
+
+    /**
+     * File > Close: drop the current project (asking first when it has unsaved changes), leave a blank canvas and
+     * show the Start Page. Plates follow the works list: a never-saved project was never a plate, so the example
+     * plates are back; an opened or saved file stays the only plate until its Clear in Recent.
+     */
+    async closeProject() {
+      if (!(await this.confirmDiscardChanges({
+        title: 'Close this project?',
+        message: 'The current canvas has changes that are not saved to a file. Closing discards them, and that cannot be undone.',
+        confirmLabel: 'Close',
+      }))) return false;
+      if (!(await this.newCanvas({ paper: this.getNewCanvasPaper(), confirm: false }))) return false;
+      this.startPage?.show?.();
+      return true;
+    }
+
+    getNewCanvasPaper() {
+      return SETTINGS.startPage?.newPaper || 'A3';
+    }
+
+    /** Replace the document with an empty one on the chosen paper. Resolves true when it happened. */
+    async newCanvas({ paper, confirm = true } = {}) {
+      const papers = window.Vectura.NEW_CANVAS_PAPERS || {};
+      const key = papers[paper] ? paper : (papers[this.getNewCanvasPaper()] ? this.getNewCanvasPaper() : Object.keys(papers)[0]);
+      const conf = papers[key];
+      if (!conf) return false;
+      if (confirm && !(await this.confirmDiscardChanges({
+        title: 'Start a new canvas?',
+        message: 'The current canvas has changes that are not saved to a file. A new canvas replaces it, and that cannot be undone.',
+        confirmLabel: 'New canvas',
+      }))) return false;
+      const MACHINES = window.Vectura.MACHINES || {};
+      const state = this.captureState();
+      state.engine.layers = [];
+      state.engine.activeLayerId = null;
+      state.selectedLayerIds = [];
+      state.selectedLayerId = null;
+      delete state.settings.startPageFill; // a blank canvas carries no opened piece's special fill
+      state.settings.paperSize = conf.machine;
+      let w;
+      let hgt;
+      if (conf.widthIn) {
+        w = conf.widthIn * 25.4;
+        hgt = conf.heightIn * 25.4;
+      } else {
+        w = MACHINES[conf.machine]?.width ?? SETTINGS.paperWidth;
+        hgt = MACHINES[conf.machine]?.height ?? SETTINGS.paperHeight;
+      }
+      // The chip caption reads "long x short mm - landscape": set the orientation from the chip's config
+      // (landscape unless it says otherwise) so a portrait document does not leak into the new sheet.
+      const orientation = conf.orientation === 'portrait' ? 'portrait' : 'landscape';
+      const long = Math.max(w, hgt);
+      const short = Math.min(w, hgt);
+      state.settings.paperOrientation = orientation;
+      state.settings.paperWidth = orientation === 'landscape' ? long : short;
+      state.settings.paperHeight = orientation === 'landscape' ? short : long;
+      this.applyState(state);
+      this.engine.setProfile(SETTINGS.paperSize);
+      this.ui?.initSettingsValues?.();
+      this.renderer?.center?.();
+      this.history = [];
+      this.redoStack = [];
+      this.pushHistory();
+      this.markDocumentClean();
+      this.currentRecentId = null; // a Save after New Canvas starts a new recent
+      this.documentName = null;
+      this.render();
+      return true;
     }
 
     // Paper selector: migrate/validate the default paper from a preference
@@ -1064,6 +1353,8 @@
             : null,
           pens: SETTINGS.pens ? clone(SETTINGS.pens) : [],
           globalLayerCount: SETTINGS.globalLayerCount,
+          // Start Page: the special fill an opened piece was showing (kept only when set, so plain files are unchanged).
+          ...(SETTINGS.startPageFill ? { startPageFill: clone(SETTINGS.startPageFill) } : {}),
         },
         selectedLayerId: this.renderer.selectedLayerId,
         selectedLayerIds,
@@ -1080,11 +1371,14 @@
       // restore below cannot commit it as a layer in the restored document.
       if (this.renderer?.penDraft) this.renderer.cancelPenPath?.();
       const s = state.settings || {};
-      SETTINGS.margin = s.margin ?? SETTINGS.margin;
+      // A document is untrusted input: numeric settings that reach the SVG export string are coerced, so a crafted
+      // file cannot smuggle markup through them (an unusable value keeps the current setting).
+      const numOr = (value, fallback) => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) && Number.isFinite(Number(value)) ? Number(value) : fallback;
+      SETTINGS.margin = numOr(s.margin, SETTINGS.margin);
       SETTINGS.speedDown = s.speedDown ?? SETTINGS.speedDown;
       SETTINGS.speedUp = s.speedUp ?? SETTINGS.speedUp;
-      SETTINGS.precision = s.precision ?? SETTINGS.precision;
-      SETTINGS.strokeWidth = s.strokeWidth ?? SETTINGS.strokeWidth;
+      SETTINGS.precision = numOr(s.precision, SETTINGS.precision);
+      SETTINGS.strokeWidth = numOr(s.strokeWidth, SETTINGS.strokeWidth);
       SETTINGS.strokeWidthOverride = s.strokeWidthOverride === true;
       // Paper selector: state.paper > legacy bgColor > user default > built-in.
       if (window.Vectura.Paper) {
@@ -1094,6 +1388,8 @@
       } else {
         SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
       }
+      if (s.startPageFill && typeof s.startPageFill === 'object' && typeof s.startPageFill.kind === 'string') SETTINGS.startPageFill = clone(s.startPageFill);
+      else delete SETTINGS.startPageFill;
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
       SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;
       SETTINGS.cropExports = s.cropExports ?? SETTINGS.cropExports;
@@ -1244,7 +1540,10 @@
         syncGridColor = false,
         refreshUi = true,
         render = true,
+        system,
       } = options;
+      // `system: true|false` sets whether the theme follows the OS; omitted leaves the mode as it is.
+      if (typeof system === 'boolean') SETTINGS.uiThemeSystem = system;
       const themeName = normalizeThemeName(nextTheme ?? SETTINGS.uiTheme);
       const theme = getThemeConfig(themeName);
       if (!theme) return null;
@@ -1256,6 +1555,8 @@
       const root = document.documentElement;
       if (root) {
         root.dataset.uiSkin = themeName;
+        // Rotation state ('dark' | 'lark' | 'light' | 'system') for CSS and for the Start Page toggle's observer.
+        root.dataset.uiThemeMode = SETTINGS.uiThemeSystem === true ? 'system' : getThemeBrightness(themeName);
         root.style.colorScheme = theme.colorScheme || themeName;
         // Clear inline cssVars left by any previously-active theme before applying
         // this theme's set. Without this, cycling dark → lark → light → dark leaves
@@ -1328,16 +1629,34 @@
       return theme;
     }
 
-    toggleTheme() {
-      // Cycle within the active theme family only: dark → lark → light → dark
-      // (or the classic-* counterparts when the Classic family is active).
-      // Family is switched by the Modern/Classic toggle in Document Setup.
-      const current = normalizeThemeName(SETTINGS.uiTheme);
-      const family = getThemeFamily(current);
-      const slot = getThemeBrightness(current);
-      const idx = BRIGHTNESS_ORDER.indexOf(slot);
-      const nextSlot = BRIGHTNESS_ORDER[(idx + 1) % BRIGHTNESS_ORDER.length];
-      const next = getThemeIdForFamilySlot(family, nextSlot) || current;
+    // The rotation state both selectors render: mode is 'dark' | 'lark' | 'light' | 'system'.
+    getThemeState() {
+      const theme = normalizeThemeName(SETTINGS.uiTheme);
+      const system = SETTINGS.uiThemeSystem === true;
+      const mode = system ? 'system' : getThemeBrightness(theme);
+      const next = THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
+      const label = THEME_MODE_LABELS[mode];
+      const nextLabel = THEME_MODE_LABELS[next];
+      const detail = system ? ` (${THEME_MODE_LABELS[getThemeBrightness(theme)]})` : '';
+      return {
+        mode,
+        next,
+        theme,
+        label,
+        nextLabel,
+        description: `Theme: ${label}${detail}. Switch to ${nextLabel} theme.`,
+      };
+    }
+
+    // Applies one rotation state within the active skin family. System resolves against the OS right now.
+    setThemeMode(mode, options = {}) {
+      const key = THEME_MODES.includes(`${mode}`) ? `${mode}` : null;
+      if (!key) return null;
+      const family = getThemeFamily(SETTINGS.uiTheme);
+      const system = key === 'system';
+      const next = system
+        ? resolveSystemThemeId(SETTINGS.uiTheme)
+        : (getThemeIdForFamilySlot(family, key) || normalizeThemeName(SETTINGS.uiTheme));
       return this.applyTheme(next, {
         persist: true,
         syncPen1: true,
@@ -1345,7 +1664,15 @@
         syncGridColor: true,
         refreshUi: true,
         render: true,
+        ...options,
+        system,
       });
+    }
+
+    toggleTheme() {
+      // Rotate dark -> lark -> light -> system -> dark within the active skin family (the classic-* themes when
+      // Classic is active). The family itself is switched by the Modern/Classic toggle in Document Setup.
+      return this.setThemeMode(this.getThemeState().next);
     }
 
     setThemeFamily(nextFamily) {
@@ -1364,6 +1691,32 @@
         refreshUi: true,
         render: true,
       });
+    }
+
+    // Follows prefers-color-scheme while the System theme is on. Installed once at boot; a change outside System
+    // mode is ignored. The recolour uses the same sync flags as a manual toggle, so the paper theme-sync rule
+    // (plain sheet in the old theme's colour follows, anything else stays) applies unchanged.
+    watchSystemScheme() {
+      if (this._systemSchemeMql || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+      let mql = null;
+      try { mql = window.matchMedia(SCHEME_QUERY); } catch (_) { mql = null; }
+      if (!mql) return;
+      this._systemSchemeMql = mql;
+      this._systemSchemeHandler = () => {
+        if (SETTINGS.uiThemeSystem !== true) return;
+        const next = resolveSystemThemeId(SETTINGS.uiTheme);
+        if (next === normalizeThemeName(SETTINGS.uiTheme)) return;
+        this.applyTheme(next, {
+          persist: true,
+          syncPen1: true,
+          syncDocumentBg: true,
+          syncGridColor: true,
+          refreshUi: true,
+          render: true,
+        });
+      };
+      if (typeof mql.addEventListener === 'function') mql.addEventListener('change', this._systemSchemeHandler);
+      else if (typeof mql.addListener === 'function') mql.addListener(this._systemSchemeHandler);
     }
 
     getThemeFamily() {

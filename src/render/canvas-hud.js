@@ -154,7 +154,14 @@
     return () => {
       if (queued) return;
       queued = true;
-      requestAnimationFrame(() => { queued = false; stepAsideCovered(); });
+      requestAnimationFrame(() => {
+        queued = false;
+        // The Start Page covers (and inerts) the editor: its own DOM churn must not force a layout and hit-test pass per
+        // HUD button. One pass runs when the page closes.
+        const U = Vectura.UI && Vectura.UI.utils;
+        if (U && U.parkTicker && U.parkTicker(scheduleStepAside)) return;
+        stepAsideCovered();
+      });
     };
   })();
   const watchCovers = () => {

@@ -103,7 +103,7 @@ describe('UI bootstrap – core panels', () => {
     themeToggle.click();
     await Promise.resolve();
     expect(window.Vectura.SETTINGS.uiTheme).toBe('light');
-    expect(themeToggle.getAttribute('aria-label')).toContain('Dark');
+    expect(themeToggle.getAttribute('aria-label')).toContain('System');
     // Light is now meridian-styled (was classic #f5f5f5 → now meridian #efefef).
     expect(themeColorMeta?.getAttribute('content')).toBe('#efefef');
 

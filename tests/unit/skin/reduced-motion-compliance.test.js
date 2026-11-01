@@ -42,6 +42,15 @@ describe('Reduced-motion compliance', () => {
     // TUX-034 touch-hold ring fill + card pop (reduced motion: ring full at once, no pop).
     'touch-hold-fill': ['touch-hold-ring-fill', 'reduce'],
     'touch-hold-pop': ['touch-hold-pop', 'reduce'],
+    // Start Page overlay ease-in (reduced motion: `.sp { animation: none; }`).
+    'sp-in': ['.sp { animation: none', 'reduce'],
+    // Start Page cover stage entrance and dice roll (reduced motion: `animation: none`).
+    'sp-cv-in': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
+    'sp-roll': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
+    // Plate editor animated iridescent fills (reduced motion: the plate holds its still frame).
+    'spe-turn': ['.spl[data-bgfill], .spl[data-txfill] { animation: none', 'reduce'],
+    // Start Page glare-sweep hover effect (reduced motion: the sweep never runs; Still switches it off too).
+    'sp-hfx-glare': ['.sp-hfx-glare::before, .sp-hfx-glare.go::before { animation: none', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {

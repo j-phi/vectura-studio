@@ -85,3 +85,10 @@
   --plotter-path-base: rgba(113, 113, 122, 0.35);
   --plotter-head: var(--ui-accent);
 }
+
+/* Start Page: dark ink on the light-blue accent (white was 2.9:1); accent/danger text lifted to 4.5:1 on the dark panels. */
+:root,
+[data-ui-skin="dark"],
+[data-ui-skin="meridian-dark"] { --ui-accent-text: #69aee8; --ui-danger-text: #ee7777; }
+[data-ui-skin="dark"] .sp,
+[data-ui-skin="meridian-dark"] .sp { --ui-on-accent: #0a0a0a; }

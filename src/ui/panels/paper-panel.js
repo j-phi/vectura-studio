@@ -135,10 +135,14 @@
     const S = strings();
     const PAPERS = Vectura.PAPERS || { ORDER: ['none'], TYPES: { none: { label: 'None' } } };
     const PT = Vectura.PaperTexture;
+    // Under the Start Page (or while a launch that opens it boots) nobody can see these swatches: draw the chips plain and
+    // fill the thumbnails when the page closes, or in idle time (UI.utils.afterEditorCover).
+    const U = Vectura.UI && Vectura.UI.utils;
+    const held = Boolean(U && U.editorCovered && U.afterEditorCover && U.editorCovered());
     const swatches = PAPERS.ORDER.map((type) => {
       const info = PAPERS.TYPES[type] || {};
       // 'none' is a plain colour chip (its colour follows the project/theme).
-      const thumb = type !== 'none' && PT && PT.thumbDataURL ? PT.thumbDataURL(type, { px: S.THUMB_PX || 96 }) : '';
+      const thumb = !held && type !== 'none' && PT && PT.thumbDataURL ? PT.thumbDataURL(type, { px: S.THUMB_PX || 96 }) : '';
       const label = esc(info.label || type);
       const hint = esc(info.hint || '');
       return `<button type="button" class="paper-swatch" role="radio" aria-checked="false" data-paper-type="${esc(type)}" title="${label}${hint ? ` — ${hint}` : ''}" aria-label="${label}">
@@ -215,6 +219,17 @@
       <input type="file" id="inp-paper-texture" class="hidden" accept="${esc(((Vectura.PAPERS || {}).IMAGE || {}).ACCEPT || 'image/png,image/jpeg,image/webp')}" aria-label="${esc(S.MENU_TEXTURE_UPLOAD || 'Upload image')}" tabindex="-1" />
     `;
     renderCustomSwatches(body);
+    if (held) {
+      U.afterEditorCover(() => {
+        body.querySelectorAll('.paper-swatch[data-paper-type]').forEach((btn) => {
+          const type = btn.dataset.paperType;
+          const el = btn.querySelector('[data-paper-thumb]');
+          if (!el || el.style.backgroundImage || type === 'none' || !(PT && PT.thumbDataURL)) return;
+          const t = PT.thumbDataURL(type, { px: S.THUMB_PX || 96 });
+          if (t) el.style.backgroundImage = `url('${t}')`;
+        });
+      });
+    }
   }
 
   // Library state of the project's custom paper:

@@ -32,28 +32,6 @@
     return NOOP_HANDLE;
   };
 
-  // Stroke style model (STR-1): internal cap vocabulary → SVG/canvas spelling.
-  // Prefers the shared config helper; local fallback keeps legacy load orders safe.
-  const svgLineCap = (cap) => {
-    const fn = window.Vectura?.STROKE_STYLE?.toCanvasCap;
-    if (fn) return fn(cap);
-    if (cap === 'projecting') return 'square';
-    return cap === 'butt' ? 'butt' : 'round';
-  };
-
-  // Format a dash pattern (mm numbers) for a stroke-dasharray attribute —
-  // same trimming as the per-path meta dash emission below.
-  const formatDashArray = (pattern) =>
-    pattern.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
-
-  const normalizeSvgId = (value, prefix = 'id') => {
-    const fallback = `${prefix || 'id'}`;
-    const base = `${value ?? ''}`.trim() || fallback;
-    const sanitized = base.replace(/[^A-Za-z0-9_.-]/g, '_') || fallback;
-    return /^[A-Za-z_]/.test(sanitized) ? sanitized : `${fallback}_${sanitized}`;
-  };
-  const isMaskLayerGeometryHidden = (layer) => Boolean(layer?.mask?.enabled && layer?.mask?.hideLayer);
-
   const Vectura = (window.Vectura = window.Vectura || {});
 
   // === TUX-053: file picker ===
@@ -126,11 +104,18 @@
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const date = new Date().toISOString().slice(0, 10);
-        const filename = `vectura-${date}.vectura`;
+        // A named document (an opened colorway copy, "Riverbed (colorway)") saves under its name.
+        let named = `${this.app.documentName || ''}`.replace(/\.vectura$/i, '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/^[\s.]+/, '').replace(/[\s.]+$/, '').slice(0, 80).trim();
+        // Windows device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9) are not usable as a file name, with or without an extension.
+        if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(named)) named = `${named}-file`;
+        const filename = named ? `${named}.vectura` : `vectura-${date}.vectura`;
         // TUX-054: no await before saveBlob — the share sheet needs the tap's user activation.
         window.Vectura.Download.saveBlob(blob, filename).then((result) => {
           if (result === 'cancelled') return;
           toast(`Saved ${filename}`, 'success');
+          this.app.markDocumentClean?.();
+          // Recents: a full copy of what was just saved (Save stays a download — no handle).
+          this.app.recents?.record({ source: 'save', name: filename, payload, id: this.app.currentRecentId || undefined, forceNew: !this.app.currentRecentId });
         }).catch((err) => {
           console.error('saveVecturaFile failed', err);
           toast('Could not save the project — see console for details', 'danger');
@@ -143,7 +128,7 @@
       }
     },
 
-    openVecturaFile(file) {
+    openVecturaFile(file, opts = {}) {
       if (!file) return;
       const rejectInvalid = () => {
         toast('Invalid .vectura file', 'danger');
@@ -153,72 +138,135 @@
         this.openModal({ title: 'Invalid File', body: errBody });
       };
       // TUX-053: reject a non-JSON file from its first bytes before the full read.
-      sniffJsonHead(file).then((ok) => {
-        if (!ok) { rejectInvalid(); return; }
-        this._readVecturaFile(file);
+      // Resolves true once the file loaded. A reopen from Recents (`fromRecent`) fails quietly: its caller falls
+      // back to the stored copy.
+      return sniffJsonHead(file).then((ok) => {
+        if (!ok) { if (!opts.fromRecent) rejectInvalid(); return false; }
+        return this._readVecturaFile(file, opts);
       });
     },
 
-    _readVecturaFile(file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
-        // roll the engine + SETTINGS back so the user is never stranded with
-        // a half-loaded project. Bugs-9.
-        const rollback = this.app.captureState();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(reader.result);
-          const state = parsed?.state || parsed;
-          if (!state?.engine || !state?.settings) {
-            throw new Error('Missing state payload');
-          }
-          // AUD-02: a file from a FUTURE format still loads best-effort
-          // (importState migrates known versions; unknown-newer passes
-          // through), but the user must know settings may not apply.
-          const fileFormat = Number(state.engine.formatVersion) || 0;
-          const knownFormat = window.Vectura?.VECTURA_FORMAT_VERSION ?? 1;
-          if (fileFormat > knownFormat) {
-            toast(
-              'This file was saved by a newer version of Vectura Studio; some settings may not apply.',
-              'warning',
-              6000
-            );
-          }
-          if (parsed?.images) {
-            const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-            Object.entries(parsed.images).forEach(([id, img]) => {
-              if (!img || !Array.isArray(img.data)) return;
-              store[id] = {
-                width: img.width,
-                height: img.height,
-                data: new Uint8ClampedArray(img.data),
-              };
-            });
-          }
-          this.app.applyState(state);
-        } catch (err) {
-          // Restore the pre-import state. applyState is idempotent so this
-          // safely undoes any half-applied SETTINGS or engine.layers mutation.
-          try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
-          console.error('openVecturaFile failed', err);
-          toast('Invalid .vectura file', 'danger');
-          // Bugs-4: build the body as a Node so we never feed an HTML string
-          // through the modal's sanitizer for this error path.
-          const errBody = document.createElement('p');
-          errBody.className = 'modal-text';
-          errBody.textContent = 'That file could not be loaded as a .vectura document.';
-          this.openModal({ title: 'Invalid File', body: errBody });
-          return;
+    // Open a file from anywhere: Chromium's file picker (keeps a handle for Recents) when it is usable,
+    // otherwise a plain <input type=file>. Under automation the input path is always used, so the
+    // existing specs (and their filechooser events) are unaffected.
+    pickVecturaFile({ input = null, host = null, forceInput = false } = {}) {
+      const canUseFsa = !forceInput && typeof window.showOpenFilePicker === 'function'
+        && !(typeof navigator !== 'undefined' && navigator.webdriver === true) && window.isSecureContext !== false;
+      if (canUseFsa) {
+        window.showOpenFilePicker({
+          multiple: false,
+          types: [{ description: 'Vectura project', accept: { 'application/json': ['.vectura', '.json'] } }],
+        }).then(async ([handle]) => {
+          if (!handle) return;
+          const file = await handle.getFile();
+          this.openVecturaFile(file, { handle });
+        }).catch((err) => {
+          if (err && err.name === 'AbortError') return;
+          console.warn('showOpenFilePicker failed; using the input fallback', err);
+          this.pickVecturaFile({ input, host: host || document.body, forceInput: true });
+        });
+        return;
+      }
+      let el = input;
+      if (!el) {
+        // A transient input hosted inside the Start Page (the editor underneath is inert).
+        document.getElementById('sp-transient-open')?.remove();
+        el = document.createElement('input');
+        el.id = 'sp-transient-open';
+        el.type = 'file';
+        el.hidden = true;
+        el.onchange = () => {
+          const file = el.files?.[0];
+          if (file) this.openVecturaFile(file);
+          el.remove();
+        };
+        (host || document.body).appendChild(el);
+      }
+      Vectura.FilePicker.pickFile({ kind: 'vectura', input: el });
+    },
+
+    _readVecturaFile(file, opts = {}) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onerror = () => resolve(false);
+        reader.onload = () => {
+          let parsed = null;
+          try { parsed = JSON.parse(reader.result); } catch (_) { parsed = null; }
+          if (opts.fromRecent && !(parsed && (parsed.state || parsed).engine && (parsed.state || parsed).settings)) { resolve(false); return; }
+          if (!this.loadVecturaPayload(parsed, { name: file.name })) { resolve(false); return; }
+          // Recents: every successful Open records a full copy (and the handle, when there is one).
+          this.app.recents?.record({ source: 'open', name: file.name || 'untitled.vectura', handle: opts.handle || null, payload: parsed });
+          this.app.startPage?.hide?.({ restoreFocus: false });
+          resolve(true);
+        };
+        reader.readAsText(file);
+      });
+    },
+
+    // Apply a parsed .vectura object. Returns true when it loaded; on failure the editor is rolled back and
+    // the user is told. `quiet` skips the "Project loaded" toast (callers that have their own message).
+    // `name`: the file (or recent) the document came from; Save then keeps it ("Riverbed.vectura" -> "Riverbed").
+    loadVecturaPayload(parsed, { quiet = false, name = null } = {}) {
+      // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
+      // roll the engine + SETTINGS back so the user is never stranded with
+      // a half-loaded project. Bugs-9.
+      const rollback = this.app.captureState();
+      try {
+        const state = parsed?.state || parsed;
+        if (!state?.engine || !state?.settings) {
+          throw new Error('Missing state payload');
         }
-        // Only after the import installs cleanly: clear history and
-        // baseline the fresh state. Doing this inside the try would discard
-        // the user's undo stack even when the import ultimately fails.
-        this.app.history = [];
-        this.app.pushHistory();
-        toast('Project loaded', 'success');
-      };
-      reader.readAsText(file);
+        // AUD-02: a file from a FUTURE format still loads best-effort
+        // (importState migrates known versions; unknown-newer passes
+        // through), but the user must know settings may not apply.
+        const fileFormat = Number(state.engine.formatVersion) || 0;
+        const knownFormat = window.Vectura?.VECTURA_FORMAT_VERSION ?? 1;
+        if (fileFormat > knownFormat) {
+          toast(
+            'This file was saved by a newer version of Vectura Studio; some settings may not apply.',
+            'warning',
+            6000
+          );
+        }
+        if (parsed?.images) {
+          const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+          Object.entries(parsed.images).forEach(([id, img]) => {
+            if (!img || !Array.isArray(img.data)) return;
+            store[id] = {
+              width: img.width,
+              height: img.height,
+              data: new Uint8ClampedArray(img.data),
+            };
+          });
+        }
+        this.app.applyState(state);
+      } catch (err) {
+        // Restore the pre-import state. applyState is idempotent so this
+        // safely undoes any half-applied SETTINGS or engine.layers mutation.
+        try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
+        console.error('openVecturaFile failed', err);
+        toast('Invalid .vectura file', 'danger');
+        // Bugs-4: build the body as a Node so we never feed an HTML string
+        // through the modal's sanitizer for this error path.
+        const errBody = document.createElement('p');
+        errBody.className = 'modal-text';
+        errBody.textContent = 'That file could not be loaded as a .vectura document.';
+        this.openModal({ title: 'Invalid File', body: errBody });
+        return false;
+      }
+      // Only after the import installs cleanly: clear history and
+      // baseline the fresh state. Doing this inside the try would discard
+      // the user's undo stack even when the import ultimately fails.
+      this.app.history = [];
+      this.app.pushHistory();
+      this.app.markDocumentClean?.();
+      this.app.currentRecentId = null; // set again by recents.record() for the opened file
+      // The opened file's name (minus .vectura) so Save downloads under it and its recent keeps its name; a colorway
+      // copy sets its own name again after this returns.
+      const opened = typeof name === 'string' ? name.replace(/\.vectura$/i, '').trim() : '';
+      this.app.documentName = opened || null;
+      if (!quiet) toast('Project loaded', 'success');
+      return true;
     },
 
     importSvgFile(file) {
@@ -634,312 +682,34 @@
     },
 
     getExportSnapshot() {
-      const prof = this.app.engine.currentProfile;
-      const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
-      const useOptimized = Boolean(SETTINGS.optimizationExport);
-      const removeHiddenGeometry = SETTINGS.removeHiddenGeometry !== false;
-      const hardCrop = SETTINGS.cropExports !== false;
-      const destructiveMarginCrop = hardCrop || (removeHiddenGeometry && SETTINGS.truncate !== false);
-      const marginRect = destructiveMarginCrop
-        ? {
-            x: SETTINGS.margin,
-            y: SETTINGS.margin,
-            w: Math.max(0, prof.width - SETTINGS.margin * 2),
-            h: Math.max(0, prof.height - SETTINGS.margin * 2),
-          }
-        : null;
-      const useSvgMarginClip = SETTINGS.truncate && !destructiveMarginCrop;
-      const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
-      const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
-      const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
-      // Direction-agnostic — same physical path forward/reversed must collapse
-      // to a single key so duplicate layers dedup even after linesort flips
-      // some paths to minimize pen travel.
-      const pathKey = (path) => {
-        if (path && path.meta && path.meta.kind === 'circle') {
-          const cx = path.meta.cx ?? path.meta.x ?? 0;
-          const cy = path.meta.cy ?? path.meta.y ?? 0;
-          const r = path.meta.r ?? path.meta.rx ?? 0;
-          return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
-        }
-        if (!Array.isArray(path)) return '';
-        const tokens = path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`);
-        const fwd = tokens.join('|');
-        const rev = tokens.slice().reverse().join('|');
-        return fwd <= rev ? fwd : rev;
-      };
-
-      this.app.computeDisplayGeometry();
-
-      const optimizationTargetIds = useOptimized
-        ? (typeof this.optimizeTargetsForCurrentScope === 'function'
-          ? this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true }).targetIds
-          : new Set((this.app.engine.layers || []).filter((layer) => layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer)) && !this.app.engine.hasCompoundAncestor(layer)).map((layer) => layer.id)))
-        : new Set();
-
-      const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
-      const fallbackPen = {
-        id: 'default',
-        name: 'Default',
-        color: '#000000',
-        width: SETTINGS.strokeWidth ?? 0.3,
-      };
-      const clipPolygonsByLayerId = new Map();
-      if (!removeHiddenGeometry) {
-        const maskBounds = window.Vectura._UIExportUtil.getMaskExportBounds(this.app.engine, prof);
-        (this.app.engine.layers || []).forEach((layer) => {
-          if (!layer || !layer.visible || !layer.mask?.enabled) return;
-          const polygons = window.Vectura._UIExportUtil.getLayerSilhouette(layer, this.app.engine, maskBounds) || [];
-          if (polygons.length) clipPolygonsByLayerId.set(layer.id, polygons);
-        });
-      }
-
-      const groups = [];
-      // Gap-aware division dedup (Fix-A): the SAME shared two-pass deduper the
-      // engine plotter-optimize pass and computeStats use, so the emitted SVG
-      // matches the reported stats regardless of stack order or line-sort
-      // interleave. Keyed per effective pen (the group key). Only active when
-      // plotter-optimize is on.
-      const SD = window.Vectura?.StrokeDivide;
-      const deduper = (optimize > 0 && SD) ? SD.createPlotDeduper(quant, pathKey) : null;
-      const seenGroupOrder = [];
-      const groupMap = new Map();
-      // Effective-pen grouping: expand every layer into path items first, then
-      // bucket each item by its EFFECTIVE pen (path.meta.penId || layer.penId;
-      // an unknown meta.penId falls back to the layer pen). Grouping by layer
-      // pen alone put per-path pen overrides in the wrong <g>, deduped
-      // identical geometry across different pens, and let pen-grouped line
-      // sort interleave pens. The canvas renderer is the reference behavior.
-      (this.app.engine.layers || []).forEach((layer, layerIndex) => {
-        // A GROUP exports when it owns its ink: a compound bakes a silhouette
-        // into layer.paths, a morph group publishes morphedPaths, and a 3D
-        // scene group publishes its one composed pass on scenePaths. Skipping
-        // every non-compound group is what made a scene-only document export a
-        // blank SVG — its children are all `_sceneConsumed`, so nothing was
-        // left to emit.
-        const ownsInk = layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer));
-        if (!layer?.visible || !ownsInk || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
-        const layerPen = penMap.get(layer.penId) || fallbackPen;
-        const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
-        const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
-        const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
-        // Stroke style model (STR-1/STR-3): join, miter limit and layer-level
-        // dash travel with each item so SVG emission and the export-preview
-        // canvas draw stay in lockstep.
-        const lineJoin = ['miter', 'round', 'bevel'].includes(layer.lineJoin) ? layer.lineJoin : 'round';
-        const miterLimit = Number.isFinite(layer.miterLimit) ? layer.miterLimit : 10;
-        const dashArray = window.Vectura.STROKE_STYLE?.getLayerDashPattern
-          ? window.Vectura.STROKE_STYLE.getLayerDashPattern(layer)
-          : (layer.dash?.enabled && Array.isArray(layer.dash.pattern)
-              && layer.dash.pattern.some((value) => Number(value) > 0)
-            ? layer.dash.pattern.slice(0, 6)
-            : null);
-        const useCurves = Boolean(layer.params && layer.params.curves);
-        const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
-        const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
-        const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
-        let paths = removeHiddenGeometry
-          ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
-          : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized });
-        if (destructiveMarginCrop) {
-          paths = window.Vectura._UIExportUtil.hardClipExportPaths(paths, marginRect, {
-            useCurves: useCurves && !removeHiddenGeometry,
-          });
-        }
-        (paths || []).forEach((path, pathIndex) => {
-          const pathPen = penMap.get(path?.meta?.penId) || layerPen;
-          // Group key comes from the shared effective-pen rule so the engine's
-          // per-pen grouping / dedup / stats bucket paths under the exact same
-          // pen this export plots them with (PenValidate.resolveEffectivePenId).
-          const key = window.Vectura.PenValidate.resolveEffectivePenId(path?.meta, layer.penId, penMap);
-          if (!groupMap.has(key)) {
-            groupMap.set(key, { key, pen: pathPen, items: [] });
-            seenGroupOrder.push(key);
-          }
-          groupMap.get(key).items.push({
-            layer,
-            layerIndex,
-            pathIndex,
-            path,
-            lineCap,
-            lineJoin,
-            miterLimit,
-            dashArray,
-            useCurves: forceLinear ? false : useCurves,
-            sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
-            layerGroupId,
-            ancestorClipLayerIds,
-            strokeWidth: (SETTINGS.strokeWidthOverride === true
-              ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
-              : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
-            strokeColor: pathPen.color || layerPen.color || '#000000',
-            groupPenId: key,
-            pathPenId: pathPen.id,
-          });
-        });
+      return window.Vectura.ExportSvgBuilder.buildExportSnapshot(this.app.engine, {
+        computeDisplayGeometry: () => this.app.computeDisplayGeometry(),
+        optimizeTargets: typeof this.optimizeTargetsForCurrentScope === 'function'
+          ? (options) => this.optimizeTargetsForCurrentScope(options)
+          : null,
       });
+    },
 
-      seenGroupOrder.forEach((key) => {
-        const group = groupMap.get(key);
-        if (!group) return;
-        const items = group.items;
-
-        const shouldInterleave = useOptimized && items.some((item) => {
-          const grouping = item?.path?.meta?.lineSortGrouping;
-          return grouping === 'pen' || grouping === 'combined';
-        });
-        if (shouldInterleave) {
-          items.sort((a, b) => {
-            const aOrder = Number.isFinite(a?.path?.meta?.lineSortOrder) ? a.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
-            const bOrder = Number.isFinite(b?.path?.meta?.lineSortOrder) ? b.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
-            if (aOrder !== bOrder) return aOrder - bOrder;
-            if (a.layerIndex !== b.layerIndex) return a.layerIndex - b.layerIndex;
-            return a.pathIndex - b.pathIndex;
-          });
-        }
-
-        // Two passes over this pen group's items (already interleave-sorted):
-        // pass 1 registers every claiming fragment's parent so a coincident
-        // solid drops order-independently; pass 2 keeps or drops. A gapped or
-        // multi-pen division keys on its own geometry + index, so it never
-        // suppresses a coincident solid (the solid inks the gaps).
-        const visibleItems = [];
-        if (deduper) {
-          items.forEach((item) => deduper.claim(key, item.path?.meta));
-        }
-        items.forEach((item) => {
-          if (deduper && !deduper.keep(key, item.layer.id, item.path?.meta, item.path)) return;
-          visibleItems.push(item);
-        });
-        groups.push({ key, pen: group.pen, items: visibleItems });
-      });
-
-      return {
-        prof,
-        precision,
-        removeHiddenGeometry,
-        hardCrop,
-        useSvgMarginClip,
-        marginRect,
-        groups,
-        clipPolygonsByLayerId,
-      };
+    // Build the plotter SVG document for the current canvas without downloading it (export and the
+    // Recents thumbnail share this). Returns { svg, pathCount, snapshot }. The markup itself comes
+    // from ExportSvgBuilder, which the Start Page art renderer also uses.
+    buildSvgDocument() {
+      const snapshot =
+        typeof this.getExportSnapshot === 'function'
+          ? this.getExportSnapshot()
+          : window.Vectura.UI.prototype.getExportSnapshot.call(this);
+      const B = window.Vectura.ExportSvgBuilder;
+      return { svg: B.buildSvgDocument(snapshot), pathCount: B.countPaths(snapshot), snapshot };
     },
 
     exportSVG() {
       const progress = startProgress('Exporting SVG…');
       try {
-      const snapshot =
-        typeof this.getExportSnapshot === 'function'
-          ? this.getExportSnapshot()
-          : window.Vectura.UI.prototype.getExportSnapshot.call(this);
-      const { prof, precision, groups, clipPolygonsByLayerId, useSvgMarginClip } = snapshot;
-      const defs = [];
-      const layerClipIds = new Map();
-      if (useSvgMarginClip) {
-        const m = SETTINGS.margin;
-        const w = prof.width - m * 2;
-        const h = prof.height - m * 2;
-        defs.push(`<clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath>`);
-      }
-      if (!snapshot.removeHiddenGeometry) {
-        clipPolygonsByLayerId.forEach((polygons, layerId) => {
-          const clipId = normalizeSvgId(`${layerId || 'layer'}-mask-clip`, 'mask');
-          const clipMarkup = window.Vectura._UIExportUtil.buildClipPathMarkup(clipId, polygons, precision, { profile: prof });
-          if (!clipMarkup) return;
-          defs.push(clipMarkup);
-          layerClipIds.set(layerId, clipId);
-        });
-      }
-      let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
-      if (defs.length) svg += `<defs>${defs.join('')}</defs>`;
-      if (useSvgMarginClip) svg += `<g clip-path="url(#margin-clip)">`;
-
-      groups.forEach((group) => {
-        const pen = group.pen || {};
-        const penName = normalizeSvgId(pen.name || pen.id || 'Pen', 'pen');
-        // Pen models: the laid width is already pen.width (stroke-width
-        // below); ink effects are preview-only. The model / special ink are
-        // recorded as data attributes ONLY when set, so plain exports stay
-        // byte-identical.
-        // The effective special ink: the pen's own, else its model's built-in
-        // one ('plain' — none, or switched off — adds no attribute).
-        const PMx = window.Vectura.PenModel;
-        const inkEffect = PMx && PMx.effectOf ? PMx.effectOf(pen)
-          : (typeof pen.effect === 'string' && pen.effect ? pen.effect : 'plain');
-        const penModelAttrs = (typeof pen.model === 'string' && pen.model
-          ? ` data-vectura-pen-model="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.model)}"` : '')
-          + (inkEffect !== 'plain'
-            ? ` data-vectura-ink-effect="${window.Vectura._UIExportUtil.escapeXmlAttr(inkEffect)}"` : '');
-        svg += `<g id="${window.Vectura._UIExportUtil.escapeXmlAttr(`pen_${penName}`)}" stroke="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.color || 'black')}" fill="none"${penModelAttrs}>`;
-        group.items.forEach((item, itemIndex) => {
-          item.ancestorClipLayerIds.forEach((layerId) => {
-            const clipId = layerClipIds.get(layerId);
-            if (clipId) svg += `<g clip-path="url(#${window.Vectura._UIExportUtil.escapeXmlAttr(clipId)})">`;
-          });
-          const joinAttrs = item.lineJoin === 'miter'
-            ? ` stroke-linejoin="miter" stroke-miterlimit="${Number(item.miterLimit ?? 10)}"`
-            : ` stroke-linejoin="${item.lineJoin || 'round'}"`;
-          const layerDashAttr = item.dashArray ? ` stroke-dasharray="${formatDashArray(item.dashArray)}"` : '';
-          svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${svgLineCap(item.lineCap)}"${joinAttrs}${layerDashAttr}>`;
-          let attrs = item.path?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
-          // Per-path cap override (`meta.strokeCap`). The pen-width ribbon
-          // geometry sets butt so its outline/fill passes end exactly on the
-          // clipped form instead of bulging half a pen width past it — the SVG
-          // has to say so too, or the plot protrudes where the canvas didn't.
-          const itemCap = window.Vectura?.Renderer?.resolvePathLineCap
-            ? window.Vectura.Renderer.resolvePathLineCap(item.path, item.lineCap)
-            : item.lineCap;
-          if (itemCap && itemCap !== item.lineCap) {
-            attrs = attrs || {};
-            attrs['stroke-linecap'] = svgLineCap(itemCap);
-          }
-          // No per-item stroke/width override here: items are bucketed by
-          // EFFECTIVE pen in getExportSnapshot, so the enclosing pen group
-          // already carries the right stroke color and pen width.
-          const dash = window.Vectura._UIExportUtil.getPathStrokeDash?.(item.path);
-          if (dash) {
-            attrs = attrs || {};
-            attrs['stroke-dasharray'] = dash.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
-          }
-          // Variable line weight (silhouette / crease emphasis): emit a per-path
-          // stroke-width override only when meta.weightScale differs from 1, so
-          // default geometry keeps the group-level stroke-width untouched.
-          // Resolved through Renderer.resolvePathWeightScale (with a
-          // byte-identical lean-runtime fallback) so the emitted width cannot
-          // drift from the canvas render, the export preview or expand.
-          const rawWeight = Number(item.path?.meta?.weightScale);
-          if (Number.isFinite(rawWeight) && rawWeight !== 1) {
-            const weightScale = window.Vectura?.Renderer?.resolvePathWeightScale
-              ? window.Vectura.Renderer.resolvePathWeightScale(item.path)
-              : Math.max(0.1, Math.min(6, rawWeight));
-            const scaledWidth = (parseFloat(item.strokeWidth) || 0) * weightScale;
-            if (Number.isFinite(scaledWidth) && scaledWidth > 0) {
-              attrs = attrs || {};
-              attrs['stroke-width'] = Number(scaledWidth.toFixed(4));
-            }
-          }
-          // Filled glyphs (spiralizer "Points" solid discs) override the group's
-          // fill="none" with the stroke color so the marker exports solid.
-          if (item.path?.meta?.fill) {
-            attrs = attrs || {};
-            attrs.fill = window.Vectura._UIExportUtil.escapeXmlAttr(item.strokeColor || group.pen?.color || 'black');
-          }
-          const markup = window.Vectura._UIExportUtil.shapeToSvg(item.path, precision, item.useCurves, attrs, item.sharpEdges);
-          if (markup) svg += markup;
-          svg += `</g>`;
-          item.ancestorClipLayerIds.forEach((layerId) => {
-            if (layerClipIds.get(layerId)) svg += `</g>`;
-          });
-        });
-        svg += `</g>`;
-      });
-
-      if (useSvgMarginClip) svg += `</g>`;
-      svg += `</svg>`;
+      // `this` may be a bare { app } stand-in (tests call the prototype method), so fall back to the prototype.
+      const { svg, pathCount } = (typeof this.buildSvgDocument === 'function'
+        ? this.buildSvgDocument() : window.Vectura.UI.prototype.buildSvgDocument.call(this));
       // Delight moment: the snapshot's groups are already in hand, so the
       // path count comes for free — "Exported vectura.svg — 1,165 paths".
-      const pathCount = groups.reduce((n, group) => n + (group.items?.length || 0), 0);
       const filename = 'vectura.svg';
       // TUX-054: no await before saveBlob — the share sheet needs the tap's user activation.
       window.Vectura.Download.saveBlob(new Blob([svg], { type: 'image/svg+xml' }), filename).then((result) => {
@@ -1053,7 +823,7 @@
       btnSaveVectura.onclick = () => this.saveVecturaFile();
     }
     if (btnOpenVectura && fileOpenVectura) {
-      btnOpenVectura.onclick = () => Vectura.FilePicker.pickFile({ kind: 'vectura', input: fileOpenVectura });
+      btnOpenVectura.onclick = () => this.pickVecturaFile({ input: fileOpenVectura });
       fileOpenVectura.onchange = () => {
         const file = fileOpenVectura.files?.[0];
         if (file) this.openVecturaFile(file);

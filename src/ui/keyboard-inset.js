@@ -164,6 +164,13 @@
     return v ? { width: v.width, height: v.height } : { width: window.innerWidth, height: window.innerHeight };
   };
 
+  // Pinch-zoom scale (1 = not zoomed) for raster-sizing code (Start Page art), so no other
+  // module reads visualViewport.
+  const pageScale = () => {
+    const v = vv();
+    return v ? Math.max(1, Number(v.scale) || 1) : 1;
+  };
+
   // Visual-viewport rect for placement code that must also honour pan offsets (TUX-035 add menu).
   const viewportRect = () => {
     const v = vv();
@@ -190,6 +197,7 @@
     get inset() { return inset; },
     viewportSize,
     viewportRect,
+    pageScale,
     onViewportChange,
     ensureVisible,
     recompute,
