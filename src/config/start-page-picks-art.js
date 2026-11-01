@@ -28,7 +28,6 @@
       "topo-mountain-range": "7m49d4",
       "spiral-galaxy": "gf2a9j",
       "shapepack-pebble-beach": "14stuly",
-      "flowfield-river-current": "1r0td7t",
       "dahlia-cornel": "10nf90l"
     }),
   });

@@ -31,7 +31,7 @@ describe('COVER_WORD_PICKS', () => {
     const picks = V.START_PAGE_PICKS.COVER_WORD_PICKS;
     expect(picks).toHaveLength(LETTERS.length);
     expect(picks.map((p) => p.presetId)).toEqual([
-      'user-terrain-1781475148727', 'terrain-alpine', 'user-rings-1786211570394', 'flowfield-river-current',
+      'user-terrain-1781475148727', 'terrain-alpine', 'user-rings-1786211570394', 'flowfield-still-pool',
       'dahlia-cornel', 'rainfall-downpour', 'rings-old-growth-oak',
     ]);
     const ids = new Set(V.PRESETS.map((p) => p.id));

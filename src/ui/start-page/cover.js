@@ -111,7 +111,8 @@
     // The art choices that matter to the mounted style (a change rebuilds; colors alone never do).
     const artChoiceSig = (style) => {
       const c = (ctx.prefs() || {}).coverArt || {};
-      return style === 'mosaic' ? (Array.isArray(c.mosaic) ? c.mosaic.join(',') : '') : String(c[style] || '');
+      const ty = coverType();
+      return `${ty.id}@${ty.scale}:` + (style === 'mosaic' ? (Array.isArray(c.mosaic) ? c.mosaic.join(',') : '') : String(c[style] || ''));
     };
 
     /* -------------------------------------------------------------- measuring */
@@ -120,16 +121,20 @@
       try {
         mctx = mctx || document.createElement('canvas').getContext('2d');
         if (!mctx) throw new Error('no canvas');
-        mctx.font = '700 100px "Space Grotesk", system-ui, sans-serif';
+        const t = coverType();
+        mctx.font = `${t.weight} 100px ${t.css}`;
         return mctx.measureText(text).width * 1.06 + 8;
       } catch (_) { return text.length * 62; }
     };
     const maxFs = () => Math.min(420, Math.max(110, (G.innerHeight || 900) * 0.4));
     // Letter spacing: every letter sits TRACK em closer to the one before it, and a few pairs tuck in further (the V's open
     // lower right over the e, the stems of u and r). Margins are in em, so they scale with the fitted size.
+    const FALLBACK_TYPE = { id: 'grotesk', css: '"Space Grotesk", system-ui, sans-serif', weight: 700, kern: true, scale: 100 };
+    const coverType = () => (Vectura.START_PAGE && Vectura.START_PAGE.coverType ? Vectura.START_PAGE.coverType(ctx.prefs()) : FALLBACK_TYPE);
+    const applyFont = (el) => { const t = coverType(); el.style.fontFamily = t.css; el.style.fontWeight = String(t.weight); };
     const TRACK = -0.045;
     const KERN = { Ve: -0.075, ur: -0.065 };
-    const gapEm = (prev, ch) => (prev && prev.trim() ? TRACK + (KERN[prev + ch] || 0) : 0);
+    const gapEm = (prev, ch) => (prev && prev.trim() ? TRACK + (coverType().kern ? (KERN[prev + ch] || 0) : 0) : 0);
     const stageWidth = () => Math.max(200, stage.clientWidth || host.clientWidth || 800);
     const splitLines = (word) => {
       const ws = word.trim().split(/\s+/);
@@ -192,11 +197,11 @@
     const fitMosaic = () => {
       const rows = [...stage.querySelectorAll('.sp-word-row')];
       if (!rows.length) return;
-      rows.forEach((r) => { r.style.fontSize = '100px'; });
+      rows.forEach((r) => { r.style.fontSize = '100px'; applyFont(r); });
       const w = Math.max(...rows.map((r) => r.getBoundingClientRect().width || 1));
       const two = rows.length > 1;
       const mf = maxFs() * (two ? 0.7 : 1);
-      const fs = Math.max(two ? 44 : 38, Math.min(mf, 100 * stageWidth() / w * 0.985));
+      const fs = Math.max(two ? 44 : 38, Math.min(mf, 100 * stageWidth() / w * 0.985) * (coverType().scale / 100));
       rows.forEach((r) => {
         r.style.fontSize = `${fs}px`;
         const kr = r.nextElementSibling;
@@ -309,7 +314,8 @@
       try { if (G.document.fonts && G.document.fonts.ready) await G.document.fonts.ready; } catch (_) { /* noop */ }
       if (my !== gen) return;
       const ink = Ink();
-      const p = ink.fillWord(el, word, { id: art.id, svg }, { fit: true, max: 290, colorway: cw, hold: animates(animate) });
+      applyFont(el);
+      const p = ink.fillWord(el, word, { id: art.id, svg }, { fit: true, max: 290 * (coverType().scale / 100), colorway: cw, hold: animates(animate) });
       if (animates(animate)) plotIn(el, { delay: 160, duration: 2000, style: animStyle(ctx.prefs()) });
       await p;
     };

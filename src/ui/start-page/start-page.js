@@ -421,7 +421,17 @@
         onWord: pickWord,
         onSync: syncCoverArt,
         examples: () => (plates ? plates.examplesState() : { dev: false, available: true }),
-        onPref: (key, value) => { if (key === 'animateIn' || key === 'hover') setMotionPref(key, value); },
+        onPref: (key, value) => {
+          if (key === 'animateIn' || key === 'hover') { setMotionPref(key, value); return; }
+          if (key === 'coverFont' || key === 'coverScale') {
+            if (Vectura.START_PAGE.ADMIN.lockCoverType) return; // set globally by the administrator
+            const clean = cleanPref(key, value);
+            if (prefs()[key] === clean) return;
+            prefs()[key] = clean;
+            persist();
+            cover.render({ animate: false });
+          }
+        },
         // Preview: play the cover's draw-in again with the chosen style (Still shows it finished)
         onPreview: () => { settings.close(false); cover.render({ animate: true }); },
         onToggle: (key, on) => {

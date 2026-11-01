@@ -6,11 +6,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Cover typeface and size in Start Page settings, with global admin defaults
+- **Settings > Cover > Typeface and Size.** Pick Space Grotesk, JetBrains Mono, System sans or Serif for the cover word, and a size from 50% to 100% of the largest that fits the page. Both apply to every cover style, take effect at once, and are saved with your other preferences (`startPage.coverFont`, `startPage.coverScale`, sanitized in `src/config/start-page.js`). The V-e and u-r kerning is tuned for Space Grotesk only.
+- **Global defaults for administrators.** The defaults for everyone live in one block, `ADMIN` in `src/config/start-page.js`; a deployment can also set `window.Vectura.START_PAGE_ADMIN = { coverFont, coverScale, lockCoverType }` before that file loads. A user's own choice wins; picking the global default again stores no choice, so later admin changes reach that user. `lockCoverType: true` applies the admin values to everyone and disables the two controls ("Set by your administrator for everyone").
+
+### Changed: Letter t of the Vectura cover carries Still Pool
+- Replaces River Current (a 956 KB pre-rendered SVG) with Still Pool (490 KB), on the same blue wash + blue pairing.
+
 ### Changed: Vectura cover word: tighter letters, larger type, hand-set art and colors
 - **Tighter spacing.** Every letter of the **Name in Ink** cover sits closer to its neighbor, and the **V-e** and **u-r** pairs tuck in a little further (`TRACK` / `KERN` in `src/ui/start-page/cover.js`, in em, so they scale with the type).
 - **Larger type.** The word now fills 98.5% of the column (was 95.5%) and may grow to 40% of the window height, capped at 420 px (was 30%, 300 px). At 1440x900 the type grows from 269 px to 311 px.
-- **V e c t u r a set in the pictured pieces.** While there are no saved works, the default word **Vectura** (and **Vectura Studio**) carries High Sierra, Alpine Ridge, Cybersigil, River Current, Dahlia 'Cornel', Downpour and Old Growth Oak, in that order, each on its own paper and pen (blue wash + blue, newsprint + black, black stock + white gel, blue wash + blue, rose + wine, hot press + teal, kraft + sepia). The pairing is pinned in the Curated color mode; the other modes recolor the letters as usual, and saved works replace the run.
-- New config `COVER_WORD_PICKS` (`src/config/start-page-picks.js`), `StartPageArtSource.coverPicks()`, `StartPageColorway.fromCatalogue()`, and `coverSlot` support in `StartPageCoverWords.assignArts`. `npm run start-page:picks` now also pre-renders River Current and Dahlia 'Cornel'.
+- **V e c t u r a set in the pictured pieces.** While there are no saved works, the default word **Vectura** (and **Vectura Studio**) carries High Sierra, Alpine Ridge, Cybersigil, Still Pool, Dahlia 'Cornel', Downpour and Old Growth Oak, in that order, each on its own paper and pen (blue wash + blue, newsprint + black, black stock + white gel, blue wash + blue, rose + wine, hot press + teal, kraft + sepia). The pairing is pinned in the Curated color mode; the other modes recolor the letters as usual, and saved works replace the run.
+- New config `COVER_WORD_PICKS` (`src/config/start-page-picks.js`), `StartPageArtSource.coverPicks()`, `StartPageColorway.fromCatalogue()`, and `coverSlot` support in `StartPageCoverWords.assignArts`. `npm run start-page:picks` now also pre-renders Dahlia 'Cornel'.
 
 ### Fixed: Duplicating a mask dropped its masked content
 - Cmd/Ctrl+D (and Option+D, the context-menu Duplicate and the panel's Duplicate selected) on a clipping mask, or on a group containing one, now copies the masked content with it — nested masks and groups come through intact, with the copy's mask clipping its own copied content. Duplicating a Unite shape keeps its compound data, the copy's layer order mirrors the original, and selecting a mask together with its content no longer copies the content twice. One undo removes the whole duplicate.
