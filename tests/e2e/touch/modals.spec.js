@@ -359,7 +359,11 @@ test.describe('TUX-046 modal sheet', () => {
     }
     await page.evaluate(() => document.getElementById('btn-settings').click());
     // The drawer slides in: wait for it to settle (WebKit finishes the transition later than 400 ms) before measuring.
-    await expect.poll(async () => inView(await rectOf(page, '#settings-panel')), { timeout: 5000 }).toBe(true).catch(() => {});
+    // WebKit only advances CSS transitions on rendered frames, so pump two rAFs per poll tick.
+    await expect.poll(async () => {
+      await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))));
+      return inView(await rectOf(page, '#settings-panel'));
+    }, { timeout: 5000 }).toBe(true).catch(() => {});
     const panel = await rectOf(page, '#settings-panel');
     const close = await rectOf(page, '#btn-close-settings');
     expect(inView(panel), `settings panel ${fmt(panel)}`).toBe(true);
