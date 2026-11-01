@@ -7068,7 +7068,23 @@
       if ((this.activeTool === 'fill' || this.activeTool === 'fill-erase') &&
           !mods.shift && !mods.meta && !mods.alt &&
           Array.isArray(this.paintBucketStack) && this.paintBucketStack.length > 1) {
-        const dir = e.deltaY > 0 ? -1 : 1;
+        // Horizontal-only gestures never change scope. Vertical delta accumulates
+        // (lines/pages normalised to px) and steps one rung per threshold, so a
+        // trackpad's stream of tiny deltas is not one rung per event while a
+        // mouse notch (~100px) is still exactly one rung.
+        const UI = window.Vectura?.UI_CONSTANTS || {};
+        const modePx = e.deltaMode === 1 ? (UI.PAINT_BUCKET_WHEEL_LINE_PX || 20)
+          : e.deltaMode === 2 ? (UI.PAINT_BUCKET_WHEEL_PAGE_PX || 400) : 1;
+        const dy = (Number(e.deltaY) || 0) * modePx;
+        if (!dy) return;
+        const dir = dy > 0 ? -1 : 1;
+        if (this._pbWheelStack !== this.paintBucketStack || Math.sign(this._pbWheelAcc || 0) === dir) {
+          this._pbWheelStack = this.paintBucketStack;
+          this._pbWheelAcc = 0;
+        }
+        this._pbWheelAcc = (this._pbWheelAcc || 0) + dy;
+        if (Math.abs(this._pbWheelAcc) < (UI.PAINT_BUCKET_WHEEL_STEP_PX || 50)) return;
+        this._pbWheelAcc = 0;
         const next = Math.max(0, Math.min(this.paintBucketStack.length - 1, this.paintBucketScopeIndex + dir));
         if (next !== this.paintBucketScopeIndex) {
           this.paintBucketScopeIndex = next;

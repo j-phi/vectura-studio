@@ -72,9 +72,33 @@ describe('TUX-022 paint bucket pointer parity', () => {
     renderer.move(ev('pointermove', 100, 100, { buttons: 0 }));
     expect(renderer.paintBucketScopeIndex).toBe(0);
     expect(renderer.paintBucketStack.length).toBeGreaterThan(1);
-    renderer.wheel({ deltaY: -1, deltaX: 0, preventDefault() {} });
+    renderer.wheel({ deltaY: -100, deltaX: 0, preventDefault() {} });
     expect(renderer.paintBucketScopeIndex).toBe(1);
     expect(renderer.paintBucketScopeOffset).toBe(0);
+  });
+
+  test('mouse: horizontal-only wheel does not change scope', () => {
+    renderer.move(ev('pointermove', 100, 100, { buttons: 0 }));
+    renderer.wheel({ deltaY: 0, deltaX: 120, preventDefault() {} });
+    renderer.wheel({ deltaY: -0, deltaX: -120, preventDefault() {} });
+    expect(renderer.paintBucketScopeIndex).toBe(0);
+  });
+
+  test('trackpad: tiny deltas accumulate; one rung per threshold, not per event', () => {
+    renderer.move(ev('pointermove', 100, 100, { buttons: 0 }));
+    for (let i = 0; i < 3; i += 1) renderer.wheel({ deltaY: -1, deltaX: 0, preventDefault() {} });
+    expect(renderer.paintBucketScopeIndex).toBe(0);
+    for (let i = 0; i < 50; i += 1) renderer.wheel({ deltaY: -1, deltaX: 0, preventDefault() {} });
+    expect(renderer.paintBucketScopeIndex).toBe(1);
+  });
+
+  test('wheel: direction flip discards the accumulator; line-mode notch is one rung', () => {
+    renderer.move(ev('pointermove', 100, 100, { buttons: 0 }));
+    renderer.wheel({ deltaY: -40, deltaX: 0, preventDefault() {} });
+    renderer.wheel({ deltaY: 40, deltaX: 0, preventDefault() {} }); // flip: 40 alone is below threshold
+    expect(renderer.paintBucketScopeIndex).toBe(0);
+    renderer.wheel({ deltaY: -3, deltaMode: 1, deltaX: 0, preventDefault() {} });
+    expect(renderer.paintBucketScopeIndex).toBe(1);
   });
 
   test('mouse: a meta down adopts the fill and does not pour', () => {
