@@ -207,23 +207,38 @@ describe('Start Page example plates', () => {
     expect(qa('.sp-pl')).toHaveLength(12);
   });
 
-  test('one explainer says these are examples, that own plates appear automatically on save/open, and that the examples stay until hidden', async () => {
+  test('the examples explainer lives in an (i) note beside the EXAMPLES count (no inline box, no "will join them" tail)', async () => {
     await boot();
-    const ex = q('#sp-plates .sp-pl-explain');
-    expect(ex.hidden).toBe(false);
-    const t = ex.textContent;
+    expect(q('#sp-plates .sp-pl-explain').hidden).toBe(true); // the old always-on box is gone
+    expect(q('.sp-pl-count').textContent).toBe('10 examples');
+    const wrap = q('.sp-pl-titles .sp-pl-head-info');
+    expect(wrap).not.toBeNull();
+    expect(wrap.hidden).toBe(false);
+    expect(wrap.previousElementSibling).toBe(q('.sp-pl-count')); // right after the count
+    const btn = wrap.querySelector('button.sp-pl-info-btn');
+    const tip = wrap.querySelector('[role="tooltip"]');
+    expect(btn.getAttribute('aria-label')).toMatch(/example plates/i);
+    expect(btn.getAttribute('aria-describedby')).toBe(tip.id);
+    const t = tip.textContent;
     expect(t).toMatch(/^These are examples\./);
     expect(t).not.toMatch(/\b(five|ten)\b/i); // count-agnostic: the count line carries the number
     expect(t).toMatch(/your own plates appear here automatically/i);
     expect(t).toMatch(/save or open a file/i);
     expect(t).toMatch(/Show example plates/i);
-    expect(t).not.toMatch(/step aside/i);
     expect(t).toMatch(/opening an example starts a new document/i);
     expect(t).not.toMatch(/commission|colour|favour/i);
-    // real text, wired to the section for assistive tech, stated once (not per plate)
-    expect(q('#sp-plates').getAttribute('aria-describedby')).toBe(ex.id);
+    // wired to the section for assistive tech, stated once (not per plate)
+    expect(q('#sp-plates').getAttribute('aria-describedby')).toBe(tip.id);
     expect(qa('#sp-plates .sp-pl').filter((w) => /automatically/i.test(w.textContent))).toHaveLength(0);
-    expect(q('.sp-pl-count').textContent).toBe('10 examples · your own work will join them');
+    // a click opens it (and keeps it open), Esc closes it
+    expect(wrap.hasAttribute('data-open')).toBe(false);
+    const down = new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+    Object.defineProperty(down, 'pointerType', { value: 'mouse' });
+    btn.dispatchEvent(down);
+    click(btn);
+    expect(wrap.dataset.open).toBe('1');
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(wrap.hasAttribute('data-open')).toBe(false);
     live().forEach((w) => { expect(w.querySelector('.sp-pl-info [role="tooltip"]').textContent).toMatch(/Show example plates/i); });
   });
 
@@ -235,6 +250,8 @@ describe('Start Page example plates', () => {
     const ex = q('#sp-plates .sp-pl-explain');
     expect(ex.textContent).not.toMatch(/examples|step aside/i);
     expect(ex.textContent).toMatch(/open or save becomes a plate automatically/i);
+    expect(ex.hidden).toBe(false);
+    expect(q('.sp-pl-titles .sp-pl-head-info').hidden).toBe(true);
     expect(q('#sp-plates').hasAttribute('aria-describedby')).toBe(false);
   });
 

@@ -326,6 +326,26 @@ describe('Start Page shell', () => {
       expect(app.startPage.isOpen()).toBe(true);
     });
 
+    test('"Back to canvas" and Esc also close the page over unsaved work with no layers (what the Open dialog warns about)', async () => {
+      await boot();
+      app.markDocumentClean?.();
+      app.startPage.show();
+      expect(document.querySelector('#start-page [data-act="back"]').hidden).toBe(true);
+      app.startPage.hide({ restoreFocus: false });
+      SETTINGS.paper = { ...(SETTINGS.paper || {}), color: '#fafaf0' }; // an unsaved change, still no layers
+      expect(app.engine.layers.length).toBe(0);
+      expect(app.isDocumentDirty()).toBe(true);
+      app.startPage.show();
+      await app.startPage.render();
+      const back = document.querySelector('#start-page [data-act="back"]');
+      expect(back.hidden).toBe(false);
+      back.click();
+      expect(app.startPage.isOpen()).toBe(false);
+      app.startPage.show();
+      document.getElementById('start-page').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(app.startPage.isOpen()).toBe(false);
+    });
+
     test('Resume offers "Continue current canvas" first when the editor holds a document', async () => {
       await boot();
       await recordRecent('delta.vectura');

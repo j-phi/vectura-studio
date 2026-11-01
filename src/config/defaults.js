@@ -2502,6 +2502,14 @@
     '9x12': { machine: 'custom', label: '9×12', widthIn: 9, heightIn: 12 },
   };
 
+  // The stock pen set: a fresh SETTINGS and every New blank canvas start from it (Pen 1 then follows the paper).
+  const DEFAULT_PENS = [
+    { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3, themeManaged: true },
+    { id: 'pen-2', name: 'Pen 2', color: '#dbeafe', width: 0.5 },
+    { id: 'pen-3', name: 'Pen 3', color: '#93c5fd', width: 0.8 },
+  ];
+  window.Vectura.DEFAULT_PENS = Object.freeze(DEFAULT_PENS.map((pen) => Object.freeze({ ...pen })));
+
   window.Vectura.SETTINGS = {
     uiTheme: 'dark',
     // true = the theme follows prefers-color-scheme (the "System" state of the theme rotation); uiTheme then
@@ -2673,11 +2681,7 @@
     },
     autoColorizationCollapsed: true,
     pensCollapsed: false,
-    pens: [
-      { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3, themeManaged: true },
-      { id: 'pen-2', name: 'Pen 2', color: '#dbeafe', width: 0.5 },
-      { id: 'pen-3', name: 'Pen 3', color: '#93c5fd', width: 0.8 },
-    ],
+    pens: DEFAULT_PENS.map((pen) => ({ ...pen })),
     globalLayerCount: 0,
     layerBarPaletteId: 'prism',
     showTourOnFirstLaunch: false,

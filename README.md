@@ -727,6 +727,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.5.1 - Start Page tidy
+- **Examples note behind an (i).** The examples explainer moves from a box under Plates into a note on an **(i)** after the EXAMPLES count (hover, focus or click). The count line drops "your own work will join them".
+- **No cover Colorways button.** The Colorways button at the top of the title section is gone; plates keep theirs.
+- **Back to canvas** now shows (and Esc works) whenever the canvas has unsaved changes, not only when it has layers.
+- **New blank canvas starts clean.** It no longer keeps the paper and inks of the last plate you opened: you get your default paper (or the theme's sheet) and the stock pens.
+
 ### 1.5.0 - Start Page
 - **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup). The page opens without an editor flash or late layout.
 - **Plates.** Your work set as an editorial run: a plate editor with manual colors (now including Title and Band), Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown. Ten example plates fill the page on a first run; the **Show example plates** switch in Start Page settings hides them, and Developer Mode lets contributors edit them.
@@ -741,14 +747,14 @@ CI lives in `.github/workflows/test.yml`:
 - **Touch layout on every OS.** Info buttons, the modifier bar, the right-pane tabs and toasts no longer depend on font metrics. On iOS, the slider value chip and the min/max editor commit when you tap outside them.
 - **Faster, steadier touch nightly.** Timer-dependent touch tests run on a frozen page clock, target sweeps run in one browser call, and the nightly runs in 21 per-project legs (target 25 minutes each). Details: `CHANGELOG.md` and `docs/testing.md`.
 
+<details>
+<summary>Older releases (1.4.18 and earlier)</summary>
+
 ### 1.4.18 - Test and CI overhaul
 - **One required check.** `ci-ok` gates every PR. PRs run the whole Vitest roster in 8 uninstrumented shards, a 4-leg browser smoke, perf and the routed Scene3D audits. Coverage, the full touch roster and linux pixel snapshots run on `main` and nightly, and a red run opens an issue.
 - **New canaries.** Every bundled preset, 13 legacy saved files, every algorithm in a real browser, SVG goldens for 11 more algorithms and 35 canonical 3D scenes. They found 6 product defects (PRH-029 to PRH-034), logged in `plans.md`.
 - **Leaner suite.** Tests no longer read git history; golden values regenerate with `npm run test:update`. Duplicate Scene3D tests were cut with mutation proofs.
 - **Timing.** PR wall time is projected at about 6 minutes (from about 17). This is not yet measured on hosted runners. Details: `docs/testing.md`.
-
-<details>
-<summary>Older releases (1.4.15 and earlier)</summary>
 
 ### 1.4.15
 - **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now
