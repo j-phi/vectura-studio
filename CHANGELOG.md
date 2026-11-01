@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Paint bucket scope wheel
+- The scope ladder no longer repeats the outermost ring when another, smaller closed shape sits elsewhere on the page, and only offers rings that actually contain the cursor. A sideways (horizontal-only) scroll no longer changes the scope, and trackpad scrolls now accumulate so one step takes about one mouse-wheel notch instead of every tiny trackpad event jumping a step. When a mask and its content share the same outline, the fill goes to the masked content.
+
 ### Added: Play buttons for the plot order
 - **Draw Order pane.** A Play button now sits right of the % readout. At 100% it replays the reveal from the start; below 100% it plays on from the handle; while playing it shows Pause. Shift-click plays at 1/10 speed, like Shift-clicking the slider.
 - **Export SVG ▸ Line Sort Print Order.** The legend has a Play/Pause button next to its gear. It draws the preview path by path in print order over a faint ghost of the whole plot, with a playhead on the gradient, then returns to the full preview. Closing the modal stops it.
