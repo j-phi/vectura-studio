@@ -1,12 +1,14 @@
 /**
  * Start Page settings popover — window.Vectura.UI.StartPageSettings (gear in the header).
- * Sections: Cover (cover word, cover style) · Colorway (mode, seed dice, swatches; color-controls.js renders into the section's
+ * Sections: Cover (cover word, cover style, cover art) · Colorway (mode, seed dice, swatches; color-controls.js renders into the section's
  * host) · Plates (Show example plates) · Under the cover (Show name, Show practice line) · Launch (Show Start Page on launch).
  * P3 sections: "Art animates in" (startPage.animateIn, with a Preview that replays the cover) and "Hover effect" (startPage.hover).
  * Keyboard: the gear toggles it (aria-expanded), the style rows are a radiogroup (arrows), Esc closes and focus
  * returns to the gear, a click outside or focus leaving closes it.
- *   create({ root, button, prefs(), onStyle(k), onWord(id, custom?), onToggle(key, on), onPref(key, value), onPreview(), examples() })
- *     -> { open, close, toggle, sync, isOpen, el, colorwayHost }
+ *   create({ root, button, prefs(), onStyle(k), onWord(id, custom?), onToggle(key, on), onPref(key, value), onPreview(), examples(), onSync() })
+ *     -> { open, close, toggle, sync, isOpen, el, colorwayHost, coverArtHost }
+ *   coverArtHost sits under "Cover style" (cover-art-controls.js renders per-piece art and colorway pickers into it);
+ *   onSync() runs at the end of every sync() so those controls refresh with the popover.
  *   examples() -> { dev, available }: Developer Mode edits the example plates themselves, so the toggle is disabled there;
  *   it is hidden when the build ships no example plates.
  */
@@ -31,7 +33,7 @@
     ['replot', 'Re-plot'], ['holo', 'Hologram Foil'], ['ripple', 'Pressure Ripple'], ['stipple', 'Stipple Weather'], ['breeze', 'Paper Breeze'],
     ['gravity', 'Gravity Well'], ['current', 'Light Current']];
 
-  const create = ({ root, button, prefs, onStyle, onWord, onToggle, onPref, onPreview, examples }) => {
+  const create = ({ root, button, prefs, onStyle, onWord, onToggle, onPref, onPreview, examples, onSync }) => {
     const { h } = Vectura.StartPageDom;
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
     const mod = () => (isMac() ? '⌘' : 'Ctrl+');
@@ -49,6 +51,7 @@
     const wordApply = h('button', { type: 'button', class: 'sp-set-btn', 'data-act': 'set-word', text: 'Set word' });
     const wordForm = h('div', { class: 'sp-wp-form', hidden: true }, wordInput, wordApply);
     const colorwayHost = h('div', { class: 'sp-set-colorway' });
+    const coverArtHost = h('div', { class: 'sp-set-coverart', 'data-slot': 'cover-art' });
     const exHelp = h('p', { class: 'sp-set-help', id: 'sp-set-showExamples-h' });
 
     const pop = h('div', { id: 'sp-settings', class: 'sp-settings', role: 'dialog', 'aria-labelledby': 'sp-settings-h', hidden: true },
@@ -63,7 +66,9 @@
         h('div', { class: 'sp-styles', role: 'radiogroup', 'aria-labelledby': 'sp-set-cover-l' },
           STYLES.map((s) => h('button', { type: 'button', role: 'radio', class: 'sp-style', 'data-style': s.id, 'aria-checked': 'false', tabindex: '-1' },
             h('span', { class: 'sp-style-art', html: s.svg }),
-            h('span', { class: 'sp-style-tx' }, h('b', {}, s.name, s.note ? h('em', { text: s.note }) : null), h('span', { text: s.desc })))))),
+            h('span', { class: 'sp-style-tx' }, h('b', {}, s.name, s.note ? h('em', { text: s.note }) : null), h('span', { text: s.desc }))))),
+        h('span', { class: 'sp-set-label sp-set-label-gap', id: 'sp-set-art-l', text: 'Cover art' }),
+        coverArtHost),
       h('section', { class: 'sp-set-sec', 'data-slot': 'colorway' },
         h('span', { class: 'sp-micro', text: 'Colorway' }),
         colorwayHost),
@@ -139,6 +144,7 @@
         const on = k === 'showOnLaunch' ? p.showOnLaunch !== false : k === 'showExamples' ? p.showExamples !== false : p[k] === true;
         b.setAttribute('aria-checked', String(on));
       });
+      if (typeof onSync === 'function') onSync();
     };
 
     const close = (refocus = true) => {
@@ -190,7 +196,7 @@
     });
     pop.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
-      if (e.target && e.target.closest && e.target.closest('select,input')) return; // the selects own their arrow keys
+      if (e.target && e.target.closest && e.target.closest('select,input,.sp-cvart')) return; // the selects and cover art controls own their arrow keys
       const r = radios();
       const i = r.indexOf(document.activeElement);
       if (i < 0) return;
@@ -207,7 +213,7 @@
     });
 
     sync();
-    return { open, close, toggle: () => (isOpen ? close(true) : open()), sync, isOpen: () => isOpen, el: pop, colorwayHost };
+    return { open, close, toggle: () => (isOpen ? close(true) : open()), sync, isOpen: () => isOpen, el: pop, colorwayHost, coverArtHost };
   };
 
   UI.StartPageSettings = { create, STYLES, ANIMATE_IN, HOVER };
