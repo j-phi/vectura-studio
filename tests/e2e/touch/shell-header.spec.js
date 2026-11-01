@@ -72,8 +72,8 @@ test.describe('TUX-001 closing round', () => {
       }
       return null;
     });
-    // iPhL-c (874x330): the sheet fills the viewport, so the only outside surface is the header wordmark.
-    const target = pt || await page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    // iPhL-c (874x330): the sheet fills the viewport, so the only outside surface is the header brand mark (the wordmark itself is a button that opens the Start Page).
+    const target = pt || await page.evaluate(() => { const r = document.querySelector('#app-header .header-brand-mark').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     await touch.tap(page, target);
     await expect(page.locator('body.phone-menu-open')).toHaveCount(0);
     const st = await page.evaluate(() => ({
@@ -103,7 +103,7 @@ test.describe('TUX-001 closing round', () => {
       window.addEventListener('pointerdown', (e) => window.__downs.push({ now: performance.now(), ts: e.timeStamp }), true);
     });
     const cdp = touch.engineSupports(page, 'cdp');
-    const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header .header-brand-mark').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     const centre = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
     const tapAt = async (p, sec) => {
       if (!cdp) { await page.touchscreen.tap(p.x, p.y); return; }
