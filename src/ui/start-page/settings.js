@@ -5,7 +5,8 @@
  * P3 sections: "Art animates in" (startPage.animateIn, with a Preview that replays the cover) and "Hover effect" (startPage.hover).
  * Keyboard: the gear toggles it (aria-expanded), the style rows are a radiogroup (arrows), Esc closes and focus
  * returns to the gear, a click outside or focus leaving closes it.
- *   create({ root, button, prefs(), onStyle(k), onWord(id, custom?), onToggle(key, on), onPref(key, value), onPreview(), examples(), onSync() })
+ *   create({ root, button, prefs(), onStyle(k), onWord(id, custom?), onToggle(key, on), onPref(key, value), onPreview(), onGlobalDefault({ lockCoverType }), examples(), onSync() })
+ *   Developer Mode adds a row under Size: "Lock for everyone" and "Set as global default…" (onGlobalDefault).
  *     -> { open, close, toggle, sync, isOpen, el, colorwayHost, coverArtHost }
  *   coverArtHost sits under "Cover style" (cover-art-controls.js renders per-piece art and colorway pickers into it);
  *   onSync() runs at the end of every sync() so those controls refresh with the popover.
@@ -33,7 +34,7 @@
     ['replot', 'Re-plot'], ['holo', 'Hologram Foil'], ['ripple', 'Pressure Ripple'], ['stipple', 'Stipple Weather'], ['breeze', 'Paper Breeze'],
     ['gravity', 'Gravity Well'], ['current', 'Light Current']];
 
-  const create = ({ root, button, prefs, onStyle, onWord, onToggle, onPref, onPreview, examples, onSync }) => {
+  const create = ({ root, button, prefs, onStyle, onWord, onToggle, onPref, onPreview, onGlobalDefault, examples, onSync }) => {
     const { h } = Vectura.StartPageDom;
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
     const mod = () => (isMac() ? '⌘' : 'Ctrl+');
@@ -80,6 +81,10 @@
           h('input', { type: 'range', class: 'sp-set-range', 'data-range': 'coverScale', 'aria-labelledby': 'sp-set-size-l', min: String(SP().COVER_SCALE.min), max: String(SP().COVER_SCALE.max), step: String(SP().COVER_SCALE.step), value: '100' }),
           h('output', { class: 'sp-set-out', 'data-out': 'coverScale', text: '100%' })),
         h('p', { class: 'sp-set-help', 'data-help': 'coverType', text: 'Size is a share of the largest that fits the page.' }),
+        h('div', { class: 'sp-set-dev', 'data-dev-row': '', hidden: true },
+          h('span', { class: 'sp-dev-badge', text: 'Developer Mode' }),
+          h('label', { class: 'sp-set-check' }, h('input', { type: 'checkbox', 'data-dev-lock': '' }), h('span', { text: 'Lock for everyone' })),
+          h('button', { type: 'button', class: 'sp-set-btn', 'data-act': 'global-default', text: 'Set as global default…', title: 'Write this typeface and size into src/config/start-page.js as the default for everyone' })),
         h('span', { class: 'sp-set-label sp-set-label-gap', id: 'sp-set-art-l', text: 'Cover art' }),
         coverArtHost),
       h('section', { class: 'sp-set-sec', 'data-slot': 'colorway' },
@@ -153,11 +158,19 @@
       const fontSel = pop.querySelector('select[data-pref="coverFont"]');
       const range = pop.querySelector('[data-range="coverScale"]');
       const out = pop.querySelector('[data-out="coverScale"]');
-      if (range) { range.value = String(ty.scale); range.disabled = A.lockCoverType; }
+      const devOn = !!(Vectura.DevMode && Vectura.DevMode.isOn && Vectura.DevMode.isOn());
+      const lockedUi = A.lockCoverType && !devOn;
+      if (range) { range.value = String(ty.scale); range.disabled = lockedUi; }
       if (out) out.textContent = `${ty.scale}%`;
-      if (fontSel) { fontSel.value = ty.id; fontSel.disabled = A.lockCoverType; }
+      if (fontSel) { fontSel.value = ty.id; fontSel.disabled = lockedUi; }
+      const devRow = pop.querySelector('[data-dev-row]');
+      if (devRow) {
+        devRow.hidden = !(Vectura.DevMode && Vectura.DevMode.isOn && Vectura.DevMode.isOn());
+        const lk = devRow.querySelector('[data-dev-lock]');
+        if (lk && !devRow.dataset.init) { lk.checked = A.lockCoverType; devRow.dataset.init = '1'; }
+      }
       const tyHelp = pop.querySelector('[data-help="coverType"]');
-      if (tyHelp) tyHelp.textContent = A.lockCoverType ? 'Set by your administrator for everyone.' : 'Size is a share of the largest that fits the page. Saved on this device.';
+      if (tyHelp) tyHelp.textContent = A.lockCoverType && devRow && devRow.hidden ? 'Set by your administrator for everyone.' : 'Size is a share of the largest that fits the page. Saved on this device.';
       pop.querySelectorAll('select[data-pref]').forEach((sel) => {
         const want = p[sel.dataset.pref];
         if (want != null && [...sel.options].some((o) => o.value === want)) sel.value = want;
@@ -221,6 +234,12 @@
       if (typeof onPref === 'function') onPref(r.dataset.range, r.value);
     });
     pop.addEventListener('click', (e) => {
+      const gd = e.target.closest && e.target.closest('[data-act="global-default"]');
+      if (gd && typeof onGlobalDefault === 'function') {
+        const lk = pop.querySelector('[data-dev-lock]');
+        onGlobalDefault({ lockCoverType: !!(lk && lk.checked) });
+        return;
+      }
       const pv = e.target.closest && e.target.closest('[data-act="preview-animate"]');
       if (pv && typeof onPreview === 'function') onPreview();
     });

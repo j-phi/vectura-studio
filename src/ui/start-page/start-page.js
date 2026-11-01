@@ -420,6 +420,27 @@
         },
         onWord: pickWord,
         onSync: syncCoverArt,
+        // Developer Mode: make this typeface + size the shipped default for everyone (rewrites the ADMIN_BUILTIN block).
+        onGlobalDefault: async ({ lockCoverType }) => {
+          const SP = Vectura.START_PAGE;
+          const say = (m, v) => { try { const Tt = Vectura.UI && Vectura.UI.overlays && Vectura.UI.overlays.Toast; if (Tt && Tt.show) Tt.show({ message: m, variant: v || 'info', duration: 5000 }); } catch (_) { /* noop */ } };
+          const ty = SP.coverType(prefs());
+          const region = SP.adminRegion({ coverFont: ty.id, coverScale: ty.scale, lockCoverType });
+          const copy = async () => { try { await G.navigator.clipboard.writeText(region); return true; } catch (_) { return false; } };
+          try {
+            if (typeof G.showOpenFilePicker !== 'function') throw new Error('nowrite');
+            const [fh] = await G.showOpenFilePicker({ multiple: false, types: [{ description: 'start-page.js', accept: { 'text/javascript': ['.js'] } }] });
+            if (!fh) return;
+            if (typeof fh.requestPermission === 'function' && (await fh.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('Write permission was not granted.');
+            const next = SP.replaceAdminRegion(await (await fh.getFile()).text(), region);
+            const w = await fh.createWritable(); await w.write(next); await w.close();
+            say(`Global default written to ${fh.name || 'start-page.js'}: ${ty.id}, ${ty.scale}%${lockCoverType ? ', locked' : ''}. Commit it to ship it.`, 'success');
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            if (err && err.message && err.message !== 'nowrite') { say(err.message, 'warning'); return; }
+            say((await copy()) ? 'Copied the ADMIN_BUILTIN block. Paste it over the one in src/config/start-page.js.' : 'This browser cannot write files or copy. Edit ADMIN_BUILTIN in src/config/start-page.js.', 'info');
+          }
+        },
         examples: () => (plates ? plates.examplesState() : { dev: false, available: true }),
         onPref: (key, value) => {
           if (key === 'animateIn' || key === 'hover') { setMotionPref(key, value); return; }
