@@ -677,7 +677,7 @@ describe('Pen Picker popover (COL-1)', () => {
       expect(saved[0].name).toBe('vectura-pens.json');
       const text = await new Promise((resolve) => { const fr = new window.FileReader(); fr.onload = () => resolve(String(fr.result)); fr.readAsText(saved[0].blob); });
       const doc = JSON.parse(text);
-      expect(doc).toMatchObject({ schema: 'vectura-pens', version: 1 });
+      expect(doc).toMatchObject({ schema: 'vectura-pens', version: 2 });
       expect(doc.pens).toHaveLength(3);
       expect(doc.pens[0]).toMatchObject({ name: 'Pen 1', effect: 'metallic' });
       // Import (the file input path reads the same text): one undo step
@@ -705,7 +705,7 @@ describe('Pen Picker popover (COL-1)', () => {
       expect(SETTINGS.pens).toHaveLength(6);
       // A newer pens file is refused with a message, nothing changes.
       const n = app.history.length;
-      const future = window.Vectura.UI.InkSettings.importPensText(app, JSON.stringify({ ...doc, version: 2 }));
+      const future = window.Vectura.UI.InkSettings.importPensText(app, JSON.stringify({ ...doc, version: 3 }));
       expect(future).toMatchObject({ ok: false, reason: 'version' });
       expect(SETTINGS.pens).toHaveLength(6);
       expect(app.history.length).toBe(n);

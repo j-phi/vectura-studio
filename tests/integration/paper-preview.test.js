@@ -344,8 +344,8 @@ describe('pen models: ink renderer integration', () => {
     widths.forEach((w) => expect(w).toBeGreaterThan(0.2 * r0)); // …and leave a residual streak
     // Ragged: the residual width varies inside the skips.
     expect(Math.max(...thin) - Math.min(...thin)).toBeGreaterThan(0.05 * r0);
-    // Lowered Signo default: about one skip per few cm, not a dash pattern.
-    expect(V.PenModel.inkDefaults({ ...gel, ink: undefined }).skips).toBeLessThanOrEqual(0.015);
+    // Lowered Signo default (UM-153 skip 0.03): about one skip per few cm, not a dash pattern.
+    expect(V.PenModel.inkDefaults({ ...gel, ink: undefined }).skips).toBeLessThanOrEqual(0.03);
   });
 
   test('closed loops get periodic edge noise: no seam where the loop ends', () => {
