@@ -15359,8 +15359,12 @@ body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-
 /* The legend covers most of a short phone preview. It only informs, so a pinch or pan starts through it; the gear stays tappable. */
 body.touch-ui #modal-overlay .export-preview-legend { pointer-events: none; }
 body.touch-ui #modal-overlay .export-preview-legend .export-legend-gear-btn { pointer-events: auto; }
-/* Play + gear each carry a centred 44 px ::before over a 22 px box: a 22 px gap makes the hit areas abut. */
-body.touch-ui #modal-overlay .export-preview-legend .export-legend-actions { gap: 22px; }
+/* Play + gear each carry a centred 44 px ::before over a 22 px box. On touch the legend sits over the
+ * middle of a phone's preview, so the two buttons go to the row's ends (Play left of the title, gear
+ * right) and the pass-through title stays in the middle: a one-finger pan started over the legend
+ * centre still reaches the canvas, and the two hit areas never touch. */
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-actions { display: contents; }
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-play-btn { order: -1; }
 /* === END TUX-041 slice B3 === */
 
 /* === TUX-047: touch zoom surfaces === */
