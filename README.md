@@ -249,6 +249,7 @@ The **Pen / Paper** tab previews the plot the way it will come off the plotter: 
 <summary>Pens & paper details</summary>
 
 - Paper: 11 papers (None plus ten realistic stocks), any colour, Texture, Ink bleed and Scale sliders, a per-user default.
+- **Pen Studio** (Pens ⋯ ▸ Pen Studio…, or the pen picker's footer button): pen boxes you own, a lab that tests a pen on every paper (nib vs line, bleed, blobs, crossings, skips, starvation) with draft-then-save tuning sliders, and a pair view that weaves a complementary ink with it; **Use in document** applies the result as one undo step. Boxes export and import as pen files (schema v2).
 - Pens: plain colour + diameter pens by default; a model chip per pen picks one of 15 real pens and its size (laid width = plotted width). Ink settings tune Bleed, Edge roughness, Opacity, Blobs & pools, Skips and Width jitter per pen.
 - Edge bleed is drawn for plain pens too on realistic paper; edges are mm-locked, deterministic and cached with level of detail.
 - **Special inks** (Ink settings ▸ Special inks, Pen Picker ▸ New Pen): metallic gold / silver / copper / bronze / rose gold, neon green / pink / orange / yellow / blue, glow-in-the-dark green / aqua, glitter gold / silver / clear, opaque white — on any pen (dual metallics come with the Pentel Hybrid Dual Metallic model). Metallic and glitter inks catch the light: flakes are fixed to the stroke in mm and the glints move as you pan and zoom (no idle animation). Neon inks glow a little on dark paper. Effect strength and Flake density sliders tune them.
@@ -727,6 +728,10 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### Unreleased - Pen Studio
+- **Pen Studio.** Pens ⋯ ▸ **Pen Studio…** (or **Open Pen Studio** in the pen picker) opens boxes, a lab and a pair view: keep the pens you own in boxes, test any pen on every paper, tune its ink as a draft and save it (or save it as a new pen), pick a complementary ink and see both woven together. **Use in document** applies it in one undo step.
+- **Pen files are schema v2.** Older versions of Vectura refuse v2 pen files; v1 files still import. Micron size `1` is now `10` (old files still load).
 
 ### Unreleased - Cover art in Start Page settings
 - **Pick the cover's art and colors.** Start Page settings > Cover > **Cover art** chooses the piece (Automatic, one of your pieces, or a template) and the colorway (the page colorway, a piece's own colors, or an alternate) for each cover style. Name in Ink gets one choice per letter. **Reset cover art** returns to automatic.

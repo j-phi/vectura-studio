@@ -315,14 +315,19 @@
       e.stopPropagation();
       const M = UI.overlays && UI.overlays.Menu;
       const S = (DEPS && DEPS.SETTINGS) || Vectura.SETTINGS || {};
+      const PSL = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PEN_STUDIO) || {};
       const items = [
+        { key: 'studio', label: PSL.MENU_OPEN || 'Pen Studio…' },
+        { separator: true },
         { key: 'export', label: LBL().MENU_EXPORT_PENS || 'Export pens' },
         { key: 'import', label: LBL().MENU_IMPORT_PENS || 'Import pens…' },
         { separator: true },
         { key: 'library', label: LBL().MENU_MY_PENS || 'My pens…' },
       ];
       const onSelect = (key) => {
-        if (key === 'export' && IS().exportPens) IS().exportPens(S.pens || []);
+        if (key === 'studio') {
+          if (UI.PenStudio && UI.PenStudio.open) UI.PenStudio.open({ app: this.app, anchorEl: btn });
+        } else if (key === 'export' && IS().exportPens) IS().exportPens(S.pens || []);
         else if (key === 'import' && input) input.click();
         else if (key === 'library' && IS().openMyPens) IS().openMyPens({ anchorEl: btn, app: this.app });
       };

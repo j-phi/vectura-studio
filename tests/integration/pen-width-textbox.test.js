@@ -91,9 +91,9 @@ describe('Per-pen stroke-weight textbox', () => {
     expect(size.value).toBe('05');
     expect(row.querySelector('.pen-model-chip').textContent).toBe('Micron');
     const before = app.history.length;
-    size.value = '1';
+    size.value = '10';
     fire(window, size, 'change');
-    expect(SETTINGS.pens[0]).toMatchObject({ size: '1', width: 0.65 });
+    expect(SETTINGS.pens[0]).toMatchObject({ size: '10', width: 0.65 });
     expect(app.history.length).toBe(before + 1);
     const field = window.document.querySelector('#pen-list .pen-width-value');
     field.dispatchEvent(new window.Event('focus', { bubbles: true }));

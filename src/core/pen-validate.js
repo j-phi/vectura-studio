@@ -62,7 +62,10 @@
     if (out.model && typeof pen.size === 'string') {
       // eslint-disable-next-line no-control-regex
       const size = pen.size.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, lim('sizeMaxLen', 48)).trim();
-      if (size) out.size = size;
+      if (size) {
+        const PM = Vectura.PenModel;
+        out.size = (PM && typeof PM.canonicalSize === 'function') ? PM.canonicalSize(out.model, size) : size;
+      }
     }
     const effects = (C && Array.isArray(C.EFFECTS)) ? C.EFFECTS : FALLBACK_EFFECTS;
     if (typeof pen.effect === 'string' && effects.includes(pen.effect)) out.effect = pen.effect;

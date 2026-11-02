@@ -2,8 +2,10 @@
  * Pen files + "My pens" — window.Vectura.PenLibrary.
  *
  * Pen file format (export / import, and the My pens localStorage shape):
- *   { schema: 'vectura-pens', version: 1, appVersion: '1.4.32',
+ *   { schema: 'vectura-pens', version: 2, appVersion: '1.4.32',
+ *     catalogueRev?, box?: { name },
  *     pens: [ { name, color, width, lineCap?, model?, size?, effect?,
+ *               nibMm?, desc?, penName?,
  *               color2?, ink?: { wetness, roughness, opacity, blobs, skips,
  *                                jitter, effectStrength, flakeDensity } } ] }
  * File pens carry no document id; My pens entries carry a library id
@@ -13,10 +15,12 @@
  * object); names are control-stripped plain text, always rendered escaped.
  *
  *   toFilePen(pen)            -> whitelisted file record | null
- *   exportDoc(pens)           -> { schema, version, appVersion, pens }
+ *   exportDoc(pens, { box? }) -> { schema, version:2, appVersion, catalogueRev, box?, pens }
  *   exportText(pens, name?)   -> { ok, text, filename, count }
  *   parseImport(text, { existingIds }) -> { ok, pens:[document pens with NEW
- *                                ids], rejected } | { ok:false, reason }
+ *                                ids], rejected, version, catalogueRev|null,
+ *                                box|null } | { ok:false, reason }
+ *                                (files v1..v2 load; v1 pens get nibMm from the model size)
  *       reason ∈ 'parse' | 'too-large' | 'schema' | 'version' | 'empty' | 'too-many'
  *   newPenId(taken)           -> 'pen-' + 7 [a-z0-9] not in `taken`
  *   applyEntry(pen, entry)    copy an entry's ink (colour, width, model,
@@ -35,16 +39,17 @@
   const FL = () => C().FILE_LIMITS || { maxBytes: 256 * 1024, maxPens: 64, libraryMax: 128, libraryMaxBytes: 256 * 1024, nameMax: 48, fileStem: 'vectura-pens', libraryIdPrefix: 'mypen-' };
   const SCHEMA = () => C().SCHEMA || { id: 'vectura-pens', version: 1 };
   const own = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
-  const cleanName = (v) => {
+  const cleanName = (v, maxLen) => {
     const U = Vectura.UserLibraryStore;
-    const max = FL().nameMax || 48;
+    const max = maxLen || FL().nameMax || 48;
     if (U && U.cleanName) return U.cleanName(typeof v === 'string' ? v : '', max);
     // eslint-disable-next-line no-control-regex
     return typeof v === 'string' ? v.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
   };
   const appVersion = () => String(Vectura.APP_VERSION || Vectura.VERSION || '');
 
-  const FIELDS = ['lineCap', 'model', 'size', 'effect', 'color2'];
+  const FIELDS = ['lineCap', 'model', 'size', 'effect', 'color2', 'nibMm', 'desc', 'penName'];
+  const DESC_MAX = 80;
 
   // Whitelisted file record of a pen (document pen, file pen or library
   // entry). Null when the pen is not valid.
@@ -65,6 +70,14 @@
       ink: pen.ink,
     });
     if (!v) return null;
+    // v2 fields: nib width in mm (finite, 0..maxWidthMm), a short description
+    // and the Pen Studio pen name this size record belongs to.
+    const nibRaw = typeof pen.nibMm === 'string' && pen.nibMm.trim() !== '' ? Number(pen.nibMm) : pen.nibMm;
+    if (typeof nibRaw === 'number' && Number.isFinite(nibRaw) && nibRaw >= 0 && nibRaw <= (FL().maxWidthMm || 20)) v.nibMm = nibRaw;
+    const descClean = cleanName(pen.desc, DESC_MAX);
+    if (descClean) v.desc = descClean;
+    const penNameClean = cleanName(pen.penName);
+    if (penNameClean) v.penName = penNameClean;
     // A pen file / library pen must be a real pen: 0 < width ≤ maxWidthMm
     // (the validator alone would clamp 1e308 to 100 mm).
     const raw = typeof pen.width === 'string' ? Number(pen.width) : pen.width;
@@ -79,12 +92,19 @@
     return out;
   };
 
-  const exportDoc = (pens) => ({
-    schema: SCHEMA().id,
-    version: SCHEMA().version,
-    appVersion: appVersion(),
-    pens: (Array.isArray(pens) ? pens : []).map(toFilePen).filter(Boolean),
-  });
+  // opts.box ({ name }) names the box a Pen Studio export came from.
+  const exportDoc = (pens, opts = {}) => {
+    const doc = {
+      schema: SCHEMA().id,
+      version: SCHEMA().version,
+      appVersion: appVersion(),
+      catalogueRev: C().CATALOGUE_REV || '',
+    };
+    const boxName = opts && opts.box ? cleanName(opts.box.name) : '';
+    if (boxName) doc.box = { name: boxName };
+    doc.pens = (Array.isArray(pens) ? pens : []).map(toFilePen).filter(Boolean);
+    return doc;
+  };
 
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'pen';
 
@@ -131,6 +151,7 @@
     const v = Number(doc.version);
     if (!Number.isFinite(v) || v < 1) return { ok: false, reason: 'schema' };
     if (Math.floor(v) > SCHEMA().version) return { ok: false, reason: 'version' };
+    const fileVersion = Math.floor(v);
     const incoming = Array.isArray(doc.pens) ? doc.pens : null;
     if (!incoming) return { ok: false, reason: 'schema' };
     if (!incoming.length) return { ok: false, reason: 'empty' };
@@ -141,12 +162,20 @@
     incoming.forEach((raw) => {
       const p = toFilePen(raw);
       if (!p) { rejected += 1; return; }
+      // Legacy / v1 pens carry no nib: take it from the model size.
+      if (!Number.isFinite(p.nibMm) && p.model && Vectura.PenModel) {
+        const M = C().MODELS;
+        const sz = M && own(M, p.model) ? Vectura.PenModel.sizeOf(M[p.model], p.size) : null;
+        if (sz && Number.isFinite(sz.nominalWidthMm)) p.nibMm = sz.nominalWidthMm;
+      }
       const id = newPenId(taken);
       taken.add(id);
       pens.push({ id, ...p, themeManaged: false });
     });
     if (!pens.length) return { ok: false, reason: 'empty', rejected };
-    return { ok: true, pens, rejected };
+    const catalogueRev = typeof doc.catalogueRev === 'string' && doc.catalogueRev ? doc.catalogueRev.slice(0, 40) : null;
+    const boxName = doc.box && typeof doc.box === 'object' && !Array.isArray(doc.box) ? cleanName(doc.box.name) : '';
+    return { ok: true, pens, rejected, version: fileVersion, catalogueRev, box: boxName ? { name: boxName } : null };
   };
 
   // Copy an entry's ink onto a document pen (id and name stay).
@@ -172,7 +201,9 @@
     store = U.create({
       key: C().LIBRARY_KEY || 'vectura.penLibrary',
       schema: SCHEMA().id,
-      version: SCHEMA().version,
+      // The My pens store keeps WRITING v1 so a downgraded build still reads
+      // it; v2 is for exported files only (exportDoc).
+      version: 1,
       itemsKey: 'pens',
       validate: toFilePen,
       max: L.libraryMax || 128,

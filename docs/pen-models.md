@@ -31,21 +31,59 @@ Coffee Fox).
 
 | Model id | Pen | Ink | Laid widths (mm) | Confidence | Sources |
 |---|---|---|---|---|---|
-| `sakura-pigma-micron` | Sakura Pigma Micron | pigment-fineliner | 003 0.17, 005 0.22, 01 0.27, 02 0.32, 03 0.36, 05 0.46, 08 0.55, 1 0.65 | 0.75 | [1](https://softsolder.com/wp-content/uploads/2017/12/img_20171224_124700-mpcnc-sakura-micron-black-pen-widths.jpg) [2](https://softsolder.com/wp-content/uploads/2017/12/img_20171224_124625-mpcnc-sakura-micron-08-black-detail.jpg) [3](https://softsolder.com/wp-content/uploads/2017/12/img_20171224_124635-mpcnc-sakura-micron-005-black-detail.jpg) |
+| `sakura-pigma-micron` | Sakura Pigma Micron | pigment-fineliner | 003 0.17, 005 0.22, 01 0.27, 02 0.32, 03 0.36, 04 0.42, 05 0.46, 08 0.55, 10 0.65 (old label `1`), 12 0.74 | 0.75 | [1](https://softsolder.com/wp-content/uploads/2017/12/img_20171224_124700-mpcnc-sakura-micron-black-pen-widths.jpg) [2](https://softsolder.com/wp-content/uploads/2017/12/img_20171224_124625-mpcnc-sakura-micron-08-black-detail.jpg) [3](https://softsolder.com/wp-content/uploads/2017/12/img_20171224_124635-mpcnc-sakura-micron-005-black-detail.jpg) |
 | `rotring-isograph` | Rotring Isograph / Rapidograph technical pen | technical-pen | 0.1 0.12, 0.18 0.2, 0.25 0.27, 0.35 0.37, 0.5 0.52, 0.7 0.72, 1.0 1.02 | 0.55 | [1](https://images.squarespace-cdn.com/content/v1/5005c8fc84ae929b37214ebd/1457701895537-T067FKCVMLDVBH0958ON/image-asset.jpeg) [2](https://images.squarespace-cdn.com/content/v1/5005c8fc84ae929b37214ebd/1457702048954-DRPMIS5PSV09V0JVXRDF/image-asset.jpeg) |
-| `stabilo-point-88` | Stabilo Point 88 | dye-fineliner | 0.4 0.48 | 0.6 | [1](https://cdn.shopify.com/s/files/1/1622/4127/files/stabilofinepoint_1024x1024.jpg?v=1590347983) [2](https://cdn.shopify.com/s/files/1/1622/4127/files/may-1-cmyk-rainbow-1_1024x1024.jpg?v=1590348987) [3](https://cdn.shopify.com/s/files/1/1622/4127/products/blue_diamond_stars_white_balance_brighter_1024x1024.jpg?v=1610174660) |
+| `stabilo-point-88` | Stabilo Point 88 | dye-fineliner | 0.4 0.40 | 0.6 | [1](https://cdn.shopify.com/s/files/1/1622/4127/files/stabilofinepoint_1024x1024.jpg?v=1590347983) [2](https://cdn.shopify.com/s/files/1/1622/4127/files/may-1-cmyk-rainbow-1_1024x1024.jpg?v=1590348987) [3](https://cdn.shopify.com/s/files/1/1622/4127/products/blue_diamond_stars_white_balance_brighter_1024x1024.jpg?v=1610174660) |
 | `pentel-sign-pen` | Pentel Sign Pen S520 | dye-fineliner | fine fibre 0.85 | 0.45 | [1](https://images.squarespace-cdn.com/content/v1/5349ba13e4b095a3fb0ba65c/6275e546-a305-466f-a19f-06e82ddbf99f/Pentel-Sign-Pen-Tip-Writing-Samples.jpg) [2](https://images.squarespace-cdn.com/content/v1/5349ba13e4b095a3fb0ba65c/94ff287b-be19-4e50-bceb-59d9a390ca41/Pentel-Sign-Pen-Planner.jpg) |
 | `sharpie-ultra-fine` | Sharpie Ultra Fine Point permanent marker | alcohol-marker | Ultra Fine 0.65, Extra Fine 0.7 | 0.55 | [1](https://lh6.googleusercontent.com/-FbvOqcKb2y4/VHCXgjCXH7I/AAAAAAAA0X8/Nmq7YNrvIr0/w500/sharpie.jpg) [2](https://lh3.googleusercontent.com/-GRANMoAEGoI/UygQwm8QEvI/AAAAAAAAONk/Dbr4k5ykkT0/w500/seah-st.jpg) |
 | `pilot-precise-v5-v7` | Pilot Precise V5/V7 & Hi-Tecpoint V5/V7 (liquid ink) | liquid-rollerball | V5 (0.5) 0.33, V7 (0.7) 0.45 | 0.5 | [1](https://blog.zsa.io/cdn-cgi/image/fit=scale-down,quality=80,format=auto,width=2080/zsa-loves-pen-plotting/16.jpg) [2](https://blog.zsa.io/cdn-cgi/image/fit=scale-down,quality=80,format=auto,width=2080/zsa-loves-pen-plotting/17.jpg) [3](http://farm5.static.flickr.com/4108/5068250333_8f517908eb_b.jpg) |
 | `pilot-kakuno-fountain` | Pilot Kakuno / Metropolitan (fountain, sheen inks) | fountain-dye | EF 0.3, F 0.38, M 0.5 | 0.55 | [1](https://res.cloudinary.com/dtz3cezyb/image/upload/c_limit,w_1920/f_auto/q_auto/v1/DSCF_0808_1d51909c1d?_a=BAVAZGID0) [2](https://res.cloudinary.com/dtz3cezyb/image/upload/c_limit,w_1920/f_auto/q_auto/v1/DSCF_0788_9f19236292?_a=BAVAZGID0) [3](https://res.cloudinary.com/dtz3cezyb/image/upload/c_limit,w_1920/f_auto/q_auto/v1/DSCF_0809_160a526814?_a=BAVAZGID0) |
-| `sakura-gelly-roll-classic` | Sakura Gelly Roll Classic (incl. white) | gel | 05 0.25, 06 0.3, 08 0.4, 10 0.5 | 0.7 | [1](https://penplotterartwork.com/wp-content/uploads/2021/10/floris_generative_truchet_tiles-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/10/generative_michelle_chandra-1024x1024.jpg) [3](https://penplotterartwork.com/wp-content/uploads/2021/10/diana_generative_white_gelly_roll-1024x1018.jpg) |
-| `uniball-signo-broad-um153` | Uni-ball Signo Broad UM-153 (white / gold / silver) | gel | 1.0 0.7 | 0.6 | [1](https://www.parkablogs.com/sites/default/files/2025/white-uniball-signo-broad-02.jpg) [2](https://tinkerlab.com/wp-content/uploads/2015/05/white-pen-on-black-paper-drawing.jpg) [3](https://images.squarespace-cdn.com/content/v1/5005c8fc84ae929b37214ebd/1433738195562-E8ASTRQCSE4K2HO8THBE/image-asset.jpeg) |
-| `sakura-gelly-roll-metallic` | Sakura Gelly Roll Metallic | metallic-gel | 08 0.45, 10 0.55 | 0.65 | [1](https://penplotterartwork.com/wp-content/uploads/2021/10/vernon_miller_generative_landscape-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/10/adam_generative_rainbow_gelly_rolls-1024x1024.jpg) [3](https://cdn.shopify.com/s/files/1/1622/4127/files/kickstarter_header_1024x1024.jpg?v=1579407014) |
+| `sakura-gelly-roll-classic` | Sakura Gelly Roll Classic (incl. white) | gel | 05 0.30, 06 0.3, 08 0.4, 10 0.5 | 0.7 | [1](https://penplotterartwork.com/wp-content/uploads/2021/10/floris_generative_truchet_tiles-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/10/generative_michelle_chandra-1024x1024.jpg) [3](https://penplotterartwork.com/wp-content/uploads/2021/10/diana_generative_white_gelly_roll-1024x1018.jpg) |
+| `uniball-signo-broad-um153` | Uni-ball Signo Broad UM-153 (white / gold / silver) | gel | 1.0 0.7 (skip 0.03) | 0.6 | [1](https://www.parkablogs.com/sites/default/files/2025/white-uniball-signo-broad-02.jpg) [2](https://tinkerlab.com/wp-content/uploads/2015/05/white-pen-on-black-paper-drawing.jpg) [3](https://images.squarespace-cdn.com/content/v1/5005c8fc84ae929b37214ebd/1433738195562-E8ASTRQCSE4K2HO8THBE/image-asset.jpeg) |
+| `sakura-gelly-roll-metallic` | Sakura Gelly Roll Metallic | metallic-gel | 08 0.45, 10 0.45 | 0.65 | [1](https://penplotterartwork.com/wp-content/uploads/2021/10/vernon_miller_generative_landscape-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/10/adam_generative_rainbow_gelly_rolls-1024x1024.jpg) [3](https://cdn.shopify.com/s/files/1/1622/4127/files/kickstarter_header_1024x1024.jpg?v=1579407014) |
 | `pentel-hybrid-dual-metallic` | Pentel Hybrid Dual Metallic K110 | metallic-gel | 1.0 0.55 | 0.55 | [1](https://cdn.shopify.com/s/files/1/1622/4127/files/penteldualhybrid_8e141efa-cd0c-4043-8ea5-e6e776a06f87_1024x1024.jpg?v=1590347164) [2](https://i0.wp.com/www.wellappointeddesk.com/wp-content/uploads/2026/04/IMG_1437.jpeg?resize=1000%2C750&ssl=1) [3](https://unsharpen.com/wp-content/uploads/Sparkle-Scan-1024x703.jpg) |
 | `sakura-gelly-roll-moonlight` | Sakura Gelly Roll Moonlight (fluorescent) | fluorescent-gel | 06 0.3, 08 0.4, 10 0.5 | 0.45 | [1](https://www.royaltalens.com/cdn/shop/collections/gelly-roll-moonlight-573878.jpg?v=1750230008&width=800) [2](https://ablairneal.com/wp-content/uploads/2023/03/IMG_0902-scaled.jpeg) |
 | `sakura-gelly-roll-stardust` | Sakura Gelly Roll Stardust (glitter) | glitter-gel | 10 (bold) 0.5, fine 0.42 | 0.4 | [1](https://unsharpen.com/wp-content/uploads/Sparkle-Scan-1024x703.jpg) [2](https://cdn.modulor.de/products/d22kz/1_768_768_r_sakura_glitter_gelroller_stardust.jpg) |
 | `uni-posca-pc1mr` | Uni Posca PC-1MR / PC-1M / PC-3M | paint-marker | PC-1MR (0.7 pin) 0.8, PC-1M (0.7-1.0 bullet) 1.0, PC-3M (0.9-1.3) 1.3 | 0.6 | [1](https://penplotterartwork.com/wp-content/uploads/2021/09/space_rays_generative_art-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/09/warp_drive_generative_art_2-1024x1024.jpg) [3](https://penplotterartwork.com/wp-content/uploads/2021/09/space_rays_code_art_mac1-1024x1024.jpg) |
 | `glow-phosphorescent-marker` | Phosphorescent marker (Glow-Writer, Markal, glow paint in a tech pen) | paint-marker | fine nib 0.9 | 0.25 | [1](https://www.2spi.com/catalog/items/04962-AB.jpg) [2](https://cdn.hackaday.io/images/resize/600x600/1091971578962718025.png) [3](https://www.youtube.com/watch?v=jDtk6HzuQ1o) |
+| `staedtler-pigment-liner-308` | Staedtler Pigment Liner 308 | pigment-fineliner | 0.05 0.07 ... 0.3 0.32, 0.5 0.52, 1.0 1.04, 1.2 1.24 (estimated) | 0.45 | [staedtler.com](https://www.staedtler.com/nz/en/products/products-for-colouring/fineliners/pigment-liner-308-fineliner-308-sb8/) [Schleiper](https://www.schleiper.com/onlinecatalogue/series/3337-staedtler-pigment-liner-308-calibred-fineliner-with-pigmented-ink-black?lang=en) |
+| `uni-pin-fineliner` | Uni-ball uni PIN | pigment-fineliner | 0.03 0.07 (floor), 0.05 0.07 ... 0.8 0.84 (estimated) | 0.45 | [Dick Blick](https://www.dickblick.com/items/uni-pin-fine-liner-pen-set-of-12-black/) [Officeworks](https://www.officeworks.com.au/shop/officeworks/p/uni-pin-fineliner-0-03-mm-black-unpin003bk) [uniball.co.uk](https://uniball.co.uk/brands/pin/uni-ball-draw-and-sketch-8-piece-uni-pin-fineliner-drawing-pens-black/) |
+| `staedtler-triplus-334` | Staedtler Triplus Fineliner 334 | dye-fineliner | 0.3 0.3 (published line width) | 0.5 | [Officeworks](https://www.officeworks.com.au/shop/officeworks/p/staedtler-triplus-0-3mm-fineliner-334-black-4-pack-st334sb4bk) |
+| `pilot-g2` | Pilot G2 | gel | 0.38 0.25, 0.5 0.3, 0.7 0.38, 1.0 0.5 (estimated) | 0.4 | [unsharpen](https://unsharpen.com/?p=4206) [JetPens](https://www.jetpens.com/Pilot-G2-Gel-Pen-0.7-mm-5-Basic-Color-Set/pd/27911) |
+| `pentel-energel` | Pentel EnerGel | gel | 0.5 0.3 (est.), 0.7 0.35, 1.0 0.5 | 0.4 | [Pentel guide](https://pentel.mywestamerica.com/2023ProductGuide/19/) [Cromwell XM](https://cromwell.co.uk/shop/office-supplies/pens/energel-xm-bl77-series-rollerball-pen-red-fine-tip-size-0-35mm-line-width-pack-of-12/p/PNL8460440K) [Cromwell X](https://cromwell.co.uk/shop/office-supplies/pens/energel-x-retractable-gel-rollerball-10mm/f/60019) |
+| `molotow-one4all-127hs` | Molotow ONE4ALL 127HS | paint-marker | 127HS-CO 1.5 -> 1.6, 127HS 2.0 -> 2.1 (estimated) | 0.35 | [Digitec](https://www.digitec.ch/en/s1/product/molotow-akrylmarker-15m) [Cass Art](https://www.cassart.co.uk/molotow-one4all-127hs-acrylic-pump) |
+| `faber-castell-pitt-artist-pen` | Faber-Castell PITT Artist Pen | pigment-fineliner | XXS 0.07, XS 0.12, S 0.32, F 0.52, M 0.74, Bullet 1.5 1.55, Bullet 2.5 2.55 (estimated) | 0.45 | [faber-castell.com](https://www.faber-castell.com/en/pitt-artist-pen) [De Serres](https://www.deserres.ca/products/8-pack-pitt-artist-pens-xxs) |
+| `copic-multiliner` | Copic Multiliner / Multiliner SP | pigment-fineliner | 0.03 0.07 ... 1.0 1.04 (estimated) | 0.45 | [Copic SP](https://www.copicmarkers.com/products/multiliner-sp-pen) [too.com](https://copic.too.com/blogs/educational/mutliliner-vs-multil) |
+| `lamy-safari` | Lamy Safari | fountain-dye | EF 0.4, F 0.5, M 0.7, B 0.9 (published line widths = nominal = laid) | 0.35 | [Fountain Pen Network](https://fountainpennetwork.com/forum/topic/216085-lamy-safar) |
+| `muji-gel-ballpoint` | Muji gel ink ballpoint | gel | 0.38 0.25, 0.5 0.3 (estimated) | 0.35 | [Muji AU](https://muji.com.au/products/gel-ink-ballpoint-pen-cap-type-) |
+
+Catalogue rev `2026-11-pens20` (unit G, pens20 ingest). New-model traits are
+copied from the nearest ink-class sibling (pigment fineliners from the Micron,
+Triplus from the Stabilo 88, gel pens from the Gelly Roll Classic, Molotow from
+the Posca, Lamy Safari from the Kakuno, EnerGel is a liquid-gel hybrid between
+gel and rollerball). Where no line width is published, laid width is estimated
+from the sibling ratio (fineliner: nominal + 0.02 up to 0.5 mm, + 0.04 above;
+gel: 0.6 / 0.5 of the ball size) and the model confidence stays at or below
+0.5. Colour names come from maker/retailer lists; their hexes are our
+approximations and carry `approx: true` (the original curated hexes are
+untouched). Each model has a `sizesSource` line, shown in the Pen Studio lab.
+Also added to existing models: Rotring Isograph 0.3, Sharpie Fine (1.0),
+Pilot V10 (1.0), Posca PC-5M (2.5, line 1.8 mm), and colours for Micron, Stabilo
+88, Sign Pen, Gelly Roll Classic / Metallic / Moonlight, Signo UM-153 and Posca.
+Sharpie and Stardust sizes were reordered so sizes ascend by nominal width.
+
+### Conflicts between research and existing values (existing kept)
+
+| Pen | Existing | Research | Decision |
+|---|---|---|---|
+| Posca PC-1M | nominal 0.85 (label 0.7-1.0) | Uni Posca Pen Guide PDF (third-party hosted): 1.0 | kept; 1.0 is the top of the existing range |
+| Posca PC-3M | nominal 1.1 (label 0.9-1.3) | same PDF: 1.5 | kept; range label covers it, revisit with the manufacturer page |
+| Sharpie Ultra Fine / Extra Fine | 0.5 / 0.4 nominal | Galaxus 0.5, Parkablogs Extra Fine 0.4 (agree); the official page gives no mm, other sources quote Ultra Fine 0.2-0.3 | kept |
+| Pentel Sign Pen S520 | fine fibre 0.8 | retailer title: 2.0 mm tip (page not fetched) | kept; not the manufacturer |
+| Pilot V5 / V7 laid | 0.33 / 0.45 | Cromwell "line width" 0.5 / 0.7 | kept; the retailer repeats the tip size, our laid value is measured from photos |
+| Gelly Roll Classic Black hex | `#16161a` | `#000000` | kept (hex values are fixed by the Start Page colorways) |
+| Pilot Kakuno | EF 0.3 / F 0.38 / M 0.5 | JetPens lists no mm | kept; the Kakuno source photo is an ink bottle, confidence unchanged but flagged |
+| uni PIN 0.03 / Multiliner 0.03 | n/a | nominal 0.03 | laid raised to 0.07: the catalogue floor for a laid width is above 0.05 mm |
 
 Deferred models (logged as PRH-110): brush pens (Pentel Pocket Brush, Tombow
 Fudenosuke — pressure-driven width needs a speed/pressure model), the HP
@@ -60,7 +98,8 @@ set.
 | `absorbentWidthGainMm` | extra width on absorbent paper |
 | `opacity` / `coverOnDark` | coverage on light / dark stock |
 | `blend` | `multiply` (translucent dye) or `source-over` (opaque gel, paint) |
-| `overlapDarkening` | how much crossings darken |
+| `overlapDarkening` | how much crossings darken (Micron 0.15) |
+| `sizeAliases` | optional `{ oldLabel: canonicalLabel }` for renamed sizes (Micron `1` -> `10`); `PenModel.sizeOf` and the validator resolve them |
 | `edge { roughness, scaleMm }` | edge lumpiness and its scale |
 | `bleed { wetness, featherResponse }` | how much the ink wicks into the sheet |
 | `dryskipResponse` | how much paper tooth breaks the line |
@@ -196,3 +235,14 @@ state only; Document Setup's preview shows the lit sheet.
 **Deferred:** UV (black-light) view for fluorescent inks (PRH-116), glow decay
 over time (PRH-117), effect pixel baselines (PRH-118).
 
+
+## Pen files (schema v2) and ink keys
+
+Pen files are `{ schema: 'vectura-pens', version: 2, appVersion, catalogueRev, box?, pens }`.
+v2 adds `catalogueRev` (`PEN_MODELS.CATALOGUE_REV`), an optional `box: { name }`
+and the per-pen `nibMm`, `desc` (80 chars) and `penName`. Files v1..v2 import
+(v1 pens get `nibMm` from the model size); v3+ is refused. The My pens
+localStorage store keeps writing v1 so a downgraded build still reads it.
+Per-pen `ink` also takes `overlap` (0..1), `starvation` (0..0.9, falls back to
+`LIMITS.studioStarveLenMm` when the model has no starvation length) and
+`coverOnDark` (0..1).

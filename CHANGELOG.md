@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Pen Studio
+- **A workshop for pens.** Open it from **Pens ⋯ ▸ Pen Studio…** or the **Open Pen Studio** button at the bottom of the pen picker. Three columns: **pen boxes** (starter boxes, your own, pin / collapse / export / import, add a pen with a model, color and the sizes you own), the **lab** (the selected pen on every paper: nib vs line, bleed, pen-down blob, crossings, skips and starvation, with an all-papers matrix and sliders for Bleed, Pen-down blob, Overlap, Skips, Starvation and Coverage on dark) and the **pair** view (complementary inks that read on the chosen paper, Randomize, and 3 to 7 woven lines).
+- **Tune, then keep or use.** Slider changes stay a draft (UNSAVED) until you Save changes or Save as new pen. **Use in document** applies the tested pen and size to the document pen, or adds it, as one undo step. Boxes and tuned pens live in this browser; nothing touches the document until you press Use.
+- **Dark stock rule.** Pen Studio treats black paper and very dark papers (luminance under 0.2) as dark stock. Kraft is not dark stock, so Micron Black stays a valid pairing on it.
+- **Pen files are now schema v2.** Exported pen files carry `version: 2` (new ink keys and the catalogue revision). Older versions of Vectura refuse v2 files; v1 files still import. The My pens library store stays v1.
+- **Micron size `1` is now `10`.** The Pigma Micron 1.0 nib is labeled `10`. Documents and pen files that say `1` still load: it is an alias for `10`.
+- **Catalogue fixes.** Corrected laid widths and ink behavior for the Micron, Stabilo, Gelly Roll, Gelly Roll Metallic and Signo UM-153 models; each model now names where its nib sizes come from (`sizesSource`).
+- **Start Page open keeps pen names.** Opening a plate keeps the plate's pen names instead of the generic ones when the colors are unchanged.
+
 ### Fixed: Pressing on a shape's outline didn't start a drag
 - With the Selection tool, pressing exactly on a shape's outline at the edge of its bounding box (for example the left edge of a rectangle) now selects it and starts a move, like pressing just inside. Resize and rotate handles still take priority.
 
