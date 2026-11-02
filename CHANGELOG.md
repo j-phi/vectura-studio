@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Pressing on a shape's outline didn't start a drag
+- With the Selection tool, pressing exactly on a shape's outline at the edge of its bounding box (for example the left edge of a rectangle) now selects it and starts a move, like pressing just inside. Resize and rotate handles still take priority.
+
 ### Fixed: A released middle mask level couldn't be re-masked
 - After releasing the middle level of a nested clipping mask, that layer had no mask toggle, so it couldn't be made a mask again. Any masked layer that can be a mask (a closed shape) now shows the toggle; turning it back on restores the original nesting, order and clipping. Layers that can't be masks still show no toggle.
 
