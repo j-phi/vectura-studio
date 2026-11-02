@@ -18568,6 +18568,10 @@ button.sp-cm-card { cursor: pointer; }
 /* settings popover: Art animates in / Hover effect */
 .sp-set-pick { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .sp-set-select { flex: 1; min-width: 0; height: 30px; padding: 0 8px; font: inherit; font-size: 12px; color: var(--ui-text); background: var(--ui-ctrl); border: 1px solid var(--ui-border); border-radius: var(--radius-sm); }
+.sp-set-dev { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; padding: 8px; border: 1px dashed var(--ui-border-hi); border-radius: var(--radius-sm); }
+.sp-set-dev[hidden] { display: none; }
+.sp-set-dev .sp-dev-badge { font: 600 9px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ui-accent); }
+.sp-set-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ui-text); cursor: pointer; }
 .sp-set-size { gap: 10px; }
 .sp-set-range { flex: 1; min-width: 0; accent-color: var(--ui-accent); }
 .sp-set-range:disabled, .sp-set-select:disabled { opacity: 0.55; cursor: not-allowed; }

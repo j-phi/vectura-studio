@@ -34,6 +34,11 @@
       mirrorExtent: 0.7,
     },
 
+    // Mouse/pen move-arm slop (CSS px): a press this close to the selection bounds still
+    // arms a move, so the exact outline pixel at the bbox edge (rounding/antialiasing put it a
+    // fraction outside) drags. Must stay < 2 px: a press 2 px off a 0-height line stays strict.
+    BOUNDS_PRESS_SLOP_PX: 1,
+
     // TUX-017: second-finger arbitration window (src/render/touch-gesture-arbiter.js).
     // A second touch within ARBITRATION_MS of the first, OR before the first moved
     // ARBITRATION_SLOP_PX (CSS client px), rolls the first action back. Otherwise it commits.

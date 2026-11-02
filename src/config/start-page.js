@@ -12,7 +12,7 @@
   const Vectura = G.Vectura = G.Vectura || {};
 
   // Cover type (the big Name in Ink / Specimen word). The typefaces on offer, the size range and the GLOBAL defaults.
-  // Admin: set the defaults for everyone either here, or by defining `window.Vectura.START_PAGE_ADMIN = { coverFont, coverScale,
+  // Admin: in Developer Mode (Document Setup > Contributor / Presets) use Start Page settings > Cover > "Set as global default", or set the defaults for everyone either in the ADMIN_BUILTIN block below, or by defining `window.Vectura.START_PAGE_ADMIN = { coverFont, coverScale,
   // lockCoverType }` in a script that loads before this file (so a deployment can change them without editing source).
   // A user's own choice (Start Page settings > Cover > Typeface / Size) is saved with their preferences and wins, unless
   // `lockCoverType` is true: then the admin values apply to everyone and the controls are disabled. A user who picks the
@@ -31,11 +31,31 @@
     return s;
   };
   const ADMIN_IN = (Vectura.START_PAGE_ADMIN && typeof Vectura.START_PAGE_ADMIN === 'object') ? Vectura.START_PAGE_ADMIN : {};
+  // <admin-defaults:begin> Developer Mode > Start Page settings > "Set as global default" rewrites this block; keep both markers.
+  const ADMIN_BUILTIN = Object.freeze({ coverFont: 'grotesk', coverScale: 100, lockCoverType: false });
+  // <admin-defaults:end>
   const ADMIN = Object.freeze({
-    coverFont: fontId(ADMIN_IN.coverFont, 'grotesk'),
-    coverScale: scaleOf(ADMIN_IN.coverScale, 100),
-    lockCoverType: ADMIN_IN.lockCoverType === true,
+    coverFont: fontId(ADMIN_IN.coverFont, ADMIN_BUILTIN.coverFont),
+    coverScale: scaleOf(ADMIN_IN.coverScale, ADMIN_BUILTIN.coverScale),
+    lockCoverType: ADMIN_IN.lockCoverType === undefined ? ADMIN_BUILTIN.lockCoverType === true : ADMIN_IN.lockCoverType === true,
   });
+  const ADMIN_BEGIN = '// <admin-defaults:begin>';
+  const ADMIN_END = '// <admin-defaults:end>';
+  // The ADMIN_BUILTIN block for { coverFont, coverScale, lockCoverType } (validated), ready to paste or write back.
+  const adminRegion = (v) => {
+    const o = v && typeof v === 'object' ? v : {};
+    const font = fontId(o.coverFont, ADMIN_BUILTIN.coverFont);
+    const scale = scaleOf(o.coverScale, ADMIN_BUILTIN.coverScale);
+    return `${ADMIN_BEGIN} Developer Mode > Start Page settings > "Set as global default" rewrites this block; keep both markers.\n`
+      + `  const ADMIN_BUILTIN = Object.freeze({ coverFont: '${font}', coverScale: ${scale}, lockCoverType: ${o.lockCoverType === true} });\n  ${ADMIN_END}`;
+  };
+  // Replace the marker-delimited block in the source text of this file; throws when the markers are missing.
+  const replaceAdminRegion = (source, region) => {
+    const a = String(source).indexOf(ADMIN_BEGIN);
+    const b = String(source).indexOf(ADMIN_END);
+    if (a < 0 || b < a) throw new Error('This file does not contain the admin-defaults markers. Pick src/config/start-page.js.');
+    return String(source).slice(0, a) + region + String(source).slice(b + ADMIN_END.length);
+  };
 
   const DEFAULTS = Object.freeze({
     showOnLaunch: true,
@@ -196,10 +216,11 @@
   // The type the cover sets for a preference object: { id, css, weight, kern, scale (percent) }. The admin lock wins.
   const coverType = (prefs) => {
     const p = prefs && typeof prefs === 'object' ? prefs : {};
-    const id = ADMIN.lockCoverType ? ADMIN.coverFont : fontId(p.coverFont, ADMIN.coverFont);
-    const scale = ADMIN.lockCoverType ? ADMIN.coverScale : scaleOf(p.coverScale, ADMIN.coverScale);
+    const locked = ADMIN.lockCoverType && !(Vectura.DevMode && Vectura.DevMode.isOn && Vectura.DevMode.isOn()); // Developer Mode edits the defaults, so it sees its own pick
+    const id = locked ? ADMIN.coverFont : fontId(p.coverFont, ADMIN.coverFont);
+    const scale = locked ? ADMIN.coverScale : scaleOf(p.coverScale, ADMIN.coverScale);
     return Object.assign({}, COVER_FONTS.find((f) => f.id === id), { scale });
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, coverType, sanitize });
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
 })();

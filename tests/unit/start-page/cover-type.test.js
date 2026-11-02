@@ -47,3 +47,32 @@ describe('cover type preference', () => {
     expect(SP.ADMIN).toMatchObject({ coverFont: 'grotesk', coverScale: 100, lockCoverType: false });
   });
 });
+
+describe('admin defaults block (Developer Mode write-back)', () => {
+  const SRC = fs.readFileSync(path.join(ROOT, 'src/config/start-page.js'), 'utf8');
+  it('builds a validated block and replaces it between the markers', () => {
+    const SP = load();
+    const region = SP.adminRegion({ coverFont: 'mono', coverScale: 72, lockCoverType: true });
+    expect(region).toContain("coverFont: 'mono', coverScale: 70, lockCoverType: true");
+    const next = SP.replaceAdminRegion(SRC, region);
+    expect(next).toContain("Object.freeze({ coverFont: 'mono', coverScale: 70, lockCoverType: true })");
+    expect(next.split('<admin-defaults:begin>')).toHaveLength(SRC.split('<admin-defaults:begin>').length); // markers survive, so it can be rewritten again
+    // the rewritten file loads and carries the new global defaults
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/', runScripts: 'outside-only' });
+    const ctx = dom.getInternalVMContext();
+    vm.runInContext(next, ctx);
+    expect(dom.window.Vectura.START_PAGE.ADMIN).toMatchObject({ coverFont: 'mono', coverScale: 70, lockCoverType: true });
+  });
+  it('rejects a file without the markers and sanitizes junk values', () => {
+    const SP = load();
+    expect(() => SP.replaceAdminRegion('const x = 1;', SP.adminRegion({}))).toThrow(/markers/);
+    expect(SP.adminRegion({ coverFont: "x'; alert(1)", coverScale: 'huge' })).toContain("coverFont: 'grotesk', coverScale: 100, lockCoverType: false");
+  });
+  it('Developer Mode edits the defaults, so the lock does not hide its own pick', () => {
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/', runScripts: 'outside-only' });
+    const ctx = dom.getInternalVMContext();
+    vm.runInContext(`window.Vectura = { START_PAGE_ADMIN: { coverFont: 'mono', coverScale: 90, lockCoverType: true }, DevMode: { isOn: () => true } };`, ctx);
+    vm.runInContext(SRC, ctx);
+    expect(dom.window.Vectura.START_PAGE.coverType({ coverFont: 'serif', coverScale: 60 })).toMatchObject({ id: 'serif', scale: 60 });
+  });
+});

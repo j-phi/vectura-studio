@@ -15,6 +15,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **Catalogue fixes.** Corrected laid widths and ink behavior for the Micron, Stabilo, Gelly Roll, Gelly Roll Metallic and Signo UM-153 models; each model now names where its nib sizes come from (`sizesSource`).
 - **Start Page open keeps pen names.** Opening a plate keeps the plate's pen names instead of the generic ones when the colors are unchanged.
 
+### Fixed: Pressing on a shape's outline didn't start a drag
+- With the Selection tool, pressing exactly on a shape's outline at the edge of its bounding box (for example the left edge of a rectangle) now selects it and starts a move, like pressing just inside. Resize and rotate handles still take priority.
+
+### Fixed: A released middle mask level couldn't be re-masked
+- After releasing the middle level of a nested clipping mask, that layer had no mask toggle, so it couldn't be made a mask again. Any masked layer that can be a mask (a closed shape) now shows the toggle; turning it back on restores the original nesting, order and clipping. Layers that can't be masks still show no toggle.
+
+### Added: Developer Mode can set the global cover typeface and size
+- There is no separate admin mode, so the global default now lives behind Developer Mode. With it on, Start Page settings show a dev-only row with "Lock for everyone" and "Set as global default…". The button rewrites the `ADMIN_BUILTIN` block in `src/config/start-page.js` (pick the file once; falls back to copying the block). Commit the file to ship it. While Developer Mode is on, the lock does not hide your own pick.
+
 ### Fixed: Start Page name sanitizer test matched the old rules
 - The Start Page name test still expected `=` to be stripped after the sanitizer moved to a symbol-friendly blocklist (angle brackets and control characters removed; `=`, `&`, `+` kept), which turned main's CI red. The test now checks the current rules, and a new test confirms a hostile name or practice line renders as plain text with no injected elements.
 
