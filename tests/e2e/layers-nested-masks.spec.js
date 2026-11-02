@@ -86,3 +86,47 @@ test('search keeps a nested masked child reachable', async ({ page }) => {
   const has = await page.evaluate((id) => !!document.querySelector(`#layer-list [data-lvl-id="${id}"]`), ids.content);
   expect(has).toBe(true);
 });
+
+test('a released middle level can be re-masked back to the original chain, with undo/redo', async ({ page }) => {
+  const ids = await setup(page);
+  await clickMask(page, ids.A);
+  await clickMask(page, ids.B);
+  await clickMask(page, ids.C);
+  const chain = { content: 'A', A: 'B', B: 'C', C: null };
+  const order = () => page.evaluate(() => window.app.engine.layers.map((l) => l.id));
+  const before = await order();
+  await clickMask(page, ids.B); // release the middle level
+  expect(await parents(page, ids)).toEqual({ content: 'A', A: 'C', B: 'C', C: null });
+  // B is now a plain masked child of C but must offer the toggle again (off state).
+  const btn = page.locator(`#layer-list [data-lvl-id="${ids.B}"] .mask-btn`);
+  await expect(btn).toHaveCount(1);
+  await expect(btn).not.toHaveClass(/is-src/);
+  await clickMask(page, ids.B); // re-mask
+  expect(await parents(page, ids)).toEqual(chain);
+  expect(await page.evaluate((id) => window.app.engine.getLayerById(id).mask.enabled, ids.B)).toBe(true);
+  expect(await order()).toEqual(before);
+  await page.evaluate(() => window.app.undo());
+  expect(await parents(page, ids)).toEqual({ content: 'A', A: 'C', B: 'C', C: null });
+  await page.evaluate(() => window.app.redo());
+  expect(await parents(page, ids)).toEqual(chain);
+});
+
+test('top and bottom nested levels release and re-mask', async ({ page }) => {
+  const ids = await setup(page);
+  await clickMask(page, ids.A);
+  await clickMask(page, ids.B);
+  await clickMask(page, ids.C);
+  const chain = { content: 'A', A: 'B', B: 'C', C: null };
+  await clickMask(page, ids.C); // top
+  await clickMask(page, ids.C);
+  expect(await parents(page, ids)).toEqual(chain);
+  await clickMask(page, ids.A); // bottom
+  await clickMask(page, ids.A);
+  expect(await parents(page, ids)).toEqual(chain);
+});
+
+test('a masked row that cannot be a mask source keeps no toggle', async ({ page }) => {
+  const ids = await setup(page);
+  await clickMask(page, ids.A);
+  await expect(page.locator(`#layer-list [data-lvl-id="${ids.content}"] .mask-btn`)).toHaveCount(0);
+});
