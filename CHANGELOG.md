@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: 3D Scenes rotate on the Start Page
+- **3D Scene pieces are live on the Start Page.** A 3D Scene on a plate or the cover band (your saved scenes, and the Studio Shadows pick) is now drawn live in 3D like the torus, coiled sphere, terrain and icosahedron: drag (or use the arrow keys) to rotate it, and it rocks gently back and forth when left alone. It starts from the scene's own camera and is drawn with contours, crease edges and its silhouette, hidden lines removed, with a ring for the ground. Still motion and reduced motion turn the rocking off.
+
 ### Added: Pen Studio
 - **A workshop for pens.** Open it from **Pens ⋯ ▸ Pen Studio…** or the **Open Pen Studio** button at the bottom of the pen picker. Three columns: **pen boxes** (starter boxes, your own, pin / collapse / export / import, add a pen with a model, color and the sizes you own), the **lab** (the selected pen on every paper: nib vs line, bleed, pen-down blob, crossings, skips and starvation, with an all-papers matrix and sliders for Bleed, Pen-down blob, Overlap, Skips, Starvation and Coverage on dark) and the **pair** view (complementary inks that read on the chosen paper, Randomize, and 3 to 7 woven lines).
 - **Tune, then keep or use.** Slider changes stay a draft (UNSAVED) until you Save changes or Save as new pen. **Use in document** applies the tested pen and size to the document pen, or adds it, as one undo step. Boxes and tuned pens live in this browser; nothing touches the document until you press Use.

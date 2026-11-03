@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - 3D Scenes rotate on the Start Page
+- **Drag to rotate a 3D Scene.** 3D Scene pieces on the Start Page (your saved scenes and the Studio Shadows pick) are live models: drag or use the arrow keys to rotate them, and they rock gently when idle, like the other 3D pieces.
+
 ### Unreleased - Pen Studio
 - **Pen Studio.** Pens ⋯ ▸ **Pen Studio…** (or **Open Pen Studio** in the pen picker) opens boxes, a lab and a pair view: keep the pens you own in boxes, test any pen on every paper, tune its ink as a draft and save it (or save it as a new pen), pick a complementary ink and see both woven together. **Use in document** applies it in one undo step.
 - **Pen files are schema v2.** Older versions of Vectura refuse v2 pen files; v1 files still import. Micron size `1` is now `10` (old files still load).

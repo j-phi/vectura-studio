@@ -2,7 +2,7 @@
  * Start Page art source — window.Vectura.StartPageArtSource.
  *
  * One list of pieces for the cover, the plate grid and the rail:
- *   Art = { id, kind: 'work'|'pick', name, algorithm, collection, workId?, presetId?, recentId?,
+ *   Art = { id, kind: 'work'|'pick', name, algorithm, collection, workId?, presetId?, recentId?, sceneId?,
  *           getSvg(): Promise<string>, ownColors: {paper, ink, penName, paperName} }
  *
  *   list()            -> Promise<Art[]>   works in addedAt order (plates), then studio picks
@@ -26,6 +26,8 @@
  * version equals RENDER_VERSION; a mismatch, a failed fetch (file://, offline) or a non-SVG body falls back to the
  * live render, so an edited preset never shows stale art.
  * Entries from another RENDER_VERSION are pruned on first open. Without IndexedDB the cache lives in memory.
+ * A 3D Scene work also gets a live, drag-to-rotate model: its stored document's scene is registered with
+ * StartPageOrbit3D (registerScene / sceneFromDoc) under `work:<id>`, and the art carries that key as `sceneId`.
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -265,12 +267,32 @@
       }).filter(Boolean);
     };
 
+    // A 3D Scene work: read its stored document once and register its scene as a live model (art.sceneId).
+    // The work's label is its first drawable layer's (a scene tree's first child: Object 3D, Light, Ground, ...).
+    const SCENE_TYPES = new Set(['scene3d', 'object3d', 'booleangroup3d', 'light', 'ground', 'scenelight3d', 'sceneground3d']);
+    const liveScenes = async (arts, entries) => {
+      const O = Vectura.StartPageOrbit3D;
+      const store = getStore();
+      if (!O || typeof O.registerScene !== 'function' || typeof O.sceneFromDoc !== 'function' || !store || typeof store.getDoc !== 'function') return arts;
+      await Promise.all(entries.map(async (entry, i) => {
+        if (!SCENE_TYPES.has(typeFromLabel(entry.algorithm).toLowerCase().replace(/[^a-z0-9]/g, ''))) return;
+        try {
+          const doc = await store.getDoc(entry.id);
+          const scene = doc ? O.sceneFromDoc(doc) : null;
+          const key = `work:${entry.id}`;
+          if (scene && O.registerScene(key, scene, arts[i].name)) arts[i].sceneId = key;
+        } catch (_e) { /* no live model: the piece keeps its drawing */ }
+      }));
+      return arts;
+    };
+    const workArts = (entries) => liveScenes(entries.map(workArt), entries);
+
     const works = async () => {
       const store = getStore();
       if (!store || typeof store.listWorks !== 'function') return [];
       let entries = [];
       try { entries = await store.listWorks(); } catch (_e) { entries = []; }
-      return entries.filter(Boolean).map(workArt);
+      return workArts(entries.filter(Boolean));
     };
 
     return {
@@ -282,7 +304,7 @@
         let entries = [];
         try { entries = store && store.listWorks ? await store.listWorks() : []; } catch (_e) { entries = []; }
         entries = entries.slice().sort((a, b) => (b.lastOpened - a.lastOpened) || (b.addedAt - a.addedAt));
-        return entries.map(workArt).concat(pickArts());
+        return (await workArts(entries)).concat(pickArts());
       },
       examples: exampleArts,
       coverPicks: coverArts,
