@@ -70,6 +70,14 @@ describe('StartPageMotion mapping', () => {
     expect(M.modelFor({ algorithm: 'Rings' })).toBe(null);
     expect(M.modelFor(null)).toBe(null);
   });
+
+  it('a 3D Scene piece asks for its scene by sceneId (a saved work) before presetId', () => {
+    const { V } = boot();
+    V.StartPageOrbit3D = { modelFor: (t, p) => (t === 'object3d' || t === 'scene3d') && p ? `scene:${p}` : null };
+    const M = V.StartPageMotion;
+    expect(M.modelFor({ algorithm: 'Object 3D', sceneId: 'work:9' })).toBe('scene:work:9');
+    expect(M.modelFor({ algorithm: 'scene3d', presetId: 'scene3d-studio-shadows' })).toBe('scene:scene3d-studio-shadows');
+  });
 });
 
 describe('StartPageMotion.bindArt', () => {

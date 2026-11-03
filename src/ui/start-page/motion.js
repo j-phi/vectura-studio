@@ -13,7 +13,7 @@
  *   plan(pref, kind)                -> { type: 'none' | 'retrigger' | 'lift-card' | 'fx', id? }
  *                                      kind 'plate': default/retrigger re-trigger the animate-in; 'card': default/lift lift the card.
  *   artType(art)                    -> the Vectura algorithm type of a piece ('topoform', 'terrain', ...), '' when unknown
- *   modelFor(art)                   -> a live 3D model id for the piece, or null
+ *   modelFor(art)                   -> a live 3D model id for the piece, or null (a 3D Scene work: by art.sceneId)
  *   bindArt(artEl, { handle(), animateIn(), hover(), kind }) -> { sync(), destroy() }
  *       Hover on ONE art element. 'retrigger' installs the draw-in re-trigger controller; an effect id lazy-loads that
  *       effect (StartPageHoverFx.attach) on first pointer entry, on this element only. Still / reduced motion: nothing.
@@ -64,7 +64,7 @@
     try {
       const O = Vectura.StartPageOrbit3D;
       if (!O || typeof O.modelFor !== 'function') return null;
-      return O.modelFor(artType(art), art && art.presetId) || null;
+      return O.modelFor(artType(art), art && (art.sceneId || art.presetId)) || null;
     } catch (_) { return null; }
   };
 

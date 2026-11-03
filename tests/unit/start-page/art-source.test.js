@@ -185,4 +185,24 @@ describe('StartPageArtSource', () => {
     await store.record({ name: 'y.vectura', algorithm: 'Rings', pens: [], thumb: null, payload: doc(10), source: 'open' });
     expect(n).toBe(1);
   });
+
+  it('a 3D Scene work registers its stored scene as a live model and carries its key as sceneId', async () => {
+    const seen = [];
+    V.StartPageOrbit3D = {
+      sceneFromDoc: (d) => (d && d.scene ? { objects: [{ primitive: 'box' }] } : null),
+      registerScene: (key, scene, name) => { seen.push([key, name]); return `scene:${key}`; },
+    };
+    await store.record({ name: 'cube.vectura', algorithm: 'Object 3D', pens: [], thumb: null, payload: Object.assign(doc(4), { scene: true }), source: 'open' });
+    clock += 1000;
+    await store.record({ name: 'flat.vectura', algorithm: 'Rings', pens: [], thumb: null, payload: Object.assign(doc(5), { scene: true }), source: 'open' });
+    const arts = await mkSource().list();
+    const cube = arts.find((a) => a.name === 'cube');
+    const flat = arts.find((a) => a.name === 'flat');
+    expect(cube.sceneId).toMatch(/^work:/);
+    expect(seen).toEqual([[cube.sceneId, 'cube']]);
+    expect(flat.sceneId).toBeUndefined(); // not a 3D work: its document is never read for a scene
+    const recent = await mkSource().listRecentFirst();
+    expect(recent.find((a) => a.name === 'cube').sceneId).toBe(cube.sceneId);
+  });
 });
+
