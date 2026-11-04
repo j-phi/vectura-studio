@@ -245,28 +245,37 @@ test.describe('TUX-034a layer card long-press', () => {
   });
 
   test('(b) movement of 11 px cancels; 9 px does not', async ({ page }) => {
+    // The 11 px move lands at 300 ms of APP time (inside the 500 ms hold window) on a frozen page clock: a slow
+    // runner stretching the wall-clock sleep past the fire timer let the hold fire before the move (nightly).
+    await clock.install(page);
     const id = await setup(page);
     const p = await holdPoint(page, id);
-    await startHold(page, p);
-    await sleep(300);
-    await touch.touchPhase(page, 'move', [{ x: p.x + 11, y: p.y, id: 0 }]);
-    await sleep(60);
-    await endAt(page, { x: p.x + 11, y: p.y });
-    await sleep(700);
-    expect((await menuState(page)).open, 'no menu after 11 px move').toBe(false);
-    expect(await page.locator('[data-touch-hold-progress]').count()).toBe(0);
-    expect((await events(page, 'touchhold:cancel')).length).toBeGreaterThan(0);
-    expect((await events(page, 'touchhold:fire')).length).toBe(0);
+    await clock.frozen(page, async () => {
+      await startHold(page, p);
+      await clock.advance(page, 300);
+      await touch.touchPhase(page, 'move', [{ x: p.x + 11, y: p.y, id: 0 }]);
+      await clock.advance(page, 60);
+      await endAt(page, { x: p.x + 11, y: p.y });
+      await clock.advance(page, 700);
+      expect((await menuState(page)).open, 'no menu after 11 px move').toBe(false);
+      expect(await page.locator('[data-touch-hold-progress]').count()).toBe(0);
+      expect((await events(page, 'touchhold:cancel')).length).toBeGreaterThan(0);
+      expect((await events(page, 'touchhold:fire')).length).toBe(0);
+    });
   });
 
   test('(b2) 9 px of movement still opens the menu', async ({ page }) => {
+    await clock.install(page);
     const id = await setup(page);
     const p = await holdPoint(page, id);
-    await startHold(page, p);
-    await touch.touchPhase(page, 'move', [{ x: p.x + 5, y: p.y + 4, id: 0 }]);
-    await waitFire(page);
-    expect((await menuState(page)).open).toBe(true);
-    await endAt(page, { x: p.x + 5, y: p.y + 4 });
+    await clock.frozen(page, async () => {
+      await startHold(page, p);
+      await touch.touchPhase(page, 'move', [{ x: p.x + 5, y: p.y + 4, id: 0 }]);
+      await clock.advance(page, (await clock.holdMsOf(page)) + 100);
+      expect((await events(page, 'touchhold:fire')).length, 'hold fired').toBe(1);
+      expect((await menuState(page)).open).toBe(true);
+      await endAt(page, { x: p.x + 5, y: p.y + 4 });
+    });
   });
 });
 

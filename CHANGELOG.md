@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Flaky WebKit touch hold tests
+- The touch tooltip and layer context-menu hold tests now run on a frozen page clock, so a slow hosted WebKit runner can no longer lift the finger before the 500 ms hold fires (or stretch a short move past it). This fixes intermittent nightly failures on WebKit iPhone and iPad; the app itself is unchanged.
+
 ### Added: 3D Scenes rotate on the Start Page
 - **3D Scene pieces are live on the Start Page.** A 3D Scene on a plate or the cover band (your saved scenes, and the Studio Shadows pick) is now drawn live in 3D like the torus, coiled sphere, terrain and icosahedron: drag (or use the arrow keys) to rotate it, and it rocks gently back and forth when left alone. It starts from the scene's own camera and is drawn with contours, crease edges and its silhouette, hidden lines removed, with a ring for the ground. Still motion and reduced motion turn the rocking off.
 
