@@ -3,9 +3,9 @@
  *   -> {setModel, setColorway, destroy, model, info, matrix, plotted}
  * Port of the reference mockup's orbit3d.js. Models are chosen by Vectura algorithm type via modelFor(type, presetId):
  *   topoform -> torus, spiralizer -> coiled-sphere, terrain -> terrain (terrain-alpine when the preset id says alpine),
- *   polyhedron -> icosahedron, scene3d / object3d -> 'scene:<presetId>' (a live model of that preset's own objects and
- *   camera, see sceneModel) or 'scene:<key>' for a scene registered with registerScene(key, sceneFromDoc(payload), name)
- *   (a saved work's own scene), anything else -> null (no live model).
+ *   polyhedron -> icosahedron, scene3d / object3d -> 'scene:<presetId>', or 'scene:<key>' for a scene registered with
+ *   registerScene(key, sceneFromDoc(payload), name) (a saved work's own scene), anything else -> null (no live model).
+ *   A 'scene:' id is drawn by StartPageSceneOrbit (real renders), never by mount() here.
  * The models are drawn live in the manner of the piece, not the exports; labels say so.
  * Motion: Still (StartPageInk.isStill / the vectura:start-page-motion event) or prefers-reduced-motion means no plot-in,
  * no sway and no inertia. `colorway` is { paper, ink, ink2? } or a () => that object; recolor live with setColorway.
@@ -108,14 +108,12 @@
     return { title: o.title, algo: 'Terrain', note: NY + ' ridgelines · hidden lines removed', file: o.file, rad: 1.45, home: mul(rx(-1.18), rz(-.08)), polys, mesh: { verts, tris: Uint32Array.from(tris) }, kind: 'zbuf', eps: .03, rx: 1.5, ry: .9 };
   }
 
-  /* ---------- 3D Scene presets: the scene's own objects, live, hidden lines removed ----------
-   * Built from the preset's objects (Scene3D.Scene meshes + object transforms) and posed by the scene's camera, so a
-   * 3D Scene piece rotates on drag and sways like the other models. Drawn as horizontal contours + crease edges, with the
-   * silhouette found per frame; the ground is a ring. Needs Vectura.Scene3D.Scene (loaded with the app); without it, or
-   * for a scene with no drawable objects, there is no live model (null) and the piece keeps its drawing. */
+  /* ---------- 3D Scene pieces: recognised here, drawn elsewhere ----------
+   * A 3D Scene (a scene3d / object3d preset, or a saved work's scene registered with registerScene) gets the model id
+   * 'scene:<key>' so the Start Page knows the piece turns, but this module does NOT draw it: StartPageSceneOrbit turns
+   * the piece's own drawing with real renders from the app's scene pipeline, so its fills and shadow shapes match the app.
+   * mount() returns null for a scene id. */
   const SCENE_TYPES = { scene3d: 1, object3d: 1 };
-  const D2R = Math.PI / 180;
-  const fin = (x, d) => { const n = Number(x); return Number.isFinite(n) ? n : d; };
   const presetById = id => { try { return (Vectura.PRESETS || []).find(p => p && p.id === id) || null; } catch (e) { return null; } };
   const sceneOf = preset => {
     const P = preset && preset.params; if (!P) return null;
@@ -147,68 +145,24 @@
     if (!scene) scene = Object.assign({}, gp, { objects: (gp.objects || []).concat(collected.filter(c => c.kind === 'object').map(c => c.params)), ground: { enabled: collected.some(c => c.kind === 'ground') } });
     return Array.isArray(scene.objects) && scene.objects.length ? scene : null;
   }
+  /* a scene worth turning: one with at least one object */
   function sceneModel(id) {
-    const S3 = Vectura.Scene3D && Vectura.Scene3D.Scene, reg = SCENES[id] || null, preset = reg ? null : presetById(id), scene = reg ? reg.scene : sceneOf(preset);
-    if (!S3 || typeof S3.buildPrimitiveMesh !== 'function' || typeof S3.applyObjectTransform !== 'function' || !scene) return null;
-    const V = [], faces = []; /* faces: {i:[...], n:[x,y,z], c:[x,y,z]} in world space */
-    (scene.objects || []).forEach(o => {
-      if (!o || o.role === 'hole' || o.hidden === true || o.visible === false) return;
-      let mesh = null; try { mesh = S3.buildPrimitiveMesh(o); } catch (e) { mesh = null; }
-      if (!mesh || !Array.isArray(mesh.vertices) || !Array.isArray(mesh.faces)) return;
-      const base = V.length, t = o.transform || {};
-      mesh.vertices.forEach(q => { const w = S3.applyObjectTransform(q, t); V.push([fin(w.x, 0), fin(w.y, 0), fin(w.z, 0)]); });
-      mesh.faces.forEach(f => { if (!Array.isArray(f) || f.length < 3) return; const i = f.map(k => k + base);
-        let nx = 0, ny = 0, nz = 0, cx = 0, cy = 0, cz = 0; /* Newell normal + centroid */
-        for (let k = 0; k < i.length; k++) { const a = V[i[k]], b = V[i[(k + 1) % i.length]]; nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1]); cx += a[0]; cy += a[1]; cz += a[2]; }
-        const l = Math.hypot(nx, ny, nz); if (!(l > 1e-12)) return;
-        faces.push({ i, n: [nx / l, ny / l, nz / l], c: [cx / i.length, cy / i.length, cz / i.length] }); });
-    });
-    if (!faces.length) return null;
-    /* fit: centre on the objects, scale the bounding sphere (ground ring included) to the model radius */
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    V.forEach(q => { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); z0 = Math.min(z0, q[2]); z1 = Math.max(z1, q[2]); });
-    const ox = (x0 + x1) / 2, oz = (z0 + z1) / 2, ground = !(scene.ground && scene.ground.enabled === false), gy = Math.min(0, y0);
-    let hr = 0; V.forEach(q => { hr = Math.max(hr, Math.hypot(q[0] - ox, q[2] - oz)); });
-    const ringR = hr * 1.18, oy = ground ? (gy + y1) / 2 : (y0 + y1) / 2;
-    let fr = 0; V.forEach(q => { fr = Math.max(fr, Math.hypot(q[0] - ox, q[1] - oy, q[2] - oz)); });
-    if (ground) fr = Math.max(fr, Math.hypot(ringR, gy - oy));
-    const RAD = 1.3, k = RAD / (fr || 1), P = q => [(q[0] - ox) * k, (q[1] - oy) * k, (q[2] - oz) * k];
-    const Vm = V.map(P), verts = new Float32Array(Vm.length * 3), tris = [];
-    Vm.forEach((q, j) => verts.set(q, j * 3));
-    faces.forEach(f => { f.c = P(f.c); for (let j = 1; j < f.i.length - 1; j++) tris.push(f.i[0], f.i[j], f.i[j + 1]); });
-    const polys = [];
-    /* contours: horizontal slices through every triangle */
-    const N = 30, ylo = (y0 - oy) * k, yhi = (y1 - oy) * k, step = (yhi - ylo) / N;
-    for (let t = 0; t < tris.length && step > 0; t += 3) {
-      const A = Vm[tris[t]], B = Vm[tris[t + 1]], C = Vm[tris[t + 2]], lo = Math.min(A[1], B[1], C[1]), hi = Math.max(A[1], B[1], C[1]);
-      for (let n = Math.ceil((lo - ylo) / step - .5); n < N; n++) { const c = ylo + (n + .5) * step; if (c > hi) break; if (c < lo) continue; const hit = [];
-        [[A, B], [B, C], [C, A]].forEach(([a, b]) => { if ((a[1] - c) * (b[1] - c) < 0) { const f = (c - a[1]) / (b[1] - a[1]); hit.push(a[0] + (b[0] - a[0]) * f, c, a[2] + (b[2] - a[2]) * f); } });
-        if (hit.length === 6) polys.push(hit); }
-    }
-    /* edges: creases and open boundaries are fixed lines; smooth edges are kept for the per-frame silhouette */
-    const E = new Map(); faces.forEach((f, fi) => f.i.forEach((a, j) => { const b = f.i[(j + 1) % f.i.length], key = a < b ? a + ',' + b : b + ',' + a; const e = E.get(key); if (e) e.f.push(fi); else E.set(key, { a, b, f: [fi] }); }));
-    const CREASE = Math.cos(32 * D2R), sil = [];
-    E.forEach(e => { if (e.f.length !== 2 || dot(faces[e.f[0]].n, faces[e.f[1]].n) < CREASE) polys.push([...Vm[e.a], ...Vm[e.b]]); else sil.push(e.a, e.b, e.f[0], e.f[1]); });
-    if (ground) { const q = [], gyM = (gy - oy) * k, R = ringR * k; for (let j = 0; j <= 160; j++) { const a = j / 160 * T; q.push(R * Math.cos(a), gyM, R * Math.sin(a)); } polys.push(q); }
-    const fn = new Float32Array(faces.length * 6); faces.forEach((f, j) => { fn.set(f.n, j * 6); fn.set(f.c, j * 6 + 3); });
-    const cam = scene.camera || {};
-    const home = mul(rz(fin(cam.roll, 0) * D2R), mul(rx(fin(cam.pitch, 22) * D2R), ry(fin(cam.yaw, -32) * D2R)));
-    const name = (reg ? reg.name : preset && preset.name) || 'Scene';
-    return { title: name, algo: 'Scene 3D', note: faces.length > 0 ? (scene.objects || []).length + ' objects · hidden lines removed' : '', file: null, rad: RAD, home, polys,
-      mesh: { verts, tris: Uint32Array.from(tris) }, sil: { edges: Uint32Array.from(sil), faces: fn, verts }, kind: 'zbuf', eps: .035, fill: .9 };
+    const reg = SCENES[id] || null, scene = reg ? reg.scene : sceneOf(presetById(id));
+    return !!(scene && Array.isArray(scene.objects) && scene.objects.some(o => o && typeof o === 'object'));
   }
   const CACHE = {};
   const ALIAS = { sphere: 'coiled-sphere', spiralizer: 'coiled-sphere', topoform: 'torus', polyhedron: 'icosahedron', 'high-sierra': 'terrain', alpine: 'terrain-alpine' };
   const SCENE = /^scene:/;
-  /* a 'scene:<presetId>' name is kept only while it builds; anything unknown falls back to the torus */
-  const sceneOK = m => { if (!(m in CACHE)) CACHE[m] = sceneModel(m.slice(6)); return !!CACHE[m]; };
+  /* a 'scene:<key>' id is a live 3D Scene only while its scene has an object */
+  const SCENE_OK = {};
+  const sceneOK = m => { if (!(m in SCENE_OK)) SCENE_OK[m] = sceneModel(m.slice(6)); return !!SCENE_OK[m]; };
   /* register (or refresh) a scene under `key`; modelFor(type, key) then gives 'scene:<key>'. Returns that id, or null */
   const registerScene = (key, scene, name) => {
     key = String(key || ''); if (!key || !scene || typeof scene !== 'object') return null;
-    SCENES[key] = { scene, name: name || 'Scene' }; delete CACHE['scene:' + key];
+    SCENES[key] = { scene, name: name || 'Scene' }; delete SCENE_OK['scene:' + key];
     return sceneOK('scene:' + key) ? 'scene:' + key : null;
   };
-  const norm = m => { const raw = String(m || 'torus'); if (SCENE.test(raw)) return sceneOK(raw) ? raw : 'torus'; m = raw.toLowerCase(); m = ALIAS[m] || m; return BUILD[m] ? m : 'torus'; };
+  const norm = m => { m = String(m || 'torus').toLowerCase(); m = ALIAS[m] || m; return BUILD[m] ? m : 'torus'; };
   const model = m => (CACHE[m = norm(m)] || (CACHE[m] = BUILD[m]()));
   const MAP = { topoform: 'torus', spiralizer: 'coiled-sphere', terrain: 'terrain', polyhedron: 'icosahedron' };
   const ALPINE = /alpine/i;
@@ -237,6 +191,7 @@
   function mount(el, opts) {
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return null; if (el._vorbit) el._vorbit.destroy();
+    if (opts && SCENE.test(String(opts.model || ''))) return null; /* a 3D Scene turns through StartPageSceneOrbit, not here */
     opts = Object.assign({ model: null, type: null, presetId: null, colorway: null, hint: true, duration: 1700, paper: true, disc: false }, opts || {});
     css(); el.classList.add('vorbit');
     if (opts.disc) el.style.borderRadius = '50%'; /* Plate 4: a slightly lighter disc; deliberately no ring, border or outline */
@@ -330,18 +285,6 @@
           if (va && vb) { push(a[0], a[1], b[0], b[1], bucket((a[2] + b[2]) / 2), joined); joined = 1; jb = 0; }
           else { joined = 0; if (dash && !va && !vb) { push(a[0], a[1], b[0], b[1], NB, jb); jb = 1; } else jb = 0; }
           a[0] = b[0]; a[1] = b[1]; a[2] = b[2]; va = vb; } });
-      if (m.sil) silhouette(m.sil, Md, proj, vis, bucket, a, b);
-    }
-    /* the outline of a smooth surface: an edge between a face turned toward the eye and one turned away */
-    function silhouette(sl, Md, proj, vis, bucket, a, b) {
-      const E = sl.edges, F = sl.faces, Vv = sl.verts;
-      const front = f => { const o = f * 6, nx = F[o], ny = F[o + 1], nz = F[o + 2], cx = F[o + 3], cy = F[o + 4], cz = F[o + 5];
-        const X = Md[0] * nx + Md[1] * ny + Md[2] * nz, Y = Md[3] * nx + Md[4] * ny + Md[5] * nz, Z = Md[6] * nx + Md[7] * ny + Md[8] * nz;
-        const px = Md[0] * cx + Md[1] * cy + Md[2] * cz, py = Md[3] * cx + Md[4] * cy + Md[5] * cz, pz = Md[6] * cx + Md[7] * cy + Md[8] * cz;
-        return -X * px - Y * py + Z * (CAM - pz) > 0; };
-      for (let i = 0; i < E.length; i += 4) { if (front(E[i + 2]) === front(E[i + 3])) continue;
-        const p = E[i] * 3, q = E[i + 1] * 3; proj(Vv[p], Vv[p + 1], Vv[p + 2], a); proj(Vv[q], Vv[q + 1], Vv[q + 2], b);
-        if (vis(a[0], a[1], a[2]) && vis(b[0], b[1], b[2])) push(a[0], a[1], b[0], b[1], bucket((a[2] + b[2]) / 2), 0); }
     }
     function render(now) {
       lastR = now;
@@ -428,5 +371,5 @@
     el._vorbit = handle; return handle;
   }
 
-  Vectura.StartPageOrbit3D = { mount, modelFor, registerScene, sceneFromDoc, MAP, models: Object.keys(BUILD), isStill, info: m => { const x = model(m); return { title: x.title, algo: x.algo, note: x.note, file: x.file }; } };
+  Vectura.StartPageOrbit3D = { mount, modelFor, registerScene, sceneFromDoc, isScene: m => SCENE.test(String(m || '')), MAP, models: Object.keys(BUILD), isStill, info: m => { const x = model(m); return { title: x.title, algo: x.algo, note: x.note, file: x.file }; } };
 })(window, document);

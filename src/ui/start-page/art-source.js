@@ -26,8 +26,10 @@
  * version equals RENDER_VERSION; a mismatch, a failed fetch (file://, offline) or a non-SVG body falls back to the
  * live render, so an edited preset never shows stale art.
  * Entries from another RENDER_VERSION are pruned on first open. Without IndexedDB the cache lives in memory.
- * A 3D Scene work also gets a live, drag-to-rotate model: its stored document's scene is registered with
- * StartPageOrbit3D (registerScene / sceneFromDoc) under `work:<id>`, and the art carries that key as `sceneId`.
+ * A 3D Scene work also turns on the Start Page: its stored document's scene is registered with StartPageOrbit3D
+ * (registerScene / sceneFromDoc) under `work:<id>`, and the art carries that key as `sceneId`. A 3D Scene piece (a work
+ * like that, or a scene3d preset) carries getScenePayload(): the .vectura document StartPageSceneOrbit re-renders with
+ * the camera turned, so every pose is drawn by the app's own scene pipeline.
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -226,6 +228,8 @@
         collection: cfg.collectionFor ? cfg.collectionFor(preset.preset_system) : 'Studies',
         presetId: preset.id,
         ownColors: Object.assign({}, FALLBACK_COLORS),
+        // a scene preset turns on the Start Page by re-rendering this document (the one its drawing came from)
+        ...(preset.preset_system === 'scene3d' ? { getScenePayload: () => getRenderer().presetPayload(preset) } : {}),
         getSvg: async () => {
           const hash = hashOf(preset);
           const rec = await cached(`pick:${preset.id}:${hash}`, async () => (await prerenderedPick(preset, hash)) || getRenderer().renderPreset(preset));
@@ -280,7 +284,7 @@
           const doc = await store.getDoc(entry.id);
           const scene = doc ? O.sceneFromDoc(doc) : null;
           const key = `work:${entry.id}`;
-          if (scene && O.registerScene(key, scene, arts[i].name)) arts[i].sceneId = key;
+          if (scene && O.registerScene(key, scene, arts[i].name)) { arts[i].sceneId = key; arts[i].getScenePayload = () => store.getDoc(entry.id); }
         } catch (_e) { /* no live model: the piece keeps its drawing */ }
       }));
       return arts;

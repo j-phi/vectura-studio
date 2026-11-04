@@ -111,6 +111,47 @@ describe('StartPageInk.mount', () => {
     window.visualViewport = undefined;
   });
 
+  test('showArt swaps in another drawing of the same piece in the HOME window and look; showArt(null) restores its own', async () => {
+    // A turning 3D Scene (StartPageSceneOrbit) shows other camera poses this way: drawn like the tile's own art
+    // (same sanitizer and colorway), never reframed or re-weighted by the alternate's own bounds.
+    const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 300, 200);
+    const own = fixture('lissajous-trefoil.svg');
+    const h = await Ink.mount(el, { id: 'tre', svg: own }, { colorway, fit: 'cover' });
+    const vb0 = el.querySelector('svg').getAttribute('viewBox');
+    const lw0 = el.style.getPropertyValue('--sp-lw');
+    const ownNode = el.querySelector('svg');
+    const alt = { id: 'tre@-30,20', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g stroke="#000" fill="none"><path d="M 1 1 L 2 9" onclick="x()"/><script>bad()</script></g></svg>' };
+    expect(await h.prepareArt(alt)).toBe(true);
+    expect(el.querySelector('svg')).toBe(ownNode); // preparing never shows
+    expect(await h.showArt(alt)).toBe(true);
+    const shown = el.querySelectorAll('svg');
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).not.toBe(ownNode);
+    expect(shown[0].querySelector('path').getAttribute('d')).toBe('M 1 1 L 2 9');
+    expect(shown[0].getAttribute('viewBox')).toBe(vb0); // the home window, not the alternate's 0 0 10 10
+    expect(el.style.getPropertyValue('--sp-lw')).toBe(lw0);
+    expect(shown[0].getAttribute('class')).toBe('sp-ink-svg'); // drawn by the same rules as the tile's own art
+    expect(el.innerHTML).not.toMatch(/onclick|<script/); // through the same sanitizer
+    expect(h.shownArt().id).toBe('tre@-30,20');
+    expect(await h.showArt(null)).toBe(true);
+    expect(el.querySelector('svg')).toBe(ownNode);
+    expect(h.shownArt().id).toBe('tre');
+  });
+
+  test('showArt on a raster tile re-rasters the alternate in the home window', async () => {
+    window.devicePixelRatio = 1;
+    const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 200, 100);
+    const h = await Ink.mount(el, { id: 'bigA', svg: bigSvg() }, { colorway, pad: 0 });
+    expect(h.mode).toBe('canvas');
+    const win0 = h.win.slice();
+    const alt = { id: 'bigA@1', svg: bigSvg().replace('viewBox="0 0 100 100"', 'viewBox="0 0 50 50"') };
+    expect(await h.showArt(alt)).toBe(true);
+    expect(h.shownArt().id).toBe('bigA@1');
+    expect(h.win).toEqual(win0);
+    expect(el.querySelectorAll('canvas.sp-ink-canvas')).toHaveLength(1);
+    expect(el.querySelector('svg')).toBeNull();
+  });
+
   test('unmount removes everything it added', async () => {
     const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 100, 100);
     await Ink.mount(el, { id: 'tre', svg: fixture('lissajous-trefoil.svg') }, { colorway });

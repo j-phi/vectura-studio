@@ -18602,6 +18602,18 @@ button.sp-cm-card { cursor: pointer; }
 
 /* live 3D models (StartPageOrbit3D) on the Portfolio band and on plates */
 .sp-pf .sp-pf-3d { position: absolute; inset: 0 0 0 24%; z-index: 0; }
+/* ===== Start Page — a turning 3D Scene (src/ui/start-page/scene-orbit.js) =====
+   The drawing under it is the tile's own (StartPageInk); this is only the surface you drag. */
+.sp-scene-orbit { position: absolute; inset: 0; z-index: 0; cursor: grab; touch-action: none; border-radius: inherit; -webkit-tap-highlight-color: transparent; }
+.sp-scene-orbit.is-drag { cursor: grabbing; }
+.sp-scene-orbit:focus-visible { outline: 2px solid var(--sp-ink, currentColor); outline-offset: -3px; }
+.sp-scene-orbit.is-drag:focus-visible,
+.sp-scene-orbit[data-pointer]:focus-visible { outline: none; }
+.sp-pf > .sp-scene-orbit { inset: 0 0 0 24%; }
+.sp-scene-hint { position: absolute; right: 10px; bottom: 8px; font: 400 10px/1 var(--font-mono, "JetBrains Mono", ui-monospace, monospace); letter-spacing: .04em; color: var(--sp-ink, currentColor); opacity: .5; pointer-events: none; user-select: none; }
+.sp-scene-orbit:hover .sp-scene-hint { opacity: .72; }
+/* the cover band's caption owns the bottom-right corner */
+.sp-pf > .sp-scene-orbit .sp-scene-hint { top: 10px; bottom: auto; }
 .sp-pf[data-live="3d"] .sp-pf-in { pointer-events: none; }
 .sp-pf[data-live="3d"] .sp-pf-in :is(button, input, a) { pointer-events: auto; }
 .spl-print[data-3d].vorbit { box-shadow: none; outline: none; border: 0; }
