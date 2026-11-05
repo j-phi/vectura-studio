@@ -1,14 +1,18 @@
 const { test, expect } = require('@playwright/test');
-const { tap, longPress, touchPhase, engineSupports } = require('../helpers/touch');
+const { tap, touchPhase, engineSupports } = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-039: a 500 ms touch hold on an icon-only button shows its name; the lift does not
 // activate it; a quick tap still does. Mouse pointers never tip.
+// Every hold runs on a frozen page clock (helpers/app-clock.js): the 500 ms fire, the 150 ms ring and the 1.5 s
+// tooltip hide are app time, so a slow hosted runner cannot lift the finger before the fire timer (nightly flake).
 // Hand is the plain target. On phones Hand lives in the All Tools drawer (no rail button),
 // so the spec falls back to Direct Selection, which is also a plain rail button.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const setup = async (page) => {
+  await clock.install(page);
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
   await page.evaluate(() => window.app.ui.setActiveTool('select'));
@@ -76,21 +80,18 @@ const compatClick = async (page, sel) => {
   await page.evaluate((s) => document.querySelector(s).click(), sel);
 };
 
-// Holds a touch on the button for 600 ms, samples whether a sub-menu is open while the
-// finger is still down, then lifts. Returns { openDuringHold }.
+// Holds a touch on the button for the hold time on a frozen page clock, samples whether a sub-menu is open while
+// the finger is still down, then lifts. Returns { openDuringHold }.
 const longPressOpen = async (page, p) => {
-  let openDuringHold = false;
-  await Promise.all([
-    longPress(page, p, 600),
-    (async () => {
-      for (let t = 0; t < 1500 && !openDuringHold; t += 60) {
-        await sleep(60);
-        openDuringHold = await page.evaluate(() => !!document.querySelector('.tool-submenu.open'));
-      }
-    })(),
-  ]);
+  const openDuringHold = await clock.frozen(page, () => clock.frozenLongPress(page, p, {
+    whileDown: () => page.evaluate(() => !!document.querySelector('.tool-submenu.open')),
+    settleMs: 150,
+  }));
   return { openDuringHold };
 };
+
+// A hold on a frozen page clock plus the compat click WebKit lacks, then 100 ms of app time (call inside clock.frozen).
+const holdTip = (page, p, sel, opts = {}) => clock.frozenLongPress(page, p, { afterLift: sel ? () => compatClick(page, sel) : undefined, ...opts });
 
 const paneOpen = (page) => page.evaluate(() => {
   const p = document.getElementById('right-pane');
@@ -123,16 +124,18 @@ test.describe('TUX-039 touch tooltips', () => {
   test('(a) hold on a plain icon button shows its name and does not activate it', async ({ page }) => {
     const t = await plainTarget(page);
     const p = await centre(page, t.sel);
+    await clock.freeze(page);
     await touchPhase(page, 'start', [{ ...p, id: 0 }]);
-    await sleep(250);
+    await clock.advance(page, 250);
     expect(await page.locator('[data-touch-hold-progress]').first().isVisible(), 'progress ring at 250 ms').toBe(true);
-    await sleep(350);
+    await clock.advance(page, 350);
     const during = await tipFor(page, t.sel);
     expect(during, 'tooltip (by aria-describedby) while the finger is down at 600 ms').not.toBeNull();
     await touchPhase(page, 'end', [{ ...p, id: 0 }]);
     await compatClick(page, t.sel);
-    await sleep(80);
+    await clock.advance(page, 80);
     const after = await tipFor(page, t.sel);
+    await clock.thaw(page);
     expect(after, 'tooltip still visible after the lift').not.toBeNull();
     expect(after.text).toContain(t.word);
     expect(after.text, 'shortcut suffix is stripped').not.toMatch(/\([^)]*\)\s*$/);
@@ -150,24 +153,23 @@ test.describe('TUX-039 touch tooltips', () => {
 
   test('(b) tooltip hides after 1.5 s and on the next touch', async ({ page }) => {
     const t = await plainTarget(page);
-    await longPress(page, await centre(page, t.sel), 600);
-    await compatClick(page, t.sel);
-    await sleep(100);
-    expect(await tipFor(page, t.sel)).not.toBeNull();
-    await sleep(1700);
-    expect(await tipFor(page, t.sel), 'hidden 1.7 s after the lift').toBeNull();
-
-    await longPress(page, await centre(page, t.sel), 600);
-    await compatClick(page, t.sel);
-    await sleep(100);
-    expect(await tipFor(page, t.sel)).not.toBeNull();
+    const p = await centre(page, t.sel);
     const empty = await page.evaluate(() => {
       const r = document.getElementById('main-canvas').getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     });
-    await tap(page, empty);
-    await sleep(120);
-    expect(await anyTip(page), 'a tap elsewhere hides the tooltip at once').toBe(0);
+    await clock.frozen(page, async () => {
+      await holdTip(page, p, t.sel);
+      expect(await tipFor(page, t.sel)).not.toBeNull();
+      await clock.advance(page, 1700);
+      expect(await tipFor(page, t.sel), 'hidden 1.7 s after the lift').toBeNull();
+
+      await holdTip(page, p, t.sel);
+      expect(await tipFor(page, t.sel)).not.toBeNull();
+      await tap(page, empty);
+      await clock.advance(page, 120);
+      expect(await anyTip(page), 'a tap elsewhere hides the tooltip at once').toBe(0);
+    });
   });
 
   test('(c) a quick tap still activates and shows no tooltip', async ({ page }) => {
@@ -181,13 +183,15 @@ test.describe('TUX-039 touch tooltips', () => {
   test('(d) moving past the slop cancels the hold', async ({ page }) => {
     const t = await plainTarget(page);
     const p = await centre(page, t.sel);
-    await touchPhase(page, 'start', [{ ...p, id: 0 }]);
-    await sleep(200);
-    await touchPhase(page, 'move', [{ x: p.x + 15, y: p.y, id: 0 }]);
-    await sleep(400);
-    await touchPhase(page, 'end', [{ x: p.x + 15, y: p.y, id: 0 }]);
-    await sleep(100);
-    expect(await anyTip(page)).toBe(0);
+    await clock.frozen(page, async () => {
+      await touchPhase(page, 'start', [{ ...p, id: 0 }]);
+      await clock.advance(page, 200);
+      await touchPhase(page, 'move', [{ x: p.x + 15, y: p.y, id: 0 }]);
+      await clock.advance(page, 400);
+      await touchPhase(page, 'end', [{ x: p.x + 15, y: p.y, id: 0 }]);
+      await clock.advance(page, 100);
+      expect(await anyTip(page)).toBe(0);
+    });
   });
 
   test('(e) variant tool keeps its own hold menu and no tooltip (regression guard)', async ({ page }) => {
@@ -195,19 +199,21 @@ test.describe('TUX-039 touch tooltips', () => {
     expect(v, 'a reachable variant tool button').toBeTruthy();
     const sel = v.sel;
     const p = await centre(page, sel);
+    await clock.freeze(page);
     await touchPhase(page, 'start', [{ ...p, id: 0 }]);
-    await sleep(600);
+    await clock.advance(page, 600);
     const open = await page.evaluate(() => [...document.querySelectorAll('.tool-submenu.open')]
       .some((m) => /subtools/.test(m.getAttribute('aria-label') || '') && m.getBoundingClientRect().width > 0));
     expect(open, `${v.tool} variant menu visible during the hold`).toBe(true);
     expect(await anyTip(page), 'no touch tooltip on a variant tool').toBe(0);
     await touchPhase(page, 'end', [{ ...p, id: 0 }]);
     // TUX-014 requirement 2: release in place leaves the sub-menu open, and the hold does not activate the tool.
-    await sleep(150);
+    await clock.advance(page, 150);
     const after = await page.evaluate(() => ({
       open: [...document.querySelectorAll('.tool-submenu.open')].some((m) => m.getBoundingClientRect().width > 0),
       active: window.app.ui.activeTool,
     }));
+    await clock.thaw(page);
     expect(after.open, `${v.tool} sub-menu stays open after lift (TUX-014)`).toBe(true);
     expect(after.active, 'a fired hold never activates the tool on lift').toBe('select');
     expect(await anyTip(page), 'still no touch tooltip after lift').toBe(0);
@@ -230,10 +236,11 @@ test.describe('TUX-039 touch tooltips', () => {
       return !!h && (h === e || e.contains(h));
     });
     if (filterVisible) {
-      await longPress(page, await centre(page, '#layer-filter-btn'), 600);
-      await compatClick(page, '#layer-filter-btn');
-      await sleep(100);
-      const tip = await tipFor(page, '#layer-filter-btn');
+      const fp = await centre(page, '#layer-filter-btn');
+      const tip = await clock.frozen(page, async () => {
+        await holdTip(page, fp, '#layer-filter-btn');
+        return tipFor(page, '#layer-filter-btn');
+      });
       const dbg = await page.evaluate(() => {
         const e = document.getElementById('layer-filter-btn');
         const r = e.getBoundingClientRect();
@@ -244,26 +251,28 @@ test.describe('TUX-039 touch tooltips', () => {
       expect(tip.text).toContain('Filter by type');
       expect(await page.locator('#layer-filter-menu').isHidden()).toBe(true);
       expect(await page.evaluate(() => [...document.querySelectorAll('.menu-dropdown')].filter((m) => m.classList.contains('open')).length), 'filter dropdown closed').toBe(0);
-      await sleep(1700);
+      await clock.frozen(page, () => clock.advance(page, 1700));
     }
 
     const cardBtn = '.lvl-card button[aria-label]';
     expect(await page.locator(cardBtn).count()).toBeGreaterThan(0);
     const first = page.locator(cardBtn).first();
     await first.evaluate((e) => e.setAttribute('data-test-hold', '1'));
-    await longPress(page, await centre(page, '[data-test-hold="1"]'), 600);
-    await compatClick(page, '[data-test-hold="1"]');
-    await sleep(100);
-    const dbg2 = await page.evaluate(() => {
-      const e = document.querySelector('[data-test-hold="1"]');
-      const r = e.getBoundingClientRect();
-      const h = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-      return `rect ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)} hit=${h && (h.id || h.className)} label=${e.getAttribute('aria-label')}`;
+    const hp = await centre(page, '[data-test-hold="1"]');
+    // The tip hides 1.5 s after the lift: sample it inside the same frozen span as the hold.
+    await clock.frozen(page, async () => {
+      await holdTip(page, hp, '[data-test-hold="1"]');
+      const dbg2 = await page.evaluate(() => {
+        const e = document.querySelector('[data-test-hold="1"]');
+        const r = e.getBoundingClientRect();
+        const h = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return `rect ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)} hit=${h && (h.id || h.className)} label=${e.getAttribute('aria-label')}`;
+      });
+      expect(await tipFor(page, '[data-test-hold="1"]'), `tooltip on a layer-card icon button (${dbg2})`).not.toBeNull();
+      const surfaces = await page.evaluate(() => [...document.querySelectorAll('.menu-dropdown')]
+        .filter((m) => m.classList.contains('open') || getComputedStyle(m).visibility !== 'hidden' && m.getBoundingClientRect().width > 0).length);
+      expect(surfaces, 'no layer context menu beside the tooltip').toBe(0);
     });
-    expect(await tipFor(page, '[data-test-hold="1"]'), `tooltip on a layer-card icon button (${dbg2})`).not.toBeNull();
-    const surfaces = await page.evaluate(() => [...document.querySelectorAll('.menu-dropdown')]
-      .filter((m) => m.classList.contains('open') || getComputedStyle(m).visibility !== 'hidden' && m.getBoundingClientRect().width > 0).length);
-    expect(surfaces, 'no layer context menu beside the tooltip').toBe(0);
     expect(await hist(), 'undo history unchanged').toBe(h0);
   });
 
@@ -330,20 +339,20 @@ test.describe('TUX-039 touch tooltips', () => {
       return { x: r.x + r.width / 2, y: r.y + r.height / 2, top: !!h && (h === c || c.contains(h)) };
     });
     expect(cc.top, 'pen chip is the top element at its centre').toBe(true);
-    await longPress(page, { x: cc.x, y: cc.y }, 600);
-    await compatClick(page, '[data-test-chip="1"]');
-    await sleep(100);
-    const tip = await tipFor(page, '[data-test-chip="1"]');
-    expect(tip, 'hold on .pen-chip shows a tooltip').not.toBeNull();
-    expect(tip.text, 'pen chip tip has touch wording').not.toMatch(/click/i);
-    expect(tip.text.length, 'pen chip tip is short').toBeLessThanOrEqual(40);
-    const picker = await page.evaluate(() => {
-      const pop = document.querySelector('.pen-pick-pop');
-      if (!pop) return false;
-      const r = pop.getBoundingClientRect();
-      return getComputedStyle(pop).visibility !== 'hidden' && !pop.classList.contains('hidden') && r.width > 0;
+    await clock.frozen(page, async () => {
+      await holdTip(page, { x: cc.x, y: cc.y }, '[data-test-chip="1"]');
+      const tip = await tipFor(page, '[data-test-chip="1"]');
+      expect(tip, 'hold on .pen-chip shows a tooltip').not.toBeNull();
+      expect(tip.text, 'pen chip tip has touch wording').not.toMatch(/click/i);
+      expect(tip.text.length, 'pen chip tip is short').toBeLessThanOrEqual(40);
+      const picker = await page.evaluate(() => {
+        const pop = document.querySelector('.pen-pick-pop');
+        if (!pop) return false;
+        const r = pop.getBoundingClientRect();
+        return getComputedStyle(pop).visibility !== 'hidden' && !pop.classList.contains('hidden') && r.width > 0;
+      });
+      expect(picker, 'pen picker stays closed after the hold').toBe(false);
     });
-    expect(picker, 'pen picker stays closed after the hold').toBe(false);
   });
 
   test('(i) hold on a layer eye button names it and does not toggle visibility', async ({ page }) => {
@@ -357,10 +366,11 @@ test.describe('TUX-039 touch tooltips', () => {
       return window.app.engine.layers.find((l) => l.visible && !l.isGroup)?.id;
     });
     expect(id, 'a visible layer row with a Hide button (aria-label)').not.toBeNull();
-    await longPress(page, await centre(page, '[data-test-hold="1"]'), 600);
-    await compatClick(page, '[data-test-hold="1"]');
-    await sleep(100);
-    const tip = await tipFor(page, '[data-test-hold="1"]');
+    const eye = await centre(page, '[data-test-hold="1"]');
+    const tip = await clock.frozen(page, async () => {
+      await holdTip(page, eye, '[data-test-hold="1"]');
+      return tipFor(page, '[data-test-hold="1"]');
+    });
     expect(tip, 'tooltip on the eye button').not.toBeNull();
     expect(tip.text).toContain('Hide');
     expect(await page.evaluate((i) => window.app.engine.layers.find((l) => l.id === i).visible, id), 'layer.visible unchanged').toBe(true);
@@ -380,31 +390,33 @@ test.describe('TUX-039 touch tooltips', () => {
     }, sel);
     expect(info && info.shown, 'modifier bar is visible').toBe(true);
     expect(info.textShown, 'a text label (full or short) is visible in every layout').toBe(true);
-    await longPress(page, await centre(page, sel), 600);
-    await sleep(100);
-    expect(await tipFor(page, sel), 'visible text label: no tooltip').toBeNull();
+    const mod = await centre(page, sel);
+    await clock.frozen(page, async () => {
+      await holdTip(page, mod);
+      expect(await tipFor(page, sel), 'visible text label: no tooltip').toBeNull();
+    });
   });
 
   test('(h) desktop parity: a mouse hold never tips and the swallow does not eat mouse clicks', async ({ page }) => {
     const [t, other] = await plainPair(page);
     const p = await centre(page, t.sel);
     await page.mouse.move(p.x, p.y);
+    await clock.freeze(page);
     await page.mouse.down();
-    await sleep(600);
+    await clock.advance(page, 600);
     await page.mouse.up();
-    await sleep(100);
+    await clock.advance(page, 100);
     expect(await activeTool(page)).toBe(t.tool);
     expect(await anyTip(page)).toBe(0);
 
     await page.evaluate(() => window.app.ui.setActiveTool('select'));
-    await longPress(page, await centre(page, t.sel), 600);
-    await compatClick(page, t.sel);
-    await sleep(100);
+    await holdTip(page, p, t.sel);
     expect(await activeTool(page), `hold did not activate ${t.tool}`).toBe('select');
     const l = await centre(page, other.sel);
     await page.mouse.click(l.x, l.y);
-    await sleep(100);
+    await clock.advance(page, 100);
     expect(await activeTool(page), 'mouse click right after a touch hold is not swallowed').toBe(other.tool);
+    await clock.thaw(page);
   });
 });
 

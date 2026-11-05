@@ -9,6 +9,8 @@
 //   advance(page, ms)  run the page clock forward by ms, firing the timers due in that span.
 //   thaw(page)     let the clock flow with real time again (rAF and render timers resume).
 //   frozenDrag(page, from, to, opts)  touch.drag on a frozen clock, then thaw.
+//   frozen(page, fn)  freeze, run fn, thaw (also when fn throws): fn's sleeps become advance() calls.
+//   frozenLongPress(page, p, opts)  inside frozen(): touchstart, hold holdMs + margin of APP time, touchend.
 
 const install = (page) => page.clock.install();
 
@@ -42,4 +44,33 @@ const frozenDrag = async (page, from, to, opts = {}, settleMs = 60) => {
   }
 };
 
-module.exports = { install, freeze, advance, thaw, frozenDrag };
+// Run fn with the page clock frozen; the clock flows again afterwards, even when fn throws. Inside fn use
+// advance() where a test would sleep, and avoid page.waitForFunction (its rAF polling is a page timer).
+const frozen = async (page, fn) => {
+  await freeze(page);
+  try {
+    return await fn(page);
+  } finally {
+    await thaw(page);
+  }
+};
+
+const holdMsOf = (page) => page.evaluate(() => window.Vectura.TOUCH_HOLD.holdMs);
+
+// A hold on a frozen page clock (call inside frozen()): finger down, holdMs + marginMs of app time, finger up.
+// whileDown() runs with the finger still down after the hold time (sample the fired state there); afterLift() runs
+// right after the lift (e.g. the compat click WebKit's synthetic touch lacks), then settleMs of app time pass.
+// The wall-clock cost of the round trips never counts: a slow runner cannot lift before the fire timer.
+const frozenLongPress = async (page, p, { marginMs = 100, settleMs = 100, whileDown, afterLift } = {}) => {
+  const touch = require('./touch');
+  const holdMs = await holdMsOf(page);
+  await touch.touchPhase(page, 'start', [{ ...p, id: 0 }]);
+  await advance(page, holdMs + marginMs);
+  const down = whileDown ? await whileDown() : undefined;
+  await touch.touchPhase(page, 'end', [{ ...p, id: 0 }]);
+  if (afterLift) await afterLift();
+  if (settleMs) await advance(page, settleMs);
+  return down;
+};
+
+module.exports = { install, freeze, advance, thaw, frozenDrag, frozen, holdMsOf, frozenLongPress };

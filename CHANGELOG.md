@@ -11,6 +11,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **What that costs.** Each new angle is a full render, so a drag steps to the exact angle a few times a second (the nearest angle already drawn shows meanwhile), and the gentle rock widens over its first few seconds as its angles finish rendering. Renders run one at a time, only while the piece is on screen.
 - Scene plates no longer take a hover effect (a hover replay would redraw the home angle over the turned one), and the cover band's "Drag to rotate" hint moved to the top right, clear of the caption.
 
+### Fixed: Flaky WebKit touch hold tests
+- The touch tooltip and layer context-menu hold tests now run on a frozen page clock, so a slow hosted WebKit runner can no longer lift the finger before the 500 ms hold fires (or stretch a short move past it). This fixes intermittent nightly failures on WebKit iPhone and iPad; the app itself is unchanged.
+
 ### Added: 3D Scenes rotate on the Start Page
 - **3D Scene pieces turn on the Start Page.** A 3D Scene on a plate or the cover band (your saved scenes, and the Studio Shadows pick) turns like the torus, coiled sphere, terrain and icosahedron: drag (or use the arrow keys) to rotate it, and it rocks gently back and forth when left alone. It starts from the scene's own camera. Still motion and reduced motion turn the rocking off.
 
