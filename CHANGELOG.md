@@ -6,11 +6,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: 3D Scenes on the Start Page draw exactly as the app draws them
+- **Fills and shadow shapes match the app.** A 3D Scene on a plate or the cover band no longer turns as a simplified stand-in (contours and edges only). At rest it shows the drawing the app made, with its fills, shadow shapes, ground and line weights, and in the plate's own layout and framing. Rocking and dragging show real renders of the same scene with the camera moved, so every angle is drawn the way the app would draw it.
+- **What that costs.** Each new angle is a full render, so a drag steps to the exact angle a few times a second (the nearest angle already drawn shows meanwhile), and the gentle rock widens over its first few seconds as its angles finish rendering. Renders run one at a time, only while the piece is on screen.
+- Scene plates no longer take a hover effect (a hover replay would redraw the home angle over the turned one), and the cover band's "Drag to rotate" hint moved to the top right, clear of the caption.
+
 ### Fixed: Flaky WebKit touch hold tests
 - The touch tooltip and layer context-menu hold tests now run on a frozen page clock, so a slow hosted WebKit runner can no longer lift the finger before the 500 ms hold fires (or stretch a short move past it). This fixes intermittent nightly failures on WebKit iPhone and iPad; the app itself is unchanged.
 
 ### Added: 3D Scenes rotate on the Start Page
-- **3D Scene pieces are live on the Start Page.** A 3D Scene on a plate or the cover band (your saved scenes, and the Studio Shadows pick) is now drawn live in 3D like the torus, coiled sphere, terrain and icosahedron: drag (or use the arrow keys) to rotate it, and it rocks gently back and forth when left alone. It starts from the scene's own camera and is drawn with contours, crease edges and its silhouette, hidden lines removed, with a ring for the ground. Still motion and reduced motion turn the rocking off.
+- **3D Scene pieces turn on the Start Page.** A 3D Scene on a plate or the cover band (your saved scenes, and the Studio Shadows pick) turns like the torus, coiled sphere, terrain and icosahedron: drag (or use the arrow keys) to rotate it, and it rocks gently back and forth when left alone. It starts from the scene's own camera. Still motion and reduced motion turn the rocking off.
 
 ### Added: Pen Studio
 - **A workshop for pens.** Open it from **Pens ⋯ ▸ Pen Studio…** or the **Open Pen Studio** button at the bottom of the pen picker. Three columns: **pen boxes** (starter boxes, your own, pin / collapse / export / import, add a pen with a model, color and the sizes you own), the **lab** (the selected pen on every paper: nib vs line, bleed, pen-down blob, crossings, skips and starvation, with an all-papers matrix and sliders for Bleed, Pen-down blob, Overlap, Skips, Starvation and Coverage on dark) and the **pair** view (complementary inks that read on the chosen paper, Randomize, and 3 to 7 woven lines).

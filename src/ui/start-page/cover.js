@@ -62,6 +62,7 @@
       tiles.forEach((t) => {
         try { ink && ink.unmount(t.el); } catch (_) { /* noop */ }
         if (t.el._sp3d) { try { t.el._sp3d.destroy(); } catch (_) { /* noop */ } t.el._sp3d = null; }
+        if (t.el._spScene) { try { t.el._spScene.destroy(); } catch (_) { /* noop */ } }
       });
       tiles = [];
       if (hold) [...stage.children].forEach((c) => { if (c !== hold.old) c.remove(); });
@@ -344,7 +345,9 @@
       // A 3D piece is a live, drag-to-rotate model on the right of the band (the same place the drawing sits).
       const model = Vectura.StartPageMotion ? Vectura.StartPageMotion.modelFor(art) : null;
       const O3 = Vectura.StartPageOrbit3D;
-      if (model && O3) {
+      // A 3D Scene is not a live model: the band draws its own drawing (as the app draws it) and turns that (below).
+      const scene = !!(model && O3 && typeof O3.isScene === 'function' && O3.isScene(model));
+      if (model && O3 && !scene) {
         const host3d = h('div', { class: 'sp-pf-3d' });
         band.dataset.live = '3d';
         band.append(host3d);
@@ -361,7 +364,13 @@
       // Text rides above the art layer: mount() appended the art box last, so lift the overlay content. The fade
       // that lets the art dissolve under the text is a gradient overlay element (never a CSS mask on the art).
       band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
-      return p.then(() => { if (animates(animate)) { plotIn(band, { delay: 120, duration: 1800, style: animStyle(ctx.prefs()) }); } });
+      return p.then(() => {
+        if (animates(animate)) { plotIn(band, { delay: 120, duration: 1800, style: animStyle(ctx.prefs()) }); }
+        const SO = Vectura.StartPageSceneOrbit;
+        if (scene && SO && typeof art.getScenePayload === 'function' && band._spInk) {
+          SO.attach(band, { payload: art.getScenePayload, label: `${art.name.replace(/\.vectura$/, '')}, ${art.algorithm || 'Piece'}` });
+        }
+      });
     };
 
     const buildEmpty = (word) => {
@@ -566,7 +575,7 @@
       if (fade) {
         void old.offsetWidth;
         old.style.opacity = '0';
-        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } if (old._sp3d) { try { old._sp3d.destroy(); } catch (_) { /* noop */ } } old.remove(); stage.style.position = ''; }, 460);
+        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } if (old._sp3d) { try { old._sp3d.destroy(); } catch (_) { /* noop */ } } if (old._spScene) { try { old._spScene.destroy(); } catch (_) { /* noop */ } } old.remove(); stage.style.position = ''; }, 460);
       }
     };
     const useAsCover = async (art, o = {}) => {

@@ -441,7 +441,10 @@
     h.raster = () => {
       if (!h.parsed || !h.w || !h.h) return Promise.resolve();
       const gen = ++h._gen; const pol = policyFor(h.w, h.h); const w0 = h.w; const h0 = h.h; const win = h.win;
-      return rasterArt(art, h.parsed, { w: w0, h: h0, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win }).then((b) => {
+      // A shown alternate (showArt) rasters in the HOME window and line look, so swapping never reframes the tile.
+      const shown = h.shown; const src = shown ? shown.art : art;
+      const parsedP = shown ? parseArt(shown.art) : Promise.resolve(h.parsed);
+      return parsedP.then((parsed) => rasterArt(src, parsed, { w: w0, h: h0, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win })).then((b) => {
         if (!h.alive() || gen !== h._gen) return;
         if (!h.canvas) { h.canvas = D.createElement('canvas'); h.canvas.className = 'sp-ink-canvas'; h.canvas.setAttribute('aria-hidden', 'true'); box.appendChild(h.canvas); }
         h.canvas.width = pol.width; h.canvas.height = pol.height; h.rasterScale = pol.scale; h.bmp = b; h.paint();
@@ -492,6 +495,47 @@
       h.measure(); h.applyLook(); h.setViewBox();
       if (h.mode === 'canvas') { clearTimeout(rT); rT = setTimeout(h.raster, 60); }
     };
+    /* Alternate drawings of the SAME piece (a live 3D Scene's other camera poses: StartPageSceneOrbit). They are drawn
+     * exactly like the tile's own art (same sanitizer, colorway, line look, fit and frame), in the tile's HOME window:
+     * the window and look stay those of the art the tile was mounted with, so a swap never reframes or re-weights it.
+     * prepareArt(alt) warms one (an off-DOM inline SVG, or a parsed raster source) and resolves when it can be shown;
+     * showArt(alt) shows it, showArt(null) shows the tile's own art again. `alt` is { id, svg } with an id of its own. */
+    const alts = new Map(); // alt id -> detached sanitized <svg> (svg mode)
+    const MAX_ALTS = 48;
+    const altNode = (a) => {
+      let n = alts.get(a.id);
+      if (!n) {
+        n = safeSvg(a.svg, gid);
+        if (!n) return null;
+        alts.set(a.id, n);
+        if (alts.size > MAX_ALTS) { const k = alts.keys().next().value; if (!h.shown || h.shown.art.id !== k) alts.delete(k); }
+      }
+      return n;
+    };
+    h.prepareArt = (a) => h.ready.then(() => {
+      if (!h.alive() || !a || typeof a.svg !== 'string') return false;
+      if (h.mode === 'svg') return !!altNode(a);
+      return parseArt(a).then(() => true, () => false);
+    });
+    h.showArt = (a) => h.ready.then(() => {
+      if (!h.alive() || !h.parsed) return false;
+      if (a && (typeof a.svg !== 'string' || a.id === art.id)) a = null;
+      if ((h.shown ? h.shown.art.id : null) === (a ? a.id : null)) return true;
+      if (h.mode === 'svg') {
+        const n = a ? altNode(a) : (h.ownSvg || h.svg);
+        if (!n || !h.svg) return false;
+        if (!h.ownSvg) h.ownSvg = h.svg;
+        if (n !== h.svg) { h.svg.replaceWith(n); h.svg = n; }
+        h.shown = a ? { art: a } : null;
+        h.setViewBox();
+        return true;
+      }
+      h.shown = a ? { art: a } : null;
+      return h.raster().then(() => true);
+    });
+    h.shownArt = () => (h.shown ? h.shown.art : art);
+    const destroyAlts = h.destroy;
+    h.destroy = () => { alts.clear(); h.shown = null; destroyAlts(); };
 
     if (ro) { resizeTargets.set(box, h); ro.observe(box); }
     h.ready = parseArt(art).then((parsed) => {

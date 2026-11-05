@@ -379,7 +379,19 @@
         }
         const user = p.main ? c.frameOverride : null;
         const fit = user && user.fit === 'contain' ? 'contain' : 'cover';
-        jobs.push(Ink.mount(p.el, c.art, { label: false, pad: 0, fit, frame: T.frameFor(p.shape, user), colorway: artColorway(c, p.disc) }));
+        const job = Ink.mount(p.el, c.art, { label: false, pad: 0, fit, frame: T.frameFor(p.shape, user), colorway: artColorway(c, p.disc) });
+        // A 3D Scene keeps exactly this drawing (the app's fills and shadow shapes) and turns it with real renders.
+        const SO = Vectura.StartPageSceneOrbit;
+        if (p.main && c.art && c.art.scene && SO) {
+          job.then(() => {
+            if (c.dead || !p.el._spInk) return;
+            const so = SO.attach(p.el, { payload: c.art.scene.payload, label: `${c.title}, ${c.algo}`.replace(/^, |, $/g, ''), hint: false });
+            if (!so) return;
+            p.el.dataset['3d'] = '1'; p.el.dataset.hint = 'Drag to rotate';
+            so.loaded.then((pl) => { if (!pl) { delete p.el.dataset['3d']; delete p.el.dataset.hint; } });
+          }, () => {});
+        }
+        jobs.push(job);
       });
       c.crops.forEach((k) => {
         jobs.push(Ink.mount(k.el, c.art, { label: false, pad: 0, fit: 'cover', frame: { z: k.z, cx: k.x, cy: k.y }, colorway: artColorway(c, false) }));
@@ -412,7 +424,7 @@
     c.dead = true;
     const Ink = ink();
     if (Ink) {
-      c.prints.forEach((p) => { if (p.el._vorbit) p.el._vorbit.destroy(); Ink.unmount(p.el); });
+      c.prints.forEach((p) => { if (p.el._vorbit) p.el._vorbit.destroy(); if (p.el._spScene) p.el._spScene.destroy(); Ink.unmount(p.el); });
       c.crops.forEach((k) => Ink.unmount(k.el));
       if (c.ko) Ink.unmount(c.ko);
     }

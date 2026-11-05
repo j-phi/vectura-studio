@@ -338,6 +338,12 @@
     /* ------------------------------------------------------------------ plates */
     const Motion = () => Vectura.StartPageMotion;
     const art3d = (e) => { try { const M = Motion(); return M ? M.modelFor(e.art) : null; } catch (_) { return null; } };
+    // A 3D Scene ('scene:' id) is NOT a live model here: the plate draws the scene's own drawing (fills and shadow shapes as
+    // the app draws them, the drawing's own layout) and StartPageSceneOrbit turns it with real renders. Other 3D pieces are
+    // live StartPageOrbit3D models.
+    const isSceneId = (m) => /^scene:/.test(String(m || ''));
+    const liveModel = (e) => { const m = art3d(e); return m && !isSceneId(m) ? m : null; };
+    const sceneFor = (e) => (isSceneId(art3d(e)) && e.art && typeof e.art.getScenePayload === 'function' ? { payload: e.art.getScenePayload } : null);
     // The plate's own motion (set in its editor) wins over the page defaults in Settings.
     const entryNow = (id) => entries.find((x) => x.id === id) || null;
     const plateAnimateIn = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.animateIn || ctx.prefs().animateIn || 'plot'; };
@@ -455,10 +461,10 @@
       e = entries.find((x) => x.id === w.dataset.plateId) || null;
       const i = e ? entries.indexOf(e) : -1;
       if (i < 0) return;
-      const model0 = svg ? art3d(e) : null;
+      const model0 = svg ? liveModel(e) : null;
       const cw = setData(w, e, i, svg ? layoutFor(e, i, model0 ? '3d' : orientationOf(svg)) : undefined);
       if (!cw || !svg) { w.dataset.state = 'error'; return; }
-      const model = art3d(e);
+      const model = liveModel(e);
       const orientation = model ? '3d' : orientationOf(svg);
       const eff = effective(e);
       const layout = layoutFor(e, i, orientation);
@@ -466,7 +472,7 @@
       let article;
       try {
         article = Layouts().render(layout, {
-          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model }, colorway: cw, index: i, total: entries.length,
+          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model, scene: sceneFor(e), name: e.art.name }, colorway: cw, index: i, total: entries.length,
           texts: textsFor(e, cw, svg, i), frame, autoMount: false,
         });
       } catch (err) {
@@ -501,7 +507,10 @@
       const mounted = Layouts().mount(article);
       if (M && main) {
         if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } }
-        st.bind = M.bindArt(main, { handle: () => main._spInk || null, animateIn: () => plateAnimateIn(e.id), hover: () => plateHover(e.id), kind: 'plate' });
+        // A turning 3D Scene takes no hover effect (like the other live 3D pieces): a hover replay would redraw the home pose
+        // over the turned one. It still draws itself in once when the plate is fresh.
+        const turns = !!sceneFor(e);
+        st.bind = M.bindArt(main, { handle: () => (turns ? null : main._spInk || null), animateIn: () => plateAnimateIn(e.id), hover: () => plateHover(e.id), kind: 'plate' });
         Promise.resolve(mounted).then(() => {
           if (st.bind) st.bind.sync();
           if (plays && fresh && main.isConnected && main._spInk) {
@@ -861,7 +870,7 @@
       const svg = svgCache.get(e.art.id) || '';
       const handle = Ed.open(art, {
         record: Object.assign(e.rec ? JSON.parse(JSON.stringify(e.rec)) : { id: e.id, artId: e.artId }, shippedColors(e) ? { colors: fullColors(shippedColors(e)) } : {}),
-        art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, model: art3d(e), ownColors: e.art.ownColors },
+        art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, model: liveModel(e), ownColors: e.art.ownColors },
         devExample: devActive, mode: mode(), index: i, colorway: placed[i] && placed[i].colorway, placed: placed.map((p, k) => { // neighbors count with the background they really show (a manual Curated background changes its class)
           const cwk = k === i ? null : resolveCw(entries[k], k);
           return cwk && p.colorway ? { id: p.id, colorway: Object.assign({}, p.colorway, { class: cwk.class || p.colorway.class, ground: cwk.ground || p.colorway.ground }) } : p;

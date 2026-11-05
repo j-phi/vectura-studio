@@ -730,7 +730,8 @@ CI lives in `.github/workflows/test.yml`:
 ## Release Notes
 
 ### Unreleased - 3D Scenes rotate on the Start Page
-- **Drag to rotate a 3D Scene.** 3D Scene pieces on the Start Page (your saved scenes and the Studio Shadows pick) are live models: drag or use the arrow keys to rotate them, and they rock gently when idle, like the other 3D pieces.
+- **Drag to rotate a 3D Scene.** 3D Scene pieces on the Start Page (your saved scenes and the Studio Shadows pick) turn: drag or use the arrow keys to rotate them, and they rock gently when idle, like the other 3D pieces.
+- **Drawn exactly as the app draws them.** Every angle is a real render of the scene, so fills, shadow shapes, ground and line weights match the app; a drag steps to the exact angle a few times a second.
 
 ### Unreleased - Pen Studio
 - **Pen Studio.** Pens ⋯ ▸ **Pen Studio…** (or **Open Pen Studio** in the pen picker) opens boxes, a lab and a pair view: keep the pens you own in boxes, test any pen on every paper, tune its ink as a draft and save it (or save it as a new pen), pick a complementary ink and see both woven together. **Use in document** applies it in one undo step.
