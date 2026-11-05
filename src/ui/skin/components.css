@@ -18611,7 +18611,7 @@ button.sp-cm-card { cursor: pointer; }
 .sp-scene-orbit[data-pointer]:focus-visible { outline: none; }
 .sp-pf > .sp-scene-orbit { inset: 0 0 0 24%; }
 .sp-scene-hint { position: absolute; right: 10px; bottom: 8px; font: 400 10px/1 var(--font-mono, "JetBrains Mono", ui-monospace, monospace); letter-spacing: .04em; color: var(--sp-ink, currentColor); opacity: .5; pointer-events: none; user-select: none; }
-.sp-scene-orbit:hover .sp-scene-hint { opacity: .72; }
+@media (hover: hover) { .sp-scene-orbit:hover .sp-scene-hint { opacity: .72; } }
 /* the cover band's caption owns the bottom-right corner */
 .sp-pf > .sp-scene-orbit .sp-scene-hint { top: 10px; bottom: auto; }
 .sp-pf[data-live="3d"] .sp-pf-in { pointer-events: none; }
