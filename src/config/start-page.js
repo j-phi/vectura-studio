@@ -106,6 +106,15 @@
   // long-press and above a deliberate click (typically 80-250 ms); touch gets a looser radius for finger wobble.
   const CLICK = Object.freeze({ maxMovePx: 5, maxMoveTouchPx: 10, maxPressMs: 350, clickGapMs: 700 });
 
+  // When a mounted plate drops its canvases. Dropping then remounting churned at fling speed and flashed bare page, so a list
+  // shorter than `minPlates` never drops. A longer one drops only plates more than `screens` viewport heights from the scroller's
+  // viewport, and only after they have stayed away for `idleMs`. (Plates still mount lazily, 800 px ahead of the viewport.)
+  const PLATE_DROP = Object.freeze({ minPlates: 24, screens: 3, idleMs: 10000 });
+
+  // A list that never drops (shorter than PLATE_DROP.minPlates) mounts its not-yet-mounted plates ahead of time, one at a time,
+  // when the browser is idle (requestIdleCallback, at most idleTimeoutMs wait; setTimeout fallbackMs where it is missing).
+  const PLATE_PREMOUNT = Object.freeze({ enabled: true, idleTimeoutMs: 2000, fallbackMs: 120 });
+
   const LIMITS = Object.freeze({
     recentsShown: 8,
     entriesMax: 48,
@@ -222,5 +231,5 @@
     return Object.assign({}, COVER_FONTS.find((f) => f.id === id), { scale });
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
 })();
