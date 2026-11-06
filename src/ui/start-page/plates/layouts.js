@@ -7,7 +7,7 @@
  *
  *   render(layoutId, { plate, art, colorway, index, total, texts, frame?, autoMount? }) -> HTMLElement
  *     plate    { id, orientation: 'landscape' | 'portrait' | 'square' | '3d', frame?: { fit, z, cx, cy } }
- *     art      { id, svg, model?, seen? }   (model marks a live 3D piece: its print carries data-3d and a drag hint; seen = drawn before, so a live model mounts already plotted)
+ *     art      { id, svg, model?, seen? }   (model marks a live 3D piece: its print carries data-3d and a drag hint; seen = drawn before, plotted = mounted off screen; either way a live model mounts already plotted)
  *     colorway a placed plate colorway ({ ground, ink, accent, class } or { paper, ink })
  *     texts    { word, title, description, algorithm?, summary?, specs: [[label, value]] | [{ label, value }],
  *                actions?: [{ id, label, primary?, onClick? }] }
@@ -372,7 +372,7 @@
         // A 3D piece is a live, drag-to-rotate model (idle sway, plot-in at 30 % visible), drawn in the plate's colors.
         if (c.art && c.art.model && O3 && p.main) {
           try {
-            O3.mount(p.el, { model: c.art.model, colorway: () => artColorway(c, p.disc), hint: false, plotted: !!c.art.seen, label: `${c.title}, ${c.algo}`.replace(/^, |, $/g, '') });
+            O3.mount(p.el, { model: c.art.model, colorway: () => artColorway(c, p.disc), hint: false, plotted: !!(c.art.seen || c.art.plotted), label: `${c.title}, ${c.algo}`.replace(/^, |, $/g, '') });
             p.el.classList.add('sp-print-3d');
             return;
           } catch (err) { if (W.console) W.console.warn('[PlateLayouts] 3D model failed, using the drawing', err); if (p.el._vorbit) p.el._vorbit.destroy(); }

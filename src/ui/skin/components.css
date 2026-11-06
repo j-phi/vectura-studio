@@ -18228,10 +18228,12 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
 .sp-pl-list[data-arranging="true"] > .sp-pl { display: none; }
 /* a plate row collapses with grid-template-rows (no display:none <-> max-height swap) */
 .sp-pl { display: grid; grid-template-rows: 1fr; opacity: 1; visibility: visible; }
-.sp-pl-in { min-height: 0; min-width: 0; overflow: clip; overflow-clip-margin: 6px; padding-bottom: 28px; }
+.sp-pl-in { --sp-pl-pad: 28px; box-sizing: border-box; min-height: 0; min-width: 0; overflow: clip; overflow-clip-margin: 6px; padding-bottom: var(--sp-pl-pad); }
 .sp-pl[data-off] { grid-template-rows: 0fr; opacity: 0; visibility: hidden; }
 .sp-pl[data-state="idle"] .sp-pl-in, .sp-pl[data-state="error"] .sp-pl-in { min-height: var(--sp-pl-h, 0); }
-.sp-pl-ph { min-height: var(--sp-pl-h, 280px); display: flex; align-items: flex-start; padding: 18px var(--spl-px, 24px); border-radius: 2px; box-shadow: 0 0 0 1px var(--ui-border); font: 500 9.5px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ui-muted); }
+/* --sp-pl-h is the dropped plate's whole box (padding included): .sp-pl-in is border-box, so the placeholder takes it minus that padding and the two agree in both box-sizing modes */
+.sp-pl-ph { box-sizing: border-box; min-height: calc(var(--sp-pl-h, 308px) - var(--sp-pl-pad)); background: var(--sp-ph-paper, transparent); display: flex; align-items: flex-start; padding: 18px var(--spl-px, 24px); border-radius: 2px; box-shadow: 0 0 0 1px var(--ui-border); font: 500 9.5px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ui-muted); }
+.sp-pl-ph[style*="--sp-ph-ink"] { color: color-mix(in srgb, var(--sp-ph-ink) 60%, transparent); }
 .sp-pl[data-off] .sp-pl-ph { min-height: 0; }
 .sp-pl-more { margin: 4px 0 0; font: 400 11px/1.4 var(--font-mono); color: var(--ui-muted); }
 .sp-pl-lnk { color: var(--ui-accent-text, var(--ui-accent)); text-decoration: underline; text-underline-offset: 3px; font: inherit; display: inline-block; min-height: 24px; min-width: 24px; padding: 4px 2px; vertical-align: middle; }

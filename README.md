@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Plates stay painted on a fast fling
+- **No white or black flashes when flinging the Start Page.** Plates stay built (short pages) or are released only far away, the rest are built in idle time after load, and a 3D plate loaded off screen arrives drawn.
+
 ### Unreleased - Plates keep their drawing on a fast scroll
 - **No more flicker on a fast scroll.** A plate you have already seen comes back drawn instead of fading in and re-plotting, and plates now load as they near the screen whether or not you have saved works.
 

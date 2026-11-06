@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Plates flashed white or black on a fast fling
+- **Plates stay painted when you fling the Start Page.** On a fast scroll (especially upward, on iPhone and in desktop Chrome) whole plates could flash to the bare page background: white in light theme, black in dark. Plates far off screen were being released and rebuilt just ahead of the screen, and a fling outran the rebuild. A page with fewer than 24 plates now never releases them, and builds the rest one at a time in idle moments after it loads, so a first fling finds them ready. Longer pages release only plates more than three screens away that have stayed away for 10 seconds.
+- **No empty 3D discs.** A live 3D plate that loads just off screen is drawn finished, so it never scrolls in as an empty disc.
+- **The plate stand-in matches the plate.** If a released plate's stand-in is ever on screen, it now has the plate's exact height and its paper colour, so it no longer reads as bare page or makes the page jump when scrolling up.
+
 ### Fixed: Plates flickered on a fast scroll
 - **A plate you have already seen comes back drawn.** Plates far off screen are still released to save memory, but when you scroll back to one it now reappears finished instead of fading in from blank and plotting itself again (4 to 5 seconds of blank or half-drawn art each time). Live 3D pieces come back fully plotted too. A plate's first appearance, and a plate whose art changed, still draw in as before.
 - **Plates load lazily with saved works too.** With saved works on the page, a timing race meant every plate mounted at once and was never released; plates now mount as they near the screen and are released when far away, whatever the page holds.

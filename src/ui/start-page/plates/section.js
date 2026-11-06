@@ -6,7 +6,8 @@
  * A plate is built by StartPagePlateLayouts with the layout = the store's layout || a rhythm suggestion, colored by
  * StartPagePlateRhythm.place() in the page mode with the store's saved edits applied for that mode
  * (StartPagePlatesStore.effectiveFor): Curated owns pins + manual colors, Basic owns the ink, other modes own all color.
- * Plates mount lazily near the viewport (IntersectionObserver, 800 px margin) and far-off ones drop their canvases.
+ * Plates mount lazily near the viewport (IntersectionObserver, 800 px margin). A long list (START_PAGE.PLATE_DROP.minPlates or more)
+ * drops the canvases of plates that stay several screens away; a short list never drops (remount churn flashed bare page on a fast fling).
  *
  * Seams (other agents' modules, all optional until merged):
  *   StartPagePlateEditor.open(plateEl, { record, art, mode, index, colorway, placed, suggestedLayout, onChange(patch),
@@ -72,6 +73,7 @@
     let placed = [];
     let wrappers = new Map();
     let io = null;
+    let ioFar = null; // the drop decision: plates far outside the scroller (PLATE_DROP.screens viewport heights)
     let unsub = null;
     let editor = null; // { id, handle, btn }
     let arrange = null;
@@ -93,6 +95,54 @@
     const svgCache = new Map();
     const statCache = new Map();
     const exitTimers = new Map();
+    const dropCfg = () => Object.assign({ minPlates: 24, screens: 3, idleMs: 10000 }, (Vectura.START_PAGE && Vectura.START_PAGE.PLATE_DROP) || {});
+    const premountCfg = () => Object.assign({ enabled: true, idleTimeoutMs: 2000, fallbackMs: 120 }, (Vectura.START_PAGE && Vectura.START_PAGE.PLATE_PREMOUNT) || {});
+    // A short list never drops, so every plate ends up mounted after one scroll anyway: mount the rest ahead of time, one at a
+    // time in idle, nearest first (below the viewport before above), so a first fast fling finds drawn plates, not unmounted ones.
+    // Long lists keep pure lazy mounting. A pre-mounted plate is off screen, so a live 3D model mounts finished (offscreen()).
+    const pre = { timer: 0, idle: false, running: false, tried: new WeakSet() };
+    const visiblePlates = () => plateEls().filter((x) => !x.hasAttribute('data-off'));
+    const stopPremount = () => {
+      if (pre.timer) { if (pre.idle && typeof G.cancelIdleCallback === 'function') G.cancelIdleCallback(pre.timer); else clearTimeout(pre.timer); }
+      pre.timer = 0; pre.running = false;
+    };
+    const nextPremount = () => {
+      const sc = ctx.scroller();
+      const sr = sc ? sc.getBoundingClientRect() : { top: 0, bottom: G.innerHeight || 0 };
+      const cands = visiblePlates().filter((w) => w._sp && !w._sp.article && !w._sp.rendering && !pre.tried.has(w) && !(editor && editor.id === w.dataset.plateId))
+        .map((w, k) => { const r = w.getBoundingClientRect(); const below = r.top >= sr.top || r.bottom > sr.bottom; return { w, k, g: below ? 0 : 1, d: below ? Math.max(0, r.top - sr.bottom) : Math.max(0, sr.top - r.bottom) }; });
+      cands.sort((a, b) => a.g - b.g || a.d - b.d || a.k - b.k);
+      return cands.length ? cands[0].w : null;
+    };
+    const schedulePremount = () => {
+      const cfg = premountCfg();
+      if (destroyed || arrange || !cfg.enabled || pre.timer) return;
+      const run = () => {
+        pre.timer = 0;
+        if (destroyed || arrange || !premountCfg().enabled || visiblePlates().length >= dropCfg().minPlates) { pre.running = false; return; }
+        const w = nextPremount();
+        if (!w) { pre.running = false; return; }
+        pre.tried.add(w);
+        Promise.resolve(renderPlate(w)).catch(() => {}).then(() => schedulePremount());
+      };
+      if (typeof G.requestIdleCallback === 'function') { pre.idle = true; pre.timer = G.requestIdleCallback(run, { timeout: cfg.idleTimeoutMs }); } else { pre.idle = false; pre.timer = setTimeout(run, cfg.fallbackMs); }
+    };
+    const startPremount = () => { if (!pre.running) { pre.tried = new WeakSet(); pre.running = true; } schedulePremount(); };
+    const watch = (w) => { if (io) { io.unobserve(w); io.observe(w); } if (ioFar) { ioFar.unobserve(w); ioFar.observe(w); } };
+    const unwatch = (w) => { if (io) io.unobserve(w); if (ioFar) ioFar.unobserve(w); clearTimeout(exitTimers.get(w)); exitTimers.delete(w); };
+    // A mounted plate far from the viewport drops its canvases only on a long list, and only once it has stayed away idleMs.
+    const armDrop = (w) => {
+      const st = w._sp;
+      if (!st || !st.article || exitTimers.has(w) || (editor && editor.id === w.dataset.plateId)) return;
+      const cfg = dropCfg();
+      if (plateEls().filter((x) => !x.hasAttribute('data-off')).length < cfg.minPlates) return;
+      exitTimers.set(w, setTimeout(() => {
+        exitTimers.delete(w);
+        if (arrange || destroyed || !w.isConnected || !st.far || !st.article || (editor && editor.id === w.dataset.plateId)) return;
+        if (plateEls().filter((x) => !x.hasAttribute('data-off')).length < dropCfg().minPlates) return;
+        dropPlate(w);
+      }, cfg.idleMs));
+    };
 
     /* ------------------------------------------------------------------ DOM shell */
     const root = h('section', { class: 'sp-plates', id: 'sp-plates', 'aria-labelledby': 'sp-pl-h' });
@@ -444,6 +494,17 @@
     let headInfo = null;
     const tool = (act, label, icon, titleText) => h('button', { type: 'button', class: 'sp-pl-tool', 'data-act': act, title: titleText, 'aria-label': titleText, html: `${icon}<span>${label}</span>` });
 
+    // A plate that mounts outside the scroller's viewport (inside the lazy-mount margin) must not scroll in as an empty 3D disc:
+    // the model's own plot-in waits for 30 % visible, so it would still be blank when the visitor reaches it.
+    const offscreen = (w) => {
+      const r = w.getBoundingClientRect();
+      if (!(r.height > 0)) return false; // not laid out: unknown, keep the plot-in
+      const sc = ctx.scroller();
+      const top = sc ? sc.getBoundingClientRect().top : 0;
+      const bottom = sc ? sc.getBoundingClientRect().bottom : (G.innerHeight || 0);
+      return r.bottom <= top || r.top >= bottom;
+    };
+
     const renderPlate = async (w) => {
       const st = w._sp;
       let e = entries.find((x) => x.id === w.dataset.plateId);
@@ -472,7 +533,7 @@
       let article;
       try {
         article = Layouts().render(layout, {
-          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model, scene: sceneFor(e), name: e.art.name, seen: st.seenArtId === e.art.id }, colorway: cw, index: i, total: entries.length,
+          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model, scene: sceneFor(e), name: e.art.name, seen: st.seenArtId === e.art.id, plotted: offscreen(w) }, colorway: cw, index: i, total: entries.length,
           texts: textsFor(e, cw, svg, i), frame, autoMount: false,
         });
       } catch (err) {
@@ -500,6 +561,7 @@
       w.dataset.layout = layout;
       w.dataset.state = 'ready';
       w.style.removeProperty('--sp-pl-h');
+      if (st.far) armDrop(w); // mounted while far from view (e.g. during the first pass): still eligible to drop
       syncTools(w);
       const main = article.querySelector('.spl-print');
       if (main) { main.classList.add('sp-pl-art'); onOpenClick(main, () => { if (!w.dataset.editing) open(entries.findIndex((x) => x.id === w.dataset.plateId), false); }); } // opens by plate id: a re-sync rebuilds the entry objects
@@ -584,7 +646,7 @@
       const st = w._sp;
       if (!st || !st.article) return;
       const hgt = w.getBoundingClientRect().height;
-      if (hgt > 40) w.style.setProperty('--sp-pl-h', `${Math.round(hgt)}px`);
+      if (hgt > 40) w.style.setProperty('--sp-pl-h', `${Math.round(hgt)}px`); // the plate's whole box: .sp-pl-in is border-box (see components.css)
       if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
       try { Layouts().destroy(st.article); } catch (_) { /* noop */ }
       w.querySelector('.sp-pl-in').replaceChildren(placeholder(w));
@@ -595,7 +657,11 @@
     const placeholder = (w) => {
       const e = entries.find((x) => x.id === w.dataset.plateId);
       const i = entries.indexOf(e);
-      return h('div', { class: 'sp-pl-ph', 'aria-hidden': 'true' }, h('span', { text: `Plate ${pad2(i + 1)} / ${pad2(entries.length)} · ${e ? pretty(e.art.name) : ''}` }));
+      const ph = h('div', { class: 'sp-pl-ph', 'aria-hidden': 'true' }, h('span', { text: `Plate ${pad2(i + 1)} / ${pad2(entries.length)} · ${e ? pretty(e.art.name) : ''}` }));
+      // Stand in as the plate's own paper, so a placeholder that is ever on screen never reads as bare page.
+      if (HEX.test(w.dataset.spPaper || '')) ph.style.setProperty('--sp-ph-paper', w.dataset.spPaper);
+      if (HEX.test(w.dataset.spInk || '')) ph.style.setProperty('--sp-ph-ink', w.dataset.spInk);
+      return ph;
     };
 
     // Refresh a mounted plate after a store / mode / theme change: rebuild only when its structure changed.
@@ -658,11 +724,11 @@
         if (!animate || reduced()) w.setAttribute('data-instant', ''); else w.removeAttribute('data-instant');
         if (off) {
           w.setAttribute('data-off', ''); w.setAttribute('inert', ''); w.setAttribute('aria-hidden', 'true');
-          if (io) io.unobserve(w);
+          unwatch(w);
           if (w._sp.article) { const wasEditing = editor && editor.id === w.dataset.plateId; if (wasEditing) closeEditor(false); setTimeout(() => { if (w.hasAttribute('data-off')) dropPlate(w); }, animate && !reduced() ? 420 : 0); }
         } else {
           w.removeAttribute('data-off'); w.removeAttribute('inert'); w.removeAttribute('aria-hidden');
-          if (io) { io.unobserve(w); io.observe(w); } else renderPlate(w);
+          if (io) watch(w); else renderPlate(w);
         }
         w.style.setProperty('--sp-pl-delay', `${Math.min(8, Math.abs(i - (lastK == null ? 0 : k))) * 25}ms`);
       });
@@ -689,18 +755,21 @@
 
     const setupObserver = () => {
       if (io || typeof G.IntersectionObserver !== 'function') return;
+      const root = ctx.scroller() || null;
       io = new G.IntersectionObserver((records) => {
         records.forEach((r) => {
           const w = r.target;
-          if (r.isIntersecting) {
-            clearTimeout(exitTimers.get(w)); exitTimers.delete(w);
-            if (!w._sp.article && !w._sp.rendering && !w.hasAttribute('data-off')) renderPlate(w);
-          } else if (w._sp.article && !(editor && editor.id === w.dataset.plateId)) {
-            clearTimeout(exitTimers.get(w));
-            exitTimers.set(w, setTimeout(() => { exitTimers.delete(w); if (!arrange && w.isConnected) dropPlate(w); }, 1500));
-          }
+          if (r.isIntersecting && !w._sp.article && !w._sp.rendering && !w.hasAttribute('data-off')) renderPlate(w);
         });
-      }, { root: ctx.scroller() || null, rootMargin: `${MARGIN} 0px` });
+      }, { root, rootMargin: `${MARGIN} 0px` });
+      // Percent margins are relative to the root, so this is `screens` viewport heights above and below the scroller.
+      ioFar = new G.IntersectionObserver((records) => {
+        records.forEach((r) => {
+          const w = r.target;
+          if (!w._sp) return;
+          if (r.isIntersecting) { w._sp.far = false; clearTimeout(exitTimers.get(w)); exitTimers.delete(w); } else { w._sp.far = true; armDrop(w); }
+        });
+      }, { root, rootMargin: `${dropCfg().screens * 100}% 0px` });
     };
 
     /* ------------------------------------------------------------------ sync / render */
@@ -790,7 +859,7 @@
       computeLayoutClasses();
       const keep = new Set(entries.map((e) => e.id));
       wrappers.forEach((w, id) => {
-        if (!keep.has(id)) { if (editor && editor.id === id) closeEditor(false); if (io) io.unobserve(w); if (w._sp.article) Layouts().destroy(w._sp.article); w.remove(); wrappers.delete(id); }
+        if (!keep.has(id)) { if (editor && editor.id === id) closeEditor(false); unwatch(w); if (w._sp.article) Layouts().destroy(w._sp.article); w.remove(); wrappers.delete(id); }
       });
       entries.forEach((e, i) => {
         let w = wrappers.get(e.id);
@@ -803,6 +872,7 @@
       applyVisibility(false);
       entries.forEach((e, i) => { const w = wrappers.get(e.id); setData(w, e, i); if (w._sp.article && !arrange) refreshPlate(w, e, i); });
       if (editor && !canEdit()) closeEditor(false);
+      startPremount();
     };
 
     const sync = () => {
@@ -956,7 +1026,8 @@
       header();
       if (focusBack !== false) { try { arrBtn.focus({ preventScroll: true }); } catch (_) { /* noop */ } } // the panel that held focus is gone
       applyVisibility(false);
-      plateEls().forEach((w) => { if (!w.hasAttribute('data-off') && io) { io.unobserve(w); io.observe(w); } else if (!w.hasAttribute('data-off')) renderPlate(w); });
+      plateEls().forEach((w) => { if (!w.hasAttribute('data-off') && io) { watch(w); } else if (!w.hasAttribute('data-off')) renderPlate(w); });
+      startPremount();
     };
 
     const openMenu = () => {
@@ -1055,7 +1126,9 @@
       closeTransient() { closeMenu(false); if (devTools) devTools.closeDialogs(); closeEditor(false); if (fanHandle) { try { fanHandle.close(); } catch (_) { /* noop */ } } if (arrange) exitArrange(true, false); },
       destroy() {
         destroyed = true;
+        stopPremount();
         if (io) io.disconnect();
+        if (ioFar) ioFar.disconnect();
         exitTimers.forEach((t) => clearTimeout(t));
         wrappers.forEach((w) => { if (w._sp.article) { try { Layouts().destroy(w._sp.article); } catch (_) { /* noop */ } } });
         if (unsub) unsub();
