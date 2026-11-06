@@ -472,7 +472,7 @@
       let article;
       try {
         article = Layouts().render(layout, {
-          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model, scene: sceneFor(e), name: e.art.name }, colorway: cw, index: i, total: entries.length,
+          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model, scene: sceneFor(e), name: e.art.name, seen: st.seenArtId === e.art.id }, colorway: cw, index: i, total: entries.length,
           texts: textsFor(e, cw, svg, i), frame, autoMount: false,
         });
       } catch (err) {
@@ -481,8 +481,11 @@
         return;
       }
       const inner = w.querySelector('.sp-pl-in');
-      const fresh = !st.article || st.artId !== e.art.id;
+      // A plate whose art was already drawn once stays "seen" across a drop (st.seenArtId outlives dropPlate): it comes back
+      // finished, with no blank frame and no re-plot. Only a never-drawn plate, or one whose art changed, animates in.
+      const fresh = st.seenArtId !== e.art.id;
       st.artId = e.art.id;
+      st.seenArtId = e.art.id;
       if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
       if (st.article) { try { Layouts().destroy(st.article); } catch (_) { /* noop */ } }
       if (st.article && st.article.parentNode === inner) { st.article.replaceWith(article); } else inner.replaceChildren(article);
@@ -642,6 +645,7 @@
       return off;
     };
     const applyVisibility = (animate) => {
+      setupObserver(); // lazy-mount needs the observer before any plate is shown (refresh() can run before render())
       const k = visibleCount(worksShown);
       const lastK = list._k;
       list._k = k;

@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Plates keep their drawing on a fast scroll
+- **No more flicker on a fast scroll.** A plate you have already seen comes back drawn instead of fading in and re-plotting, and plates now load as they near the screen whether or not you have saved works.
+
 ### Unreleased - 3D Scenes rotate on the Start Page
 - **Drag to rotate a 3D Scene.** 3D Scene pieces on the Start Page (your saved scenes and the Studio Shadows pick) turn: drag or use the arrow keys to rotate them, and they rock gently when idle, like the other 3D pieces.
 - **Drawn exactly as the app draws them.** Every angle is a real render of the scene, so fills, shadow shapes, ground and line weights match the app; a drag steps to the exact angle a few times a second.
