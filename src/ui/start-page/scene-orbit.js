@@ -12,6 +12,11 @@
  *     SWAY_MAX ms without interaction (pointer enter, focus or scrolling back into view resumes it);
  *   - drag / arrow keys: the camera follows on a DRAG_STEP° grid; the nearest pose already drawn shows at once and the exact
  *     pose replaces it when its render lands. Releasing makes the dragged pose the new home.
+ * Cost budget (config START_PAGE.SCENE_ORBIT): every pose render is timed. A scene whose pose takes longer than heavyMs rocks through
+ * at most heavyLevels poses each side (none past haltMs), renders nothing while it is dragged (the nearest drawn pose shows, and
+ * only the release pose is rendered) and does not re-queue a rock after a turn. Rock poses never START within yieldMs of a scroll or a
+ * pointer / wheel event, and stop being pre-rendered once the rock has parked (waking it resumes them). Poses are drawn through one
+ * StartPageArtRenderer.sceneSession per piece (one engine, only the camera changes), else through renderDocument.
  * Still (StartPageInk.isStill) or prefers-reduced-motion: no rocking (dragging still turns the piece).
  * `payload` is the piece's .vectura document, or a function returning it (or a promise of it). A document with no 3D Scene
  * layer, or one that fails to render, leaves the drawing as it is (no overlay). Renders run one at a time, only while the
@@ -30,6 +35,9 @@
   const PITCH = [-89, 89];
   const MAX_POSES = 40; // drawn poses kept per piece (a long drag renders many; the oldest off-rock ones are dropped)
   const D2 = 180 / Math.PI;
+  // Mirrors START_PAGE.SCENE_ORBIT (src/config/start-page.js) for a page without the config; the config wins when present.
+  const CFG0 = { heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300 };
+  const cfg = () => Object.assign({}, CFG0, (Vectura.START_PAGE && Vectura.START_PAGE.SCENE_ORBIT) || {});
 
   const reducedMQ = () => { try { return W.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
   const isStill = () => { try { const I = Vectura.StartPageInk; if (I && typeof I.isStill === 'function') return !!I.isStill(); } catch (e) { /* fall through */ } return reducedMQ(); };
@@ -66,10 +74,14 @@
     const ink = el._spInk;
     if (!ink || typeof ink.showArt !== 'function' || typeof ink.prepareArt !== 'function') return null;
     opts = Object.assign({ payload: null, render: null, label: '', hint: 'Drag to rotate' }, opts || {});
-    const render = typeof opts.render === 'function' ? opts.render : (pl, lb) => {
+    let session = null; /* one engine for every pose of this piece (StartPageArtRenderer.sceneSession), created on the first render */
+    const drawPose = (pose, label) => {
+      if (typeof opts.render === 'function') return opts.render(posed(payload, pose), label);
       const R = Vectura.StartPageArtRenderer;
       if (!R || typeof R.renderDocument !== 'function') return Promise.reject(new Error('StartPageArtRenderer is not loaded'));
-      return R.renderDocument(pl, lb);
+      if (session === null && typeof R.sceneSession === 'function') { try { session = R.sceneSession(payload); } catch (e) { session = false; } }
+      if (session) return session.render({ yaw: pose.yaw, pitch: pose.pitch }, label);
+      return R.renderDocument(posed(payload, pose), label);
     };
     const own = ink.art || { id: 'scene' };
     const baseId = String(own.id || 'scene');
@@ -77,6 +89,7 @@
     let alive = true; let visible = !('IntersectionObserver' in W); let payload = null; let home = null; let homeKey0 = '';
     let target = null; let drag = null; let busy = false; let renders = 0; let failed = false; let lastError = ''; let stage = '';
     let lastAct = performance.now(); let swayT = 0; let tPrev = 0; let timer = 0; let shownKey = '';
+    let lastMs = 0; let lastPageAct = -Infinity; let pumpTimer = 0;
     const cache = new Map(); // pose key -> Promise<alt art | null (the tile's own art)>
     const ready = new Map(); // pose key -> alt art | null, once drawn
 
@@ -106,7 +119,9 @@
       const k = keyOf(pose);
       if (cache.has(k)) return cache.get(k);
       stage = `render ${k}`;
-      const p = Promise.resolve().then(() => render(posed(payload, pose), `${baseId}@${k}`)).then((out) => {
+      const t0 = performance.now();
+      const p = Promise.resolve().then(() => drawPose(pose, `${baseId}@${k}`)).then((out) => {
+        lastMs = out && Number.isFinite(out.ms) ? out.ms : performance.now() - t0; /* the render's own time, not the wait in the queue */
         if (!alive || !out || typeof out.svg !== 'string') return Promise.reject(new Error('no drawing'));
         renders++; stage = `prepare ${k}`;
         const alt = { id: `${baseId}@${k}`, svg: out.svg };
@@ -135,16 +150,30 @@
     };
 
     /* one render at a time: the drag target first, then the rock's poses (nearest home first) */
-    const swayOK = () => visible && !isStill() && !drag;
+    const isHeavy = () => lastMs > cfg().heavyMs;
+    /* poses each side of home the rock steps through: all of them, a few for a heavy scene, none past haltMs or once a heavy scene has been turned */
+    const rockLevels = () => {
+      const c = cfg();
+      if (lastMs > c.haltMs) return 0;
+      if (lastMs > c.heavyMs) return home && keyOf(home) !== homeKey0 ? 0 : Math.max(0, Math.min(LEVELS, c.heavyLevels));
+      return LEVELS;
+    };
+    const parked = (now) => now - lastAct >= IDLE + SWAY_MAX;
+    const swayOK = () => visible && !isStill() && !drag && !parked(performance.now());
     function nextWanted() {
-      if (target && !cache.has(keyOf(target))) return target;
+      if (target && !cache.has(keyOf(target))) return drag && isHeavy() ? null : target; /* a heavy scene renders only the release pose */
       if (target || !swayOK()) return null;
-      for (let i = 1; i <= LEVELS; i++) for (const s of [1, -1]) { const p = poseAt(s * i); if (!cache.has(keyOf(p))) return p; }
+      const L = rockLevels();
+      for (let i = 1; i <= L; i++) for (const s of [1, -1]) { const p = poseAt(s * i); if (!cache.has(keyOf(p))) return p; }
       return null;
     }
     function pump() {
       if (!alive || busy || !payload || !visible) return;
       const want = nextWanted(); if (!want) return;
+      if (!(target && keyOf(want) === keyOf(target))) { /* the rock's poses wait for a quiet page; a drag target never does */
+        const wait = cfg().yieldMs - (performance.now() - lastPageAct);
+        if (wait > 0) { if (!pumpTimer) pumpTimer = setTimeout(() => { pumpTimer = 0; pump(); }, wait + 1); return; }
+      }
       busy = true;
       renderPose(want).then(() => {
         if (target && keyOf(target) === keyOf(want)) { show(keyOf(want)); if (!drag) target = null; } else if (target) { const n = nearest(target); if (n) show(n); }
@@ -153,15 +182,16 @@
     }
 
     /* ---------- the rock (a stepped sway through the drawn poses) ---------- */
-    const parked = (now) => now - lastAct >= IDLE + SWAY_MAX;
     function frame() {
       timer = 0; if (!alive || !payload) return;
       const now = performance.now(); const dt = Math.min(0.1, (now - (tPrev || now)) / 1000); tPrev = now;
       if (drag || target || !visible) { tPrev = 0; return; }
       if (isStill() || now - lastAct < IDLE) { swayT = 0; show(keyOf(home)); if (!isStill() && visible) schedule(IDLE - (now - lastAct)); else tPrev = 0; return; }
+      const L = rockLevels();
+      if (!L) { swayT = 0; tPrev = 0; show(keyOf(home)); return; } /* nothing to rock through: rest on home */
       swayT += dt;
       const r = Math.min(1, swayT / 2.5); const e = r * r * (3 - 2 * r);
-      let lv = Math.round(Math.sin(2 * Math.PI * swayT / SWAY_P) * e * LEVELS);
+      let lv = Math.round(Math.sin(2 * Math.PI * swayT / SWAY_P) * e * L);
       if (parked(now) && lv === 0) { swayT = 0; tPrev = 0; show(keyOf(home)); return; } /* parks once it is back at home */
       while (lv !== 0 && !ready.has(keyOf(poseAt(lv)))) lv -= Math.sign(lv); /* the rock widens as its poses are drawn */
       show(keyOf(poseAt(lv)));
@@ -216,6 +246,13 @@
     ov.addEventListener('pointerup', onUp); ov.addEventListener('pointercancel', onUp); ov.addEventListener('lostpointercapture', onUp);
     ov.addEventListener('keydown', onKey);
 
+    /* a quiet page: scrolling (the scroller that holds this piece, or the page) and pointer / wheel input hold the rock's renders back */
+    const bump = () => { lastPageAct = performance.now(); };
+    const onScroll = (e) => { const t = e.target; if (!t || t === D || t === W || (t.nodeType === 1 && t.contains(el))) bump(); };
+    const ACT = ['pointermove', 'pointerdown', 'wheel', 'touchmove'];
+    D.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    ACT.forEach((n) => W.addEventListener(n, bump, { capture: true, passive: true }));
+
     const io = 'IntersectionObserver' in W ? new IntersectionObserver((es) => es.forEach((e) => { visible = e.isIntersecting; if (visible) wake(); }), { threshold: [0, 0.3] }) : null;
     if (io) io.observe(el);
     const onMotion = () => { if (isStill()) { swayT = 0; show(home ? keyOf(home) : shownKey); } kick(); pump(); };
@@ -225,6 +262,9 @@
     function teardown() {
       if (!alive) return;
       alive = false; if (timer) { clearTimeout(timer); timer = 0; }
+      if (pumpTimer) { clearTimeout(pumpTimer); pumpTimer = 0; }
+      D.removeEventListener('scroll', onScroll, { capture: true }); ACT.forEach((n) => W.removeEventListener(n, bump, { capture: true }));
+      if (session) { try { session.dispose(); } catch (e) { /* gone */ } session = false; }
       if (io) io.disconnect();
       W.removeEventListener('vectura:start-page-motion', onMotion); if (mq && mq.removeEventListener) mq.removeEventListener('change', onMotion);
       ov.remove(); el.classList.remove('sp-scene-live');
@@ -237,7 +277,7 @@
       get home() { return home; },
       get shown() { return shownKey; },
       get failed() { return failed; },
-      get stats() { return { renders, drawn: ready.size, busy, swaying: !!timer && swayT > 0, stage, lastError }; },
+      get stats() { return { renders, drawn: ready.size, busy, swaying: !!timer && swayT > 0, stage, lastError, lastMs, heavy: isHeavy() }; },
       poseKey: keyOf,
       destroy: teardown,
     };

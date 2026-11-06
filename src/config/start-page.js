@@ -115,6 +115,16 @@
   // when the browser is idle (requestIdleCallback, at most idleTimeoutMs wait; setTimeout fallbackMs where it is missing).
   const PLATE_PREMOUNT = Object.freeze({ enabled: true, idleTimeoutMs: 2000, fallbackMs: 120 });
 
+  // A turning 3D Scene (scene-orbit.js) draws every pose with a full render. A scene whose pose render takes longer than `heavyMs`
+  // rocks through at most `heavyLevels` poses each side and draws nothing while it is dragged (it shows the nearest drawn pose and
+  // renders only the release pose); past `haltMs` it does not rock at all. Rock poses are never started within `yieldMs` of a scroll
+  // or a pointer / wheel event, so a render never lands in the middle of a gesture.
+  const SCENE_ORBIT = Object.freeze({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300 });
+
+  // The idle sway of the live 3D models (orbit3d.js) redraws at `fps`; with `crowdAt` or more models swaying on screen at once,
+  // or when a frame costs more than `overrunMs` to draw, each model drops to `crowdFps`.
+  const ORBIT_SWAY = Object.freeze({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 });
+
   const LIMITS = Object.freeze({
     recentsShown: 8,
     entriesMax: 48,
@@ -231,5 +241,5 @@
     return Object.assign({}, COVER_FONTS.find((f) => f.id === id), { scale });
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, SCENE_ORBIT, ORBIT_SWAY, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
 })();

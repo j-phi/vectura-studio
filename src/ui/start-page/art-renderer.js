@@ -7,6 +7,8 @@
  *   renderDocument(payload) -> Promise<{ svg, bytes, algorithm, ownColors, pathCount, ms }>
  *   renderPreset(preset)    -> Promise<same>
  *   presetPayload(preset)   -> .vectura object (sync) for opening a preset in the editor
+ *   sceneSession(payload)   -> { render(pose {yaw,pitch}, label) -> Promise<same>, dispose() }: one engine for every camera pose of a
+ *                              3D Scene document (byte-identical to renderDocument of the posed document, cheaper per pose)
  *   stats()                 -> { count, slowestMs, slowestId, lastMs }
  *
  * The engine and the export code read the global SETTINGS (paper, margin, pens,
@@ -171,6 +173,15 @@
   };
 
   // ---------------------------------------------------------------- the two renders
+  const loadDocumentImages = (payload) => {
+    if (!payload.images || typeof payload.images !== 'object') return;
+    const store = (Vectura.NOISE_IMAGES = Vectura.NOISE_IMAGES || {});
+    Object.entries(payload.images).forEach(([id, img]) => {
+      if (!img || !Array.isArray(img.data)) return;
+      store[id] = { width: img.width, height: img.height, data: new Uint8ClampedArray(img.data) };
+    });
+  };
+
   const documentJob = (payload) => {
     const state = payload && (payload.state || payload);
     if (!state || !state.engine || !state.settings) throw new Error('Not a Vectura document');
@@ -178,13 +189,7 @@
     const restoreImages = snapshotNoiseImages();
     try {
       applyDocumentSettings(state.settings);
-      if (payload.images && typeof payload.images === 'object') {
-        const store = (Vectura.NOISE_IMAGES = Vectura.NOISE_IMAGES || {});
-        Object.entries(payload.images).forEach(([id, img]) => {
-          if (!img || !Array.isArray(img.data)) return;
-          store[id] = { width: img.width, height: img.height, data: new Uint8ClampedArray(img.data) };
-        });
-      }
+      loadDocumentImages(payload);
       const engine = new Vectura.VectorEngine();
       if (Vectura.SETTINGS.paperSize) engine.setProfile(Vectura.SETTINGS.paperSize);
       engine.importState(copyOf(state.engine));
@@ -280,6 +285,58 @@
     };
   });
 
+  // ---------------------------------------------------------------- scene sessions
+  // A turning 3D Scene draws many poses of ONE document. A session builds the private engine once (the same setup as
+  // documentJob) and, for each pose, moves only the scene camera and recomputes the display geometry, then builds the SVG
+  // exactly as documentJob does: the same bytes as a fresh renderDocument of the posed document, minus the engine build and the
+  // per-object generation. Every call still snapshots and restores SETTINGS inside the shared idle queue, so it interleaves
+  // safely with other Start Page renders.
+  const isSceneCameraLayer = (l) => !!(l && l.type === 'scene3d' && l.params && typeof l.params === 'object' && (!l.isGroup || l.containerRole === 'scene'));
+  const turnCamera = (layers, pose) => {
+    (layers || []).forEach((l) => {
+      if (isSceneCameraLayer(l)) l.params.camera = Object.assign({}, l.params.camera || {}, { yaw: pose.yaw, pitch: pose.pitch });
+    });
+  };
+  const sameCamera = (a, b) => !!(a && b && a.yaw === b.yaw && a.pitch === b.pitch);
+
+  const sceneSession = (payload) => {
+    const state = payload && (payload.state || payload);
+    if (!state || !state.engine || !state.settings) throw new Error('Not a Vectura document');
+    let engine = null;
+    let current = null;
+    let disposed = false;
+    const job = (pose) => {
+      if (disposed) throw new Error('Scene session disposed');
+      const restoreSettings = snapshotSettings();
+      const restoreImages = snapshotNoiseImages();
+      try {
+        applyDocumentSettings(state.settings);
+        loadDocumentImages(payload);
+        if (!engine) {
+          const doc = copyOf(state.engine);
+          turnCamera(doc.layers, pose);
+          const built = new Vectura.VectorEngine();
+          if (Vectura.SETTINGS.paperSize) built.setProfile(Vectura.SETTINGS.paperSize);
+          built.importState(doc);
+          engine = built;
+        } else if (!sameCamera(current, pose)) {
+          turnCamera(engine.layers, pose);
+          engine.computeAllDisplayGeometry();
+        }
+        current = { yaw: pose.yaw, pitch: pose.pitch };
+        const { svg, pathCount } = buildSvg(engine);
+        return { svg, pathCount, algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine) };
+      } finally {
+        restoreImages();
+        restoreSettings();
+      }
+    };
+    return {
+      render: (pose, label) => enqueue(label || 'scene', () => job(pose)),
+      dispose: () => { disposed = true; engine = null; current = null; },
+    };
+  };
+
   // ---------------------------------------------------------------- idle queue
   let tail = Promise.resolve();
   const stat = { count: 0, slowestMs: 0, slowestId: null, lastMs: 0 };
@@ -308,6 +365,7 @@
 
   Vectura.StartPageArtRenderer = {
     renderDocument: (payload, label) => enqueue(label || 'document', () => documentJob(payload)),
+    sceneSession,
     renderPreset: (preset) => enqueue(preset && preset.id, () => presetJob(preset)),
     presetPayload,
     stats: () => Object.assign({}, stat),

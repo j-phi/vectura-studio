@@ -22,6 +22,18 @@ describe('START_PAGE config', () => {
   let SP;
   beforeAll(() => { SP = load(); });
 
+  it('carries the 3D Scene budget and the orbit sway rates, and the modules mirror them for a page without the config', () => {
+    expect(Object.isFrozen(SP.SCENE_ORBIT)).toBe(true);
+    expect(Object.isFrozen(SP.ORBIT_SWAY)).toBe(true);
+    expect(SP.SCENE_ORBIT).toEqual({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300 });
+    expect(SP.ORBIT_SWAY).toEqual({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 });
+    const so = fs.readFileSync(path.join(ROOT, 'src/ui/start-page/scene-orbit.js'), 'utf8');
+    const ob = fs.readFileSync(path.join(ROOT, 'src/ui/start-page/orbit3d.js'), 'utf8');
+    const lit = (src, re) => Function(`return (${src.match(re)[1]})`)();
+    expect(lit(so, /const CFG0 = (\{[^}]*\});/)).toEqual(SP.SCENE_ORBIT);
+    expect(lit(ob, /Object\.assign\((\{ fps[^}]*\}), \(Vectura\.START_PAGE/)).toEqual(SP.ORBIT_SWAY);
+  });
+
   it('registers on window.Vectura and is frozen', () => {
     expect(SP).toBeTruthy();
     expect(Object.isFrozen(SP)).toBe(true);

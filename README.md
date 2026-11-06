@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Start Page stays responsive with heavy 3D Scenes
+- **No more Start Page freezes from heavy 3D Scenes.** Slow scenes rock less and render only where you let go, background renders wait for a quiet page, each scene reuses one renderer, and several live 3D pieces share a lighter sway.
+
 ### Unreleased - Plates stay painted on a fast fling
 - **No white or black flashes when flinging the Start Page.** Plates stay built (short pages) or are released only far away, the rest are built in idle time after load, and a 3D plate loaded off screen arrives drawn.
 
