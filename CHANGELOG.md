@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Plates flickered on a fast scroll
+- **A plate you have already seen comes back drawn.** Plates far off screen are still released to save memory, but when you scroll back to one it now reappears finished instead of fading in from blank and plotting itself again (4 to 5 seconds of blank or half-drawn art each time). Live 3D pieces come back fully plotted too. A plate's first appearance, and a plate whose art changed, still draw in as before.
+- **Plates load lazily with saved works too.** With saved works on the page, a timing race meant every plate mounted at once and was never released; plates now mount as they near the screen and are released when far away, whatever the page holds.
+
 ### Fixed: 3D Scenes on the Start Page draw exactly as the app draws them
 - **Fills and shadow shapes match the app.** A 3D Scene on a plate or the cover band no longer turns as a simplified stand-in (contours and edges only). At rest it shows the drawing the app made, with its fills, shadow shapes, ground and line weights, and in the plate's own layout and framing. Rocking and dragging show real renders of the same scene with the camera moved, so every angle is drawn the way the app would draw it.
 - **What that costs.** Each new angle is a full render, so a drag steps to the exact angle a few times a second (the nearest angle already drawn shows meanwhile), and the gentle rock widens over its first few seconds as its angles finish rendering. Renders run one at a time, only while the piece is on screen.

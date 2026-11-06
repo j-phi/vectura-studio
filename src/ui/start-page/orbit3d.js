@@ -1,5 +1,5 @@
 /* ===================== StartPageOrbit3D: live, drag-to-rotate 3D line art in plotter style =====================
- * window.Vectura.StartPageOrbit3D.mount(el, {type, presetId, model, colorway, hint, disc, label, duration, paper})
+ * window.Vectura.StartPageOrbit3D.mount(el, {type, presetId, model, colorway, hint, disc, label, duration, plotted, paper})  (plotted: show finished at once, no plot-in)
  *   -> {setModel, setColorway, destroy, model, info, matrix, plotted}
  * Port of the reference mockup's orbit3d.js. Models are chosen by Vectura algorithm type via modelFor(type, presetId):
  *   topoform -> torus, spiralizer -> coiled-sphere, terrain -> terrain (terrain-alpine when the preset id says alpine),
@@ -192,7 +192,7 @@
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return null; if (el._vorbit) el._vorbit.destroy();
     if (opts && SCENE.test(String(opts.model || ''))) return null; /* a 3D Scene turns through StartPageSceneOrbit, not here */
-    opts = Object.assign({ model: null, type: null, presetId: null, colorway: null, hint: true, duration: 1700, paper: true, disc: false }, opts || {});
+    opts = Object.assign({ model: null, type: null, presetId: null, colorway: null, hint: true, duration: 1700, plotted: false, paper: true, disc: false }, opts || {});
     css(); el.classList.add('vorbit');
     if (opts.disc) el.style.borderRadius = '50%'; /* Plate 4: a slightly lighter disc; deliberately no ring, border or outline */
     const cv = D.createElement('canvas'); cv.tabIndex = 0; cv.setAttribute('role', 'application'); cv.setAttribute('aria-roledescription', '3D viewer');
@@ -335,6 +335,7 @@
     function plotIn(dur) { shown = true; if (!motionOK() || !dur) { plot = 1; plotting = null; lastAct = performance.now(); } else { plot = 0; plotting = { t0: performance.now(), dur }; } kick(); }
     const io = 'IntersectionObserver' in W ? new IntersectionObserver(es => es.forEach(e => { visible = e.isIntersecting; if (visible && !shown && e.intersectionRatio >= .3) plotIn(opts.duration); if (visible) wake(); }), { threshold: [0, .3] }) : null;
     io ? io.observe(el) : (visible = true, plotIn(0));
+    if (opts.plotted) plotIn(0); /* a piece the visitor has already seen (a remounted plate) is shown finished at once, not blank until 30 % visible */
 
     /* input */
     const touch = now => { if (plotting) { plotting = null; plot = 1; } bake(); lastAct = now; };
