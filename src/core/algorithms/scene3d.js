@@ -34,6 +34,22 @@
   // their marks ~4x during a drag while keeping the same structure (measured
   // in Chrome: turingStripe 458 -> 135 ms, mezzoRegion 386 -> 211 ms).
   const MONO_DRAFT_PEN_SCALE = 2.5;
+  // The same tier also coarsens the mono SUBSTRATE (surface-fill-mono.js
+  // `makeCtx`), which the pen scale does not touch: the chart lattice that `inv`
+  // seeds Newton from (96x96 base, refined to 0.75 mm on paper) and the
+  // fallback-seed list were rebuilt every frame at full size. Halving the base
+  // grid, doubling the refinement target and striding the seeds by 2x cuts the
+  // lattice ~4x; Newton still converges from the wider seeds (inv's 0.30 mm
+  // tolerance is unchanged). Draft only: the settled 'full' compose passes no
+  // `substrateDraft`, so it and every export stay byte-identical.
+  const MONO_DRAFT_LG_SCALE = 0.5;
+  const MONO_DRAFT_LAT_MM_SCALE = 2;
+  const MONO_DRAFT_SEED_STRIDE_SCALE = 2;
+  const MONO_DRAFT_SUBSTRATE = Object.freeze({
+    lgScale: MONO_DRAFT_LG_SCALE,
+    latMMScale: MONO_DRAFT_LAT_MM_SCALE,
+    seedStrideScale: MONO_DRAFT_SEED_STRIDE_SCALE,
+  });
   const isMonoToneLaw = (law) => {
     const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
     return Boolean(M && typeof M.isMono === 'function' && M.isMono(law));
@@ -3435,6 +3451,8 @@
         })();
         const out = [];
         const sb = spacingBand(normalWorld, styleParams, faceWorldCentroid(face), face, record, null);
+        // F5 law draft: same pen scale and substrate coarsening as the curved path.
+        const monoPen = lawDraft ? penWidth * MONO_DRAFT_PEN_SCALE : penWidth;
         let handled = false;
         try {
           handled = M.emit({
@@ -3446,18 +3464,19 @@
             pushRun: (run) => {
               if (Array.isArray(run) && run.length >= 2) out.push(run.map((pt) => ({ x: pt.x, y: pt.y })));
             },
-            penWidth,
-            inkWidth: penWidth * (1 + MONO_INK_SPREAD),
-            floorPitch: MONO_PLOT_FLOOR_PEN * penWidth,
+            penWidth: monoPen,
+            substrateDraft: lawDraft ? MONO_DRAFT_SUBSTRATE : null,
+            inkWidth: monoPen * (1 + MONO_INK_SPREAD),
+            floorPitch: MONO_PLOT_FLOOR_PEN * monoPen,
             // What the facet's own ladder rung asked for, so Density and the
             // tone band still set the scale the law works at.
-            masterPitch: Math.max(penWidth, finite(sb.spacing, hatchSpacing(styleParams.fillDensity))),
+            masterPitch: Math.max(monoPen, finite(sb.spacing, hatchSpacing(styleParams.fillDensity))),
             litMaxPitch: monoLitMaxPitch(),
             targetArea: null,
             // Never below the structural emission floor this file has carried
             // since Phase 1 — a sub-pen-width fragment is a pen-down dot, not a
             // mark, on the faceted path exactly as on the curved one.
-            minMarkMM: Math.max(MIN_RUN_MM, 2 * penWidth),
+            minMarkMM: Math.max(MIN_RUN_MM, 2 * monoPen),
             hash: ldHash,
             angleDeg: screenAngleDeg,
             densityScale: monoDensityScale(monoDensityOf(styleParams)),
@@ -5012,6 +5031,9 @@
                 // pen coarsens it uniformly and keeps its character.
                 penWidth: lawDraft && isMonoToneLaw(Params.resolveToneLaw(sp))
                   ? penWidth * MONO_DRAFT_PEN_SCALE : penWidth,
+                // F5 law draft: coarser mono chart lattice / seeds (null otherwise).
+                substrateDraft: lawDraft && isMonoToneLaw(Params.resolveToneLaw(sp))
+                  ? MONO_DRAFT_SUBSTRATE : null,
                 // F5 law draft: ribbon laws emit weighted centrelines.
                 ribbonDraft: lawDraft,
                 // Density: `hatchSpacing` UNCHANGED at d>=50 (the O27 parity

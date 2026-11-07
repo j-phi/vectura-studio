@@ -13155,6 +13155,7 @@
           sampleAt,
           pushRun,
           penWidth,
+          substrateDraft: opts.substrateDraft || null,
           inkWidth: inkWidth(),
           floorPitch,
           masterPitch,

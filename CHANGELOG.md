@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Improved: Mezzotint 3D fills turn faster in the editor
+- **Faster drag preview for the mono Fill Styles.** Rotating a 3D object with the Mezzotint Region fill (or another mono fill law) no longer rebuilds its full-detail setup on every drag frame: the drag preview uses a coarser lattice and fewer seeds, and boxes, planes and other flat-faced shapes now get the drag preview at all. A mezzotint box or plane turns about three times faster (about 600 ms to 200 ms per frame), a sphere about 20 to 25 % faster.
+- **Less wasted work everywhere.** A mono fill builds its depth and light field only when the fill actually reads it, which Mezzotint Region never does.
+- **Same drawing.** The settled drawing, export and saved files are byte-identical; only the preview shown while you drag changes.
+
 ### Improved: Start Page stays responsive with heavy 3D Scenes
 - **Heavy scenes no longer freeze the page.** Each turning 3D Scene plate times its own renders. A scene that takes more than about a second per angle (a mezzotint fill, say) rocks through only a couple of angles, or none past four seconds, renders nothing while you drag it and draws only the angle you let go on. With a mezzotint plate on screen the desktop main thread went from busy all the time to about 9 % busy, and a drag went from 3 to 85 pointer moves registered in 4 s.
 - **Quieter background work.** A scene's rock angles wait for about 0.3 s of no scrolling or pointer input before rendering, and stop once the rock has parked.

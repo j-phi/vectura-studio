@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Mezzotint 3D fills turn faster
+- **Faster rotation with mono fills.** The drag preview for Mezzotint Region and the other mono fill laws is lighter (flat-faced shapes about three times faster), and the settled drawing is unchanged.
+
 ### Unreleased - Start Page stays responsive with heavy 3D Scenes
 - **No more Start Page freezes from heavy 3D Scenes.** Slow scenes rock less and render only where you let go, background renders wait for a quiet page, each scene reuses one renderer, and several live 3D pieces share a lighter sway.
 
