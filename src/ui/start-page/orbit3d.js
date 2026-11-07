@@ -11,7 +11,8 @@
  * no sway and no inertia. `colorway` is { paper, ink, ink2? } or a () => that object; recolor live with setColorway.
  * Off-screen models are PAUSED, not destroyed: the IntersectionObserver stops the frame loop when the model leaves the viewport and the
  * canvas, matrix and plot state stay as they were; scrolling back kicks it again (nothing is rebuilt or re-plotted).
- * Idle cost: the sway redraws at ~15 fps (not the display rate), stops after SWAY_MAX (~20 s) with no interaction, and
+ * Idle cost: the sway redraws at ~15 fps (not the display rate; ~8 fps each once 2 or more models sway on screen at once, or when a frame
+ * overruns its budget: START_PAGE.ORBIT_SWAY), stops after SWAY_MAX (~20 s) with no interaction, and
  * resumes on pointer enter, focus or scrolling back into view. The z-buffer is reused while the view matrix is unchanged.
  * `disc:true` gives the Plate 4 look: round, on a slightly lighter paper, with no ring, border or outline. */
 (function (W, D) {
@@ -24,6 +25,9 @@
   let stillEvt = false;
   const isStill = () => { try { const I = Vectura.StartPageInk; if (I && typeof I.isStill === 'function') return !!I.isStill(); } catch (e) { /* fall through */ } return stillEvt || reducedMQ(); };
   const motionOK = () => !isStill();
+  /* sway rate: START_PAGE.ORBIT_SWAY (src/config/start-page.js); the literals mirror it for a page without the config */
+  const swayCfg = () => Object.assign({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 }, (Vectura.START_PAGE && Vectura.START_PAGE.ORBIT_SWAY) || {});
+  const SWAYING = new Set(); /* models that are visible and in their idle sway right now: they share the frame budget */
 
   /* ---------- 3×3 row-major matrices ---------- */
   const mul = (A, B) => { const C = new Float64Array(9); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i * 3 + j] = A[i * 3] * B[j] + A[i * 3 + 1] * B[3 + j] + A[i * 3 + 2] * B[6 + j]; return C; };
@@ -203,7 +207,8 @@
     let name = norm(opts.model || modelFor(opts.type, opts.presetId) || 'torus'), M0 = model(name), M = M0.home, cwOpt = opts.colorway;
     let vel = [0, 0], drag = null, lastAct = -1e9, swayT = 0, swayA = [0, 0], dirty = true, plot = 0, plotting = null, shown = false, running = 0, visible = false, alive = true;
     let Wd = 0, Hd = 0, dpr = 1, ink = '#000', ink2 = null, inkFrom = null, inkT0 = 0, tPrev = 0;
-    const SWAY = [.10, .04], SWAY_P = [8.5, 12.5], IDLE = 1800, SWAY_MAX = 20000, SWAY_MS = 1000 / 15;
+    const SWAY = [.10, .04], SWAY_P = [8.5, 12.5], IDLE = 1800, SWAY_MAX = 20000, tok = {}; let frameMs = 0;
+    const swayMs = () => { const c = swayCfg(); return 1000 / ((SWAYING.size >= c.crowdAt || frameMs > c.overrunMs) ? c.crowdFps : c.fps); };
     let timer = 0, lastR = -1e9;
     const dispM = () => (swayA[0] || swayA[1]) ? mul(mul(rx(swayA[1]), ry(swayA[0])), M) : M;
     const bake = () => { M = orthonorm(dispM()); swayA = [0, 0]; swayT = 0; };
@@ -316,15 +321,16 @@
         swayT += dt; const r = Math.min(1, swayT / 2.5), e = r * r * (3 - 2 * r);
         swayA = [SWAY[0] * e * Math.sin(T * swayT / SWAY_P[0]), SWAY[1] * e * Math.sin(T * swayT / SWAY_P[1])]; more = true; }
       if (inkFrom) more = true;
-      if (more || dirty) render(now); dirty = false;
+      if (more || dirty) { const r0 = performance.now(); render(now); frameMs = frameMs * .5 + (performance.now() - r0) * .5; } dirty = false;
       /* a sway that has run its course is parked in place (baked, so resuming is seamless) and the loop ends */
       if (ok && !plotting && !drag && swayT > 0 && now - lastAct >= IDLE + SWAY_MAX) bake();
       const waitSway = ok && shown && !drag && !plotting && now - lastAct < IDLE + SWAY_MAX;
+      if (waitSway && visible && shown) SWAYING.add(tok); else SWAYING.delete(tok);
       const busy = plotting || drag || inkFrom || dirty || Math.abs(vel[0]) > 1e-3 || Math.abs(vel[1]) > 1e-3;
       if ((more || waitSway) && visible) {
         if (!running) {
           /* sway alone redraws at ~15 fps; anything interactive keeps the display rate */
-          const delay = !busy ? SWAY_MS - (performance.now() - now) - 2 : 0;
+          const delay = !busy ? swayMs() - (performance.now() - now) - 2 : 0;
           if (delay > 3) { running = 1; timer = setTimeout(() => { timer = 0; running = requestAnimationFrame(frame); }, delay); } else running = requestAnimationFrame(frame);
         }
       } else tPrev = 0;
@@ -365,7 +371,7 @@
       setModel(m, o) { o = o || {}; name = norm(m); M0 = model(name); M = M0.home; vel = [0, 0]; swayA = [0, 0]; swayT = 0; if (o.label !== undefined) opts.label = o.label;
         cv.setAttribute('aria-label', label()); color(false); if (shown) plotIn(o.replot === false ? 0 : 1100); return handle; },
       setColorway(cw) { cwOpt = cw || null; color(true); return handle; },
-      destroy() { alive = false; if (timer) { clearTimeout(timer); timer = 0; } else if (running) cancelAnimationFrame(running); io && io.disconnect(); ro && ro.disconnect(); W.removeEventListener('vectura:start-page-motion', onMotion); mq && mq.removeEventListener && mq.removeEventListener('change', onMotion);
+      destroy() { alive = false; SWAYING.delete(tok); if (timer) { clearTimeout(timer); timer = 0; } else if (running) cancelAnimationFrame(running); io && io.disconnect(); ro && ro.disconnect(); W.removeEventListener('vectura:start-page-motion', onMotion); mq && mq.removeEventListener && mq.removeEventListener('change', onMotion);
         cv.removeEventListener('pointerenter', wake); cv.removeEventListener('focus', wake); cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerup', onUp); cv.removeEventListener('pointercancel', onUp); cv.removeEventListener('lostpointercapture', onUp); cv.removeEventListener('keydown', onKey);
         cv.remove(); hintEl && hintEl.remove(); el.classList.remove('vorbit'); if (opts.paper !== false) el.style.backgroundColor = ''; if (opts.disc) el.style.borderRadius = ''; el.style.removeProperty('--vorbit-ink'); delete el._vorbit; }
     };

@@ -6,6 +6,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Improved: Start Page stays responsive with heavy 3D Scenes
+- **Heavy scenes no longer freeze the page.** Each turning 3D Scene plate times its own renders. A scene that takes more than about a second per angle (a mezzotint fill, say) rocks through only a couple of angles, or none past four seconds, renders nothing while you drag it and draws only the angle you let go on. With a mezzotint plate on screen the desktop main thread went from busy all the time to about 9 % busy, and a drag went from 3 to 85 pointer moves registered in 4 s.
+- **Quieter background work.** A scene's rock angles wait for about 0.3 s of no scrolling or pointer input before rendering, and stop once the rock has parked.
+- **Faster angles.** Each scene keeps one renderer and only moves its camera between angles, about 20 to 40 % faster per angle for Studio Shadows, with byte-identical drawings.
+- **Lighter 3D sways.** When two or more live 3D pieces sway at once they step at about 8 frames a second instead of 15 (one alone keeps 15), roughly halving their CPU use.
+
 ### Fixed: Plates flashed white or black on a fast fling
 - **Plates stay painted when you fling the Start Page.** On a fast scroll (especially upward, on iPhone and in desktop Chrome) whole plates could flash to the bare page background: white in light theme, black in dark. Plates far off screen were being released and rebuilt just ahead of the screen, and a fling outran the rebuild. A page with fewer than 24 plates now never releases them, and builds the rest one at a time in idle moments after it loads, so a first fling finds them ready. Longer pages release only plates more than three screens away that have stayed away for 10 seconds.
 - **No empty 3D discs.** A live 3D plate that loads just off screen is drawn finished, so it never scrolls in as an empty disc.
