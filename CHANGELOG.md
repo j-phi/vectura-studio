@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Improved: Mezzotint 3D fills turn faster in the editor
+- **Faster drag preview for the mono Fill Styles.** Rotating a 3D object with the Mezzotint Region fill (or another mono fill law) no longer rebuilds its full-detail setup on every drag frame: the drag preview uses a coarser lattice and fewer seeds, and boxes, planes and other flat-faced shapes now get the drag preview at all. A mezzotint box or plane turns about three times faster (about 600 ms to 200 ms per frame), a sphere about 20 to 25 % faster.
+- **Less wasted work everywhere.** A mono fill builds its depth and light field only when the fill actually reads it, which Mezzotint Region never does.
+- **Same drawing.** The settled drawing, export and saved files are byte-identical; only the preview shown while you drag changes.
+
 ### Fixed: Plates flashed white or black on a fast fling
 - **Plates stay painted when you fling the Start Page.** On a fast scroll (especially upward, on iPhone and in desktop Chrome) whole plates could flash to the bare page background: white in light theme, black in dark. Plates far off screen were being released and rebuilt just ahead of the screen, and a fling outran the rebuild. A page with fewer than 24 plates now never releases them, and builds the rest one at a time in idle moments after it loads, so a first fling finds them ready. Longer pages release only plates more than three screens away that have stayed away for 10 seconds.
 - **No empty 3D discs.** A live 3D plate that loads just off screen is drawn finished, so it never scrolls in as an empty disc.

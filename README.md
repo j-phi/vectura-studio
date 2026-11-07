@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Mezzotint 3D fills turn faster
+- **Faster rotation with mono fills.** The drag preview for Mezzotint Region and the other mono fill laws is lighter (flat-faced shapes about three times faster), and the settled drawing is unchanged.
+
 ### Unreleased - Plates stay painted on a fast fling
 - **No white or black flashes when flinging the Start Page.** Plates stay built (short pages) or are released only far away, the rest are built in idle time after load, and a 3D plate loaded off screen arrives drawn.
 

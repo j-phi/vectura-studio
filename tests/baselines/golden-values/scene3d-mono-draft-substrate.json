@@ -1,0 +1,70 @@
+{
+  "arm64": {
+    "box/mezzoRegion": {
+      "hash": "670cda9a",
+      "paths": 720,
+      "pts": 19130
+    },
+    "fields/box": {
+      "hash": "87ea8cdc",
+      "lat": 6400
+    },
+    "fields/sphere": {
+      "hash": "9ea1b036",
+      "lat": 9530
+    },
+    "fields/torus": {
+      "hash": "5102c157",
+      "lat": 9549
+    },
+    "plane/mezzoRegion": {
+      "hash": "988f5332",
+      "paths": 745,
+      "pts": 23430
+    },
+    "sphere/etfKang": {
+      "hash": "458964db",
+      "paths": 285,
+      "pts": 13885
+    },
+    "sphere/mezzoRegion": {
+      "hash": "8ee322d6",
+      "paths": 534,
+      "pts": 17788
+    }
+  },
+  "x64": {
+    "box/mezzoRegion": {
+      "hash": "670cda9a",
+      "paths": 720,
+      "pts": 19130
+    },
+    "fields/box": {
+      "hash": "87ea8cdc",
+      "lat": 6400
+    },
+    "fields/sphere": {
+      "hash": "9ea1b036",
+      "lat": 9530
+    },
+    "fields/torus": {
+      "hash": "5102c157",
+      "lat": 9549
+    },
+    "plane/mezzoRegion": {
+      "hash": "988f5332",
+      "paths": 745,
+      "pts": 23430
+    },
+    "sphere/etfKang": {
+      "hash": "b2689b20",
+      "paths": 285,
+      "pts": 13885
+    },
+    "sphere/mezzoRegion": {
+      "hash": "109a43af",
+      "paths": 534,
+      "pts": 17788
+    }
+  }
+}

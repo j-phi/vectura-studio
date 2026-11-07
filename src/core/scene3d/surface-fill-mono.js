@@ -331,8 +331,14 @@
      * cut — and both the depth and the total are budgeted, so a chart with a
      * genuine singularity cannot run the sampler away.
      */
-    const LG = 96;
-    const LAT_MM = 0.75;
+    // DRAFT (`o.substrateDraft`, the 'law' drag tier only): a coarser base grid,
+    // a coarser on-paper refinement target and a wider fallback-seed stride. The
+    // settled compose and every export pass no draft, so they keep 96 / 0.75 / 2
+    // exactly. The scales come from scene3d.js (MONO_DRAFT_*).
+    const SD = o.substrateDraft || null;
+    const LG = SD ? Math.max(24, Math.round(96 * finite(SD.lgScale, 1))) : 96;
+    const LAT_MM = SD ? 0.75 * Math.max(1, finite(SD.latMMScale, 1)) : 0.75;
+    const SEED_STRIDE = SD ? Math.max(2, Math.round(2 * finite(SD.seedStrideScale, 1))) : 2;
     const LAT_MAX = 90000;
     const lat = [];
     let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
@@ -561,7 +567,7 @@
       areaFor, shadeAt,
       emittedCount: () => famIdx,
       cutCount: () => cutSegs,
-      lat, ok, minX, minY, maxX, maxY, W, H: Hh, R,
+      lat, ok, minX, minY, maxX, maxY, W, H: Hh, R, SEED_STRIDE,
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
       stripeAlign: clamp(finite(o.stripeAlign, 0), 0, STRIPE_ALIGN_MAX),
@@ -666,7 +672,7 @@
     // from one line) are backed by a FALLBACK list — the whole lattice, dark
     // first — and a seed whose walk dies is simply the next one's problem.
     const fallback = [];
-    for (let k = 0; k < C.lat.length; k += 2) {
+    for (let k = 0; k < C.lat.length; k += C.SEED_STRIDE) {
       const s = C.at(C.lat[k].a, C.lat[k].b);
       if (s) fallback.push(s);
     }
@@ -716,24 +722,38 @@
   const attachFields = (C) => {
     // A coarse screen raster of camera depth and radiance, built from the chart
     // so it is exact on the surface and empty off it.
+    // LAZY. The raster is ~17.7k `inv` calls and it is the single largest cost
+    // of `emit` (~36 %), yet only the four laws that read depth / occlusion /
+    // the light's direction (etfKang's `gradZ`, creviceAO's `aoAt`, the horizon
+    // law's `horizonAt` + `lightDir`) ever touch it. So it is built on the FIRST
+    // read of any accessor and never for the other laws. `inv` is a pure
+    // function of the chart (no RNG, no cache), so building later yields the
+    // same values; `C.fieldBuilds` counts the builds (0 or 1) for the tests.
     const N = 132;
     const dx = C.W / N; const dy = C.H / N;
-    const Z = new Float32Array((N + 1) * (N + 1));
-    const Ii = new Float32Array((N + 1) * (N + 1));
-    const M = new Uint8Array((N + 1) * (N + 1));
-    for (let j = 0; j <= N; j++) {
-      for (let i = 0; i <= N; i++) {
-        const s = C.inv(C.minX + i * dx, C.minY + j * dy);
-        const k = j * (N + 1) + i;
-        if (!s) continue;
-        M[k] = 1; Z[k] = finite(s.z, 0); Ii[k] = finite(s.I, 0);
+    let Z = null; let Ii = null; let M = null;
+    C.fieldBuilds = 0;
+    const raster = () => {
+      if (M) return;
+      C.fieldBuilds += 1;
+      Z = new Float32Array((N + 1) * (N + 1));
+      Ii = new Float32Array((N + 1) * (N + 1));
+      M = new Uint8Array((N + 1) * (N + 1));
+      for (let j = 0; j <= N; j++) {
+        for (let i = 0; i <= N; i++) {
+          const s = C.inv(C.minX + i * dx, C.minY + j * dy);
+          const k = j * (N + 1) + i;
+          if (!s) continue;
+          M[k] = 1; Z[k] = finite(s.z, 0); Ii[k] = finite(s.I, 0);
+        }
       }
-    }
+    };
     const gi = (x) => clamp(Math.round((x - C.minX) / dx), 0, N);
     const gj = (y) => clamp(Math.round((y - C.minY) / dy), 0, N);
-    C.depthAt = (x, y) => { const k = gj(y) * (N + 1) + gi(x); return M[k] ? Z[k] : null; };
+    C.depthAt = (x, y) => { raster(); const k = gj(y) * (N + 1) + gi(x); return M[k] ? Z[k] : null; };
     // Screen gradient of depth — the steepest-descent direction of the body.
     C.gradZ = (x, y) => {
+      raster();
       const i = gi(x); const j = gj(y);
       if (i < 1 || j < 1 || i >= N || j >= N) return null;
       const k = j * (N + 1) + i;
@@ -766,7 +786,9 @@
     };
     // The LIGHT'S OWN HORIZON — cast/contact shadow density as a field of its
     // own, marched along the light's screen direction over the same raster.
-    C.lightDir = (() => {
+    let lightDirV = null;
+    const computeLightDir = () => {
+      raster();
       // Recover the light's screen direction from the radiance gradient, which
       // is the one thing this file can read without reaching into the lighting.
       let gx = 0; let gy = 0;
@@ -779,7 +801,12 @@
       }
       const L = Math.hypot(gx, gy) || 1;
       return { x: gx / L, y: gy / L };
-    })();
+    };
+    Object.defineProperty(C, 'lightDir', {
+      configurable: true,
+      enumerable: true,
+      get() { if (!lightDirV) lightDirV = computeLightDir(); return lightDirV; },
+    });
     C.horizonAt = (x, y) => {
       const z0 = C.depthAt(x, y);
       if (z0 == null) return null;
@@ -3137,7 +3164,7 @@
     // A law that throws must not take the whole fill with it, and the reason
     // has to survive to the harness — a silently empty cell is the one failure
     // mode this rig cannot tell apart from a law that draws nothing.
-    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null, readsAngle: false };
+    const diag = { algo: o.algo, lat: C.lat.length, fieldBuilds: 0, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null, readsAngle: false };
     // U6 `chainMarks`: a maze is a graph of short wall segments that touch at
     // their ends. Collect the runs and join those that share an endpoint into
     // polylines. No point moves, so the ink is the same and only the pen-lifts
@@ -3168,6 +3195,7 @@
       diag.chained = { before: chain.runs.length, after: joined.length };
       joined.forEach((j) => realPush(j.run, j.back, j.idx));
     }
+    diag.fieldBuilds = C.fieldBuilds;
     diag.emitted = C.emittedCount();
     diag.cut = C.cutCount();
     // A law may publish its own numbers. `voronoiWeb`'s clamps are a claim
