@@ -43,6 +43,9 @@ describe('mono fill — lazy fields, draft substrate, full-tier identity', () =>
   beforeAll(async () => {
     runtime = await loadVecturaRuntime({ includeUi: false });
     V = runtime.window.Vectura;
+    // These tests pin the DRAFT TIERS of the generator; a pose-only preview would be served by the
+    // pose warp instead (covered by scene3d-pose-preview.test.js).
+    V.SETTINGS.scenePoseWarp = false;
   }, 300000);
   afterAll(() => runtime && runtime.cleanup && runtime.cleanup());
   afterEach(() => { delete V.SETTINGS.sceneDraftTier; });

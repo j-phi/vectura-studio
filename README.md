@@ -729,6 +729,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - 3D Scenes turn at frame rate
+- **Dragging a sphere or box in a 3D Scene no longer lags.** The drag preview carries the last settled drawing through the new angle (about 5 ms a frame instead of 200-300 ms with Mezzotint); the drawing re-renders exactly on release.
+
 ### Unreleased - Mezzotint 3D fills turn faster
 - **Faster rotation with mono fills.** The drag preview for Mezzotint Region and the other mono fill laws is lighter (flat-faced shapes about three times faster), and the settled drawing is unchanged.
 

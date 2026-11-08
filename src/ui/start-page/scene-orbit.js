@@ -203,10 +203,24 @@
 
     /* ---------- input ---------- */
     const touch = () => { lastAct = performance.now(); swayT = 0; tPrev = 0; };
+    /* A heavy scene is not re-rendered exactly while it is dragged; instead the session warps its settled ink through each
+     * drag pose (StartPageArtRenderer.sceneSession preview: milliseconds). The exact pose still lands on release. */
+    let pvBusy = false; let pvN = 0;
+    const previewDrag = () => {
+      if (pvBusy || !drag || !target || !alive || !session || typeof session.preview !== 'function' || !isHeavy()) return;
+      const want = target; const k = keyOf(want);
+      if (ready.has(k)) return;
+      pvBusy = true;
+      session.preview({ yaw: want.yaw, pitch: want.pitch }, `${baseId}~pv`).then((out) => {
+        if (!alive || !drag || !out || typeof out.svg !== 'string') return null;
+        const alt = { id: `${baseId}~pv${++pvN}`, svg: out.svg };
+        return ink.prepareArt(alt).then((ok) => { if (ok && alive && drag && !el.classList.contains('sp-ink-drawing')) { shownKey = alt.id; ink.showArt(alt); } });
+      }).catch(() => null).then(() => { pvBusy = false; if (alive && drag && target && !ready.has(keyOf(target))) previewDrag(); });
+    };
     const moveTo = (pose) => {
       target = { yaw: round1(snap(pose.yaw, DRAG_STEP)), pitch: round1(clamp(snap(pose.pitch, DRAG_STEP), PITCH[0], PITCH[1])) };
       const k = keyOf(target);
-      if (ready.has(k)) show(k); else { const n = nearest(target); if (n) show(n); }
+      if (ready.has(k)) show(k); else if (drag && isHeavy() && session && typeof session.preview === 'function') previewDrag(); else { const n = nearest(target); if (n) show(n); }
       pump();
     };
     const settle = () => {

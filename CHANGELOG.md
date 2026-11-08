@@ -6,6 +6,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Improved: 3D Scenes turn at frame rate while you drag
+- **Drag a sphere or box and it follows your hand.** Turning the camera or moving or rotating a lone sphere or box in a 3D Scene (Mezzotint and every other fill) now takes about 5 ms per frame in the editor, where the Mezzotint sphere took about 200 ms and the box about 300 ms per frame. The preview carries the drawing the scene last settled with through the new angle: marks stay glued to the surface, the far side is filled from the mirror image of the near side, the floor, shadow and frame follow the camera, and the object hides the floor behind it.
+- **Same final drawing.** When you let go the scene is re-drawn exactly as before (the settled drawing, export and saved files are byte-identical); only the preview shown while you drag is new. Anything that is not a pose (light, fill style, shadows, more than one object, other shapes) keeps the previous drag preview.
+- **Start Page.** A turning 3D Scene plate whose angles take more than a second to draw now shows an approximate angle in about 40 ms while you drag it, and the exact angle replaces it on release.
+- **Known limits of the preview.** Marks that were foreshortened near the edge of the object look stretched or sparse when they turn to face you, the cast shadow stays where it was until release, and a mezzotint's random layout re-seeds on release.
+
 ### Improved: Mezzotint 3D fills turn faster in the editor
 - **Faster drag preview for the mono Fill Styles.** Rotating a 3D object with the Mezzotint Region fill (or another mono fill law) no longer rebuilds its full-detail setup on every drag frame: the drag preview uses a coarser lattice and fewer seeds, and boxes, planes and other flat-faced shapes now get the drag preview at all. A mezzotint box or plane turns about three times faster (about 600 ms to 200 ms per frame), a sphere about 20 to 25 % faster.
 - **Less wasted work everywhere.** A mono fill builds its depth and light field only when the fill actually reads it, which Mezzotint Region never does.

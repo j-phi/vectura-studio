@@ -40,6 +40,7 @@ const SCENE3D_FILES = Object.freeze([
   'src/core/scene3d/params.js',
   'src/core/scene3d/boolean.js',
   'src/core/scene3d/scene.js',
+  'src/core/scene3d/pose-preview.js',
   'src/core/scene3d/edges.js',
   'src/core/scene3d/depth.js',
   'src/core/scene3d/hlr.js',

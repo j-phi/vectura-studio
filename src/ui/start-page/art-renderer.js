@@ -304,6 +304,7 @@
     if (!state || !state.engine || !state.settings) throw new Error('Not a Vectura document');
     let engine = null;
     let current = null;
+    let settled = false; // the engine has done at least one exact compose (something to warp from)
     let disposed = false;
     const job = (pose) => {
       if (disposed) throw new Error('Scene session disposed');
@@ -324,6 +325,7 @@
           engine.computeAllDisplayGeometry();
         }
         current = { yaw: pose.yaw, pitch: pose.pitch };
+        settled = true;
         const { svg, pathCount } = buildSvg(engine);
         return { svg, pathCount, algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine) };
       } finally {
@@ -331,9 +333,33 @@
         restoreSettings();
       }
     };
+    // A cheap, approximate drawing of a pose (the settled compose's ink warped through the pose,
+    // Scene3D.PosePreview): milliseconds where the exact render of a mezzotint scene takes seconds.
+    // Falls back to the exact render until the session has one to warp from. The engine is then NOT
+    // at `pose` as far as the exact path is concerned (`current` is cleared), so the next exact
+    // render recomposes in full.
+    const previewJob = (pose) => {
+      if (disposed) throw new Error('Scene session disposed');
+      if (!engine || !settled) return job(pose);
+      const restoreSettings = snapshotSettings();
+      const restoreImages = snapshotNoiseImages();
+      try {
+        applyDocumentSettings(state.settings);
+        loadDocumentImages(payload);
+        turnCamera(engine.layers, pose);
+        engine.layers.forEach((l) => { if (l && l.isGroup && l.type === 'scene3d' && l.containerRole === 'scene') engine.generate(l.id, { preview: true }); });
+        current = null;
+        const { svg, pathCount } = buildSvg(engine);
+        return { svg, pathCount, algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine), preview: true };
+      } finally {
+        restoreImages();
+        restoreSettings();
+      }
+    };
     return {
       render: (pose, label) => enqueue(label || 'scene', () => job(pose)),
-      dispose: () => { disposed = true; engine = null; current = null; },
+      preview: (pose, label) => enqueue(label || 'scene-preview', () => previewJob(pose)),
+      dispose: () => { disposed = true; engine = null; current = null; settled = false; },
     };
   };
 

@@ -890,7 +890,7 @@
       // A WeakMap so a removed group (or an undo-restored copy) drops its entry.
       this._sceneComposeMemo = new WeakMap();
       // Diagnostics for tests / perf harnesses: real composes vs memo hits.
-      this.sceneComposeStats = { composes: 0, hits: 0, lastTier: null };
+      this.sceneComposeStats = { composes: 0, hits: 0, warps: 0, lastTier: null };
     }
 
     // Announce every removed layer id to the host (e.g. the on-canvas text
@@ -2898,6 +2898,30 @@
       };
       if (tier === 'law') bounds.lawDraft = true;
 
+      // POSE WARP — a preview frame whose scene differs from the last settled
+      // compose only by pose (object transform, camera angles / zoom) is served
+      // by carrying the settled ink through the new pose (Scene3D.PosePreview):
+      // O(vertices), no generator run. The settled compose is never touched, so
+      // the release / idle render stays byte-identical.
+      const PosePreview = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.PosePreview;
+      if (options && options.preview === true && PosePreview && group._scenePose && SETTINGS.scenePoseWarp !== false) {
+        let warped = null;
+        try {
+          const now = PosePreview.compatible(group._scenePose, assembled, bounds);
+          if (now) warped = PosePreview.warp(group._scenePose, now);
+        } catch (err) {
+          warped = null;
+        }
+        if (warped) {
+          this.sceneComposeStats.warps += 1;
+          this.sceneComposeStats.lastTier = 'warp';
+          group._pathsFromDraft = true;
+          group.scenePaths = warped;
+          this._invalidateGroupOptimization(group);
+          return;
+        }
+      }
+
       // NEW-3 — compose memo. Twenty-odd callers recompose every scene group
       // through computeAllDisplayGeometry (export, layer reorder, pens panel,
       // mirror-guide drags...) without touching the scene. A FULL compose whose
@@ -2945,6 +2969,14 @@
       // layer's own `curves` flag, which _applyObjectDivisions already reads).
       const finished = this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      // Lift the settled ink for the drag preview (null when the scene is not
+      // warpable; never throws into the compose).
+      if (tier === 'full') {
+        group._scenePose = null;
+        if (PosePreview && SETTINGS.scenePoseWarp !== false) {
+          try { group._scenePose = PosePreview.snapshot(assembled, bounds, group.scenePaths); } catch (err) { group._scenePose = null; }
+        }
+      }
       // The composed ink is the source of truth; anything derived from the
       // PREVIOUS compose is now stale. generate() recomposes a scene group
       // outside the optimize pass (Increment D — scene-object drags), so
