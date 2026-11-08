@@ -63,8 +63,14 @@
     return tag.src.replace('compose-client.js', 'compose-worker.js');
   };
 
-  const available = () => !broken && typeof Worker === 'function' && typeof document !== 'undefined'
-    && location.protocol !== 'file:' && !!resolveScripts() && !!workerUrl();
+  // The page's script tags do not change, so whether the worker can be built is worked out once (it was a script-tag walk per call,
+  // and the renderer asks on every frame).
+  let supported = null;
+  const available = () => {
+    if (broken || typeof Worker !== 'function' || typeof document === 'undefined' || location.protocol === 'file:') return false;
+    if (supported === null) supported = !!resolveScripts() && !!workerUrl();
+    return supported;
+  };
 
   // One worker + one in-flight job. The shared `client` below serves the release settle; the spin
   // baker (spin-ring.js) makes its own with `create()` so a bake never queues behind (or cancels) a settle.

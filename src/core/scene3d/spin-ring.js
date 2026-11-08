@@ -44,12 +44,20 @@
   const circDist = (a, b) => Math.abs(normYaw(a - b));
   const now = () => (globalScope.performance || Date).now();
 
-  const packedBytes = (packed) => {
+  // Bytes a packed ink holds. The curve metadata crosses as JSON text (pick polygons, anchors) and is mostly
+  // repeated from path to path and between the raw and finished ink: identical strings are interned through
+  // `pool` (one copy kept, counted once; JSON is one byte per char).
+  const internBytes = (packed, pool) => {
     let n = 0;
     ((packed && packed.paths) || []).forEach((e) => {
       if (e.flat) n += e.flat.byteLength;
       else if (e.pts) n += e.pts.length * 40;
-      n += (e.metaJson ? e.metaJson.length * 2 : 0) + 64;
+      n += 64;
+      if (e.metaJson) {
+        const hit = pool.get(e.metaJson);
+        if (hit !== undefined) e.metaJson = hit;
+        else { pool.set(e.metaJson, e.metaJson); n += e.metaJson.length; }
+      }
     });
     return n;
   };
@@ -112,6 +120,7 @@
       key0: null,
     };
     let clock = 0;
+    const pool = new Map(); // interned curve metadata, shared by every frame of this ring
     let cursor = 0;
     const runners = [];
     const inflight = new Map(); // runner -> idx
@@ -142,7 +151,7 @@
       if (ring.disposed) return;
       const frame = {
         idx, yaw: yaws[idx], key, ms: res.ms, packed: res.packed, finishedPacked: res.finishedPacked,
-        bytes: packedBytes(res.packed) + packedBytes(res.finishedPacked), used: ++clock, raster: null,
+        bytes: internBytes(res.packed, pool) + internBytes(res.finishedPacked, pool), used: ++clock, raster: null,
       };
       ring.frames.set(idx, frame);
       ring.stats.baked += 1; stats.frames += 1;
@@ -220,13 +229,21 @@
 
     ring.rasterBytes = () => { let n = 0; ring.frames.forEach((f) => { if (f.raster) n += f.raster.bytes; }); return n; };
     ring.dropRasters = () => { ring.frames.forEach((f) => { f.raster = null; }); };
-    // Least recently used rasters go first; `keep` (a frame) is never dropped.
-    ring.trimRasters = (maxRasterBytes, keep) => {
+    // Rasters are evicted by how long ago they were useful: the one farthest (circularly) from the yaw being viewed goes
+    // first, which for a turntable dragged one way is also the least recently used. `keep` is never dropped.
+    ring.farthestRaster = (yaw, except) => {
+      let far = null; let fd = -1;
+      ring.frames.forEach((f) => { if (!f.raster || f === except) return; const d = circDist(f.yaw, yaw); if (d > fd) { fd = d; far = f; } });
+      return far ? { frame: far, dist: fd } : null;
+    };
+    ring.trimRasters = (maxRasterBytes, keep, yaw) => {
       let total = ring.rasterBytes();
-      if (total <= maxRasterBytes) return 0;
-      const list = Array.from(ring.frames.values()).filter((f) => f.raster && f !== keep).sort((a, b) => a.used - b.used);
       let dropped = 0;
-      for (const f of list) { if (total <= maxRasterBytes) break; total -= f.raster.bytes; f.raster = null; dropped += 1; }
+      while (total > maxRasterBytes) {
+        const far = ring.farthestRaster(yaw, keep);
+        if (!far) break;
+        total -= far.frame.raster.bytes; far.frame.raster = null; dropped += 1;
+      }
       return dropped;
     };
 

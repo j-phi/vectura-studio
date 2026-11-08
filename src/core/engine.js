@@ -3037,10 +3037,10 @@
     // to the synchronous `generate` (no worker, not a scene, result stale or cancelled).
     // Split in two so a caller that must hold document settings (the Start Page scene session) can
     // do each half under them: beginSceneAsync posts the job, finishSceneAsync installs the result.
-    beginSceneAsync(layerId) {
+    beginSceneAsync(layerId, opts) {
       const layer = this.layers.find((l) => l.id === layerId);
       const group = layer && (layer.isGroup ? layer : this._sceneOwnerGroup(layer));
-      const Client = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient;
+      const Client = (opts && opts.client) || (window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient);
       if (!group || group.type !== 'scene3d' || group.containerRole !== 'scene' || !Client || !Client.available()) return null;
       const noiseImages = window.Vectura.NOISE_IMAGES;
       if (noiseImages && Object.keys(noiseImages).length) return null;
