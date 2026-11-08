@@ -12237,7 +12237,7 @@
         token.raf = null;
         token.timer = setTimeout(() => {
           token.timer = null;
-          if (this._sceneSettle === token) this.flushSceneSettleRegen();
+          if (this._sceneSettle === token) this.flushSceneSettleRegen({ async: true });
         }, 0);
       });
       this._sceneSettle = token;
@@ -12245,6 +12245,7 @@
 
     // Cancel a pending settle (only for `layerId` when given). True if one was.
     _cancelSceneSettleRegen(layerId) {
+      if (layerId != null) this._cancelSceneSettleAsync(layerId);
       const token = this._sceneSettle;
       if (!token) return false;
       if (layerId != null && token.layerId !== layerId) return false;
@@ -12257,13 +12258,43 @@
       return true;
     }
 
+    // A worker settle still in flight for `layerId` (or any): drop it. The preview on screen stays.
+    _cancelSceneSettleAsync(layerId) {
+      const a = this._sceneSettleAsync;
+      if (!a || (layerId != null && a.layerId !== layerId)) return false;
+      this._sceneSettleAsync = null;
+      try { this.engine.cancelSceneAsync?.(a.layerId); } catch (err) { /* nothing in flight */ }
+      return true;
+    }
+
     // Run a pending settle now (export paths, tests). True if one ran.
-    flushSceneSettleRegen() {
+    // `{ async: true }` (the release timer) composes in a Web Worker and keeps the drag preview on
+    // screen until the exact ink is ready, so the main thread never blocks on the compose; every
+    // other caller (export, tests) still gets the synchronous settle.
+    flushSceneSettleRegen(opts) {
       const token = this._sceneSettle;
       if (!token) return false;
       this._cancelSceneSettleRegen();
       const layer = this.engine.layers.find((l) => l.id === token.layerId);
       if (!layer) return false;
+      if (opts && opts.async === true && typeof this.engine.generateAsync === 'function') {
+        const job = { layerId: layer.id };
+        this._sceneSettleAsync = job;
+        this.engine.generateAsync(layer.id).then((ok) => {
+          if (this._sceneSettleAsync !== job) return;
+          this._sceneSettleAsync = null;
+          if (!ok) this.engine.generate(layer.id);
+          if (typeof token.after === 'function') token.after(layer);
+          if (this.app?.render) this.app.render(); else this.draw();
+        }, () => {
+          if (this._sceneSettleAsync !== job) return;
+          this._sceneSettleAsync = null;
+          this.engine.generate(layer.id);
+          if (typeof token.after === 'function') token.after(layer);
+          if (this.app?.render) this.app.render(); else this.draw();
+        });
+        return true;
+      }
       this.engine.generate(layer.id);
       if (typeof token.after === 'function') token.after(layer);
       if (this.app?.render) this.app.render(); else this.draw();

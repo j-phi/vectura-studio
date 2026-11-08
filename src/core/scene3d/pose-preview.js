@@ -134,8 +134,18 @@
         b: [width, height, num(bounds && bounds.m, 0), num(bounds && bounds.penWidth, 0), bounds && bounds.truncate ? 1 : 0],
       });
     } catch (_) { return refuse('key'); }
+    // The sun, when it is the one directional light: the cast shadow can then be re-projected per frame.
+    let sunDir = null;
+    try {
+      const Lt = Scene3D.Lighting;
+      const ls = (Array.isArray(p.lights) ? p.lights : []).filter((l) => l && l.type !== 'ambient');
+      if (Lt && ls.length === 1 && (!ls[0].type || ls[0].type === 'directional')) {
+        const d = Lt.lightWorldDir(ls[0]);
+        if (d && d.y < -1e-3) sunDir = [d.x, d.y, d.z];
+      }
+    } catch (_) { sunDir = null; }
     return {
-      key, prim, objId: o.id, pose, width, height,
+      key, prim, objId: o.id, pose, width, height, sunDir,
       half: [hx, hy, hz], radius: rad,
       groundOn: Boolean(p.ground && p.ground.enabled),
     };
@@ -170,7 +180,11 @@
 
   const pathTarget = (path) => (path && path.meta && path.meta.sceneTarget) || null;
 
-  const buildLift = (info, paths) => {
+  // Generator so the lift can be time-sliced (`sliceMs`): it yields every few hundred vertices once the
+  // slice is spent. Driven to completion at once, it is the synchronous lift.
+  function* liftGen(info, paths, sliceMs) {
+    const now = () => (globalScope.performance && globalScope.performance.now ? globalScope.performance.now() : Date.now());
+    let sliceStart = now();
     const pose = info.pose;
     const { camR, objR } = poseMatrices(info, pose);
     const camRt = tr3(camR); const objRt = tr3(objR);
@@ -182,7 +196,7 @@
     const X = new Float64Array(n); const Y = new Float64Array(n); const Z = new Float64Array(n);
     const MASK = new Uint8Array(n); const OK = new Uint8Array(n);
     const start = new Int32Array(paths.length + 1);
-    const kind = new Uint8Array(paths.length); // 0 object, 1 ground (plane), 2 sphere silhouette (screen similarity), 3 untouched
+    const kind = new Uint8Array(paths.length); // 0 object, 1 ground (plane), 2 sphere silhouette (screen similarity), 3 untouched, 4 cast-shadow ground mark
     const metas = new Array(paths.length);
     const camNormalY = apply3(camR, 0, 1, 0); // ground plane normal in camera space (plane passes through the origin)
     const half = info.half; const rad = info.radius;
@@ -200,14 +214,15 @@
       if (tg.objectId === info.objId) {
         kind[i] = (info.prim === 'sphere' && tg.edgeClass === 'silhouette') ? 2 : 0;
       } else if (tg.objectId === 'ground') {
-        kind[i] = 1;
+        kind[i] = (tg.regionClass === 'castShadow') ? 4 : 1;
       } else return refuse(`target:${tg.objectId}`);
       for (let j = 0; j < path.length; j++, at++) {
+        if (sliceMs && (at & 255) === 0 && now() - sliceStart > sliceMs) { yield; sliceStart = now(); }
         const q = path[j];
         const sx = q.x; const sy = q.y;
         if (kind[i] === 2) { X[at] = sx; Y[at] = sy; OK[at] = 1; continue; }
         const ray = screenRay(pose, sx, sy);
-        if (kind[i] === 1) {
+        if (kind[i] === 1 || kind[i] === 4) {
           // ray . n_cam * ... : plane n.P = 0 with P = o + t d
           const nd = camNormalY[0] * ray.d[0] + camNormalY[1] * ray.d[1] + camNormalY[2] * ray.d[2];
           const no = camNormalY[0] * ray.o[0] + camNormalY[1] * ray.o[1] + camNormalY[2] * ray.o[2];
@@ -263,6 +278,12 @@
     start[paths.length] = at;
     stats.lifts += 1;
     return { X, Y, Z, MASK, OK, start, kind, metas, count: paths.length };
+  }
+  const buildLift = (info, paths) => {
+    const it = liftGen(info, paths, 0);
+    let r = it.next();
+    while (!r.done) r = it.next();
+    return r.value;
   };
 
   // ── snapshot ─────────────────────────────────────────────────────────────
@@ -276,6 +297,43 @@
     try { lift = buildLift(info, paths); } catch (_) { return refuse('lift-threw'); }
     if (!lift) return null;
     return { info, paths, lift };
+  };
+
+  // The same snapshot, lifted in slices of `sliceMs` that yield to the event loop (the settle that
+  // follows a worker compose must not hold the main thread). `onDone(snap | null)` fires when complete;
+  // the returned handle cancels it.
+  const snapshotSliced = (raw, bounds, paths, onDone, sliceMs = 5) => {
+    stats.snapshots += 1;
+    let cancelled = false;
+    if (!Array.isArray(paths) || !paths.length) { refuse('no-paths'); onDone(null); return { cancel() {} }; }
+    const info = describe(raw, bounds);
+    if (!info) { onDone(null); return { cancel() {} }; }
+    const it = liftGen(info, paths, sliceMs);
+    const step = () => {
+      if (cancelled) return;
+      let r;
+      try { r = it.next(); } catch (_) { refuse('lift-threw'); onDone(null); return; }
+      if (!r.done) { setTimeout(step, 0); return; }
+      if (!r.value) { onDone(null); return; }
+      const snap = { info, paths, lift: r.value };
+      // Prime the lazily built parts (view-cone tiling, shadow lattice, JIT) in their own short tasks, so
+      // the first drag frame pays for none of them.
+      const stages = [
+        () => { if (info.prim === 'sphere') sphereTiling(info, snap.lift); },
+        () => { snap.lift._shadowFit = info.sunDir ? fitShadow(snap.lift) : null; snap.lift.hasShadow = Boolean(snap.lift._shadowFit); },
+        () => { const nudge = { cam: Object.assign({}, info.pose.cam, { yaw: info.pose.cam.yaw + 0.01 }), obj: Object.assign({}, info.pose.obj) }; warp(snap, Object.assign({}, info, { pose: nudge })); },
+        () => { const nudge = { cam: Object.assign({}, info.pose.cam, { pitch: info.pose.cam.pitch - 0.01 }), obj: Object.assign({}, info.pose.obj, { x: info.pose.obj.x + 0.1 }) }; warp(snap, Object.assign({}, info, { pose: nudge })); },
+      ];
+      const prime = () => {
+        if (cancelled) return;
+        const st = stages.shift();
+        if (st) { try { st(); } catch (_) { /* priming is best effort */ } setTimeout(prime, 0); return; }
+        onDone(snap);
+      };
+      prime();
+    };
+    setTimeout(step, 0);
+    return { cancel() { cancelled = true; } };
   };
 
   // Can the preview frame for `raw` be served from this snapshot?
@@ -340,6 +398,128 @@
     out.x = c.cx + cx * c.scale; out.y = c.cy - cy * c.scale;
     return true;
   };
+
+
+  // ── cast shadow, re-projected per frame ────────────────────────────────────
+  // The settled shadow is a world-fixed hatch lattice clipped to the object's shadow. If every shadow mark
+  // is a straight segment on a regular lattice, the lattice can be rebuilt for ANY pose and clipped to the
+  // shadow polygon of the CURRENT pose (hull of the silhouette projected along the sun onto y = 0).
+  const fitShadow = (lift) => {
+    const groups = new Map(); // angle key -> {ang, nx, nz, items:[{c, i, x0,z0,x1,z1}]}
+    const { X, Z, OK, start, kind } = lift;
+    for (let i = 0; i < lift.count; i++) {
+      if (kind[i] !== 4) continue;
+      const a = start[i]; const b = start[i + 1];
+      let f = -1; let l = -1;
+      for (let k = a; k < b; k++) if (OK[k]) { if (f < 0) f = k; l = k; }
+      if (f < 0 || l === f) continue;
+      const dx = X[l] - X[f]; const dz = Z[l] - Z[f];
+      const len = Math.hypot(dx, dz);
+      if (!(len > 1e-9)) continue;
+      const ux = dx / len; const uz = dz / len;
+      for (let k = f; k <= l; k++) {
+        if (!OK[k]) return null;
+        if (Math.abs((X[k] - X[f]) * -uz + (Z[k] - Z[f]) * ux) > 1e-3 * len + 1e-6) return null; // not straight
+      }
+      let ang = Math.atan2(uz, ux); if (ang < 0) ang += Math.PI; if (ang >= Math.PI - 1e-9) ang = 0;
+      const ak = Math.round(ang * 1000);
+      let g = groups.get(ak);
+      if (!g) { g = { ux, uz, nx: -uz, nz: ux, items: [] }; groups.set(ak, g); }
+      g.items.push({ c: g.nx * X[f] + g.nz * Z[f], i, t0: g.ux * X[f] + g.uz * Z[f], t1: g.ux * X[l] + g.uz * Z[l] });
+    }
+    if (!groups.size) return null;
+    const out = [];
+    groups.forEach((g) => {
+      const cs = Array.from(new Set(g.items.map((it) => Math.round(it.c * 1e4) / 1e4))).sort((p, q) => p - q);
+      const meta = new Map();
+      g.items.forEach((it) => { const k = Math.round(it.c * 1e4) / 1e4; if (!meta.has(k)) meta.set(k, it.i); });
+      let sp = 0;
+      for (let k = 1; k < cs.length; k++) { const d = cs[k] - cs[k - 1]; if (d > 1e-6 && (sp === 0 || d < sp)) sp = d; }
+      let regular = sp > 0;
+      if (regular) for (let k = 0; k < cs.length; k++) { const q = (cs[k] - cs[0]) / sp; if (Math.abs(q - Math.round(q)) > 0.05) { regular = false; break; } }
+      out.push({ g, cs, sp: regular ? sp : 0, mi: meta.get(cs[0]), meta });
+    });
+    return out;
+  };
+
+  // Convex polygon (CCW in the (x, z) frame) of the object's shadow on y = 0.
+  const shadowHull = (now, sun) => {
+    const pose = now.pose; const o = pose.obj;
+    const objR = rotMatrix({ yaw: o.yaw, pitch: o.pitch, roll: o.roll });
+    const pts = [];
+    const cast = (wx, wy, wz) => {
+      const s = -wy / sun[1];
+      pts.push({ x: wx + s * sun[0], y: wz + s * sun[2] });
+    };
+    if (now.prim === 'sphere') {
+      const r = now.radius * o.sx;
+      let ux = sun[1]; let uy = -sun[0]; let uz = 0; // any vector perpendicular to the sun
+      if (Math.hypot(ux, uy) < 1e-6) { ux = 0; uy = sun[2]; uz = -sun[1]; }
+      const ul = Math.hypot(ux, uy, uz); ux /= ul; uy /= ul; uz /= ul;
+      const wx = sun[1] * uz - sun[2] * uy; const wy = sun[2] * ux - sun[0] * uz; const wz = sun[0] * uy - sun[1] * ux;
+      for (let k = 0; k < 40; k++) {
+        const a = (k / 40) * Math.PI * 2; const ca = Math.cos(a) * r; const sa = Math.sin(a) * r;
+        cast(o.x + ca * ux + sa * wx, o.y + ca * uy + sa * wy, o.z + ca * uz + sa * wz);
+      }
+    } else {
+      for (let i = 0; i < 8; i++) {
+        const l = apply3(objR, (i & 1 ? 1 : -1) * now.half[0] * o.sx, (i & 2 ? 1 : -1) * now.half[1] * o.sy, (i & 4 ? 1 : -1) * now.half[2] * o.sz);
+        cast(o.x + l[0], o.y + l[1], o.z + l[2]);
+      }
+    }
+    const hull = convexHull(pts);
+    return hull.length >= 3 ? hull : null;
+  };
+  const chordOfLine = (px, pz, dx, dz, hull) => {
+    let t0 = -Infinity; let t1 = Infinity;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i]; const b = hull[(i + 1) % hull.length];
+      const ex = b.x - a.x; const ez = b.y - a.y;
+      const num = ex * (pz - a.y) - ez * (px - a.x);
+      const den = ex * dz - ez * dx;
+      if (Math.abs(den) < 1e-12) { if (num < 0) return null; continue; }
+      const t = -num / den;
+      if (den > 0) { if (t > t0) t0 = t; } else if (t < t1) t1 = t;
+    }
+    return t0 < t1 && Number.isFinite(t0) && Number.isFinite(t1) ? [t0, t1] : null;
+  };
+
+  // The unit sphere's tiling: the settled view cone (x0 >= |x1|, |x2| in the view basis b0,b1,b2) is the
+  // best-sampled ink; six proper rotations carry it onto the six octahedral cells, so a turning sphere
+  // shows ink of the right density everywhere instead of a stretched limb band and a gap.
+  const sphereTiling = (info, lift) => {
+    if (lift._tile) return lift._tile;
+    const M0 = poseMatrices(info, info.pose).M;
+    let b0 = [M0[6], M0[7], M0[8]];
+    const nl = Math.hypot(b0[0], b0[1], b0[2]) || 1; b0 = b0.map((v) => v / nl);
+    let b1 = Math.abs(b0[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const d = b1[0] * b0[0] + b1[1] * b0[1] + b1[2] * b0[2];
+    b1 = [b1[0] - d * b0[0], b1[1] - d * b0[1], b1[2] - d * b0[2]];
+    const l1 = Math.hypot(b1[0], b1[1], b1[2]); b1 = b1.map((v) => v / l1);
+    const b2 = [b0[1] * b1[2] - b0[2] * b1[1], b0[2] * b1[0] - b0[0] * b1[2], b0[0] * b1[1] - b0[1] * b1[0]];
+    const B = [b0[0], b1[0], b2[0], b0[1], b1[1], b2[1], b0[2], b1[2], b2[2]]; // columns b0,b1,b2
+    const Bt = tr3(B);
+    const P = [ // coordinates in the (b0,b1,b2) basis
+      [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      [-1, 0, 0, 0, 1, 0, 0, 0, -1],
+      [0, 1, 0, -1, 0, 0, 0, 0, 1],
+      [0, -1, 0, 1, 0, 0, 0, 0, 1],
+      [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      [0, 0, -1, 0, 1, 0, 1, 0, 0],
+    ];
+    const T = P.map((m) => mul3(B, mul3(m, Bt)));
+    const cell = new Uint8Array(lift.X.length);
+    const { X, Y, Z } = lift;
+    for (let k = 0; k < X.length; k++) {
+      const x0 = X[k] * b0[0] + Y[k] * b0[1] + Z[k] * b0[2];
+      const x1 = X[k] * b1[0] + Y[k] * b1[1] + Z[k] * b1[2];
+      const x2 = X[k] * b2[0] + Y[k] * b2[1] + Z[k] * b2[2];
+      cell[k] = (x0 >= Math.abs(x1) && x0 >= Math.abs(x2)) ? 1 : 0;
+    }
+    lift._tile = { T, cell };
+    return lift._tile;
+  };
+  const MIN_FACING = 0.25; // sphere: marks foreshortened past this cosine are dropped, not piled on the rim
 
   // ── warp ─────────────────────────────────────────────────────────────────
   const warp = (snap, now) => {
@@ -407,7 +587,73 @@
     const { X, Y, Z, MASK, OK, start, kind, metas } = lift;
     const gc0 = apply3(camR, 1, 0, 0); const gc2 = apply3(camR, 0, 0, 1);
     const spans = [];
+    const tiling = sphere ? sphereTiling(info, lift) : null;
+    const tileAT = tiling ? tiling.T.map((Tm) => mul3(A, Tm)) : null;
 
+    // ground marks: project the world points, then drop what the object hides. `pts` (array of [x,z]) overrides the lift.
+    const groundRun = (i, a, b, pts) => {
+      let run = [];
+      const flush = () => { if (run.length >= 2) emit(i, run); run = []; };
+      const pr = [];
+      const n = pts ? pts.length : b - a;
+      for (let k = 0; k < n; k++) {
+        let wx; let wz;
+        if (pts) { wx = pts[k][0]; wz = pts[k][1]; } else { if (!OK[a + k]) { pr.push(null); continue; } wx = X[a + k]; wz = Z[a + k]; }
+        const cx = gc0[0] * wx + gc2[0] * wz; const cy = gc0[1] * wx + gc2[1] * wz; const cz = gc0[2] * wx + gc2[2] * wz;
+        const q = { x: 0, y: 0 };
+        pr.push(project(pose, cx, cy, cz, q) ? q : null);
+      }
+      for (let k = 0; k + 1 < pr.length; k++) {
+        const p0 = pr[k]; const p1 = pr[k + 1];
+        if (!p0 || !p1) { flush(); continue; }
+        spans.length = 0;
+        if (occ && occ.circle) clipOutsideCircle(p0, p1, occ.circle.cx, occ.circle.cy, occ.circle.r, spans);
+        else if (occ && occ.hull) {
+          const f0 = { x: p0.x, y: -p0.y }; const f1 = { x: p1.x, y: -p1.y };
+          clipOutsideConvex(f0, f1, occ.hull, spans);
+        } else spans.push([0, 1]);
+        const dx = p1.x - p0.x; const dy = p1.y - p0.y;
+        for (let s = 0; s < spans.length; s++) {
+          const t0 = spans[s][0]; const t1 = spans[s][1];
+          if (t1 - t0 < 1e-9) continue;
+          const q0 = { x: p0.x + dx * t0, y: p0.y + dy * t0 };
+          const q1 = { x: p0.x + dx * t1, y: p0.y + dy * t1 };
+          if (!(run.length && t0 === 0 && s === 0)) { flush(); run.push(q0); }
+          run.push(q1);
+          if (t1 < 1) flush();
+        }
+      }
+      flush();
+    };
+    let shadowFit;
+    if (info.sunDir && now.sunDir && lift.hasShadow !== false) {
+      if (lift._shadowFit === undefined) { lift._shadowFit = fitShadow(lift); lift.hasShadow = Boolean(lift._shadowFit); }
+      shadowFit = lift._shadowFit || undefined;
+    }
+    if (shadowFit) {
+      const hull = shadowHull(now, now.sunDir);
+      if (!hull) shadowFit = undefined;
+      else {
+        for (let gi = 0; gi < shadowFit.length; gi++) {
+          const { g, cs, sp, meta } = shadowFit[gi];
+          let cmin = Infinity; let cmax = -Infinity;
+          hull.forEach((q) => { const c = g.nx * q.x + g.nz * q.y; if (c < cmin) cmin = c; if (c > cmax) cmax = c; });
+          const offs = [];
+          if (sp > 0 && (cmax - cmin) / sp < 4000) {
+            const k0 = Math.ceil((cmin - cs[0]) / sp - 1e-9); const k1 = Math.floor((cmax - cs[0]) / sp + 1e-9);
+            for (let k = k0; k <= k1; k++) offs.push(cs[0] + k * sp);
+          } else cs.forEach((c) => { if (c >= cmin && c <= cmax) offs.push(c); });
+          for (let oi = 0; oi < offs.length; oi++) {
+            const c = offs[oi];
+            const px = g.nx * c; const pz = g.nz * c;
+            const ch = chordOfLine(px, pz, g.ux, g.uz, hull);
+            if (!ch) continue;
+            const mk = meta.get(Math.round(c * 1e4) / 1e4);
+            groundRun(mk === undefined ? shadowFit[gi].mi : mk, 0, 0, [[px + g.ux * ch[0], pz + g.uz * ch[0]], [px + g.ux * ch[1], pz + g.uz * ch[1]]]);
+          }
+        }
+      }
+    }
     for (let i = 0; i < lift.count; i++) {
       const a = start[i]; const b = start[i + 1];
       const kd = kind[i];
@@ -418,43 +664,44 @@
         emit(i, pts);
         continue;
       }
-      if (kd === 1) {
-        // project the ground vertices, then drop what the object hides
-        let run = [];
-        const flush = () => { if (run.length >= 2) emit(i, run); run = []; };
-        const pr = [];
-        for (let k = a; k < b; k++) {
-          if (!OK[k]) { pr.push(null); continue; }
-          const wx = X[k]; const wz = Z[k];
-          const cx = gc0[0] * wx + gc2[0] * wz; const cy = gc0[1] * wx + gc2[1] * wz; const cz = gc0[2] * wx + gc2[2] * wz;
-          const q = { x: 0, y: 0 };
-          pr.push(project(pose, cx, cy, cz, q) ? q : null);
-        }
-        for (let k = 0; k + 1 < pr.length; k++) {
-          const p0 = pr[k]; const p1 = pr[k + 1];
-          if (!p0 || !p1) { flush(); continue; }
-          spans.length = 0;
-          if (occ && occ.circle) clipOutsideCircle(p0, p1, occ.circle.cx, occ.circle.cy, occ.circle.r, spans);
-          else if (occ && occ.hull) {
-            // hull is y-up; flip the segment into the same frame
-            const f0 = { x: p0.x, y: -p0.y }; const f1 = { x: p1.x, y: -p1.y };
-            clipOutsideConvex(f0, f1, occ.hull, spans);
-          } else spans.push([0, 1]);
-          const dx = p1.x - p0.x; const dy = p1.y - p0.y;
-          for (let s = 0; s < spans.length; s++) {
-            const t0 = spans[s][0]; const t1 = spans[s][1];
-            if (t1 - t0 < 1e-9) continue;
-            const q0 = { x: p0.x + dx * t0, y: p0.y + dy * t0 };
-            const q1 = { x: p0.x + dx * t1, y: p0.y + dy * t1 };
-            if (!(run.length && t0 === 0 && s === 0)) { flush(); run.push(q0); }
-            run.push(q1);
-            if (t1 < 1) flush();
-          }
-        }
-        flush();
+      if (kd === 4 && shadowFit !== undefined && shadowFit) { continue; } // rebuilt below, once
+      if (kd === 1 || kd === 4) {
+        groundRun(i, a, b, null);
         continue;
       }
-      // object marks: this copy, and the antipodal copy
+      if (sphere) {
+        // six rotated copies of the settled view cone tile the whole sphere (see sphereTiling)
+        const { T, cell } = tiling;
+        for (let ti = 0; ti < 6; ti++) {
+          const dest = ti === 0 ? out : antiOut;
+          // A * T applied to a local point
+          const AT = tileAT[ti];
+          let run = [];
+          for (let k = a; k < b; k++) {
+            let vis = OK[k] === 1 && cell[k] === 1;
+            let px = 0; let py = 0;
+            if (vis) {
+              const cx = AT[0] * X[k] + AT[1] * Y[k] + AT[2] * Z[k] + cT[0];
+              const cy = AT[3] * X[k] + AT[4] * Y[k] + AT[5] * Z[k] + cT[1];
+              const cz = AT[6] * X[k] + AT[7] * Y[k] + AT[8] * Z[k] + cT[2];
+              const nx = cx - cT[0]; const ny = cy - cT[1]; const nz = cz - cT[2];
+              if (c.persp) {
+                const vx = -cx; const vy = -cy; const vz = camPz - cz;
+                vis = (nx * vx + ny * vy + nz * vz) > MIN_FACING * Math.sqrt((nx * nx + ny * ny + nz * nz) * (vx * vx + vy * vy + vz * vz));
+              } else vis = nz > MIN_FACING * Math.sqrt(nx * nx + ny * ny + nz * nz);
+              if (vis) { vis = project(pose, cx, cy, cz, tmp); px = tmp.x; py = tmp.y; }
+            }
+            if (vis) run.push({ x: px, y: py });
+            else {
+              if (run.length >= 2) { run.meta = metas[i]; dest.push(run); }
+              run = [];
+            }
+          }
+          if (run.length >= 2) { run.meta = metas[i]; dest.push(run); }
+        }
+        continue;
+      }
+      // box marks: this copy, and the antipodal copy
       for (let copy = 0; copy < 2; copy++) {
         const sg = copy === 0 ? 1 : -1;
         const dest = copy === 0 ? out : antiOut;
@@ -467,13 +714,8 @@
             const cx = A[0] * lx + A[1] * ly + A[2] * lz + cT[0];
             const cy = A[3] * lx + A[4] * ly + A[5] * lz + cT[1];
             const cz = A[6] * lx + A[7] * ly + A[8] * lz + cT[2];
-            if (sphere) {
-              const nx = cx - cT[0]; const ny = cy - cT[1]; const nz = cz - cT[2];
-              vis = c.persp ? (nx * (0 - cx) + ny * (0 - cy) + nz * (camPz - cz)) > 0 : nz > 0;
-            } else {
-              const m = copy === 0 ? MASK[k] : swapMask(MASK[k]);
-              vis = (m & frontMask) !== 0;
-            }
+            const m = copy === 0 ? MASK[k] : swapMask(MASK[k]);
+            vis = (m & frontMask) !== 0;
             if (vis) { vis = project(pose, cx, cy, cz, tmp); px = tmp.x; py = tmp.y; }
           }
           if (vis) run.push({ x: px, y: py });
@@ -489,7 +731,7 @@
     return out;
   };
 
-  Scene3D.PosePreview = { snapshot, compatible, warp, stats, describe, _internals: { rotMatrix, mul3 } };
+  Scene3D.PosePreview = { snapshot, snapshotSliced, compatible, warp, stats, describe, _internals: { rotMatrix, mul3 } };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.PosePreview;
 })();

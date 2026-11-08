@@ -106,4 +106,111 @@ describe('Scene3D.PosePreview — pose-only drag frames are warped, not composed
     const without = run(false);
     expect(withWarp).toBe(without);
   }, 240000);
+  test('sphere warp covers the whole disc and never piles foreshortened ink on the limb', () => {
+    const { engine, gid, group } = make('sphere', 'mezzoRegion');
+    const settled = group.scenePaths.filter(isObj).filter((p) => p.meta.sceneTarget.edgeClass !== 'silhouette');
+    const sil = group.scenePaths.find((p) => isObj(p) && p.meta.sceneTarget.edgeClass === 'silhouette');
+    expect(sil).toBeTruthy();
+    group.params.camera.yaw += 90; // a quarter turn: the old limb ring is now the centre
+    engine.generate(gid, { preview: true });
+    expect(engine.sceneComposeStats.lastTier).toBe('warp');
+    const sp = group.scenePaths.filter(isObj).filter((p) => p.meta.sceneTarget.edgeClass !== 'silhouette');
+    const b = bbox(group.scenePaths, (p) => isObj(p) && p.meta.sceneTarget.edgeClass === 'silhouette');
+    const cx = (b.x0 + b.x1) / 2; const cy = (b.y0 + b.y1) / 2; const R = (b.x1 - b.x0) / 2;
+    // every one of 8 sectors x 3 radial rings holds ink (no crescent gap)
+    const cells = new Set(); const ring = [0, 0, 0, 0];
+    sp.forEach((p) => p.forEach((q) => {
+      const r = Math.hypot(q.x - cx, q.y - cy) / R;
+      if (r > 1.001) return;
+      const sector = Math.floor(((Math.atan2(q.y - cy, q.x - cx) + Math.PI) / (2 * Math.PI)) * 8) % 8;
+      cells.add(`${sector}:${Math.min(2, Math.floor(r * 3))}`);
+      ring[Math.min(3, Math.floor(r * 4))] += 1;
+    }));
+    for (let sct = 0; sct < 8; sct++) for (let rg = 0; rg < 3; rg++) expect(cells.has(`${sct}:${rg}`)).toBe(true);
+    // vertices per unit area at the rim stay within 3x of the middle (the old band was several times denser)
+    const area = (i) => (((i + 1) / 4) ** 2 - (i / 4) ** 2);
+    const dens = ring.map((n, i) => n / area(i));
+    expect(dens[3]).toBeLessThan(3 * (dens[1] + dens[2]) / 2);
+    expect(settled.length).toBeGreaterThan(0);
+  }, 240000);
+
+  test('the cast shadow follows the object when it moves', () => {
+    const { engine, gid, group, child } = make('sphere', 'mezzoRegion');
+    const shadow = (paths) => paths.filter((p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.regionClass === 'castShadow');
+    const centroid = (paths) => { let sx = 0; let sy = 0; let n = 0; shadow(paths).forEach((p) => p.forEach((q) => { sx += q.x; sy += q.y; n++; })); return { x: sx / n, y: sy / n, n }; };
+    const c0 = centroid(group.scenePaths);
+    expect(c0.n).toBeGreaterThan(20);
+    child.params.transform.x = (child.params.transform.x || 0) + 25;
+    engine.generate(gid, { preview: true });
+    expect(engine.sceneComposeStats.lastTier).toBe('warp');
+    const wp = group.scenePaths;
+    const cw = centroid(wp);
+    engine.computeAllDisplayGeometry();
+    const cf = centroid(group.scenePaths);
+    expect(Math.hypot(cw.x - c0.x, cw.y - c0.y)).toBeGreaterThan(5); // moved (frozen shadow would not)
+    // the far (left) edge of the shadow lands where the exact render puts it
+    const left = (paths) => bbox(paths, (p) => p.meta && p.meta.sceneTarget && p.meta.sceneTarget.regionClass === 'castShadow').x0;
+    expect(Math.abs(left(wp) - left(group.scenePaths))).toBeLessThan(4);
+  }, 240000);
+});
+
+describe('Scene3D.ComposeJob — the worker compose is byte-identical to the main-thread compose', () => {
+  let runtime; let V;
+  beforeAll(async () => { runtime = await loadVecturaRuntime({ includeUi: false }); V = runtime.window.Vectura; }, 300000);
+  afterAll(() => runtime && runtime.cleanup && runtime.cleanup());
+
+  const make = () => {
+    const engine = new V.VectorEngine();
+    const gid = engine.addLayer('scene3d');
+    const group = engine.layers.find((l) => l.id === gid);
+    const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
+    child.params.primitive = 'sphere';
+    child.params.style = { penId: null, mapper: 'hatch', params: { fillCurves: true, toneLaw: 'mezzoRegion' } };
+    group.params.seed = 4242;
+    return { engine, gid, group };
+  };
+
+  test('pack/unpack round-trips ink and meta exactly', () => {
+    const { engine, group } = make();
+    engine.computeAllDisplayGeometry();
+    const CJ = V.Scene3D.ComposeJob;
+    const back = CJ.unpack(structuredClone(CJ.pack(group.scenePaths)).paths ? { paths: structuredClone(CJ.pack(group.scenePaths).paths) } : null);
+    expect(hashPaths(back)).toBe(hashPaths(group.scenePaths));
+    back.forEach((p, i) => expect(JSON.stringify(p.meta)).toBe(JSON.stringify(group.scenePaths[i].meta)));
+  }, 240000);
+
+  test('generateAsync with a (simulated) worker settles to the same bytes as generate, and the memo hit agrees', async () => {
+    const CJ = V.Scene3D.ComposeJob;
+    const realClient = V.Scene3D.ComposeClient;
+    V.Scene3D.ComposeClient = {
+      available: () => true, warm() { return Promise.resolve(false); },
+      run: (job) => {
+        const r = CJ.run(job);
+        const wire = { packed: { paths: structuredClone(r.packed.paths) }, finished: r.finished ? { paths: structuredClone(r.finished.paths) } : null };
+        const res = { paths: CJ.unpack(wire.packed), finished: wire.finished ? CJ.unpack(wire.finished) : null, packed: wire.packed, ms: r.ms };
+        return { promise: Promise.resolve(res), cancel() {} };
+      },
+    };
+    try {
+      const a = make();
+      const ok = await a.engine.generateAsync(a.gid);
+      expect(ok).toBe(true);
+      const asyncHash = hashPaths(a.group.scenePaths);
+      const b = make();
+      b.engine.generate(b.gid);
+      expect(asyncHash).toBe(hashPaths(b.group.scenePaths));
+      a.engine.generate(a.gid); // memo hit (lazily unpacked)
+      expect(hashPaths(a.group.scenePaths)).toBe(asyncHash);
+    } finally { V.Scene3D.ComposeClient = realClient; }
+  }, 240000);
+
+  test('the worker script manifest matches index.html and the test runtime', () => {
+    const fs = require('fs'); const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
+    ['pose-preview.js', 'compose-job.js', 'compose-client.js'].forEach((f) => expect(html).toContain(`src/core/scene3d/${f}`));
+    const worker = fs.readFileSync(path.join(__dirname, '../../src/core/scene3d/compose-worker.js'), 'utf8');
+    expect(worker).toContain('self.window = self');
+    expect(worker).toContain('importScripts');
+    (V.Scene3D.ComposeClient.WORKER_SCRIPTS || []).forEach((f) => expect(html).toContain(f.replace(/^\.?\//, '')));
+  });
 });

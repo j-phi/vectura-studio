@@ -2929,32 +2929,52 @@
       // tiers are never cached, so a draft frame can never be served as final.
       const memoKey = tier === 'full' ? this._sceneComposeKey(algo, assembled, bounds, group) : null;
       const memo = memoKey ? this._sceneComposeMemo.get(group) : null;
+
       let paths = [];
       this.sceneComposeStats.lastTier = tier;
       const modules = memoKey ? sceneModuleFingerprint(algo) : null;
       if (memo && memo.key === memoKey && sameFingerprint(memo.modules, modules)) {
+        // A worker-composed memo keeps its ink packed until a hit actually needs it.
+        if (memo.lazy && !memo.paths) {
+          memo.paths = window.Vectura.Scene3D.ComposeJob.unpack(memo.lazy);
+          memo.lazy = null;
+        }
         paths = cloneScenePaths(memo.paths);
         this.sceneComposeStats.hits += 1;
       } else {
+        // Async settle (generateAsync): hand the compose input to the caller instead of running it.
+        if (options && options.captureJob === true) {
+          group._sceneJob = { assembled, bounds, seed: group.params.seed, memoKey, tier, objects: Array.from(objectLayers).map(([id, l]) => [id, l.params]) };
+          return;
+        }
         const rng = new SeededRNG(group.params.seed);
         const noise = new SimpleNoise(group.params.seed);
         const t0 = nowMs();
         let failed = false;
+        const pre = options && options.precomputed;
         try {
-          paths = algo.generate(assembled, rng, noise, bounds) || [];
+          paths = pre ? pre.paths : (algo.generate(assembled, rng, noise, bounds) || []);
         } catch (err) {
           console.error('[Engine] Scene group compose failed:', err);
           paths = [];
           failed = true;
         }
-        const ms = nowMs() - t0;
+        const ms = pre ? pre.ms : nowMs() - t0;
         this.sceneComposeStats.composes += 1;
         if (tier === 'full') {
           group._sceneLastFullMs = ms;
+          // A scene this slow will settle through the worker after its next drag: start it now, off
+          // the interaction path, so the modules are loaded by the time they are needed.
+          if (ms > 100 && !pre) {
+            const Client = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient;
+            if (Client && Client.available()) Client.warm().catch(() => {});
+          }
           // A fresh settled measurement re-arms the law tier for the next drag.
           group._sceneLastLawDraftMs = null;
           if (memoKey && !failed) {
-            this._sceneComposeMemo.set(group, { key: memoKey, modules, paths: cloneScenePaths(paths) });
+            this._sceneComposeMemo.set(group, pre && pre.packed
+              ? { key: memoKey, modules, paths: null, lazy: pre.packed }
+              : { key: memoKey, modules, paths: cloneScenePaths(paths) });
           }
         } else if (tier === 'law') {
           group._sceneLastLawDraftMs = ms;
@@ -2967,14 +2987,27 @@
       // BEFORE divisions, so a dashed object dashes along the true curve rather
       // than along the chords it was fitted from (divideChain flattens via the
       // layer's own `curves` flag, which _applyObjectDivisions already reads).
-      const finished = this._applySceneCurveFinish(paths, assembled, objectLayers, group);
+      const finished = options && options.precomputed && options.precomputed.finished
+        ? options.precomputed.finished
+        : this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
       // Lift the settled ink for the drag preview (null when the scene is not
       // warpable; never throws into the compose).
       if (tier === 'full') {
         group._scenePose = null;
+        if (group._scenePoseLift) { group._scenePoseLift.cancel(); group._scenePoseLift = null; }
         if (PosePreview && SETTINGS.scenePoseWarp !== false) {
-          try { group._scenePose = PosePreview.snapshot(assembled, bounds, group.scenePaths); } catch (err) { group._scenePose = null; }
+          try {
+            if (options && options.precomputed) {
+              // after a worker settle the lift is time-sliced so it never holds the main thread
+              const settledPaths = group.scenePaths;
+              const seq = (group._sceneSeq = (group._sceneSeq || 0) + 1);
+              group._scenePoseLift = PosePreview.snapshotSliced(assembled, bounds, settledPaths, (snap) => {
+                group._scenePoseLift = null;
+                if (group._sceneSeq === seq) group._scenePose = snap;
+              });
+            } else { group._sceneSeq = (group._sceneSeq || 0) + 1; group._scenePose = PosePreview.snapshot(assembled, bounds, group.scenePaths); }
+          } catch (err) { group._scenePose = null; }
         }
       }
       // The composed ink is the source of truth; anything derived from the
@@ -2985,6 +3018,65 @@
       // computeAllDisplayGeometry re-runs optimizeLayers immediately after its
       // own compose pass, so nothing is lost there.
       this._invalidateGroupOptimization(group);
+    }
+
+    // Non-blocking settle. Composes the scene group that owns `layerId` in a Web Worker
+    // (Scene3D.ComposeClient) and installs the result exactly as a synchronous full compose would:
+    // the same prefix runs here, the generator runs there, so the ink is byte-identical.
+    // Resolves true when the group now holds the settled ink, false when the caller must fall back
+    // to the synchronous `generate` (no worker, not a scene, result stale or cancelled).
+    generateAsync(layerId) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      const group = layer && (layer.isGroup ? layer : this._sceneOwnerGroup(layer));
+      const Client = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient;
+      if (!group || group.type !== 'scene3d' || group.containerRole !== 'scene' || !Client || !Client.available()) return Promise.resolve(false);
+      const noiseImages = window.Vectura.NOISE_IMAGES;
+      if (noiseImages && Object.keys(noiseImages).length) return Promise.resolve(false);
+      group._sceneJob = null;
+      this._composeSceneGroup(group, { captureJob: true });
+      const job = group._sceneJob;
+      group._sceneJob = null;
+      if (!job) return Promise.resolve(true); // a memo hit: already composed
+      if (!job.memoKey || job.tier !== 'full') return Promise.resolve(false);
+      const V = window.Vectura || {};
+      const token = (group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1);
+      let handle;
+      try {
+        handle = Client.run({
+          assembled: job.assembled, bounds: job.bounds, seed: job.seed,
+          finish: {
+            objectParams: job.objects,
+            groupParams: group.params,
+          },
+          globals: { silProtoOff: window.__SIL_PROTO_OFF, silProtoTorusOn: window.__SIL_PROTO_TORUS_ON, strokeFillDefault: V.SCENE3D_STROKE_FILL_DEFAULT },
+        });
+      } catch (err) {
+        return Promise.resolve(false);
+      }
+      group._sceneAsyncHandle = handle;
+      return handle.promise.then((res) => {
+        if (group._sceneAsyncToken !== token) return false;
+        group._sceneAsyncHandle = null;
+        // The scene must still be the one that was posted.
+        group._sceneJob = null;
+        this._composeSceneGroup(group, { captureJob: true });
+        const again = group._sceneJob;
+        group._sceneJob = null;
+        if (again && again.memoKey !== job.memoKey) return false;
+        this._composeSceneGroup(group, { precomputed: res });
+        return true;
+      }, () => false);
+    }
+
+    cancelSceneAsync(layerId) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      const group = layer && (layer.isGroup ? layer : this._sceneOwnerGroup(layer));
+      if (!group) return false;
+      group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1;
+      const h = group._sceneAsyncHandle;
+      group._sceneAsyncHandle = null;
+      if (h && typeof h.cancel === 'function') { h.cancel(); return true; }
+      return false;
     }
 
     // "Expand into group" fidelity for a scene-tree CHILD (object3d /
