@@ -77,7 +77,7 @@ const mountScene = async (opts) => {
 
 describe('StartPageSceneOrbit', () => {
   beforeEach(() => { still = false; load(); });
-  afterEach(() => dom.window.close());
+  afterEach(() => { const m = W.document.getElementById('m'); if (m && m._spScene) m._spScene.destroy(); dom.window.close(); });
 
   it('needs a mounted Ink tile that can show alternates', () => {
     const el = W.document.getElementById('m');
@@ -123,49 +123,68 @@ describe('StartPageSceneOrbit', () => {
     expect(timers.length).toBeLessThanOrEqual(scheduled); // the loop has ended
   });
 
-  it('drag turns the camera: the exact pose shows once its render lands and becomes home', async () => {
+  it('drag turns the camera through baked poses: nothing renders during it, the shown pose becomes home on release', async () => {
     const { el, tile, h } = await mountScene();
     const ov = el.querySelector('.sp-scene-orbit');
     expect(ov.getAttribute('role')).toBe('application');
+    await run(6000); // the rock and the drag arc are baked ahead
+    const before = renders.length;
     ptr(ov, 'pointerdown', 100, 100);
     for (let i = 1; i <= 6; i++) { ptr(ov, 'pointermove', 100 + i * 10, 100); await run(30); }
+    expect(renders.length).toBe(before); // no render on the interaction path
     ptr(ov, 'pointerup', 160, 100);
     await run(500);
     expect(h.home.yaw).toBeLessThan(-32 - 10); // 60 px to the right turns the scene well past the sway
-    const key = h.poseKey(h.home);
-    expect(renders.some((pl) => pl.state.engine.layers[0].params.camera.yaw === h.home.yaw)).toBe(true);
-    expect(tile.log[tile.log.length - 1]).toBe(`work:1@${key}`);
+    expect(h.home.pitch).toBe(22);
+    expect(tile.log[tile.log.length - 1]).toBe(`work:1@${h.poseKey(h.home)}`);
+    expect(renders.some((pl) => pl.state.engine.layers[0].params.camera.yaw === h.home.yaw)).toBe(true); // it was baked
+  });
+
+  it('a drag before anything is baked stays on home; the arc widens as poses finish', async () => {
+    const { el, h } = await mountScene();
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 100, 100);
+    ptr(ov, 'pointermove', 200, 100);
+    ptr(ov, 'pointerup', 200, 100);
+    expect(h.home.yaw).toBe(-32);
+    expect(renders.length).toBeLessThanOrEqual(1);
   });
 
   it('a long drag keeps a bounded number of drawn poses (home and the rock\'s poses stay)', async () => {
     const { el, h } = await mountScene();
-    await run(4000); // the rock's poses are drawn
+    await run(6000);
     const ov = el.querySelector('.sp-scene-orbit');
     ptr(ov, 'pointerdown', 0, 100);
     for (let i = 1; i <= 120; i++) { ptr(ov, 'pointermove', i * 2.5, 100); await run(20); }
     ptr(ov, 'pointerup', 300, 100);
     await run(300);
-    expect(renders.length).toBeGreaterThan(40);
     expect(h.stats.drawn).toBeLessThanOrEqual(40);
   });
 
-  it('arrow keys turn it in steps', async () => {
+  it('arrow keys turn it in baked steps', async () => {
     const { el, h } = await mountScene();
+    await run(6000);
+    const n = renders.length;
     el.querySelector('.sp-scene-orbit').dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
-    await run(200);
     expect(h.home.yaw).toBe(-27);
+    expect(renders.length).toBe(n); // the turn itself rendered nothing
   });
 
-  it('Still: no rocking, and dragging still turns it', async () => {
+  it('Still: no rocking and no background baking until engaged; then dragging turns it through baked poses', async () => {
     still = true; dom.window.close(); load();
     const { el, tile, h } = await mountScene();
     await run(8000);
     expect(renders.length).toBe(0);
     expect(tile.log.filter((x) => x !== null)).toEqual([]);
     const ov = el.querySelector('.sp-scene-orbit');
+    ov.dispatchEvent(new W.Event('pointerenter'));
+    await run(8000);
+    expect(renders.length).toBeGreaterThan(0);
+    const n = renders.length;
     ptr(ov, 'pointerdown', 100, 100); ptr(ov, 'pointermove', 140, 100); ptr(ov, 'pointerup', 140, 100);
     await run(300);
-    expect(renders.length).toBe(1);
+    expect(renders.length).toBe(n);
+    expect(h.home.yaw).toBeLessThan(-32);
     expect(tile.log[tile.log.length - 1]).toBe(`work:1@${h.poseKey(h.home)}`);
   });
 

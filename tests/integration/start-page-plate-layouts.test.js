@@ -184,8 +184,10 @@ describe('StartPagePlateLayouts', () => {
     expect(main._spInk.art.svg).toBe(svg); // exactly the drawing a flat plate shows
     const flat = render('diptych'); document.body.appendChild(flat); await L.mount(flat);
     const body = (n) => n.innerHTML.replace(/sp-g\d+/g, 'sp-g'); // each tile numbers its own gradient
-    expect(body(main.querySelector('.sp-ink-svg'))).toBe(body(flat.querySelector('.spl-print .sp-ink-svg')));
-    expect(main.querySelector('.sp-ink-svg').getAttribute('viewBox')).toBe(flat.querySelector('.spl-print .sp-ink-svg').getAttribute('viewBox'));
+    // a Scene plate draws its poses as cached bitmaps (ink.useRaster), so it holds a canvas where a flat plate holds the inline SVG;
+    // the drawing both are made from is the same art (asserted above through _spInk.art.svg)
+    expect(main.classList.contains('sp-ink')).toBe(true); // (the harness has no real canvas, so only the flat plate's SVG is inspectable)
+    expect(flat.querySelector('.spl-print .sp-ink-svg')).toBeTruthy();
     expect(main._spScene).toBeTruthy();
     expect(main.querySelector('.sp-scene-orbit')).toBeTruthy();
     expect(main.dataset.hint).toBe('Drag to rotate');

@@ -333,33 +333,66 @@
         restoreSettings();
       }
     };
-    // A cheap, approximate drawing of a pose (the settled compose's ink warped through the pose,
-    // Scene3D.PosePreview): milliseconds where the exact render of a mezzotint scene takes seconds.
-    // Falls back to the exact render until the session has one to warp from. The engine is then NOT
-    // at `pose` as far as the exact path is concerned (`current` is cleared), so the next exact
-    // render recomposes in full.
-    const previewJob = (pose) => {
-      if (disposed) throw new Error('Scene session disposed');
-      if (!engine || !settled) return job(pose);
-      const restoreSettings = snapshotSettings();
-      const restoreImages = snapshotNoiseImages();
-      try {
-        applyDocumentSettings(state.settings);
-        loadDocumentImages(payload);
-        turnCamera(engine.layers, pose);
-        engine.layers.forEach((l) => { if (l && l.isGroup && l.type === 'scene3d' && l.containerRole === 'scene') engine.generate(l.id, { preview: true }); });
-        current = null;
-        const { svg, pathCount } = buildSvg(engine);
-        return { svg, pathCount, algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine), preview: true };
-      } finally {
-        restoreImages();
-        restoreSettings();
+    // Once the session has one exact compose, every further pose is composed in a Web Worker (the same compose the
+    // engine runs, byte-identical): stage A posts the job under the document's settings, stage B installs the result
+    // and builds the SVG under them again. The main thread never runs the generator for a baked pose. No worker, a
+    // scene the worker cannot take, or a stale result: the exact synchronous render below.
+    let client;
+    const workerClient = () => {
+      if (client === undefined) {
+        const C = Vectura.Scene3D && Vectura.Scene3D.ComposeClient;
+        client = C && typeof C.create === 'function' && C.available() ? C.create() : null;
       }
+      return client;
+    };
+    const renderPose = (pose, label) => {
+      const sync = () => enqueue(label || 'scene', () => job(pose));
+      if (!engine || !settled || sameCamera(current, pose) || !workerClient()) return sync();
+      return enqueue(`${label || 'scene'}~post`, () => {
+        if (disposed) throw new Error('Scene session disposed');
+        const restoreSettings = snapshotSettings();
+        const restoreImages = snapshotNoiseImages();
+        try {
+          applyDocumentSettings(state.settings);
+          loadDocumentImages(payload);
+          turnCamera(engine.layers, pose);
+          current = null;
+          const begun = [];
+          for (const l of engine.layers) {
+            if (!(l && l.isGroup && l.type === 'scene3d' && l.containerRole === 'scene')) continue;
+            const c = engine.beginSceneAsync(l.id, { client });
+            if (!c) return { begun: null };
+            begun.push(c);
+          }
+          return { begun };
+        } finally {
+          restoreImages();
+          restoreSettings();
+        }
+      }).then(({ begun }) => {
+        if (!begun) return sync();
+        return Promise.all(begun.map((c) => (c.done ? null : c.promise.then((res) => ({ c, res }), () => null)))).then((done) => enqueue(`${label || 'scene'}~done`, () => {
+          if (disposed) throw new Error('Scene session disposed');
+          const restoreSettings = snapshotSettings();
+          const restoreImages = snapshotNoiseImages();
+          try {
+            applyDocumentSettings(state.settings);
+            loadDocumentImages(payload);
+            done.forEach((d) => { if (d) engine.finishSceneAsync(d.c, d.res); });
+            engine.computeAllDisplayGeometry(); // a group the worker did not deliver composes here, exactly as before
+            current = { yaw: pose.yaw, pitch: pose.pitch };
+            const { svg, pathCount } = buildSvg(engine);
+            return { svg, pathCount, algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine), worker: true, workerMs: done.reduce((n, d) => n + (d && d.res ? Number(d.res.ms) || 0 : 0), 0) };
+          } finally {
+            restoreImages();
+            restoreSettings();
+          }
+        }));
+      });
     };
     return {
-      render: (pose, label) => enqueue(label || 'scene', () => job(pose)),
-      preview: (pose, label) => enqueue(label || 'scene-preview', () => previewJob(pose)),
-      dispose: () => { disposed = true; engine = null; current = null; settled = false; },
+      render: (pose, label) => renderPose(pose, label),
+      dispose: () => { disposed = true; engine = null; current = null; settled = false; if (client) { try { client.terminate(); } catch (e) { /* gone */ } } client = null; },
     };
   };
 
@@ -383,7 +416,8 @@
       stat.count += 1;
       stat.lastMs = ms;
       if (ms > stat.slowestMs) { stat.slowestMs = ms; stat.slowestId = label; }
-      return Object.assign(out, { bytes: bytesOf(out.svg), ms });
+      const total = ms + (Number(out.workerMs) || 0); // a worker-composed pose also owns the compose time it took off this thread
+      return Object.assign(out, { bytes: typeof out.svg === 'string' ? bytesOf(out.svg) : 0, ms: total });
     }));
     tail = run.then(() => undefined, () => undefined);
     return run;

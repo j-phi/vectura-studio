@@ -10,11 +10,12 @@
  *   - idle: after IDLE ms the piece rocks gently (yaw ±SWAY[0]°, pitch ±SWAY[1]°, one back-and-forth per SWAY_P s), stepping
  *     through 2·LEVELS + 1 pre-rendered poses; the rock widens as its poses finish rendering, and parks at home after
  *     SWAY_MAX ms without interaction (pointer enter, focus or scrolling back into view resumes it);
- *   - drag / arrow keys: the camera follows on a DRAG_STEP° grid; the nearest pose already drawn shows at once and the exact
- *     pose replaces it when its render lands. Releasing makes the dragged pose the new home.
+ *   - drag / arrow keys: PRE-BAKED. A ring of poses around home (yaw ±RING° in RING_STEP° steps at home's pitch, plus the rock's fine
+ *     poses) is rendered ahead of time (in a worker when there is one), outward from home. A drag only ever shows the nearest pose already
+ *     drawn: no render runs on the interaction path, the turn is limited to the baked arc (it widens as poses finish) and the pitch stays at
+ *     home's. Releasing makes the shown pose the new home.
  * Cost budget (config START_PAGE.SCENE_ORBIT): every pose render is timed. A scene whose pose takes longer than heavyMs rocks through
- * at most heavyLevels poses each side (none past haltMs), renders nothing while it is dragged (the nearest drawn pose shows, and
- * only the release pose is rendered) and does not re-queue a rock after a turn. Rock poses never START within yieldMs of a scroll or a
+ * at most heavyLevels poses each side and bakes a narrower ring (none past haltMs), and does not re-queue a rock after a turn. Rock poses never START within yieldMs of a scroll or a
  * pointer / wheel event, and stop being pre-rendered once the rock has parked (waking it resumes them). Poses are drawn through one
  * StartPageArtRenderer.sceneSession per piece (one engine, only the camera changes), else through renderDocument.
  * Still (StartPageInk.isStill) or prefers-reduced-motion: no rocking (dragging still turns the piece).
@@ -30,7 +31,8 @@
   const SWAY_P = 8.5; // seconds per back-and-forth
   const LEVELS = 6; // poses each side of home: the rock steps through 2·LEVELS + 1 real drawings
   const IDLE = 1800; const SWAY_MAX = 20000; const TICK = 1000 / 15;
-  const DRAG_STEP = 1; // degrees: drag poses snap to this grid (each pose is a full render)
+  const RING = 30; const RING_STEP = 2.5; // degrees: the baked drag arc each side of home, and its pose spacing
+const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than heavyMs
   const KEY_STEP = 5;
   const PITCH = [-89, 89];
   const MAX_POSES = 40; // drawn poses kept per piece (a long drag renders many; the oldest off-rock ones are dropped)
@@ -86,7 +88,7 @@
     const own = ink.art || { id: 'scene' };
     const baseId = String(own.id || 'scene');
 
-    let alive = true; let visible = !('IntersectionObserver' in W); let payload = null; let home = null; let homeKey0 = '';
+    let engaged = false; let home0 = null; let alive = true; let visible = !('IntersectionObserver' in W); let payload = null; let home = null; let homeKey0 = '';
     let target = null; let drag = null; let busy = false; let renders = 0; let failed = false; let lastError = ''; let stage = '';
     let lastAct = performance.now(); let swayT = 0; let tPrev = 0; let timer = 0; let shownKey = '';
     let lastMs = 0; let lastPageAct = -Infinity; let pumpTimer = 0;
@@ -107,7 +109,8 @@
       if (!alive) return null;
       const cam = pl ? cameraOf(pl) : null;
       if (!cam) { fail(); return null; }
-      payload = pl; home = { yaw: round1(cam.yaw), pitch: round1(cam.pitch) }; homeKey0 = keyOf(home);
+      if (typeof ink.useRaster === 'function') ink.useRaster(); /* poses are drawn as cached bitmaps, not swapped inline SVG */
+      payload = pl; home = { yaw: round1(cam.yaw), pitch: round1(cam.pitch) }; home0 = home; homeKey0 = keyOf(home);
       cache.set(homeKey0, Promise.resolve(null)); ready.set(homeKey0, null); shownKey = homeKey0;
       pump(); kick();
       return payload;
@@ -160,25 +163,28 @@
     };
     const parked = (now) => now - lastAct >= IDLE + SWAY_MAX;
     const swayOK = () => visible && !isStill() && !drag && !parked(performance.now());
+    const ringPoses = () => {
+      const out = []; const lim = lastMs > cfg().haltMs ? 0 : (lastMs > cfg().heavyMs ? RING_HEAVY : RING);
+      for (let a = RING_STEP; a <= lim + 1e-6; a += RING_STEP) for (const sg of [1, -1]) out.push({ yaw: round1(home0.yaw + sg * a), pitch: home0.pitch });
+      return out;
+    };
     function nextWanted() {
-      if (target && !cache.has(keyOf(target))) return drag && isHeavy() ? null : target; /* a heavy scene renders only the release pose */
-      if (target || !swayOK()) return null;
+      if (drag || !visible || parked(performance.now()) || (isStill() && !engaged)) return null; /* Still: nothing bakes until the piece is engaged (pointer, focus, a drag) */
+       /* nothing renders while the piece is dragged; baking stops once the piece has parked */
       const L = rockLevels();
       for (let i = 1; i <= L; i++) for (const s of [1, -1]) { const p = poseAt(s * i); if (!cache.has(keyOf(p))) return p; }
+      if (L) for (const p of ringPoses()) if (!cache.has(keyOf(p))) return p;
       return null;
     }
     function pump() {
       if (!alive || busy || !payload || !visible) return;
       const want = nextWanted(); if (!want) return;
-      if (!(target && keyOf(want) === keyOf(target))) { /* the rock's poses wait for a quiet page; a drag target never does */
+      { /* baked poses wait for a quiet page */
         const wait = cfg().yieldMs - (performance.now() - lastPageAct);
         if (wait > 0) { if (!pumpTimer) pumpTimer = setTimeout(() => { pumpTimer = 0; pump(); }, wait + 1); return; }
       }
       busy = true;
-      renderPose(want).then(() => {
-        if (target && keyOf(target) === keyOf(want)) { show(keyOf(want)); if (!drag) target = null; } else if (target) { const n = nearest(target); if (n) show(n); }
-      }, () => { if (target && keyOf(target) === keyOf(want) && !drag) target = null; })
-        .then(() => { busy = false; if (alive) { pump(); kick(); } });
+      renderPose(want).then(() => {}, () => {}).then(() => { busy = false; if (alive) { pump(); kick(); } });
     }
 
     /* ---------- the rock (a stepped sway through the drawn poses) ---------- */
@@ -199,39 +205,27 @@
     }
     function schedule(ms) { if (!timer && alive) timer = setTimeout(frame, Math.max(0, ms)); }
     function kick() { if (timer) { clearTimeout(timer); timer = 0; } schedule(0); }
-    function wake() { if (parked(performance.now())) lastAct = performance.now() - IDLE; kick(); pump(); }
+    function wake() { engaged = true; if (parked(performance.now())) lastAct = performance.now() - IDLE; kick(); pump(); }
 
     /* ---------- input ---------- */
     const touch = () => { lastAct = performance.now(); swayT = 0; tPrev = 0; };
-    /* A heavy scene is not re-rendered exactly while it is dragged; instead the session warps its settled ink through each
-     * drag pose (StartPageArtRenderer.sceneSession preview: milliseconds). The exact pose still lands on release. */
-    let pvBusy = false; let pvN = 0;
-    const previewDrag = () => {
-      if (pvBusy || !drag || !target || !alive || !session || typeof session.preview !== 'function' || !isHeavy()) return;
-      const want = target; const k = keyOf(want);
-      if (ready.has(k)) return;
-      pvBusy = true;
-      session.preview({ yaw: want.yaw, pitch: want.pitch }, `${baseId}~pv`).then((out) => {
-        if (!alive || !drag || !out || typeof out.svg !== 'string') return null;
-        const alt = { id: `${baseId}~pv${++pvN}`, svg: out.svg };
-        return ink.prepareArt(alt).then((ok) => { if (ok && alive && drag && !el.classList.contains('sp-ink-drawing')) { shownKey = alt.id; ink.showArt(alt); } });
-      }).catch(() => null).then(() => { pvBusy = false; if (alive && drag && target && !ready.has(keyOf(target))) previewDrag(); });
-    };
+    /* The drag shows the nearest BAKED pose (yaw only: the pitch stays home's); nothing renders here. */
     const moveTo = (pose) => {
-      target = { yaw: round1(snap(pose.yaw, DRAG_STEP)), pitch: round1(clamp(snap(pose.pitch, DRAG_STEP), PITCH[0], PITCH[1])) };
-      const k = keyOf(target);
-      if (ready.has(k)) show(k); else if (drag && isHeavy() && session && typeof session.preview === 'function') previewDrag(); else { const n = nearest(target); if (n) show(n); }
-      pump();
+      const n = nearest({ yaw: round1(pose.yaw), pitch: home.pitch });
+      if (!n) return;
+      const [y, p] = n.split(',').map(Number);
+      target = { yaw: y, pitch: p };
+      show(n);
     };
     const settle = () => {
       if (!target) return;
-      home = target;
-      if (ready.has(keyOf(home))) { show(keyOf(home)); target = null; }
+      home = target; target = null;
+      show(keyOf(home));
       touch(); pump(); kick();
     };
     const onDown = (e) => {
       if (e.button > 0 || !payload) return;
-      ov.dataset.pointer = '1'; /* focused by a pointer: no keyboard focus ring */
+      engaged = true; ov.dataset.pointer = '1'; /* focused by a pointer: no keyboard focus ring */
       try { ov.focus({ preventScroll: true }); } catch (_) { /* noop */ }
       try { ov.setPointerCapture(e.pointerId); } catch (_) { /* noop */ }
       const base = target || home;
@@ -241,7 +235,7 @@
     const onMove = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const r = el.getBoundingClientRect(); const k = 3.4 / Math.max(240, Math.min(r.width || 0, r.height || 0)) * D2;
-      moveTo({ yaw: drag.yaw - (e.clientX - drag.x) * k, pitch: drag.pitch + (e.clientY - drag.y) * k });
+      moveTo({ yaw: drag.yaw - (e.clientX - drag.x) * k, pitch: drag.pitch });
       touch();
     };
     const onUp = (e) => {
@@ -253,7 +247,7 @@
       delete ov.dataset.pointer;
       if (!K || !payload) return; e.preventDefault();
       const s = KEY_STEP * (e.shiftKey ? 2.5 : 1); const base = target || home;
-      touch(); moveTo({ yaw: base.yaw + K[0] * s, pitch: base.pitch + K[1] * s }); settle();
+      if (!K[0]) return; touch(); moveTo({ yaw: base.yaw + K[0] * s, pitch: base.pitch }); settle();
     };
     ov.addEventListener('pointerenter', wake); ov.addEventListener('focus', wake);
     ov.addEventListener('pointerdown', onDown); ov.addEventListener('pointermove', onMove);

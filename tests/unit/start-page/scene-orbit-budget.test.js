@@ -1,7 +1,7 @@
 /**
  * Start Page turning 3D Scenes, cost budget (src/ui/start-page/scene-orbit.js).
- * A scene whose pose render is slow (heavy) rocks through fewer poses or none, renders nothing during a drag (only the release pose),
- * and does not re-queue a rock after a turn; the rock's renders hold back while the page scrolls or the pointer moves and stop once
+ * Dragging is PRE-BAKED: the drag shows the nearest already-drawn pose and never starts a render (not on move, not on release).
+ * A scene whose pose render is slow (heavy) rocks through fewer poses (and bakes a narrower drag arc) or none; the rock's renders hold back while the page scrolls or the pointer moves and stop once
  * the rock has parked. The renderer is a fake that reports how long each pose "took" (ms) so the budget can be driven exactly.
  */
 import fs from 'node:fs';
@@ -87,12 +87,15 @@ const drag = async (ov, n, dx) => {
 
 describe('StartPageSceneOrbit cost budget', () => {
   beforeEach(() => { still = false; poseMs = 100; poseDelay = 0; load(); });
-  afterEach(() => dom.window.close());
+  afterEach(() => { const m = W.document.getElementById('m'); if (m && m._spScene) m._spScene.destroy(); dom.window.close(); });
 
-  it('a light scene keeps the full rock (12 poses)', async () => {
+  it('a light scene keeps the full rock (12 poses) and bakes the drag arc (24 more: +-30 deg in 2.5 deg steps)', async () => {
     await mountScene();
-    await run(4000);
-    expect(renders.length).toBe(12);
+    await run(6000);
+    expect(renders.length).toBe(12 + 24);
+    const yaws = renders.map((pl) => pl.state.engine.layers[0].params.camera.yaw);
+    expect(Math.min(...yaws)).toBe(-62);
+    expect(Math.max(...yaws)).toBe(-2);
   });
 
   it('a heavy scene (pose render > heavyMs) rocks through only the 2 poses of level 1', async () => {
@@ -100,9 +103,10 @@ describe('StartPageSceneOrbit cost budget', () => {
     const { h } = await mountScene();
     await run(10000);
     expect(h.stats.heavy).toBe(true);
-    expect(renders.length).toBe(2); // +1 and -1 level: the probe is one of them
+    expect(renders.length).toBe(2 + 8); // +1 and -1 level, then the narrower drag arc (+-10 deg)
     const yaws = renders.map((pl) => pl.state.engine.layers[0].params.camera.yaw);
-    expect(new Set(yaws).size).toBe(2);
+    expect(new Set(yaws).size).toBe(10);
+    expect(Math.min(...yaws)).toBe(-42);
   });
 
   it('a scene past haltMs does not rock at all: after the probe pose it renders nothing and shows only its own art', async () => {
@@ -114,39 +118,42 @@ describe('StartPageSceneOrbit cost budget', () => {
     expect(tile.shownArt()).toBe(tile.art);
   });
 
-  it('a heavy scene renders nothing while dragging, shows the nearest drawn pose, and renders only the release pose', async () => {
+  it('a heavy scene renders nothing while dragging or on release: the drag shows the nearest baked pose, clamped to the baked arc', async () => {
     poseMs = 1500;
     const { el, tile, h } = await mountScene();
-    await run(3000);
+    await run(16000);
     const before = renders.length;
+    expect(before).toBe(10);
     const ov = el.querySelector('.sp-scene-orbit');
     await drag(ov, 8, 10);
     expect(renders.length).toBe(before); // nothing rendered mid-drag
     shown(tile).forEach((id) => expect(tile.prepared).toContain(id)); // only drawn poses were shown
     ptr(ov, 'pointerup', 180, 100);
-    await run(5000);
-    expect(renders.length).toBe(before + 1); // the release pose only, no re-queued rock
-    expect(renders[renders.length - 1].state.engine.layers[0].params.camera.yaw).toBe(h.home.yaw);
-    expect(h.home.yaw).toBeLessThan(-32 - 10);
-    expect(tile.cur.id).toBe(`work:1@${h.poseKey(h.home)}`); // the exact pose shows once it lands
+    await run(3000);
+    expect(renders.length).toBe(before); // nor on release
+    expect(h.home.yaw).toBe(-42); // 52 deg of drag, clamped to the +-10 deg baked arc
+    expect(h.home.pitch).toBe(22); // the pitch stays home's
+    expect(tile.cur.id).toBe(`work:1@${h.poseKey(h.home)}`);
   });
 
-  it('a light scene still renders the drag poses and re-queues its rock on release', async () => {
-    const { el } = await mountScene();
-    await run(4000);
+  it('a light scene drags through baked poses only, then bakes the poses around its new home', async () => {
+    const { el, tile, h } = await mountScene();
+    await run(6000);
     const before = renders.length;
     const ov = el.querySelector('.sp-scene-orbit');
-    await drag(ov, 8, 10);
-    expect(renders.length).toBeGreaterThan(before + 3);
-    ptr(ov, 'pointerup', 180, 100);
+    await drag(ov, 4, 10); // 26 deg: inside the baked arc
+    expect(renders.length).toBe(before);
+    ptr(ov, 'pointerup', 140, 100);
+    expect(h.home.yaw).toBe(-57);
+    expect(tile.cur.id).toBe(`work:1@${h.poseKey(h.home)}`);
     await run(6000);
-    expect(renders.length).toBeGreaterThan(before + 8 + 6);
+    expect(renders.length).toBeGreaterThan(before); // the rock around the new home
   });
 });
 
 describe('StartPageSceneOrbit yield and pause', () => {
   beforeEach(() => { still = false; poseMs = 10; poseDelay = 0; load(); });
-  afterEach(() => dom.window.close());
+  afterEach(() => { const m = W.document.getElementById('m'); if (m && m._spScene) m._spScene.destroy(); dom.window.close(); });
 
   it('starts no rock render within yieldMs of a scroll of the scroller that holds the piece, and resumes after', async () => {
     const el = W.document.getElementById('m');
@@ -171,16 +178,16 @@ describe('StartPageSceneOrbit yield and pause', () => {
     expect(renders.length).toBeGreaterThan(0);
   });
 
-  it('does not delay a drag-target render with the scroll pause', async () => {
+  it('a drag starts no render at all, scroll pause or not', async () => {
     const { el } = await mountScene();
-    await run(4000);
+    await run(6000);
     const before = renders.length;
     const ov = el.querySelector('.sp-scene-orbit');
     el.parentElement.dispatchEvent(new W.Event('scroll'));
     ptr(ov, 'pointerdown', 100, 100);
     ptr(ov, 'pointermove', 140, 100);
-    await run(60);
-    expect(renders.length).toBeGreaterThan(before); // rendered inside the 300 ms window
+    await run(600);
+    expect(renders.length).toBe(before);
   });
 
   it('stops pre-rendering once the rock has parked, and resumes on wake', async () => {
