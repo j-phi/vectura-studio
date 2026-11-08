@@ -39,11 +39,7 @@
     'src/core/scene3d/compose-job.js',
   ]);
 
-  const stats = { starts: 0, jobs: 0, cancels: 0, failures: 0 };
-  let worker = null;
-  let ready = null; // Promise resolved when the worker has loaded its modules
-  let pending = null; // { id, resolve, reject }
-  let nextId = 1;
+  const stats = { starts: 0, jobs: 0, cancels: 0, failures: 0, workers: 0 };
   let broken = false;
 
   const resolveScripts = () => {
@@ -70,52 +66,78 @@
   const available = () => !broken && typeof Worker === 'function' && typeof document !== 'undefined'
     && location.protocol !== 'file:' && !!resolveScripts() && !!workerUrl();
 
-  const stop = () => {
-    if (worker) { try { worker.terminate(); } catch (_) { /* gone */ } }
-    worker = null; ready = null;
-    if (pending) { const p = pending; pending = null; p.reject(new Error('cancelled')); }
-  };
+  // One worker + one in-flight job. The shared `client` below serves the release settle; the spin
+  // baker (spin-ring.js) makes its own with `create()` so a bake never queues behind (or cancels) a settle.
+  const makeClient = () => {
+    let worker = null;
+    let ready = null; // Promise resolved when the worker has loaded its modules
+    let isReady = false;
+    let pending = null; // { id, resolve, reject, lazy }
+    let nextId = 1;
 
-  const warm = () => {
-    if (ready) return ready;
-    if (!available()) return Promise.reject(new Error('worker unavailable'));
-    stats.starts += 1;
-    ready = new Promise((resolve, reject) => {
-      let w;
-      try { w = new Worker(workerUrl()); } catch (err) { broken = true; reject(err); return; }
-      worker = w;
-      w.onmessage = (e) => {
-        const m = e.data || {};
-        if (m.type === 'ready') { resolve(); return; }
-        if (m.type === 'result' && pending && pending.id === m.id) {
-          const p = pending; pending = null;
-          const tU = (globalScope.performance || Date).now();
-          try { p.resolve({ paths: Scene3D.ComposeJob.unpack(m.packed), finished: m.finished ? Scene3D.ComposeJob.unpack(m.finished) : null, packed: m.packed, ms: m.ms }); } catch (err) { p.reject(err); }
-          stats.lastUnpackMs = (globalScope.performance || Date).now() - tU;
-        } else if (m.type === 'error') {
-          stats.failures += 1; stats.lastError = m.message; if (typeof console !== 'undefined') console.warn('[ComposeClient]', m.message);
-          if (pending && pending.id === m.id) { const p = pending; pending = null; p.reject(new Error(m.message)); }
-          else { broken = true; reject(new Error(m.message)); }
-        }
+    const stop = () => {
+      if (worker) { try { worker.terminate(); } catch (_) { /* gone */ } }
+      worker = null; ready = null; isReady = false;
+      if (pending) { const p = pending; pending = null; p.reject(new Error('cancelled')); }
+    };
+
+    const warm = () => {
+      if (ready) return ready;
+      if (!available()) return Promise.reject(new Error('worker unavailable'));
+      stats.starts += 1; stats.workers += 1;
+      ready = new Promise((resolve, reject) => {
+        let w;
+        try { w = new Worker(workerUrl()); } catch (err) { broken = true; reject(err); return; }
+        worker = w;
+        w.onmessage = (e) => {
+          const m = e.data || {};
+          if (m.type === 'ready') { isReady = true; resolve(); return; }
+          if (m.type === 'result' && pending && pending.id === m.id) {
+            const p = pending; pending = null;
+            const tU = (globalScope.performance || Date).now();
+            try {
+              // `lazy` keeps the ink packed (one Float64Array per path): the spin baker stores frames this way
+              // and unpacks only the one it installs.
+              p.resolve(p.lazy
+                ? { packed: m.packed, finishedPacked: m.finished || null, ms: m.ms }
+                : { paths: Scene3D.ComposeJob.unpack(m.packed), finished: m.finished ? Scene3D.ComposeJob.unpack(m.finished) : null, packed: m.packed, ms: m.ms });
+            } catch (err) { p.reject(err); }
+            stats.lastUnpackMs = (globalScope.performance || Date).now() - tU;
+          } else if (m.type === 'error') {
+            stats.failures += 1; stats.lastError = m.message; if (typeof console !== 'undefined') console.warn('[ComposeClient]', m.message);
+            if (pending && pending.id === m.id) { const p = pending; pending = null; p.reject(new Error(m.message)); }
+            else { broken = true; reject(new Error(m.message)); }
+          }
+        };
+        w.onerror = (e) => { broken = true; stats.failures += 1; reject(new Error(e && e.message || 'worker error')); if (pending) { const p = pending; pending = null; p.reject(new Error('worker error')); } };
+        w.postMessage({ type: 'init', scripts: resolveScripts().concat([]) });
+      });
+      ready.catch(() => { stop(); });
+      return ready;
+    };
+
+    // `opts.lazy` resolves the packed ink instead of unpacked paths. When the worker is already warm the job is
+    // posted SYNCHRONOUSLY (structured clone happens now, so the caller may mutate the scene right after);
+    // a cold worker posts when it is ready, so callers that edit the scene in between must clone first.
+    const run = (job, opts) => {
+      stats.jobs += 1;
+      const id = nextId++;
+      const lazy = !!(opts && opts.lazy);
+      const post = (resolve, reject) => {
+        if (!worker) { reject(new Error('cancelled')); return; }
+        pending = { id, resolve, reject, lazy };
+        try { worker.postMessage({ type: 'job', id, job }); } catch (err) { pending = null; reject(err); }
       };
-      w.onerror = (e) => { broken = true; stats.failures += 1; reject(new Error(e && e.message || 'worker error')); if (pending) { const p = pending; pending = null; p.reject(new Error('worker error')); } };
-      w.postMessage({ type: 'init', scripts: resolveScripts().concat([]) });
-    });
-    ready.catch(() => { stop(); });
-    return ready;
+      const promise = (isReady && worker && !pending)
+        ? new Promise(post)
+        : warm().then(() => new Promise(post));
+      return { promise, cancel: () => { if (pending && pending.id === id) { stats.cancels += 1; stop(); } } };
+    };
+
+    return { available, warm, run, isReady: () => isReady, busy: () => !!pending, cancel: () => { if (pending) { stats.cancels += 1; stop(); } }, terminate: stop };
   };
 
-  const run = (job) => {
-    stats.jobs += 1;
-    const id = nextId++;
-    const promise = warm().then(() => new Promise((resolve, reject) => {
-      if (!worker) { reject(new Error('cancelled')); return; }
-      pending = { id, resolve, reject };
-      try { worker.postMessage({ type: 'job', id, job }); } catch (err) { pending = null; reject(err); }
-    }));
-    return { promise, cancel: () => { if (pending && pending.id === id) { stats.cancels += 1; stop(); } } };
-  };
-
-  Scene3D.ComposeClient = { available, warm, run, cancel: () => { if (pending) { stats.cancels += 1; stop(); } }, stats, WORKER_SCRIPTS };
+  const client = makeClient();
+  Scene3D.ComposeClient = Object.assign({}, client, { create: makeClient, stats, WORKER_SCRIPTS });
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.ComposeClient;
 })();

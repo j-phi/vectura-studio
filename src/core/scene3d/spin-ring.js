@@ -1,0 +1,254 @@
+/**
+ * Scene3D.SpinRing — a pre-baked turntable for a 3D Scene.
+ *
+ * WHY. Rotating a Scene (a mezzotint sphere is 0.5-2 s per compose) can only be smooth if no compose
+ * happens while the pointer moves. So the poses are composed AHEAD of the drag: the scene's exact full
+ * compose is run, in Web Workers, for a ring of yaws (72 at 5 degrees), and a drag frame just picks the nearest
+ * baked one. Nothing here approximates: a frame is the output of the same compose a normal render runs
+ * (same assembled scene, seed, bounds, output finish), so installing it is byte-identical to rendering
+ * the scene at that yaw (Engine.installSpinFrame verifies the compose key first).
+ *
+ *   SpinRing.create({ engine, group, target, step?, runnerFactory?, maxBytes? }) -> ring
+ *     target  { id, get() -> yaw, set(yaw), fixed? }  the angle being swept (camera yaw, or one object's yaw)
+ *     ring.key0         the scene's compose key with the swept yaw zeroed: "the scene hash minus yaw"
+ *     ring.valid()      key0 still matches the scene (any other edit makes the ring stale)
+ *     ring.start()      bake outward from the current yaw (0, +1, -1, +2, -2 ... steps)
+ *     ring.nearest(yaw) the ready frame closest to `yaw` (circular), or null
+ *     ring.dispose()    cancel the in-flight bakes and drop every frame
+ *
+ * A baked frame keeps the worker's ink PACKED (one Float64Array per path) so a ring of dense mezzotint
+ * costs tens of MB, not hundreds; `maxBytes` caps it (the ring then stops baking and keeps the frames
+ * nearest the starting yaw). Cached rasters (the renderer's drawImage layer) hang off `frame.raster` and are
+ * evicted least-recently-used by `trimRasters`.
+ */
+(function registerSceneSpinRing() {
+  'use strict';
+
+  const globalScope = typeof window !== 'undefined' ? window : globalThis;
+  const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
+  const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
+
+  // Counters for the contract tests.
+  const stats = { rings: 0, jobs: 0, frames: 0, disposed: 0, installs: 0 };
+
+  const normYaw = (v) => {
+    let n = Number(v) % 360;
+    if (n > 180) n -= 360;
+    if (n < -180) n += 360;
+    return Object.is(n, -0) ? 0 : n;
+  };
+  const tidy = (v) => {
+    const n = Math.round(v * 10) / 10;
+    return Object.is(n, -0) ? 0 : n;
+  };
+  const circDist = (a, b) => Math.abs(normYaw(a - b));
+  const now = () => (globalScope.performance || Date).now();
+
+  const packedBytes = (packed) => {
+    let n = 0;
+    ((packed && packed.paths) || []).forEach((e) => {
+      if (e.flat) n += e.flat.byteLength;
+      else if (e.pts) n += e.pts.length * 40;
+      n += (e.metaJson ? e.metaJson.length * 2 : 0) + 64;
+    });
+    return n;
+  };
+
+  // A runner that composes on the calling thread. For tests and tools: it blocks, so the app never uses it.
+  const inlineRunner = () => ({
+    isReady: () => false, // runs later than the call: the baker hands it a private copy of the job
+    run: (job) => {
+      const promise = new Promise((resolve, reject) => {
+        setTimeout(() => {
+          try {
+            const out = Scene3D.ComposeJob.run(job);
+            resolve({ packed: out.packed, finishedPacked: out.finished, ms: out.ms });
+          } catch (err) { reject(err); }
+        }, 0);
+      });
+      return { promise, cancel: () => {} };
+    },
+    terminate: () => {},
+  });
+
+  // structuredClone where the platform has it (every browser); a JSON copy in the DOM-free test runtime.
+  const deepCopy = (o) => (typeof globalScope.structuredClone === 'function' ? globalScope.structuredClone(o) : JSON.parse(JSON.stringify(o)));
+
+  const defaultPoolSize = () => {
+    const hc = (globalScope.navigator && globalScope.navigator.hardwareConcurrency) || 2;
+    return Math.max(1, Math.min(3, hc - 1 > 0 ? hc - 1 : 1));
+  };
+
+  const create = (opts) => {
+    const { engine, group, target } = opts;
+    if (!engine || !group || !target) throw new Error('SpinRing.create needs engine, group and target');
+    const step = opts.step > 0 ? opts.step : 5;
+    const count = Math.max(2, Math.round(360 / step));
+    const base = normYaw(target.get());
+    const yaws = Array.from({ length: count }, (_, i) => tidy(normYaw(base + i * (360 / count))));
+    const SETTINGS = Vectura.SETTINGS || {};
+    const maxBytes = Number.isFinite(opts.maxBytes) ? opts.maxBytes
+      : (Number.isFinite(SETTINGS.sceneSpinMaxMB) ? SETTINGS.sceneSpinMaxMB : 96) * 1024 * 1024;
+    const factory = opts.runnerFactory || (() => {
+      const C = Scene3D.ComposeClient;
+      return C && C.available() ? C.create() : null;
+    });
+
+    // Bake order: the starting yaw, then alternately one step either side of it, outward.
+    const order = [0];
+    for (let k = 1; order.length < count; k++) {
+      order.push(k % count);
+      if (order.length < count && (count - k) % count !== k % count) order.push((count - k) % count);
+    }
+
+    const ring = {
+      engine, group, target, step: 360 / count, count, base, yaws,
+      pitch: opts.pitch,
+      frames: new Map(), // idx -> frame
+      stats: { jobs: 0, baked: 0, failed: 0, bakeMs: 0, startedAt: 0, doneAt: 0, vectorBytes: 0, capped: false, workers: 0 },
+      disposed: false,
+      running: false,
+      onFrame: opts.onFrame || null,
+      key0: null,
+    };
+    let clock = 0;
+    let cursor = 0;
+    const runners = [];
+    const inflight = new Map(); // runner -> idx
+
+    const computeKey0 = () => {
+      const saved = target.get();
+      let job = null;
+      try { target.set(0); job = engine.sceneJobOnly(group); } finally { target.set(saved); }
+      return job ? job.memoKey : null;
+    };
+    ring.computeKey0 = computeKey0;
+    ring.key0 = computeKey0();
+    ring.valid = () => !ring.disposed && ring.key0 != null && computeKey0() === ring.key0;
+
+    const globals = () => ({
+      silProtoOff: globalScope.__SIL_PROTO_OFF,
+      silProtoTorusOn: globalScope.__SIL_PROTO_TORUS_ON,
+      strokeFillDefault: Vectura.SCENE3D_STROKE_FILL_DEFAULT,
+    });
+
+    const finishIfDone = () => {
+      if (inflight.size === 0 && cursor >= order.length || ring.stats.capped) {
+        if (inflight.size === 0 && !ring.stats.doneAt) ring.stats.doneAt = now();
+      }
+    };
+
+    const land = (idx, key, res) => {
+      if (ring.disposed) return;
+      const frame = {
+        idx, yaw: yaws[idx], key, ms: res.ms, packed: res.packed, finishedPacked: res.finishedPacked,
+        bytes: packedBytes(res.packed) + packedBytes(res.finishedPacked), used: ++clock, raster: null,
+      };
+      ring.frames.set(idx, frame);
+      ring.stats.baked += 1; stats.frames += 1;
+      ring.stats.vectorBytes += frame.bytes;
+      ring.stats.bakeMs += res.ms || 0;
+      if (ring.stats.vectorBytes + frame.bytes > maxBytes) ring.stats.capped = true;
+      if (ring.onFrame) { try { ring.onFrame(frame, ring); } catch (err) { /* a listener must not stop the bake */ } }
+    };
+
+    const feed = (runner) => {
+      if (ring.disposed || !ring.running || inflight.has(runner)) return;
+      while (cursor < order.length && ring.frames.has(order[cursor])) cursor += 1;
+      if (ring.stats.capped || cursor >= order.length) { finishIfDone(); return; }
+      const idx = order[cursor++];
+      const yaw = yaws[idx];
+      const saved = target.get();
+      let job = null;
+      try { target.set(yaw); job = engine.sceneJobOnly(group); } catch (err) { job = null; }
+      // The post below happens synchronously for a warm worker; a cold one posts later, so give it a private copy.
+      let msg = null;
+      if (job) {
+        msg = { assembled: job.assembled, bounds: job.bounds, seed: job.seed, finish: { objectParams: job.objects, groupParams: group.params }, globals: globals() };
+        if (!(runner.isReady && runner.isReady())) { try { msg = deepCopy(msg); } catch (err) { msg = null; } }
+      }
+      target.set(saved);
+      if (!job || !msg) { ring.stats.failed += 1; feed(runner); return; }
+      ring.stats.jobs += 1; stats.jobs += 1;
+      let h;
+      try { h = runner.run(msg, { lazy: true }); } catch (err) { ring.stats.failed += 1; return; }
+      inflight.set(runner, idx);
+      h.promise.then((res) => {
+        inflight.delete(runner);
+        land(idx, job.memoKey, res);
+      }, () => {
+        inflight.delete(runner);
+        if (!ring.disposed) ring.stats.failed += 1;
+      }).then(() => { if (!ring.disposed && ring.stats.failed < 4) feed(runner); else finishIfDone(); });
+    };
+
+    ring.start = () => {
+      if (ring.running || ring.disposed || ring.key0 == null) return false;
+      const n = Number.isFinite(opts.poolSize) ? opts.poolSize : defaultPoolSize();
+      for (let i = 0; i < n; i++) {
+        const r = factory();
+        if (!r) break;
+        runners.push(r);
+      }
+      if (!runners.length) return false;
+      ring.stats.workers = runners.length;
+      ring.running = true;
+      ring.stats.startedAt = now();
+      runners.forEach(feed);
+      return true;
+    };
+
+    ring.readyCount = () => ring.frames.size;
+    ring.complete = () => ring.frames.size >= count;
+
+    ring.frameAt = (yaw) => {
+      let best = null; let bd = Infinity;
+      ring.frames.forEach((f) => { const d = circDist(f.yaw, yaw); if (d < bd) { bd = d; best = f; } });
+      if (best) { best.used = ++clock; best.dist = bd; }
+      return best;
+    };
+
+    // The nearest ready frame that also has a raster (what a drag frame draws), preferring `frameAt` when it has one.
+    ring.rasterAt = (yaw) => {
+      const f = ring.frameAt(yaw);
+      if (f && f.raster) return f;
+      let best = null; let bd = Infinity;
+      ring.frames.forEach((g) => { if (!g.raster) return; const d = circDist(g.yaw, yaw); if (d < bd) { bd = d; best = g; } });
+      if (best) { best.used = ++clock; best.dist = bd; }
+      return best;
+    };
+
+    ring.rasterBytes = () => { let n = 0; ring.frames.forEach((f) => { if (f.raster) n += f.raster.bytes; }); return n; };
+    ring.dropRasters = () => { ring.frames.forEach((f) => { f.raster = null; }); };
+    // Least recently used rasters go first; `keep` (a frame) is never dropped.
+    ring.trimRasters = (maxRasterBytes, keep) => {
+      let total = ring.rasterBytes();
+      if (total <= maxRasterBytes) return 0;
+      const list = Array.from(ring.frames.values()).filter((f) => f.raster && f !== keep).sort((a, b) => a.used - b.used);
+      let dropped = 0;
+      for (const f of list) { if (total <= maxRasterBytes) break; total -= f.raster.bytes; f.raster = null; dropped += 1; }
+      return dropped;
+    };
+
+    ring.report = () => ({
+      count, ready: ring.frames.size, step: ring.step, workers: ring.stats.workers, jobs: ring.stats.jobs, failed: ring.stats.failed,
+      capped: ring.stats.capped, vectorMB: ring.stats.vectorBytes / 1048576, rasterMB: ring.rasterBytes() / 1048576,
+      bakeWallMs: ring.stats.doneAt && ring.stats.startedAt ? ring.stats.doneAt - ring.stats.startedAt : null,
+      composeMsSum: ring.stats.bakeMs,
+    });
+
+    ring.dispose = () => {
+      if (ring.disposed) return;
+      ring.disposed = true; ring.running = false; stats.disposed += 1;
+      runners.forEach((r) => { try { r.terminate(); } catch (err) { /* gone */ } });
+      runners.length = 0; inflight.clear();
+      ring.frames.clear();
+    };
+
+    stats.rings += 1;
+    return ring;
+  };
+
+  Scene3D.SpinRing = { create, inlineRunner, stats, normYaw, tidy, circDist };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.SpinRing;
+})();

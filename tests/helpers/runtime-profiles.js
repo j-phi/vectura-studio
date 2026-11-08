@@ -43,6 +43,7 @@ const SCENE3D_FILES = Object.freeze([
   'src/core/scene3d/pose-preview.js',
   'src/core/scene3d/compose-job.js',
   'src/core/scene3d/compose-client.js',
+  'src/core/scene3d/spin-ring.js',
   'src/core/scene3d/edges.js',
   'src/core/scene3d/depth.js',
   'src/core/scene3d/hlr.js',

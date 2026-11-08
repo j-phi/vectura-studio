@@ -890,7 +890,7 @@
       // A WeakMap so a removed group (or an undo-restored copy) drops its entry.
       this._sceneComposeMemo = new WeakMap();
       // Diagnostics for tests / perf harnesses: real composes vs memo hits.
-      this.sceneComposeStats = { composes: 0, hits: 0, warps: 0, lastTier: null };
+      this.sceneComposeStats = { composes: 0, hits: 0, warps: 0, lastTier: null, spinInstalls: 0 };
     }
 
     // Announce every removed layer id to the host (e.g. the on-canvas text
@@ -2871,6 +2871,7 @@
         }
       });
 
+      const prevAssembled = group._sceneAssembled;
       const assembled = Params.collectSceneParams(group.params, collected);
       // Scene-tree — publish the COLLECTED input so consumers that need to
       // re-derive the scene (the renderer's per-pixel pick-face pass) use the
@@ -2928,6 +2929,13 @@
       // complete input signature matches the last one reuses its output; draft
       // tiers are never cached, so a draft frame can never be served as final.
       const memoKey = tier === 'full' ? this._sceneComposeKey(algo, assembled, bounds, group) : null;
+      // SPIN BAKE — hand the compose input of THIS state to the caller without touching the group at all
+      // (no memo read, no installed ink, `_sceneAssembled` put back): the baker aims it at poses the scene is not in.
+      if (options && options.jobOnly === true) {
+        group._sceneAssembled = prevAssembled;
+        group._sceneJob = memoKey ? { assembled, bounds, seed: group.params.seed, memoKey, tier, objects: Array.from(objectLayers).map(([id, l]) => [id, l.params]) } : null;
+        return;
+      }
       const memo = memoKey ? this._sceneComposeMemo.get(group) : null;
 
       let paths = [];
@@ -2960,7 +2968,8 @@
           failed = true;
         }
         const ms = pre ? pre.ms : nowMs() - t0;
-        this.sceneComposeStats.composes += 1;
+        // a baked spin frame is a compose that already happened (in the worker): counted apart
+        if (pre && pre.spin) this.sceneComposeStats.spinInstalls += 1; else this.sceneComposeStats.composes += 1;
         if (tier === 'full') {
           group._sceneLastFullMs = ms;
           // A scene this slow will settle through the worker after its next drag: start it now, off
@@ -2991,6 +3000,7 @@
         ? options.precomputed.finished
         : this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      if (tier === 'full') group._sceneSettledKey = memoKey;
       // Lift the settled ink for the drag preview (null when the scene is not
       // warpable; never throws into the compose).
       if (tier === 'full') {
@@ -3025,19 +3035,21 @@
     // the same prefix runs here, the generator runs there, so the ink is byte-identical.
     // Resolves true when the group now holds the settled ink, false when the caller must fall back
     // to the synchronous `generate` (no worker, not a scene, result stale or cancelled).
-    generateAsync(layerId) {
+    // Split in two so a caller that must hold document settings (the Start Page scene session) can
+    // do each half under them: beginSceneAsync posts the job, finishSceneAsync installs the result.
+    beginSceneAsync(layerId) {
       const layer = this.layers.find((l) => l.id === layerId);
       const group = layer && (layer.isGroup ? layer : this._sceneOwnerGroup(layer));
       const Client = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient;
-      if (!group || group.type !== 'scene3d' || group.containerRole !== 'scene' || !Client || !Client.available()) return Promise.resolve(false);
+      if (!group || group.type !== 'scene3d' || group.containerRole !== 'scene' || !Client || !Client.available()) return null;
       const noiseImages = window.Vectura.NOISE_IMAGES;
-      if (noiseImages && Object.keys(noiseImages).length) return Promise.resolve(false);
+      if (noiseImages && Object.keys(noiseImages).length) return null;
       group._sceneJob = null;
       this._composeSceneGroup(group, { captureJob: true });
       const job = group._sceneJob;
       group._sceneJob = null;
-      if (!job) return Promise.resolve(true); // a memo hit: already composed
-      if (!job.memoKey || job.tier !== 'full') return Promise.resolve(false);
+      if (!job) return { done: true, group };  // a memo hit: already composed
+      if (!job.memoKey || job.tier !== 'full') return null;
       const V = window.Vectura || {};
       const token = (group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1);
       let handle;
@@ -3051,21 +3063,63 @@
           globals: { silProtoOff: window.__SIL_PROTO_OFF, silProtoTorusOn: window.__SIL_PROTO_TORUS_ON, strokeFillDefault: V.SCENE3D_STROKE_FILL_DEFAULT },
         });
       } catch (err) {
-        return Promise.resolve(false);
+        return null;
       }
       group._sceneAsyncHandle = handle;
-      return handle.promise.then((res) => {
-        if (group._sceneAsyncToken !== token) return false;
-        group._sceneAsyncHandle = null;
-        // The scene must still be the one that was posted.
-        group._sceneJob = null;
-        this._composeSceneGroup(group, { captureJob: true });
-        const again = group._sceneJob;
-        group._sceneJob = null;
-        if (again && again.memoKey !== job.memoKey) return false;
-        this._composeSceneGroup(group, { precomputed: res });
-        return true;
-      }, () => false);
+      return { group, job, token, promise: handle.promise };
+    }
+
+    finishSceneAsync(ctx, res) {
+      const { group, job, token } = ctx;
+      if (group._sceneAsyncToken !== token) return false;
+      group._sceneAsyncHandle = null;
+      // The scene must still be the one that was posted.
+      group._sceneJob = null;
+      this._composeSceneGroup(group, { captureJob: true });
+      const again = group._sceneJob;
+      group._sceneJob = null;
+      if (again && again.memoKey !== job.memoKey) return false;
+      this._composeSceneGroup(group, { precomputed: res });
+      return true;
+    }
+
+    generateAsync(layerId) {
+      const ctx = this.beginSceneAsync(layerId);
+      if (!ctx) return Promise.resolve(false);
+      if (ctx.done) return Promise.resolve(true);
+      return ctx.promise.then((res) => this.finishSceneAsync(ctx, res), () => false);
+    }
+
+    // ── Spin ring support (Scene3D.SpinRing) ─────────────────────────────────────
+    // The compose input of the scene in its CURRENT state, touching nothing (null when memo is off).
+    sceneJobOnly(group) {
+      group._sceneJob = null;
+      this._composeSceneGroup(group, { jobOnly: true });
+      const job = group._sceneJob;
+      group._sceneJob = null;
+      return job;
+    }
+
+    // The ink a baked frame draws: its packed worker output through the same tail the settle runs
+    // (output finish, then per-object divisions), WITHOUT installing it. Null when the frame has no finished ink.
+    spinFramePaths(group, frame) {
+      const Job = window.Vectura.Scene3D.ComposeJob;
+      if (!frame || !frame.finishedPacked) return null;
+      const objectLayers = new Map();
+      this.getLayerDescendants(group.id).forEach((l) => { if (l && l.type === 'object3d' && l.visible !== false) objectLayers.set(l.id, l); });
+      return this._applyObjectDivisions(Job.unpack(frame.finishedPacked), objectLayers);
+    }
+
+    // Install a baked frame as the group's settled ink. The scene must be exactly the one the frame was
+    // composed for (same compose key, camera/object yaw already at the frame's); then the result is the
+    // ink a normal full compose would have produced, byte for byte. False = not installed, caller composes.
+    installSpinFrame(group, frame) {
+      if (!group || !frame || !frame.finishedPacked || !frame.key) return false;
+      const job = this.sceneJobOnly(group);
+      if (!job || job.memoKey !== frame.key) return false;
+      const Job = window.Vectura.Scene3D.ComposeJob;
+      this._composeSceneGroup(group, { precomputed: { paths: [], finished: Job.unpack(frame.finishedPacked), packed: frame.packed, ms: frame.ms, spin: true } });
+      return group._sceneSettledKey === frame.key;
     }
 
     cancelSceneAsync(layerId) {
