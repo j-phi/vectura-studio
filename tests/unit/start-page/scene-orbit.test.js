@@ -256,4 +256,17 @@ describe('StartPageSceneOrbit', () => {
     await run(6000);
     expect(renders.length).toBeGreaterThan(n);
   });
+
+  // RED (pre-change): a plate baked every pose regardless of memory (a 3x phone plate: ~3.4 MB a pose, 37 poses).
+  it('stops baking when the plate\'s bitmap budget (ink.altCapacity) is spent', async () => {
+    const el = W.document.getElementById('m');
+    const tile = fakeTile(el);
+    tile.altCapacity = () => 8;
+    const h = S.attach(el, { payload: () => DOC(), render });
+    await flush();
+    await run(30000);
+    expect(h.stats.drawn).toBeLessThanOrEqual(8);
+    expect(renders.length).toBeLessThanOrEqual(8);
+    expect(renders.length).toBeGreaterThan(0);
+  });
 });

@@ -38,7 +38,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
   const MAX_POSES = 40; // drawn poses kept per piece (a long drag renders many; the oldest off-rock ones are dropped)
   const D2 = 180 / Math.PI;
   // Mirrors START_PAGE.SCENE_ORBIT (src/config/start-page.js) for a page without the config; the config wins when present.
-  const CFG0 = { heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500 };
+  const CFG0 = { heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500, altBitmapMB: 32, altBitmapMBMobile: 18 };
   const cfg = () => Object.assign({}, CFG0, (Vectura.START_PAGE && Vectura.START_PAGE.SCENE_ORBIT) || {});
 
   const reducedMQ = () => { try { return W.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
@@ -192,6 +192,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       return out;
     };
     function nextWanted() {
+      if (typeof ink.altCapacity === 'function' && ready.size >= ink.altCapacity()) return null; /* the plate's bitmap budget is spent */
       if (drag || !visible || (isStill() && !engaged)) return null; /* Still: nothing bakes until the piece is engaged (pointer, focus, a drag) */
       /* nothing renders while the piece is dragged. The rock's poses stop once the piece has parked; the drag ring does not: it is a
        * bounded set, and a ring left half baked would cap the turn for the rest of the page's life. */

@@ -518,6 +518,16 @@
       }
       return n;
     };
+    /* How many rastered poses this tile may hold: START_PAGE.SCENE_ORBIT.altBitmapMB (altBitmapMBMobile on a touch / low-memory device) over
+     * the bytes of one bitmap, never fewer than 6 nor more than MAX_ALTS. The scene orbit stops baking poses past it. */
+    h.altCapacity = () => {
+      const C = (Vectura.START_PAGE && Vectura.START_PAGE.SCENE_ORBIT) || {};
+      let mob = false;
+      try { mob = (Number.isFinite(W.navigator && W.navigator.deviceMemory) && W.navigator.deviceMemory <= 4) || !!(W.matchMedia && W.matchMedia('(pointer: coarse)').matches); } catch (e) { mob = false; }
+      const mb = mob ? (C.altBitmapMBMobile || 18) : (C.altBitmapMB || 32);
+      const pol = policyFor(h.w || 1, h.h || 1);
+      return Math.max(6, Math.min(MAX_ALTS, Math.floor(mb * 1048576 / Math.max(1, pol.width * pol.height * 4))));
+    };
     h.prepareArt = (a) => h.ready.then(() => {
       if (!h.alive() || !a || typeof a.svg !== 'string') return false;
       if (h.mode === 'svg') return !!altNode(a);
@@ -529,7 +539,8 @@
         return rasterArt(a, parsed, { w: h.w, h: h.h, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win: h.win }).then((b) => {
           if (!h.alive() || altKey !== key) return true;
           altBmps.set(a.id, b);
-          if (altBmps.size > MAX_ALTS) { const k = altBmps.keys().next().value; if (!h.shown || h.shown.art.id !== k) altBmps.delete(k); }
+          const cap = h.altCapacity();
+          for (const k of Array.from(altBmps.keys())) { if (altBmps.size <= cap) break; if (!h.shown || h.shown.art.id !== k) altBmps.delete(k); }
           return true;
         }, () => true);
       }, () => false);

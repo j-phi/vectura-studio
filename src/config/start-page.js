@@ -120,7 +120,8 @@
   // renders only the release pose); past `haltMs` it does not rock at all. Rock poses are never started within `yieldMs` of a scroll
   // or a pointer / wheel event, so a render never lands in the middle of a gesture.
   // `afterDragMs`: no pose render starts for this long after a drag is released (its 60-150 ms main-thread tail must not follow the gesture).
-  const SCENE_ORBIT = Object.freeze({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500 });
+  // `altBitmapMB` (`...Mobile` on a touch / low-memory device): memory a plate's rastered poses may take; baking stops at that many poses.
+  const SCENE_ORBIT = Object.freeze({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500, altBitmapMB: 32, altBitmapMBMobile: 18 });
 
   // The idle sway of the live 3D models (orbit3d.js) redraws at `fps`; with `crowdAt` or more models swaying on screen at once,
   // or when a frame costs more than `overrunMs` to draw, each model drops to `crowdFps`.
