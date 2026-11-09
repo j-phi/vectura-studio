@@ -93,7 +93,13 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     // identical to a plain full render of the same scene at that yaw
     const ref = build();
     ref.group.params.camera.yaw = shown.yaw; ref.engine.computeAllDisplayGeometry();
-    expect(hashPaths(o.group.scenePaths)).toBe(hashPaths(ref.group.scenePaths));
+    // (baked frames are Float32, so equal to float32 precision: < 1e-4 mm)
+    const a = o.group.scenePaths; const b = ref.group.scenePaths;
+    expect(a.length).toBe(b.length);
+    let worst = 0;
+    a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { worst = Math.max(worst, Math.abs(q.x - b[i][j].x), Math.abs(q.y - b[i][j].y)); }); });
+    expect(worst).toBeLessThan(1e-4);
+    void hashPaths;
     o.renderer._spinDrop(); ref.renderer._spinDrop();
   }, 180000);
 
@@ -121,4 +127,58 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     expect(o.group.params.camera.pitch).not.toBe(pitch0);
     o.renderer.end3DRotationDrag();
   });
+
+  // ── gesture path is hash-free; raster density is capped (perf/scene3d-instant-drag) ──────────────────────────────
+  // RED (pre-change): pointerdown re-derived the ring key (ring.valid -> sceneJobOnly -> _sceneComposeKey) and release hashed
+  // the scene twice more (installSpinFrame verify + the precomputed compose), 50-130 ms each on a dense scene.
+  test('no scene hashing on pointerdown, pointermove or release', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    let keys = 0;
+    const orig = o.engine._sceneComposeKey.bind(o.engine);
+    o.engine._sceneComposeKey = (...a) => { keys += 1; return orig(...a); };
+    const start = grab(o);
+    expect(o.renderer.rotation3DDrag.spin).toBeTruthy();
+    for (let i = 1; i <= 12; i++) o.renderer.apply3DRotationDrag({ clientX: start.x + i * 30, clientY: start.y });
+    o.renderer.end3DRotationDrag();
+    expect(o.engine.sceneComposeStats.spinInstalls).toBe(1);
+    expect(keys).toBe(0);
+    // the ring is still this scene's afterwards without re-hashing on the next draw
+    o.renderer._spinMaintain();
+    expect(keys).toBe(0);
+    expect(o.renderer._spin && o.renderer._spin.ring).toBe(ring);
+    o.renderer._spinDrop();
+  }, 180000);
+
+  test('an edit between bake and gesture start falls back instead of trusting the ring', async () => {
+    const o = build();
+    await startRing(o);
+    o.group.params.camera.zoom = 1.4;
+    o.engine.generate(o.gid);                                           // settled key moved; _spinMaintain has not run yet
+    const start = grab(o);
+    expect(o.renderer.rotation3DDrag.spin).toBeFalsy();
+    void start;
+    o.renderer.end3DRotationDrag();
+    o.renderer._spinDrop();
+  }, 180000);
+
+  test('raster density is capped by config (a 3x screen rasters at the cap, not 3x)', () => {
+    const o = build();
+    o.renderer.backingDpr = 3;
+    expect(o.renderer._spinRasterDpr()).toBe(V.Scene3D.SpinRing.isMobile() ? V.SETTINGS.sceneSpinRasterMaxDprMobile : V.SETTINGS.sceneSpinRasterMaxDpr);
+    o.renderer.backingDpr = 1;
+    expect(o.renderer._spinRasterDpr()).toBe(1);
+  });
+
+  test('the raster budget evicts the frame farthest from the viewed yaw and never the kept one', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    ring.frames.forEach((f) => { f.raster = { empty: true, bytes: 1000, view: {} }; });
+    const keep = ring.frameAt(ring.base);
+    const dropped = ring.trimRasters(2000, keep, ring.base);
+    expect(dropped).toBe(ring.frames.size - 2);
+    expect(ring.rasterBytes()).toBeLessThanOrEqual(2000);
+    expect(keep.raster).toBeTruthy();
+    o.renderer._spinDrop();
+  }, 180000);
 });

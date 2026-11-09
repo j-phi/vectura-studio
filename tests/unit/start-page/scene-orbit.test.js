@@ -207,4 +207,41 @@ describe('StartPageSceneOrbit', () => {
     await run(4000);
     expect(renders.length).toBe(n);
   });
+
+  // ── per-move work is independent of the number of baked poses (perf/scene3d-instant-drag) ──────────────────────────
+  // RED (pre-change): every pointermove read el.getBoundingClientRect() and scanned + string-split every drawn pose key.
+  it('a drag move does no layout read and no per-pose scan: one sorted index, binary search', async () => {
+    const { el, h } = await mountScene();
+    await run(6000);
+    const ov = el.querySelector('.sp-scene-orbit');
+    let rects = 0;
+    const prev = W.Element.prototype.getBoundingClientRect;
+    W.Element.prototype.getBoundingClientRect = function () { rects += 1; return prev.call(this); };
+    ptr(ov, 'pointerdown', 100, 100);
+    const r0 = rects;
+    const l0 = h.lookup.lookups; const b0 = h.lookup.rebuilds;
+    for (let i = 1; i <= 60; i++) ptr(ov, 'pointermove', 100 + i * 2, 100);
+    expect(rects).toBe(r0);                                   // no forced layout per move
+    expect(h.lookup.lookups - l0).toBe(60);
+    expect(h.lookup.rebuilds - b0).toBeLessThanOrEqual(1);    // the index is built once per change of the baked set
+    ptr(ov, 'pointerup', 220, 100);
+    W.Element.prototype.getBoundingClientRect = prev;
+  });
+
+  it('a pose that lands mid-drag waits for the gesture to end (its main-thread tail never falls inside it)', async () => {
+    let release; const held = [];
+    const gated = (pl) => { const cam = pl.state.engine.layers[0].params.camera; return new Promise((res) => { held.push(() => res({ svg: `<svg data-yaw="${cam.yaw}" data-pitch="${cam.pitch}"/>` })); }); };
+    const { el, tile } = await mountScene({ render: gated });
+    void release;
+    await run(2500);
+    expect(held.length).toBe(1);                              // one pose in flight
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 100, 100);
+    held.shift()();                                           // it lands during the drag
+    await run(400);
+    expect(tile.prepared.length).toBe(0);                     // not prepared (rastered) until the pointer is up
+    ptr(ov, 'pointerup', 100, 100);
+    await run(600);
+    expect(tile.prepared.length).toBe(1);
+  });
 });

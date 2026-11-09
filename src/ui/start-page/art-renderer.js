@@ -345,7 +345,7 @@
       }
       return client;
     };
-    const renderPose = (pose, label) => {
+    const renderPose = (pose, label, gate) => {
       const sync = () => enqueue(label || 'scene', () => job(pose));
       if (!engine || !settled || sameCamera(current, pose) || !workerClient()) return sync();
       return enqueue(`${label || 'scene'}~post`, () => {
@@ -371,7 +371,7 @@
         }
       }).then(({ begun }) => {
         if (!begun) return sync();
-        return Promise.all(begun.map((c) => (c.done ? null : c.promise.then((res) => ({ c, res }), () => null)))).then((done) => enqueue(`${label || 'scene'}~done`, () => {
+        return Promise.all(begun.map((c) => (c.done ? null : c.promise.then((res) => ({ c, res }), () => null)))).then((done) => Promise.resolve(typeof gate === 'function' ? gate() : undefined).then(() => done)).then((done) => enqueue(`${label || 'scene'}~done`, () => {
           if (disposed) throw new Error('Scene session disposed');
           const restoreSettings = snapshotSettings();
           const restoreImages = snapshotNoiseImages();
@@ -391,7 +391,7 @@
       });
     };
     return {
-      render: (pose, label) => renderPose(pose, label),
+      render: (pose, label, gate) => renderPose(pose, label, gate),
       dispose: () => { disposed = true; engine = null; current = null; settled = false; if (client) { try { client.terminate(); } catch (e) { /* gone */ } } client = null; },
     };
   };

@@ -2595,6 +2595,16 @@
     // 'draft' = fastest/coarsest, 'high' = near-final. Consumed by the 3D
     // algorithms via bounds.preview3dQuality (see Geometry3D.previewDetailScale).
     preview3dQuality: 'balanced',
+    // Scene3D spin ring (a pre-baked yaw turntable: Scene3D.SpinRing + the renderer's drag blit). Memory budgets PER SCENE LAYER, in MB:
+    // vector frames (packed Float32 ink) + the cached drag rasters. Desktop ~ 24 + 16 = 40; a low-memory / touch device (deviceMemory <= 4 or a
+    // coarse pointer) takes the *Mobile values. `sceneSpinRasterMaxDpr` caps the raster density (a drag frame is scaled to the screen).
+    sceneSpinMaxMB: 24,
+    sceneSpinMaxMBMobile: 12,
+    sceneSpinRasterMaxMB: 16,
+    sceneSpinRasterMaxMBMobile: 10,
+    sceneSpinRasterMaxDpr: 2,
+    sceneSpinRasterMaxDprMobile: 1.5,
+    sceneSpinFloat32: true,
     // CONTRACT L5: pen-true paper preview. When true the renderer paints the
     // canvas at true pen.color/width with no display-contrast substitution, so
     // dark-stock previews render honestly. 2B reads it in the draw loop and

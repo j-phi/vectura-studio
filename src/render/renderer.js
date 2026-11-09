@@ -17471,6 +17471,13 @@
       }
     }
 
+    // Density the drag rasters are made at: the backing DPR, capped (config) so a 3x phone screen does not pay 9x the pixels. A blit scales it up.
+    _spinRasterDpr() {
+      const Ring = window.Vectura.Scene3D.SpinRing;
+      const cap = Ring.budgetMB('sceneSpinRasterMaxDpr', 2, 1.5);
+      return Math.min(this.getBackingDpr(), cap > 0 ? cap : Infinity);
+    }
+
     _spinKickRaster() {
       const st = this._spin;
       if (!st || st.rasterTimer || !st.ring) return;
@@ -17486,15 +17493,21 @@
       const sinceView = performance.now() - st.viewChangedAt;
       if (st.viewChangedAt && sinceView < (SETTINGS.sceneSpinRezoomMs ?? 150)) { this._spinKickRaster(); return; }
       const yaw = target.get();
-      const dpr = this.getBackingDpr();
-      const cap = (SETTINGS.sceneSpinRasterMaxMB ?? 192) * 1048576;
+      const dpr = this._spinRasterDpr();
+      const cap = window.Vectura.Scene3D.SpinRing.budgetMB('sceneSpinRasterMaxMB', 16, 10) * 1048576;
       const rs = (this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 });
       // a live drag only rasters a frame it is about to need; the ring is topped up when it ends
       const dragging = !!(this.rotation3DDrag && this.rotation3DDrag.spin);
+      let want = null;
       if (dragging) {
-        const nearest = st.ring.frameAt(yaw);
-        if (!nearest || nearest.raster) return;
-        if (st.job && st.job.frame !== nearest) return;
+        // the frame on screen first, then the ones the drag is heading for (the raster window is only a few frames wide)
+        const dir = this.rotation3DDrag.spin.dir || 0;
+        const step = st.ring.spacing();
+        const cands = [st.ring.frameAt(yaw)];
+        if (dir) cands.push(st.ring.frameAt(yaw + dir * step), st.ring.frameAt(yaw + dir * step * 2));
+        want = cands.find((f) => f && !f.raster && !f.rasterFailed) || null;
+        if (!want) return;
+        if (st.job && st.job.frame !== want && cands.indexOf(st.job.frame) < 0) st.job = null;
       }
       if (st.job) {
         const j = st.job;
@@ -17503,16 +17516,21 @@
         else {
           const t0 = performance.now();
           let done = false;
-          try { done = this._spinRasterStep(j, SETTINGS.sceneSpinSlicePts ?? 2500); } catch (err) { j.frame.rasterFailed = true; done = true; }
+          const maxPts = SETTINGS.sceneSpinSlicePts ?? 2500;
+          st.sliceBudget = st.sliceBudget || maxPts;
+          try { done = this._spinRasterStep(j, st.sliceBudget); } catch (err) { j.frame.rasterFailed = true; done = true; }
           const ms = performance.now() - t0;
+          // a slice's cost is mostly the flush of its strokes: keep each one well under a frame by fitting the budget to the last
+          if (ms > 8) st.sliceBudget = Math.max(250, Math.floor(st.sliceBudget * 0.6));
+          else if (ms < 3) st.sliceBudget = Math.min(maxPts, Math.ceil(st.sliceBudget * 1.25));
           rs.sliceMs = (rs.sliceMs || 0) + ms; rs.sliceMaxMs = Math.max(rs.sliceMaxMs || 0, ms);
           if (done) { st.job = null; rs.rasters = (rs.rasters || 0) + 1; st.ring.trimRasters(cap, j.frame, yaw); }
           this._spinKickRaster();
           return;
         }
       }
-      let best = null; let bd = Infinity;
-      st.ring.frames.forEach((f) => {
+      let best = want; let bd = want ? 0 : Infinity;
+      if (!want) st.ring.frames.forEach((f) => {
         const fresh = f.raster && f.raster.view.scale === this.scale && f.raster.view.dpr === dpr;
         if (fresh || f.rasterFailed) return;
         const d = window.Vectura.Scene3D.SpinRing.circDist(f.yaw, yaw);
@@ -17538,19 +17556,43 @@
     // slice of paths (about SLICE_PTS vertices) and flushes it, so no single task holds the main thread for a
     // whole dense frame. The raster is published on the frame only when the last slice is in.
     _spinRasterBegin(group, frame) {
-      const paths = this.engine.spinFramePaths(group, frame);
-      if (!paths) return null;
-      const dpr = this.getBackingDpr();
+      // Stream the frame from its packed form (a slice of paths per task) unless a stroke division needs the whole run: unpacking a
+      // dense frame to point objects in one go is a 30-60 ms task.
+      const Job = window.Vectura.Scene3D.ComposeJob;
+      const packed = frame && frame.finishedPacked && !this.engine.spinHasDivisions(group) ? frame.finishedPacked : null;
+      const paths = packed ? null : this.engine.spinFramePaths(group, frame);
+      if (!packed && !paths) return null;
+      const dpr = this._spinRasterDpr();
       const sc = this.scale;
-      const cw = this.canvas.width; const ch = this.canvas.height;
+      const kd = dpr / this.getBackingDpr();
+      const cw = Math.round(this.canvas.width * kd); const ch = Math.round(this.canvas.height * kd);
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       const widest = (SETTINGS.pens || []).reduce((m, pn) => Math.max(m, Number(pn && pn.width) || 0), Number(group.strokeWidth) || SETTINGS.strokeWidth || 0.3);
-      paths.forEach((path) => {
-        if (path && path.meta && path.meta.kind === 'circle') {
-          const m = path.meta; const cx = m.cx ?? m.x ?? 0; const cy = m.cy ?? m.y ?? 0; const rx = m.r ?? m.rx ?? 0; const ry = m.r ?? m.ry ?? rx;
-          minX = Math.min(minX, cx - rx); maxX = Math.max(maxX, cx + rx); minY = Math.min(minY, cy - ry); maxY = Math.max(maxY, cy + ry);
-          return;
-        }
+      const circle = (m) => {
+        const cx = m.cx ?? m.x ?? 0; const cy = m.cy ?? m.y ?? 0; const rx = m.r ?? m.rx ?? 0; const ry = m.r ?? m.ry ?? rx;
+        minX = Math.min(minX, cx - rx); maxX = Math.max(maxX, cx + rx); minY = Math.min(minY, cy - ry); maxY = Math.max(maxY, cy + ry);
+      };
+      if (packed) {
+        // bounds straight off the packed coordinates: no point objects
+        packed.paths.forEach((e) => {
+          if (e.metaJson && e.metaJson.indexOf('"circle"') >= 0) { try { const m = JSON.parse(e.metaJson); if (m && m.kind === 'circle') { circle(m); return; } } catch (err) { /* plain path */ } }
+          if (e.flat) {
+            const f = e.flat;
+            for (let i = 0; i < f.length; i += 2) {
+              const x = f[i]; const y = f[i + 1];
+              if (x < minX) minX = x; if (x > maxX) maxX = x;
+              if (y < minY) minY = y; if (y > maxY) maxY = y;
+            }
+          } else if (e.pts) {
+            for (let i = 0; i < e.pts.length; i++) {
+              const q = e.pts[i];
+              if (q.x < minX) minX = q.x; if (q.x > maxX) maxX = q.x;
+              if (q.y < minY) minY = q.y; if (q.y > maxY) maxY = q.y;
+            }
+          }
+        });
+      } else paths.forEach((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') { circle(path.meta); return; }
         if (!Array.isArray(path)) return;
         for (let i = 0; i < path.length; i++) {
           const q = path[i];
@@ -17568,26 +17610,35 @@
       const w = x1 - x0; const h = y1 - y0;
       if (w < 1 || h < 1) { frame.raster = { empty: true, bytes: 0, view }; return null; }
       const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
-      return { frame, group, paths, i: 0, canvas, octx: canvas.getContext('2d'), x0, y0, w, h, view };
+      return { frame, group, paths, packed, count: packed ? packed.paths.length : paths.length, Job, i: 0, canvas, octx: canvas.getContext('2d'), x0, y0, w, h, view };
     }
 
     // One slice of a raster job. True when the job is complete (the raster is then on the frame).
     _spinRasterStep(job, budgetPts) {
-      const { octx, paths, view } = job;
+      const { octx, view } = job;
       let n = 0; let end = job.i;
-      while (end < paths.length && (n === 0 || n < budgetPts)) { const p = paths[end++]; n += Array.isArray(p) ? p.length : 8; }
+      let paths;
+      if (job.packed) {
+        const es = job.packed.paths;
+        while (end < es.length && (n === 0 || n < budgetPts)) n += job.Job.entryPoints(es[end++]);
+        paths = job.Job.unpackRange(job.packed, job.i, end); // only this slice becomes point objects
+      } else {
+        paths = job.paths;
+        while (end < paths.length && (n === 0 || n < budgetPts)) { const p = paths[end++]; n += Array.isArray(p) ? p.length : 8; }
+        paths = paths.slice(job.i, end);
+      }
       const mainCtx = this.ctx;
       this.ctx = octx;
       try {
         octx.setTransform(view.scale * view.dpr, 0, 0, view.scale * view.dpr, view.offsetX * view.dpr - job.x0, view.offsetY * view.dpr - job.y0);
         octx.lineJoin = 'round';
-        this._spinStroke(job.group, paths.slice(job.i, end));
+        this._spinStroke(job.group, paths);
       } finally { this.ctx = mainCtx; }
       job.i = end;
       // A canvas 2D context records its strokes and rasterizes them at the first read: read one pixel now so the work
       // happens in this slice (off the interaction path) and a drag frame's drawImage is only a copy.
       try { octx.getImageData(0, 0, 1, 1); } catch (err) { /* an unreadable canvas still draws */ }
-      if (job.i < paths.length) return false;
+      if (job.i < job.count) return false;
       job.frame.raster = { canvas: job.canvas, x0: job.x0, y0: job.y0, w: job.w, h: job.h, bytes: job.w * job.h * 4, view };
       return true;
     }
@@ -17688,11 +17739,13 @@
       const st = this._spin;
       if (!st || !st.ring || st.ring.disposed || st.groupId !== layer.id) return;
       const target = this._spinTarget(layer);
-      if (!target || target.id !== st.targetId || !st.ring.valid()) return;
-      const dpr = this.getBackingDpr();
+      // Cheap proof the ring is still this scene's (no hashing on the gesture path): the scene is settled at the very key the ring
+      // was last confirmed against. Any edit recomposes and moves `_sceneSettledKey`; `_spinMaintain` re-validates (hashing, off the gesture).
+      if (!target || target.id !== st.targetId || layer._pathsFromDraft !== false || layer._sceneSettledKey !== st.seenKey) return;
+      const dpr = this._spinRasterDpr();
       let rastered = 0;
       st.ring.frames.forEach((f) => { if (f.raster && f.raster.view.dpr === dpr) rastered += 1; });
-      if (rastered < Math.min(6, st.ring.count)) return;
+      if (rastered < Math.min(3, st.ring.count)) return; // the window is small (memory budget); the rest is made as the drag moves
       drag.spin = { ring: st.ring, target, pitch: drag.startPitch };
       this.spinStats.drags += 1;
     }
@@ -17702,9 +17755,11 @@
       const sp = drag.spin;
       if (!sp || sp.ring.disposed) return false;
       const yaw = sp.target.get();
+      if (sp.lastYaw != null && yaw !== sp.lastYaw) sp.dir = Math.sign(window.Vectura.Scene3D.SpinRing.normYaw(yaw - sp.lastYaw)) || sp.dir || 0;
+      sp.lastYaw = yaw;
       const f = sp.ring.frameAt(yaw);
       const warpable = layer._scenePose && SETTINGS.scenePoseWarp !== false;
-      if (!f || (f.dist > sp.ring.step * 0.75 && warpable)) { layer._spinBlit = null; this.spinStats.fallbacks += 1; return false; }
+      if (!f || (f.dist > sp.ring.spacing() * 0.75 && warpable)) { layer._spinBlit = null; this.spinStats.fallbacks += 1; return false; }
       const g = f.raster ? f : sp.ring.rasterAt(yaw);
       if (!g) { layer._spinBlit = null; this.spinStats.fallbacks += 1; return false; }
       if (g !== f) this._spinKickRaster();
@@ -17734,7 +17789,9 @@
       layer._spinBlit = null;
       if (!g || sp.ring.disposed || !drag.moved) return false;
       sp.target.set(g.yaw);
-      return this.engine.installSpinFrame(layer, g);
+      const ok = this.engine.installSpinFrame(layer, g, { trusted: true });
+      if (ok && this._spin && this._spin.groupId === layer.id) this._spin.seenKey = g.key; // the ring is still this scene's: no re-hash on the next draw
+      return ok;
     }
 
 

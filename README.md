@@ -759,7 +759,7 @@ CI lives in `.github/workflows/test.yml`:
 - **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
 
 ### Unreleased - 3D Scene pre-baked spin
-- **Spin a heavy 3D Scene smoothly.** The editor bakes a selected Scene's exact drawing for 72 angles in background workers and a drag shows the nearest baked frame (about 60 fps); release installs that frame's exact drawing. While a ring is ready the drag turns the scene around the vertical axis only. Start Page plates bake their angles ahead and drag only through baked ones (limited arc).
+- **Spin a heavy 3D Scene smoothly.** The editor bakes a selected Scene's exact drawing for 72 angles in background workers and a drag shows the nearest baked frame (about 60 fps); release installs that frame's exact drawing. Memory per scene is capped (about 24 MB of drawings plus 16 MB of pictures; less on a phone), and baking never blocks editing. While a ring is ready the drag turns the scene around the vertical axis only. Start Page plates bake their angles ahead and drag only through baked ones (limited arc).
 
 ### Unreleased - Start Page tidy
 - **Cover typeface and size.** Start Page settings > Cover has a Typeface menu (Space Grotesk, JetBrains Mono, System sans, Serif) and a Size slider (50-100%), saved with your preferences. Administrators set the global defaults (and can lock them) in the `ADMIN` block of `src/config/start-page.js`.

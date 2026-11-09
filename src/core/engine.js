@@ -2928,7 +2928,8 @@
       // mirror-guide drags...) without touching the scene. A FULL compose whose
       // complete input signature matches the last one reuses its output; draft
       // tiers are never cached, so a draft frame can never be served as final.
-      const memoKey = tier === 'full' ? this._sceneComposeKey(algo, assembled, bounds, group) : null;
+      // `knownKey`: the caller already holds this exact state's compose key (a trusted spin-frame install), so the scene is not hashed again.
+      const memoKey = tier === 'full' ? ((options && options.knownKey) || this._sceneComposeKey(algo, assembled, bounds, group)) : null;
       // SPIN BAKE — hand the compose input of THIS state to the caller without touching the group at all
       // (no memo read, no installed ink, `_sceneAssembled` put back): the baker aims it at poses the scene is not in.
       if (options && options.jobOnly === true) {
@@ -3110,15 +3111,36 @@
       return this._applyObjectDivisions(Job.unpack(frame.finishedPacked), objectLayers);
     }
 
+    // True when some object of the scene has an enabled, non-degenerate stroke division (then a frame's ink must go through
+    // _applyObjectDivisions as a whole run; otherwise it passes through unchanged and may be materialized in slices).
+    spinHasDivisions(group) {
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      if (!StrokeDivide) return false;
+      let any = false;
+      this.getLayerDescendants(group.id).forEach((l) => {
+        if (!l || l.type !== 'object3d' || l.visible === false) return;
+        const d = this.ensureLayerDivisions(l);
+        if (!d || !d.enabled) return;
+        const len = typeof StrokeDivide.cycleLengthMm === 'function' ? StrokeDivide.cycleLengthMm(d) : 0;
+        if (len > 1e-6) any = true;
+      });
+      return any;
+    }
+
     // Install a baked frame as the group's settled ink. The scene must be exactly the one the frame was
     // composed for (same compose key, camera/object yaw already at the frame's); then the result is the
     // ink a normal full compose would have produced, byte for byte. False = not installed, caller composes.
-    installSpinFrame(group, frame) {
+    // `opts.trusted`: the caller has already proved the scene unchanged since the ring was baked (the renderer checks the settled key at
+    // gesture start and nothing edits during a drag), so the compose key is not re-derived: hashing a dense scene costs 50-130 ms.
+    installSpinFrame(group, frame, opts) {
       if (!group || !frame || !frame.finishedPacked || !frame.key) return false;
-      const job = this.sceneJobOnly(group);
-      if (!job || job.memoKey !== frame.key) return false;
+      const trusted = !!(opts && opts.trusted);
+      if (!trusted) {
+        const job = this.sceneJobOnly(group);
+        if (!job || job.memoKey !== frame.key) return false;
+      }
       const Job = window.Vectura.Scene3D.ComposeJob;
-      this._composeSceneGroup(group, { precomputed: { paths: [], finished: Job.unpack(frame.finishedPacked), packed: frame.packed, ms: frame.ms, spin: true } });
+      this._composeSceneGroup(group, { knownKey: trusted ? frame.key : undefined, precomputed: { paths: [], finished: Job.unpack(frame.finishedPacked), packed: frame.packed, ms: frame.ms, spin: true } });
       return group._sceneSettledKey === frame.key;
     }
 

@@ -62,6 +62,48 @@
     return n;
   };
 
+  // Compact a baked frame's packed ink in place: every plain polyline is held as Float32 (half the bytes; the rounding is
+  // under 3e-5 mm at page scale, far below a pen's width) and the transfer-list `buffers` the worker sent are released.
+  const compactPacked = (packed) => {
+    if (!packed) return packed;
+    (packed.paths || []).forEach((e) => {
+      if (e.flat && e.flat.BYTES_PER_ELEMENT === 8) e.flat = Float32Array.from(e.flat);
+    });
+    packed.buffers = [];
+    return packed;
+  };
+  // Value equality of two packed inks (same entries, same coordinates, same props / meta): when the output finish changed nothing the raw
+  // and finished inks are one ink and one copy is kept.
+  const samePacked = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b || a.paths.length !== b.paths.length) return false;
+    for (let i = 0; i < a.paths.length; i++) {
+      const x = a.paths[i]; const y = b.paths[i];
+      if (!!x.flat !== !!y.flat || x.metaJson !== y.metaJson || 'raw' in x !== 'raw' in y) return false;
+      if (x.flat) {
+        if (x.flat.length !== y.flat.length) return false;
+        for (let j = 0; j < x.flat.length; j++) if (x.flat[j] !== y.flat[j]) return false;
+      } else if (!x.flat && x.pts && JSON.stringify(x.pts) !== JSON.stringify(y.pts)) return false;
+      if (JSON.stringify(x.props || null) !== JSON.stringify(y.props || null)) return false;
+    }
+    return true;
+  };
+
+  // Deep-device heuristic: low-memory / touch devices get the smaller budgets (config: SETTINGS.sceneSpin*).
+  const isMobile = () => {
+    const nav = globalScope.navigator || {};
+    if (Number.isFinite(nav.deviceMemory) && nav.deviceMemory <= 4) return true;
+    try { if (globalScope.matchMedia && globalScope.matchMedia('(pointer: coarse)').matches) return true; } catch (err) { /* no media */ }
+    return false;
+  };
+  // A budget by name: SETTINGS[key] on desktop, SETTINGS[key + 'Mobile'] on a low-memory / touch device, else the given default.
+  const budgetMB = (key, desktopDefault, mobileDefault) => {
+    const S = (globalScope.Vectura && globalScope.Vectura.SETTINGS) || {};
+    const mob = isMobile();
+    const v = mob ? S[`${key}Mobile`] : S[key];
+    return Number.isFinite(v) ? v : (mob ? mobileDefault : desktopDefault);
+  };
+
   // A runner that composes on the calling thread. For tests and tools: it blocks, so the app never uses it.
   const inlineRunner = () => ({
     isReady: () => false, // runs later than the call: the baker hands it a private copy of the job
@@ -95,23 +137,31 @@
     const base = normYaw(target.get());
     const yaws = Array.from({ length: count }, (_, i) => tidy(normYaw(base + i * (360 / count))));
     const SETTINGS = Vectura.SETTINGS || {};
-    const maxBytes = Number.isFinite(opts.maxBytes) ? opts.maxBytes
-      : (Number.isFinite(SETTINGS.sceneSpinMaxMB) ? SETTINGS.sceneSpinMaxMB : 96) * 1024 * 1024;
+    const maxBytes = Number.isFinite(opts.maxBytes) ? opts.maxBytes : budgetMB('sceneSpinMaxMB', 24, 12) * 1024 * 1024;
     const factory = opts.runnerFactory || (() => {
       const C = Scene3D.ComposeClient;
       return C && C.available() ? C.create() : null;
     });
 
-    // Bake order: the starting yaw, then alternately one step either side of it, outward.
-    const order = [0];
-    for (let k = 1; order.length < count; k++) {
-      order.push(k % count);
-      if (order.length < count && (count - k) % count !== k % count) order.push((count - k) % count);
+    // Bake order: a COARSE pass first (every second step: the starting yaw, then alternately two steps either side of it, outward) so the
+    // whole turntable answers within a step of 2x as soon as half the frames are in; then the FILL pass over the steps in between, again
+    // outward. A byte cap that stops the bake therefore leaves an even ring, not a short arc.
+    const coarse = opts.coarse !== false && count % 2 === 0 && count >= 8;
+    const order = [];
+    const seen = new Set();
+    const add = (i) => { if (!seen.has(i)) { seen.add(i); order.push(i); } };
+    if (coarse) {
+      add(0);
+      for (let k = 2; order.length < count / 2; k += 2) { add(k % count); add((count - k) % count); }
+      for (let k = 1; order.length < count; k += 2) { add(k % count); add((count - k) % count); }
+    } else {
+      add(0);
+      for (let k = 1; order.length < count; k++) { add(k % count); add((count - k) % count); }
     }
 
     const ring = {
       engine, group, target, step: 360 / count, count, base, yaws,
-      pitch: opts.pitch,
+      pitch: opts.pitch, coarse,
       frames: new Map(), // idx -> frame
       stats: { jobs: 0, baked: 0, failed: 0, bakeMs: 0, startedAt: 0, doneAt: 0, vectorBytes: 0, capped: false, workers: 0 },
       disposed: false,
@@ -149,9 +199,13 @@
 
     const land = (idx, key, res) => {
       if (ring.disposed) return;
+      const quant = SETTINGS.sceneSpinFloat32 !== false;
+      const packed = quant ? compactPacked(res.packed) : res.packed;
+      let finishedPacked = quant ? compactPacked(res.finishedPacked) : res.finishedPacked;
+      if (finishedPacked && samePacked(packed, finishedPacked)) finishedPacked = packed; // the finish changed nothing: one copy
       const frame = {
-        idx, yaw: yaws[idx], key, ms: res.ms, packed: res.packed, finishedPacked: res.finishedPacked,
-        bytes: internBytes(res.packed, pool) + internBytes(res.finishedPacked, pool), used: ++clock, raster: null,
+        idx, yaw: yaws[idx], key, ms: res.ms, packed, finishedPacked,
+        bytes: internBytes(packed, pool) + (finishedPacked === packed ? 0 : internBytes(finishedPacked, pool)), used: ++clock, raster: null,
       };
       ring.frames.set(idx, frame);
       ring.stats.baked += 1; stats.frames += 1;
@@ -209,6 +263,8 @@
 
     ring.readyCount = () => ring.frames.size;
     ring.complete = () => ring.frames.size >= count;
+    // The ring's present spacing: `step` once every frame is in, twice that while only the coarse pass (or part of the fill) is.
+    ring.spacing = () => (ring.complete() ? ring.step : ring.step * (coarse ? 2 : 1));
 
     ring.frameAt = (yaw) => {
       let best = null; let bd = Infinity;
@@ -266,6 +322,6 @@
     return ring;
   };
 
-  Scene3D.SpinRing = { create, inlineRunner, stats, normYaw, tidy, circDist };
+  Scene3D.SpinRing = { create, inlineRunner, stats, normYaw, tidy, circDist, budgetMB, isMobile, compactPacked, samePacked };
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.SpinRing;
 })();

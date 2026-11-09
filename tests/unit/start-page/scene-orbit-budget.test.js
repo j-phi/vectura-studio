@@ -190,17 +190,22 @@ describe('StartPageSceneOrbit yield and pause', () => {
     expect(renders.length).toBe(before);
   });
 
-  it('stops pre-rendering once the rock has parked, and resumes on wake', async () => {
-    poseDelay = 4000; // each pose takes 4 s of page time: the 12 poses would run to ~50 s
+  it('once the rock has parked only the bounded drag ring keeps baking (to completion), then nothing more', async () => {
+    poseDelay = 4000; // each pose takes 4 s of page time: the 12 rock poses alone would run to ~50 s
     const { el } = await mountScene();
     await run(24000); // parked at ~21.8 s
     const atPark = renders.length;
     expect(atPark).toBeGreaterThan(0);
     expect(atPark).toBeLessThan(12);
     await run(12000);
-    expect(renders.length).toBe(atPark); // nothing new starts after parking
+    expect(renders.length).toBeGreaterThanOrEqual(atPark);            // the ring is still being baked...
+    await run(180000);
+    const total = renders.length;
+    expect(total).toBeLessThanOrEqual(12 + 24);                         // ...but it is bounded: 12 rock + 2 x (30 deg / 2.5 deg) ring poses
+    await run(20000);
+    expect(renders.length).toBe(total);                                 // and then stops for good
     el.querySelector('.sp-scene-orbit').dispatchEvent(new W.Event('pointerenter'));
     await run(1000);
-    expect(renders.length).toBe(atPark + 1);
+    expect(renders.length).toBeGreaterThanOrEqual(total);               // a wake resumes the rock's own poses
   });
 });

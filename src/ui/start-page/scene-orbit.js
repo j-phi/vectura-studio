@@ -77,12 +77,17 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
     if (!ink || typeof ink.showArt !== 'function' || typeof ink.prepareArt !== 'function') return null;
     opts = Object.assign({ payload: null, render: null, label: '', hint: 'Drag to rotate' }, opts || {});
     let session = null; /* one engine for every pose of this piece (StartPageArtRenderer.sceneSession), created on the first render */
+    /* A pose that lands while the piece is being dragged waits: its main-thread tail (installing the worker's ink, building the SVG,
+     * rastering the bitmap) is 60-150 ms and must not fall inside a gesture. It resumes shortly after the pointer is released. */
+    let quietWaiters = []; let quietTimer = 0;
+    const whenQuiet = () => (drag ? new Promise((res) => quietWaiters.push(res)) : undefined);
+    const flushQuiet = () => { if (quietTimer) clearTimeout(quietTimer); quietTimer = setTimeout(() => { quietTimer = 0; const w = quietWaiters; quietWaiters = []; w.forEach((f) => f()); }, 250); };
     const drawPose = (pose, label) => {
       if (typeof opts.render === 'function') return opts.render(posed(payload, pose), label);
       const R = Vectura.StartPageArtRenderer;
       if (!R || typeof R.renderDocument !== 'function') return Promise.reject(new Error('StartPageArtRenderer is not loaded'));
       if (session === null && typeof R.sceneSession === 'function') { try { session = R.sceneSession(payload); } catch (e) { session = false; } }
-      if (session) return session.render({ yaw: pose.yaw, pitch: pose.pitch }, label);
+      if (session) return session.render({ yaw: pose.yaw, pitch: pose.pitch }, label, whenQuiet);
       return R.renderDocument(posed(payload, pose), label);
     };
     const own = ink.art || { id: 'scene' };
@@ -128,7 +133,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
         if (!alive || !out || typeof out.svg !== 'string') return Promise.reject(new Error('no drawing'));
         renders++; stage = `prepare ${k}`;
         const alt = { id: `${baseId}@${k}`, svg: out.svg };
-        return ink.prepareArt(alt).then((ok) => { if (!ok) throw new Error('not drawable'); ready.set(k, alt); trim(); return alt; });
+        return Promise.resolve(whenQuiet()).then(() => ink.prepareArt(alt)).then((ok) => { if (!ok) throw new Error('not drawable'); ready.set(k, alt); readyVer += 1; trim(); return alt; });
       });
       cache.set(k, p);
       p.catch((err) => { cache.delete(k); lastError = String(err && err.message || err); });
@@ -151,6 +156,24 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       ready.forEach((_, k) => { const [y, p] = k.split(',').map(Number); const d = Math.hypot(y - pose.yaw, p - pose.pitch); if (d < bd) { bd = d; best = k; } });
       return best;
     };
+    /* The drag's lookup: the baked yaws at home's pitch, sorted once per change of the baked set (not per pointer move), then a binary
+     * search. A pointer move costs O(log poses) and allocates nothing. `lookups` / `rebuilds` are the counters the budget tests read. */
+    let ringIdx = null; let ringIdxFor = ''; let readyVer = 0; const lookupStats = { lookups: 0, rebuilds: 0 };
+    const nearestYaw = (yaw, pitch) => {
+      lookupStats.lookups += 1;
+      const tag = `${readyVer}|${ready.size}|${pitch}`;
+      if (!ringIdx || ringIdxFor !== tag) {
+        lookupStats.rebuilds += 1; ringIdxFor = tag;
+        const rows = [];
+        ready.forEach((_, k) => { const i = k.indexOf(','); const y = +k.slice(0, i); const p = +k.slice(i + 1); if (Math.abs(p - pitch) < 0.05) rows.push({ y, k, p }); });
+        rows.sort((a, b) => a.y - b.y); ringIdx = rows;
+      }
+      const rows = ringIdx; if (!rows.length) return nearest({ yaw, pitch });
+      let lo = 0; let hi = rows.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (rows[mid].y < yaw) lo = mid + 1; else hi = mid; }
+      const a = rows[lo]; const b = lo > 0 ? rows[lo - 1] : a;
+      return Math.abs(a.y - yaw) <= Math.abs(b.y - yaw) ? a : b;
+    };
 
     /* one render at a time: the drag target first, then the rock's poses (nearest home first) */
     const isHeavy = () => lastMs > cfg().heavyMs;
@@ -169,10 +192,11 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       return out;
     };
     function nextWanted() {
-      if (drag || !visible || parked(performance.now()) || (isStill() && !engaged)) return null; /* Still: nothing bakes until the piece is engaged (pointer, focus, a drag) */
-       /* nothing renders while the piece is dragged; baking stops once the piece has parked */
+      if (drag || !visible || (isStill() && !engaged)) return null; /* Still: nothing bakes until the piece is engaged (pointer, focus, a drag) */
+      /* nothing renders while the piece is dragged. The rock's poses stop once the piece has parked; the drag ring does not: it is a
+       * bounded set, and a ring left half baked would cap the turn for the rest of the page's life. */
       const L = rockLevels();
-      for (let i = 1; i <= L; i++) for (const s of [1, -1]) { const p = poseAt(s * i); if (!cache.has(keyOf(p))) return p; }
+      if (!parked(performance.now())) for (let i = 1; i <= L; i++) for (const s of [1, -1]) { const p = poseAt(s * i); if (!cache.has(keyOf(p))) return p; }
       if (L) for (const p of ringPoses()) if (!cache.has(keyOf(p))) return p;
       return null;
     }
@@ -211,11 +235,10 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
     const touch = () => { lastAct = performance.now(); swayT = 0; tPrev = 0; };
     /* The drag shows the nearest BAKED pose (yaw only: the pitch stays home's); nothing renders here. */
     const moveTo = (pose) => {
-      const n = nearest({ yaw: round1(pose.yaw), pitch: home.pitch });
+      const n = nearestYaw(round1(pose.yaw), home.pitch);
       if (!n) return;
-      const [y, p] = n.split(',').map(Number);
-      target = { yaw: y, pitch: p };
-      show(n);
+      if (!target || target.yaw !== n.y || target.pitch !== n.p) target = { yaw: n.y, pitch: n.p };
+      show(n.k);
     };
     const settle = () => {
       if (!target) return;
@@ -229,18 +252,18 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       try { ov.focus({ preventScroll: true }); } catch (_) { /* noop */ }
       try { ov.setPointerCapture(e.pointerId); } catch (_) { /* noop */ }
       const base = target || home;
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, yaw: base.yaw, pitch: base.pitch };
+      const r0 = el.getBoundingClientRect(); /* measured once per gesture: a pointer move forces no layout */
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, yaw: base.yaw, pitch: base.pitch, k: 3.4 / Math.max(240, Math.min(r0.width || 0, r0.height || 0)) * D2 };
       ov.classList.add('is-drag'); touch();
     };
     const onMove = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
-      const r = el.getBoundingClientRect(); const k = 3.4 / Math.max(240, Math.min(r.width || 0, r.height || 0)) * D2;
-      moveTo({ yaw: drag.yaw - (e.clientX - drag.x) * k, pitch: drag.pitch });
+      moveTo({ yaw: drag.yaw - (e.clientX - drag.x) * drag.k, pitch: drag.pitch });
       touch();
     };
     const onUp = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
-      drag = null; ov.classList.remove('is-drag'); settle();
+      drag = null; ov.classList.remove('is-drag'); settle(); flushQuiet();
     };
     const onKey = (e) => {
       const K = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -285,6 +308,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       get home() { return home; },
       get shown() { return shownKey; },
       get failed() { return failed; },
+      get lookup() { return lookupStats; },
       get stats() { return { renders, drawn: ready.size, busy, swaying: !!timer && swayT > 0, stage, lastError, lastMs, heavy: isHeavy() }; },
       poseKey: keyOf,
       destroy: teardown,

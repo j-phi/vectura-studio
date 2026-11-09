@@ -54,7 +54,7 @@
     return { paths: out, buffers };
   };
 
-  const unpack = (packed) => (packed.paths || []).map((entry) => {
+  const unpackEntry = (entry) => {
     if ('raw' in entry) return entry.raw;
     let path;
     if (entry.flat) {
@@ -64,7 +64,12 @@
     Object.keys(entry.props || {}).forEach((k) => { path[k] = entry.props[k]; });
     if (entry.metaJson != null) path.meta = JSON.parse(entry.metaJson);
     return path;
-  });
+  };
+  const unpack = (packed) => (packed.paths || []).map(unpackEntry);
+  // A slice of the same unpack (entries [from, to)): lets a caller materialize a big ink a few thousand points per task.
+  const unpackRange = (packed, from, to) => (packed.paths || []).slice(from, to).map(unpackEntry);
+  // Points an entry holds without materializing it (for budgeting and bounds).
+  const entryPoints = (entry) => (entry.flat ? entry.flat.length / 2 : entry.pts ? entry.pts.length : 8);
 
   // job = { assembled, seed, bounds, globals? }. Returns { packed, ms }.
   const run = (job) => {
@@ -92,6 +97,6 @@
     return { packed, finished, ms };
   };
 
-  Scene3D.ComposeJob = { run, pack, unpack };
+  Scene3D.ComposeJob = { run, pack, unpack, unpackRange, entryPoints };
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.ComposeJob;
 })();
