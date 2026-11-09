@@ -6566,6 +6566,7 @@
       this.ctx.restore();
       if (!showOptimizedOverlay || this.exportModalOpen) this.updateOptimizationOverlayLegend(false);
       this._spinMaintain();
+      this._pickWarm();
     }
 
     // ── Type tool ────────────────────────────────────────────────────────────
@@ -11673,7 +11674,7 @@
         // I12: per-object projected points, so an object with no pickable face
         // covering the interior (a sphere/torus is drawn as edges + hatch fill)
         // is still selectable anywhere inside its projected silhouette (below).
-        const objPoints = mode === 'object' ? new Map() : null;
+        const silhouettes = mode === 'object' ? this._sceneSilhouettes(paths) : null;
         paths.forEach((path) => {
           const meta = path && path.meta;
           const target = meta && meta.sceneTarget;
@@ -11681,16 +11682,6 @@
           const kind = meta.kind;
           const depth = Number.isFinite(target.depth) ? target.depth : 0;
           const occluded = Boolean(target.occluded);
-          if (objPoints && target.objectId) {
-            let rec = objPoints.get(target.objectId);
-            if (!rec) { rec = { pts: [], depth: Infinity, occluded: true }; objPoints.set(target.objectId, rec); }
-            for (let pi = 0; pi < path.length; pi++) {
-              const pt = path[pi];
-              if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) rec.pts.push(pt);
-            }
-            if (depth < rec.depth) rec.depth = depth;
-            if (!occluded) rec.occluded = false;
-          }
           // Partially-occluded faces emit OPEN visible runs; 1A stamps the full
           // closed outline as target.pickPolygon so point-in-poly still hits the
           // whole face. Fully-visible faces are closed paths (poly === path).
@@ -11790,12 +11781,11 @@
         // already hit directly (the ground, any solid face) keep their true
         // per-face depth untouched — critical, since merging a large plane's
         // min depth would wrongly float it in front of everything.
-        if (objPoints) {
+        if (silhouettes) {
           const directHitIds = new Set(candidates.map((c) => c.objectId));
-          objPoints.forEach((rec, objectId) => {
-            if (directHitIds.has(objectId) || rec.pts.length < 3) return;
-            const hull = this._convexHull2D(rec.pts);
-            if (hull.length >= 3 && this.pointInPoly(world, hull)) {
+          silhouettes.forEach((rec, objectId) => {
+            if (directHitIds.has(objectId) || !rec.hull) return;
+            if (this.pointInPoly(world, rec.hull)) {
               push({
                 layer, kind: 'object', key: objectId, objectId, faceId: null,
                 depth: rec.depth === Infinity ? 0 : rec.depth, dist: 0, occluded: rec.occluded, rank: 0,
@@ -11813,6 +11803,55 @@
         }
       }
       return [];
+    }
+
+    // Per-object projected silhouette (convex hull of the object's path points, nearest depth, occluded flag) of one composed ink array.
+    // Cached by the array's identity (a recompose replaces it): the first hover over a dense Scene used to collect every vertex and sort
+    // them for the hull inside the pointermove (a 20-60 ms task), and every later hover repeated it.
+    _sceneSilhouettes(paths) {
+      if (!Array.isArray(paths)) return new Map();
+      const cache = this._sceneSilhouetteCache || (this._sceneSilhouetteCache = new WeakMap());
+      const hit = cache.get(paths);
+      if (hit) return hit;
+      const acc = new Map();
+      paths.forEach((path) => {
+        const target = path && path.meta && path.meta.sceneTarget;
+        if (!target || !Array.isArray(path) || path.length < 2 || !target.objectId) return;
+        const depth = Number.isFinite(target.depth) ? target.depth : 0;
+        let rec = acc.get(target.objectId);
+        if (!rec) { rec = { pts: [], depth: Infinity, occluded: true, hull: null }; acc.set(target.objectId, rec); }
+        for (let pi = 0; pi < path.length; pi++) {
+          const pt = path[pi];
+          if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) rec.pts.push(pt);
+        }
+        if (depth < rec.depth) rec.depth = depth;
+        if (!target.occluded) rec.occluded = false;
+      });
+      acc.forEach((rec) => {
+        if (rec.pts.length >= 3) { const hull = this._convexHull2D(rec.pts); rec.hull = hull.length >= 3 ? hull : null; }
+        rec.pts = null;
+      });
+      cache.set(paths, acc);
+      return acc;
+    }
+
+    // Warm the hover / pick caches of the selected, settled Scene while the app is idle, so the first pointer entry does not pay for
+    // them (assembleScene for the pick faces, the silhouette hulls). O(1) per draw; one idle task per cache.
+    _pickWarm() {
+      const g = this._spinGroup ? this._spinGroup() : null;
+      if (!g || !g.scenePaths || g._pathsFromDraft !== false) return;
+      const ref = g.scenePaths;
+      if (this._pickWarmRef === ref) return;
+      this._pickWarmRef = ref;
+      const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 600 }) : setTimeout(fn, 120));
+      idle(() => {
+        if (this._pickWarmRef !== ref || g.scenePaths !== ref) return;
+        try { this._scenePickFaces(g); } catch (err) { /* cold on first hover instead */ }
+        idle(() => {
+          if (this._pickWarmRef !== ref || g.scenePaths !== ref) return;
+          try { this._sceneSilhouettes(this.getInteractionPaths(g)); } catch (err) { /* cold on first hover instead */ }
+        });
+      });
     }
 
     // Monotone-chain convex hull of 2D points (screen space). Used as the
@@ -18064,9 +18103,11 @@
           this.app?.ui?._activePresetGalleryRefresh?.();
         };
         if (layer.type === 'scene3d' && drag.spin && this._spinEndDrag(layer, drag)) {
-          // the shown baked frame IS the exact ink for this pose: no settle compose, no recompute flash
+          // the shown baked frame IS the exact ink for this pose: no settle compose, no recompute flash. The panel rebuild (18-25 ms of
+          // DOM) waits a frame so the release task stays short.
           this._cancelSceneSettleRegen(layer.id);
-          settle();
+          const later = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+          later(() => setTimeout(settle, 0));
         } else if (layer.type === 'scene3d') {
           if (drag.spin) layer._spinBlit = null;
           // B3 — a scene's orbit drew draft tiers; settle once, deferred.

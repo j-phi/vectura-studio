@@ -299,4 +299,44 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     expect(ring.disposed).toBe(false);
     o.renderer._spinDrop();
   }, 180000);
+
+  // The 54-67 ms task on the first pointer entry (CDP profile: _recomputeSceneHoverHint -> _sceneCandidatesAtPoint -> _scenePickFaces
+  // (assembleScene) + a convex hull over every vertex). RED (pre-change): each hover rebuilt the hulls and the first one built the pick faces.
+  test('hover: silhouettes are cached per composed ink, and the pick faces are warmed while idle (the first pointer entry builds nothing)', async () => {
+    const o = build();
+    const Scene = V.Scene3D.Scene;
+    const realAsm = Scene.assembleScene; let asm = 0;
+    Scene.assembleScene = (...a) => { asm += 1; return realAsm.apply(Scene, a); };
+    let hulls = 0; const realHull = o.renderer._convexHull2D.bind(o.renderer);
+    o.renderer._convexHull2D = (pts) => { hulls += 1; return realHull(pts); };
+    try {
+      o.renderer._pickWarm();                                           // what draw() does once the Scene has settled
+      await new Promise((r) => setTimeout(r, 900));                    // the idle callbacks
+      const warmAsm = asm; const warmHulls = hulls;
+      expect(warmAsm).toBeGreaterThan(0);
+      expect(warmHulls).toBeGreaterThan(0);
+      const b = o.renderer.getSelectionBounds([o.group]);
+      const c = o.renderer.get3DRotationControl(o.group, b).center;
+      o.renderer._sceneCandidatesAtPoint({ x: c.x, y: c.y }, 'object');
+      o.renderer._sceneCandidatesAtPoint({ x: c.x + 1, y: c.y }, 'object');
+      o.renderer._sceneCandidatesAtPoint({ x: c.x, y: c.y + 1 }, 'face');
+      expect(asm).toBe(warmAsm);                                         // no pick-face build on the hover
+      expect(hulls).toBe(warmHulls);                                     // no hull on any hover
+    } finally { Scene.assembleScene = realAsm; }
+    o.renderer._spinDrop();
+  }, 180000);
+
+  // RED (pre-change): the panel rebuild (buildControls, 18-25 ms) ran inside the release task.
+  test('release does not rebuild the panel inside the release task', async () => {
+    const o = build();
+    await startRing(o);
+    let rebuilds = 0; o.renderer.app.ui.buildControls = () => { rebuilds += 1; };
+    const start = grab(o);
+    for (let i = 1; i <= 4; i++) o.renderer.apply3DRotationDrag({ clientX: start.x + i * 60, clientY: start.y });
+    o.renderer.end3DRotationDrag();
+    expect(rebuilds).toBe(0);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(rebuilds).toBe(1);
+    o.renderer._spinDrop();
+  }, 180000);
 });
