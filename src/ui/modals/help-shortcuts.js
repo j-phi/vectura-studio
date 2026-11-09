@@ -155,7 +155,8 @@
         are ready, dragging the orbit pad or the yaw handle snaps to the nearest 5&deg; picture and stays smooth, and letting go
         keeps that exact angle. The drag turns the scene around the vertical axis: moving the pointer more than 5&deg; of
         tilt up or down leaves the baked angles for that drag (use the pitch handle or the panel to tilt). Any other
-        edit draws the angles again.</p>
+        edit draws the angles again. Every 5&deg; is ready even for a very heavy scene; if you let go on one that was kept in a
+        compact form, it shows at once and sharpens to the exact drawing a moment later.</p>
         <p><strong>Hidden edges.</strong> Dashed occluded edges of a wireframe come from <em>Object &rarr; Edge Styles
         &rarr; Hidden &rarr; Occluded</em>. The old <em>Show hidden</em> switch was folded into it.</p>
       </div>`;

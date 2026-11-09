@@ -40,7 +40,7 @@ describe('Scene3D.SpinRing', () => {
     const target = { id: 'camera', get: () => group.params.camera.yaw, set: (y) => { group.params.camera.yaw = y; } };
     return { engine, group, child, target };
   };
-  const ringOf = (o, step = 90) => V.Scene3D.SpinRing.create({ engine: o.engine, group: o.group, target: o.target, step, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 1 });
+  const ringOf = (o, step = 90, extra = {}) => V.Scene3D.SpinRing.create(Object.assign({ engine: o.engine, group: o.group, target: o.target, step, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 1 }, extra));
 
   test('key is the scene minus yaw: yaw edits keep the ring, other edits drop it', () => {
     const o = make(); const ring = ringOf(o);
@@ -138,11 +138,69 @@ describe('Scene3D.SpinRing', () => {
     ring.dispose();
   }, 180000);
 
+  // RED (pre-change): every frame was held as exact Float64 (and the raw copy too), so a cap of half the exact need baked only about half
+  // of the angles; frames had no `exact` flag, nothing was quantized and installSpinFrame accepted whatever it was given.
+  test('playback frames: every angle fits a cap that holds only about half of them exact, within 0.0026 mm of the exact ink', async () => {
+    const o = make();
+    const Job = V.Scene3D.ComposeJob;
+    const exactRing = ringOf(o, 45, { exactBytes: Infinity });
+    exactRing.start(); await wait(exactRing, exactRing.count);
+    const exactTotal = exactRing.stats.vectorBytes;
+    expect(exactRing.frames.size).toBe(8);
+    const cap = exactTotal * 0.5;
+    const ring = ringOf(o, 45, { maxBytes: cap });
+    ring.start(); await wait(ring, ring.count);
+    expect(ring.frames.size).toBe(ring.count); // all 8 angles
+    expect(ring.stats.capped).toBe(false);
+    expect(ring.stats.vectorBytes).toBeLessThanOrEqual(cap);
+    expect(ring.stats.vectorBytes).toBeLessThan(exactTotal * 0.5); // the whole ring is lighter than half the exact one
+    const all = Array.from(ring.frames.values());
+    const exact = all.filter((f) => f.exact); const playback = all.filter((f) => !f.exact);
+    expect(exact.length).toBeGreaterThanOrEqual(1);
+    expect(playback.length).toBeGreaterThanOrEqual(ring.count - 3);
+    expect(ring.stats.exactBytes).toBeLessThanOrEqual(cap / 3 + exact[0].bytes);
+    let worst = 0; let pts = 0;
+    playback.forEach((f) => {
+      expect(f.packed).toBe(null); // no raw copy of a playback frame
+      const ref = exactRing.frames.get(f.idx);
+      const a = Job.unpack(f.finishedPacked); const b = Job.unpack(ref.finishedPacked);
+      expect(a.length).toBe(b.length);
+      a.forEach((path, i) => {
+        expect(path.length).toBe(b[i].length);
+        expect(JSON.stringify(path.meta || null)).toBe(JSON.stringify(b[i].meta || null));
+        path.forEach((q, j) => { worst = Math.max(worst, Math.abs(q.x - b[i][j].x), Math.abs(q.y - b[i][j].y)); pts += 1; });
+      });
+    });
+    expect(pts).toBeGreaterThan(1000);
+    expect(worst).toBeLessThanOrEqual(0.0026);
+    expect(worst).toBeGreaterThan(0); // it really is quantized
+    // only an exact frame installs; a playback frame is refused (release composes the exact ink instead)
+    const aim = (f) => { o.group.params.camera.yaw = f.yaw; };
+    aim(playback[0]);
+    const before = o.group._sceneSettledKey;
+    expect(o.engine.installSpinFrame(o.group, playback[0])).toBe(false);
+    expect(o.group._sceneSettledKey).toBe(before);
+    aim(exact[0]);
+    expect(o.engine.installSpinFrame(o.group, exact[0])).toBe(true);
+    ring.dispose(); exactRing.dispose();
+  }, 300000);
+
+  test('the ink budget of one layer: playback frames are a quarter of the exact bytes or less per point', async () => {
+    const o = make();
+    const exactRing = ringOf(o, 90, { exactBytes: Infinity });
+    exactRing.start(); await wait(exactRing, exactRing.count);
+    const playRing = ringOf(o, 90, { exactBytes: 0 });
+    playRing.start(); await wait(playRing, playRing.count);
+    const e = exactRing.stats.vectorBytes; const p = playRing.stats.vectorBytes;
+    expect(p).toBeLessThan(e * 0.4);
+    exactRing.dispose(); playRing.dispose();
+  }, 300000);
+
   test('the vector byte cap is honored: baking stops at the cap and keeps an even coarse ring', async () => {
     const o = make();
-    const probe = ringOf(o, 45); probe.start(); await wait(probe, 1);
+    const probe = ringOf(o, 45, { exactBytes: 0 }); probe.start(); await wait(probe, 1);
     const one = probe.frames.get(0).bytes; probe.dispose();
-    const ring = V.Scene3D.SpinRing.create({ engine: o.engine, group: o.group, target: o.target, step: 45, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 1, maxBytes: one * 2.5 });
+    const ring = V.Scene3D.SpinRing.create({ engine: o.engine, group: o.group, target: o.target, step: 45, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 1, maxBytes: one * 2.5, exactBytes: 0 });
     ring.start();
     await new Promise((r) => setTimeout(r, 4000));
     expect(ring.stats.capped).toBe(true);
@@ -156,9 +214,9 @@ describe('Scene3D.SpinRing', () => {
   // reached were still stored, so a pool of 3 ended 1-2 frames past the cap.
   test('the byte cap is strict: each frame counted once, frames in flight past the cap are dropped', async () => {
     const o = make();
-    const probe = ringOf(o, 45); probe.start(); await wait(probe, 1);
+    const probe = ringOf(o, 45, { exactBytes: 0 }); probe.start(); await wait(probe, 1);
     const one = probe.frames.get(0).bytes; probe.dispose();
-    const ring = V.Scene3D.SpinRing.create({ engine: o.engine, group: o.group, target: o.target, step: 45, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 3, maxBytes: one * 2.5 });
+    const ring = V.Scene3D.SpinRing.create({ engine: o.engine, group: o.group, target: o.target, step: 45, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 3, maxBytes: one * 2.5, exactBytes: 0 });
     ring.start();
     await new Promise((r) => setTimeout(r, 4000));
     expect(ring.stats.capped).toBe(true);
@@ -175,7 +233,8 @@ describe('Scene3D.SpinRing', () => {
     try {
       expect(V.SETTINGS.sceneSpinMaxMB).toBeGreaterThan(0);
       expect(V.SETTINGS.sceneSpinMaxMBMobile).toBeLessThan(V.SETTINGS.sceneSpinMaxMB);
-      expect(V.SETTINGS.sceneSpinRasterMaxMB + V.SETTINGS.sceneSpinMaxMB).toBeLessThanOrEqual(40);
+      expect(V.SETTINGS.sceneSpinRasterMaxMB + V.SETTINGS.sceneSpinMaxMB + V.SETTINGS.sceneSpinLowResMB).toBeLessThanOrEqual(40);
+      expect(V.SETTINGS.sceneSpinRasterMaxMBMobile + V.SETTINGS.sceneSpinMaxMBMobile + V.SETTINGS.sceneSpinLowResMBMobile).toBeLessThanOrEqual(22);
       V.SETTINGS.sceneSpinMaxMB = 7;
       expect(budgetMB('sceneSpinMaxMB', 24, 12)).toBe(V.Scene3D.SpinRing.isMobile() ? V.SETTINGS.sceneSpinMaxMBMobile : 7);
     } finally { Object.assign(V.SETTINGS, saved); }

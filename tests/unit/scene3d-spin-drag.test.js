@@ -26,7 +26,7 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
   let runtime; let V;
   beforeAll(async () => { runtime = await loadVecturaRuntime({ includeRenderer: true }); V = runtime.window.Vectura; }, 300000);
   afterAll(() => runtime.cleanup());
-  afterEach(() => { ['sceneSpinRunner', 'sceneSpinStep', 'sceneSpinPool', 'sceneSpinDelayMs'].forEach((k) => delete V.SETTINGS[k]); });
+  afterEach(() => { ['sceneSpinRunner', 'sceneSpinStep', 'sceneSpinPool', 'sceneSpinDelayMs', 'sceneSpinExactMB'].forEach((k) => delete V.SETTINGS[k]); });
 
   const build = () => {
     V.SETTINGS.sceneSpinRunner = V.Scene3D.SpinRing.inlineRunner;
@@ -338,5 +338,78 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     await new Promise((r) => setTimeout(r, 120));
     expect(rebuilds).toBe(1);
     o.renderer._spinDrop();
+  }, 180000);
+
+  // The low-res tier and playback frames. RED (pre-change): a pose with no sharp raster showed ANOTHER pose's sharp raster (the nearest one held),
+  // so a drag faster than the sharp rasters were made jumped across the ring; and every frame installed on release, so there was no playback tier.
+  const buildPlayback = (opts = {}) => {
+    const o = build();
+    V.SETTINGS.sceneSpinExactMB = opts.exactMB == null ? 0 : opts.exactMB;
+    const R = o.renderer;
+    // sharp rasters only for the starting pose; a low-res raster for every pose (markers: the contract is WHICH raster is drawn)
+    R._spinRasterBegin = (g, frame, lo) => {
+      if (lo) { frame.rasterLo = { empty: true, bytes: 100, view: R._spinViewNow(g, R._spinLoDpr()) }; return null; }
+      if (frame.idx === 0) frame.raster = { empty: true, bytes: 0, view: R._spinViewNow(g) }; else frame.rasterFailed = true;
+      return null;
+    };
+    return o;
+  };
+
+  test('a pose without a sharp raster is drawn from its own low-res raster, never from another pose', async () => {
+    const o = buildPlayback();
+    o.renderer._spinStart({ groupId: o.gid, key: o.group._sceneSettledKey, targetId: 'camera' });
+    const st = o.renderer._spin; const ring = st.ring;
+    await until(() => ring.complete() && Array.from(ring.frames.values()).every((f) => f.rasterLo));
+    expect(Array.from(ring.frames.values()).filter((f) => f.raster).length).toBe(1);
+    expect(ring.loCount()).toBe(ring.count);
+    const start = grab(o);
+    expect(o.renderer.rotation3DDrag.spin).toBeTruthy();
+    const seen = new Set(); let lo = 0;
+    for (let i = 1; i <= 24; i++) {
+      o.renderer.apply3DRotationDrag({ clientX: start.x + i * 25, clientY: start.y });
+      const b = o.group._spinBlit;
+      expect(b).toBeTruthy();
+      expect(b.frame.yaw).toBe(o.group.params.camera.yaw);              // the pose under the pointer, every move
+      if (b.lo) { lo += 1; expect(b.frame.rasterLo).toBeTruthy(); } else expect(b.frame.raster).toBeTruthy();
+      seen.add(b.frame.yaw);
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(3);                          // it really swept several poses
+    expect(lo).toBeGreaterThan(10);                                       // most of them from the low-res tier
+    expect(o.renderer.spinStats.loBlits).toBe(lo);
+    o.renderer.end3DRotationDrag();
+    o.renderer._spinDrop();
+  }, 180000);
+
+  test('release on a playback frame installs nothing: the exact settle composes, the raster is held, and the result equals a fresh render', async () => {
+    const o = buildPlayback();
+    o.renderer._spinStart({ groupId: o.gid, key: o.group._sceneSettledKey, targetId: 'camera' });
+    const ring = o.renderer._spin.ring;
+    await until(() => ring.complete() && Array.from(ring.frames.values()).every((f) => f.rasterLo));
+    expect(Array.from(ring.frames.values()).every((f) => f.exact === false)).toBe(true);
+    const start = grab(o);
+    for (let i = 1; i <= 6; i++) o.renderer.apply3DRotationDrag({ clientX: start.x + i * 40, clientY: start.y });
+    const yaw = o.group.params.camera.yaw;
+    expect(yaw).not.toBe(ring.base);
+    const shown = o.group._spinBlit.frame;
+    const keyBefore = o.group._sceneSettledKey;
+    const installs = o.engine.sceneComposeStats.spinInstalls;
+    o.renderer.end3DRotationDrag();
+    expect(o.engine.sceneComposeStats.spinInstalls).toBe(installs);       // a playback frame is never installed
+    expect(o.group._spinHold && o.group._spinHold.frame).toBe(shown);      // its raster stays up while the exact ink is composed
+    expect(o.group._spinHold.fromKey).toBe(keyBefore);
+    expect(o.renderer._sceneSettle).toBeTruthy();                          // the ordinary settle is queued
+    o.renderer.flushSceneSettleRegen();                                    // ... and run (synchronously here)
+    expect(o.group._pathsFromDraft).toBe(false);
+    expect(o.group._sceneSettledKey).not.toBe(keyBefore);
+    shown.raster = { empty: true, bytes: 0, view: o.renderer._spinViewNow(o.group) }; // its sharp raster has been made meanwhile
+    o.renderer._spinHoldResolve(o.group);
+    expect(o.group._spinHold).toBeNull();                                  // settled: the hold is gone
+    expect(o.group._spinShown && o.group._spinShown.key).toBe(o.group._sceneSettledKey); // and the layer goes on drawing from the frame's raster
+    const ref = build();
+    ref.group.params.camera.yaw = yaw; ref.engine.computeAllDisplayGeometry();
+    const a = o.group.scenePaths; const b = ref.group.scenePaths;
+    expect(a.length).toBe(b.length);
+    a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { if (q.x !== b[i][j].x || q.y !== b[i][j].y) throw new Error(`path ${i} point ${j} differs`); }); });
+    o.renderer._spinDrop(); ref.renderer._spinDrop();
   }, 180000);
 });

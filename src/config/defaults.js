@@ -2596,14 +2596,28 @@
     // algorithms via bounds.preview3dQuality (see Geometry3D.previewDetailScale).
     preview3dQuality: 'balanced',
     // Scene3D spin ring (a pre-baked yaw turntable: Scene3D.SpinRing + the renderer's drag blit). Memory budgets PER SCENE LAYER, in MB:
-    // vector frames (packed exact Float64 ink, so an installed frame equals a fresh render byte for byte; the cap bakes fewer frames, coarse pass first) + the cached drag rasters. Desktop ~ 24 + 16 = 40; a low-memory / touch device (deviceMemory <= 4 or a
-    // coarse pointer) takes the *Mobile values. `sceneSpinRasterMaxDpr` caps the raster density (a drag frame is scaled to the screen).
+    // vector frames (a few exact Float64 frames that install byte for byte, every other angle as quarter-size playback ink; 72 angles take 11-22 MB
+    // for a sphere, a box and two mezzotint objects) + the sharp drag rasters (a window of a few frames) + the low-res raster of every angle.
+    // Desktop 24 + 8 + 8 = 40; a low-memory / touch device (deviceMemory <= 4 or a coarse pointer) takes the *Mobile values (12 + 5 + 5 = 22; the
+    // vector cap then bakes an even coarse ring when a scene does not fit). `sceneSpinRasterMaxDpr` caps the raster density (a drag frame is scaled to the screen).
     sceneSpinMaxMB: 24,
     sceneSpinMaxMBMobile: 12,
-    sceneSpinRasterMaxMB: 16,
-    sceneSpinRasterMaxMBMobile: 10,
+    // The share of the vector cap (at most a third of it) kept as EXACT frames, which install on release with no recompose; every other angle is playback ink.
+    sceneSpinExactMB: 4,
+    sceneSpinExactMBMobile: 2,
+    sceneSpinRasterMaxMB: 8,
+    sceneSpinRasterMaxMBMobile: 5,
     sceneSpinRasterMaxDpr: 2,
     sceneSpinRasterMaxDprMobile: 1.5,
+    // The low-res tier: one small raster per baked angle (after the bake), so a drag always has the pose under the pointer even when the sharp
+    // rasters (a window of a few) are still being made. The tier holds what `sceneSpinTotalMB` has left after the drawings and the sharp window
+    // (between half and 2.5 times `sceneSpinLowResMB`), at a density chosen so that all of the ring fits, never below this share of the sharp one.
+    sceneSpinLowResMB: 8,
+    sceneSpinLowResMBMobile: 5,
+    sceneSpinLowResMinScale: 0.15,
+    // All of one Scene layer's spin memory: drawings + sharp window + low-res tier. The low-res tier takes what the drawings leave.
+    sceneSpinTotalMB: 40,
+    sceneSpinTotalMBMobile: 22,
     // CONTRACT L5: pen-true paper preview. When true the renderer paints the
     // canvas at true pen.color/width with no display-contrast substitution, so
     // dark-stock previews render honestly. 2B reads it in the draw loop and

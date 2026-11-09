@@ -431,7 +431,9 @@
     // post-mask) and take top precedence, matching engine.getRenderablePaths.
     // An empty-but-present array (all-gap cycle) exports as zero paths — never
     // fall through to the undivided geometry the canvas is not drawing.
-    if (Array.isArray(layer.dividedPaths)) return clonePathsWithMeta(layer.dividedPaths);
+    // `sourceOnly`: the source list itself, uncloned (the sliced SVG build clones it chunk by chunk)
+    const copyOf = options.sourceOnly ? (list) => list : clonePathsWithMeta;
+    if (Array.isArray(layer.dividedPaths)) return copyOf(layer.dividedPaths);
     const { useOptimized = false } = options;
     // COMPOSED GROUP INK (morph blend / 3D scene pass). A group has no
     // `layer.paths`, so reading the leaf chain below would export NOTHING —
@@ -441,7 +443,7 @@
     // the plotter lays down.
     const groupInk = window.Vectura.LayerInk.groupInkPaths(layer);
     if (groupInk) {
-      return clonePathsWithMeta(
+      return copyOf(
         useOptimized && Array.isArray(layer.optimizedPaths) ? layer.optimizedPaths : groupInk
       );
     }
@@ -451,15 +453,16 @@
         : Array.isArray(layer.effectivePaths) && layer.effectivePaths.length
         ? layer.effectivePaths
         : layer.paths || [];
-    return clonePathsWithMeta(source);
+    return copyOf(source);
   };
 
   const getVisibleExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
     if (layer._morphConsumed || layer._sceneConsumed) return [];
-    if (Array.isArray(layer.dividedPaths)) return clonePathsWithMeta(layer.dividedPaths);
-    if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return clonePathsWithMeta(layer.displayPaths);
+    const copyOf = options.sourceOnly ? (list) => list : clonePathsWithMeta;
+    if (Array.isArray(layer.dividedPaths)) return copyOf(layer.dividedPaths);
+    if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return copyOf(layer.displayPaths);
     return getRawExportPaths(layer, options);
   };
 
@@ -885,6 +888,7 @@
     getMaskExportBounds,
     getRawExportPaths,
     getVisibleExportPaths,
+    cloneExportPaths: clonePathsWithMeta,
     hardClipExportPaths,
     getPathStrokeDash,
   };

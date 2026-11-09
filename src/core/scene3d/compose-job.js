@@ -60,6 +60,10 @@
     if (entry.flat) {
       const f = entry.flat; path = new Array(f.length / 2);
       for (let i = 0; i < path.length; i++) path[i] = { x: f[2 * i], y: f[2 * i + 1] };
+    } else if (entry.q) {
+      // a playback-only (quantized) entry: Uint16 steps from the entry's own origin
+      const q = entry.q; const { ox, oy, st } = entry; path = new Array(q.length / 2);
+      for (let i = 0; i < path.length; i++) path[i] = { x: ox + q[2 * i] * st, y: oy + q[2 * i + 1] * st };
     } else path = entry.pts;
     Object.keys(entry.props || {}).forEach((k) => { path[k] = entry.props[k]; });
     if (entry.metaJson != null) path.meta = JSON.parse(entry.metaJson);
@@ -69,7 +73,36 @@
   // A slice of the same unpack (entries [from, to)): lets a caller materialize a big ink a few thousand points per task.
   const unpackRange = (packed, from, to) => (packed.paths || []).slice(from, to).map(unpackEntry);
   // Points an entry holds without materializing it (for budgeting and bounds).
-  const entryPoints = (entry) => (entry.flat ? entry.flat.length / 2 : entry.pts ? entry.pts.length : 8);
+  const entryPoints = (entry) => (entry.flat ? entry.flat.length / 2 : entry.q ? entry.q.length / 2 : entry.pts ? entry.pts.length : 8);
+
+  // PLAYBACK COMPACTION. A packed ink whose Float64 coordinates are replaced by Uint16 steps from each path's own corner
+  // (step = max(QUANT_STEP, extent / 65000) mm, so a path up to 325 mm across is held to 0.0025 mm, a 420 mm sheet to 0.0032 mm): a quarter of the
+  // bytes, and a stroked frame cannot be told from the exact one (0.0025 mm is a hundredth of a pen width). It is for frames that are only
+  // DRAWN (the Scene3D spin ring's drag playback); the ink a scene keeps and exports is always the exact one. Entries without plain
+  // {x, y} points ({raw}, {pts}) pass through unchanged.
+  const QUANT_STEP = 0.005;
+  const quantizePacked = (packed) => {
+    if (!packed) return packed;
+    const paths = (packed.paths || []).map((e) => {
+      const f = e.flat;
+      if (!f || !f.length) return e;
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      for (let i = 0; i < f.length; i += 2) {
+        const x = f[i]; const y = f[i + 1];
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      const st = Math.max(QUANT_STEP, Math.max(maxX - minX, maxY - minY) / 65000);
+      if (!(st > 0) || !Number.isFinite(st)) return e;
+      const q = new Uint16Array(f.length);
+      for (let i = 0; i < f.length; i += 2) { q[i] = Math.round((f[i] - minX) / st); q[i + 1] = Math.round((f[i + 1] - minY) / st); }
+      const out = { q, ox: minX, oy: minY, st };
+      if (e.props) out.props = e.props;
+      if (e.metaJson != null) out.metaJson = e.metaJson;
+      return out;
+    });
+    return { paths, buffers: [], compact: true };
+  };
 
   // job = { assembled, seed, bounds, globals? }. Returns { packed, ms }.
   const run = (job) => {
@@ -97,6 +130,6 @@
     return { packed, finished, ms };
   };
 
-  Scene3D.ComposeJob = { run, pack, unpack, unpackRange, entryPoints };
+  Scene3D.ComposeJob = { run, pack, unpack, unpackRange, unpackEntry, entryPoints, quantizePacked, QUANT_STEP };
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.ComposeJob;
 })();

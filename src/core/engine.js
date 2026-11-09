@@ -3068,7 +3068,7 @@
             groupParams: group.params,
           },
           globals: { silProtoOff: window.__SIL_PROTO_OFF, silProtoTorusOn: window.__SIL_PROTO_TORUS_ON, strokeFillDefault: V.SCENE3D_STROKE_FILL_DEFAULT },
-        });
+        }, opts && opts.lazy ? { lazy: true } : undefined);
       } catch (err) {
         return null;
       }
@@ -3099,11 +3099,32 @@
       if (h && typeof h.cancel === 'function') { try { h.cancel(); } catch (err) { /* already gone */ } }
     }
 
+    // The worker's finished ink arrives packed (one Float64Array per path). Turning it into point objects is 50-110 ms for a dense Scene,
+    // so it is done a few milliseconds of paths at a time, one slice per task; a result that is not packed (a client without `lazy`)
+    // is used as it stands. Resolves the result `finishSceneAsync` takes.
+    _unpackFinishedSliced(res) {
+      const Job = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeJob;
+      if (!res || !res.finishedPacked || !Job) return Promise.resolve(res);
+      const entries = res.finishedPacked.paths || [];
+      const out = [];
+      let i = 0;
+      const now = () => (window.performance || Date).now();
+      return new Promise((resolve) => {
+        const step = () => {
+          const t0 = now();
+          while (i < entries.length && now() - t0 < 4) out.push(Job.unpackEntry(entries[i++]));
+          if (i < entries.length) setTimeout(step, 0);
+          else resolve({ paths: [], finished: out, packed: res.packed, ms: res.ms });
+        };
+        setTimeout(step, 0);
+      });
+    }
+
     generateAsync(layerId) {
-      const ctx = this.beginSceneAsync(layerId);
+      const ctx = this.beginSceneAsync(layerId, { lazy: true });
       if (!ctx) return Promise.resolve(false);
       if (ctx.done) return Promise.resolve(true);
-      return ctx.promise.then((res) => this.finishSceneAsync(ctx, res), () => false);
+      return ctx.promise.then((res) => this._unpackFinishedSliced(res)).then((res) => this.finishSceneAsync(ctx, res), () => false);
     }
 
     // ── Spin ring support (Scene3D.SpinRing) ─────────────────────────────────────
@@ -3148,7 +3169,7 @@
     // `opts.trusted`: the caller has already proved the scene unchanged since the ring was baked (the renderer checks the settled key at
     // gesture start and nothing edits during a drag), so the compose key is not re-derived: hashing a dense scene costs 50-130 ms.
     installSpinFrame(group, frame, opts) {
-      if (!group || !frame || !frame.finishedPacked || !frame.key) return false;
+      if (!group || !frame || !frame.finishedPacked || !frame.key || frame.exact === false) return false; // a playback frame is not the exact ink
       const trusted = !!(opts && opts.trusted);
       if (!trusted) {
         const job = this.sceneJobOnly(group);

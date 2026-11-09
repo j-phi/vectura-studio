@@ -5639,11 +5639,19 @@
           // by their parent's baked silhouette — don't draw them separately.
           if (this.engine.hasCompoundAncestor?.(l)) return;
           // Spin ring drag: the layer's baked raster stands in for its vector ink (plain-pen layers only).
+          if (l._spinHold) this._spinHoldResolve(l);
           if (l._spinBlit) {
             if (!this.rotation3DDrag) l._spinBlit = null;
             else if (!inkPlan && !revealActive && !layerDrawOptimized(l) && !this.groupEditMode && !this.paperPreviewActive()) {
               flushBeforePlain();
               if (this._spinBlit(l)) return;
+            }
+          } else if (l._spinHold) {
+            // Released on a playback frame: its raster stands in for the vector ink until the exact settle has installed the new pose.
+            const h = l._spinHold;
+            if (!inkPlan && !revealActive && !layerDrawOptimized(l) && !this.groupEditMode && !this.paperPreviewActive()) {
+              l._spinBlit = { frame: h.frame, lo: !!h.lo }; flushBeforePlain(); const ok = this._spinBlit(l); l._spinBlit = null;
+              if (ok) return;
             }
           } else if (l._spinShown && !this.rotation3DDrag && !inkPlan && !revealActive && !layerDrawOptimized(l) && !this.groupEditMode
             && !this.paperPreviewActive() && !dedupe && !(this.tempTransform && this.selectedLayerIds?.has(l.id)) && !this.mirrorDragState?.has(l.id)) {
@@ -17466,8 +17474,8 @@
     }
 
     // The view a raster made NOW would be valid for.
-    _spinViewNow(l) {
-      return { scale: this.scale, dpr: this._spinRasterDpr(), offsetX: this.offsetX, offsetY: this.offsetY, cw: this.canvas.width, ch: this.canvas.height, sig: this._spinStyleSig(l) };
+    _spinViewNow(l, dpr) {
+      return { scale: this.scale, dpr: dpr || this._spinRasterDpr(), offsetX: this.offsetX, offsetY: this.offsetY, cw: this.canvas.width, ch: this.canvas.height, sig: this._spinStyleSig(l) };
     }
 
     _spinViewSame(a, b) {
@@ -17477,6 +17485,38 @@
     // A frame's raster is drawable in place of its ink only in the very view it was made for.
     _spinFresh(frame, now) {
       return !!(frame && frame.raster && this._spinViewSame(frame.raster.view, now));
+    }
+
+    // LOW-RES TIER. The full-density rasters are few (a memory window of 4-7 frames), so a drag faster than they are made would show a far
+    // frame's pose. Every frame therefore also gets a small raster (`frame.rasterLo`, `sceneSpinLowResMB` for the whole ring, density chosen
+    // so that all of the ring fits): the pose under the pointer is always one drawImage away, a little soft until its sharp raster lands.
+    // The bytes the low-res tier may hold: what the layer's total budget (`sceneSpinTotalMB`) has left once the baked drawings and the sharp
+    // window are paid for - a sphere that bakes in 11 MB leaves 20 MB, two heavy objects 10 MB - between half and 2.5 times the nominal
+    // `sceneSpinLowResMB`. Fixed once the bake is over (the density must not move under rasters already made).
+    _spinLoBudget(st) {
+      if (st && st.loBudget) return st.loBudget;
+      const Ring = window.Vectura.Scene3D.SpinRing;
+      const nominal = Ring.budgetMB('sceneSpinLowResMB', 8, 5) * 1048576;
+      const ring = st && st.ring;
+      if (!ring || (!ring.stats.doneAt && !ring.stats.capped)) return nominal;
+      const total = Ring.budgetMB('sceneSpinTotalMB', 40, 22) * 1048576;
+      const sharp = Ring.budgetMB('sceneSpinRasterMaxMB', 8, 5) * 1048576;
+      st.loBudget = Math.max(nominal * 0.5, Math.min(total - ring.stats.vectorBytes - sharp, nominal * 2.5));
+      return st.loBudget;
+    }
+
+    _spinLoDpr() {
+      const mb = this._spinLoBudget(this._spin);
+      const minScale = Number.isFinite(SETTINGS.sceneSpinLowResMinScale) ? SETTINGS.sceneSpinLowResMinScale : 0.15;
+      const dpr = this._spinRasterDpr();
+      const kd = dpr / this.getBackingDpr();
+      const px = Math.max(1, this.canvas.width * kd) * Math.max(1, this.canvas.height * kd);
+      const count = this._spin && this._spin.ring ? this._spin.ring.count : 72;
+      return dpr * Math.max(minScale, Math.min(0.6, Math.sqrt(mb / (count * px * 4))));
+    }
+
+    _spinFreshLo(frame, nowLo) {
+      return !!(frame && frame.rasterLo && this._spinViewSame(frame.rasterLo.view, nowLo));
     }
 
     _spinGroup() {
@@ -17492,7 +17532,7 @@
       if (st) st.job = null;
       if (st && st.ring) st.ring.dispose();
       this._spin = null;
-      if (this.engine && this.engine.layers) this.engine.layers.forEach((l) => { if (l && l._spinBlit) l._spinBlit = null; if (l && l._spinShown) l._spinShown = null; });
+      if (this.engine && this.engine.layers) this.engine.layers.forEach((l) => { if (l && l._spinBlit) l._spinBlit = null; if (l && l._spinShown) l._spinShown = null; if (l && l._spinHold) l._spinHold = null; });
     }
 
     // O(1) per draw: notices that the selected Scene settled, changed or was left, and (re)starts the bake.
@@ -17582,7 +17622,7 @@
       const yaw = target.get();
       const dpr = this._spinRasterDpr();
       const viewNow = this._spinViewNow(group);
-      const cap = window.Vectura.Scene3D.SpinRing.budgetMB('sceneSpinRasterMaxMB', 16, 10) * 1048576;
+      const cap = window.Vectura.Scene3D.SpinRing.budgetMB('sceneSpinRasterMaxMB', 8, 5) * 1048576;
       const rs = (this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 });
       // a live drag only rasters a frame it is about to need; the ring is topped up when it ends
       const dragging = !!(this.rotation3DDrag && this.rotation3DDrag.spin);
@@ -17594,18 +17634,18 @@
         const cands = [st.ring.frameAt(yaw)];
         if (dir) cands.push(st.ring.frameAt(yaw + dir * step), st.ring.frameAt(yaw + dir * step * 2));
         want = cands.find((f) => f && !this._spinFresh(f, viewNow) && !f.rasterFailed) || null;
-        if (!want) return;
+        if (!want) { if (!st.job) this._spinLoTick(st, group, yaw); return; }
         if (st.job && st.job.frame !== want && cands.indexOf(st.job.frame) < 0) st.job = null;
       }
       if (st.job) {
         const j = st.job;
-        if (st.ring.disposed || !this._spinViewSame(j.view, viewNow)) st.job = null; // the view moved: start over
+        if (st.ring.disposed || !this._spinViewSame(j.view, j.lo ? this._spinViewNow(group, this._spinLoDpr()) : viewNow)) st.job = null; // the view moved: start over
         else {
           const t0 = performance.now();
           let done = false;
           const maxPts = SETTINGS.sceneSpinSlicePts ?? 2500;
           st.sliceBudget = st.sliceBudget || maxPts;
-          try { done = this._spinRasterStep(j, st.sliceBudget); } catch (err) { j.frame.rasterFailed = true; done = true; }
+          try { done = this._spinRasterStep(j, st.sliceBudget); } catch (err) { j.frame[j.lo ? 'rasterLoFailed' : 'rasterFailed'] = true; done = true; }
           const ms = performance.now() - t0;
           // a slice's cost is mostly the flush of its strokes: keep each one well under a frame by fitting the budget to the last
           if (ms > 8) st.sliceBudget = Math.max(250, Math.floor(st.sliceBudget * 0.6));
@@ -17622,17 +17662,39 @@
         const d = window.Vectura.Scene3D.SpinRing.circDist(f.yaw, yaw);
         if (d < bd) { bd = d; best = f; }
       });
-      if (!best) return;
+      if (!best) { this._spinLoTick(st, group, yaw); return; }
       // At the cap a raster is only worth making if it is nearer the viewed yaw than the farthest one held (that one goes).
       let held = 0; let heldN = 0;
       st.ring.frames.forEach((f) => { if (f.raster) { held += f.raster.bytes; heldN += 1; } });
       if (!this._spinFresh(best, viewNow) && held + (heldN ? held / heldN : 0) > cap) {
         const far = st.ring.farthestRaster(yaw, null);
-        if (!far || far.dist <= bd) return;
+        if (!far || far.dist <= bd) { this._spinLoTick(st, group, yaw); return; }
       }
       let job = null;
       try { job = this._spinRasterBegin(group, best); } catch (err) { best.rasterFailed = true; }
       if (job) st.job = job; else if (best.raster) st.ring.trimRasters(cap, best, yaw);
+      this._spinKickRaster();
+    }
+
+    // The next frame without a fresh low-res raster (nearest the viewed yaw first), as a time-sliced job like any other.
+    _spinLoTick(st, group, yaw) {
+      if (st.job || !st.ring || st.ring.disposed) return;
+      if (!st.ring.stats.doneAt && !st.ring.stats.capped) return; // the density is chosen once the bake is over
+      const Ring = window.Vectura.Scene3D.SpinRing;
+      const nowLo = this._spinViewNow(group, this._spinLoDpr());
+      let held = 0;
+      st.ring.frames.forEach((f) => { if (f.rasterLo) held += f.rasterLo.bytes; });
+      if (held > this._spinLoBudget(st) * 1.25) return;
+      let best = null; let bd = Infinity;
+      st.ring.frames.forEach((f) => {
+        if (f.rasterLoFailed || this._spinFreshLo(f, nowLo)) return;
+        const d = Ring.circDist(f.yaw, yaw);
+        if (d < bd) { bd = d; best = f; }
+      });
+      if (!best) return;
+      let job = null;
+      try { job = this._spinRasterBegin(group, best, true); } catch (err) { best.rasterLoFailed = true; }
+      if (job) st.job = job;
       this._spinKickRaster();
     }
 
@@ -17641,14 +17703,14 @@
     // Time-sliced: `_spinRasterBegin` sizes the canvas and returns a job, `_spinRasterStep` strokes the next
     // slice of paths (about SLICE_PTS vertices) and flushes it, so no single task holds the main thread for a
     // whole dense frame. The raster is published on the frame only when the last slice is in.
-    _spinRasterBegin(group, frame) {
+    _spinRasterBegin(group, frame, lo) {
       // Stream the frame from its packed form (a slice of paths per task) unless a stroke division needs the whole run: unpacking a
       // dense frame to point objects in one go is a 30-60 ms task.
       const Job = window.Vectura.Scene3D.ComposeJob;
       const packed = frame && frame.finishedPacked && !this.engine.spinHasDivisions(group) ? frame.finishedPacked : null;
       const paths = packed ? null : this.engine.spinFramePaths(group, frame);
       if (!packed && !paths) return null;
-      const dpr = this._spinRasterDpr();
+      const dpr = lo ? this._spinLoDpr() : this._spinRasterDpr();
       const sc = this.scale;
       const kd = dpr / this.getBackingDpr();
       const cw = Math.round(this.canvas.width * kd); const ch = Math.round(this.canvas.height * kd);
@@ -17669,6 +17731,20 @@
               if (x < minX) minX = x; if (x > maxX) maxX = x;
               if (y < minY) minY = y; if (y > maxY) maxY = y;
             }
+          } else if (e.q) {
+            // a playback (quantized) entry: its corner and extent, from the Uint16 steps
+            const qa = e.q;
+            let lx = Infinity; let hx = -Infinity; let ly = Infinity; let hy = -Infinity;
+            for (let i = 0; i < qa.length; i += 2) {
+              const x = qa[i]; const y = qa[i + 1];
+              if (x < lx) lx = x; if (x > hx) hx = x;
+              if (y < ly) ly = y; if (y > hy) hy = y;
+            }
+            if (lx <= hx) {
+              const x0 = e.ox + lx * e.st; const x1 = e.ox + hx * e.st; const y0 = e.oy + ly * e.st; const y1 = e.oy + hy * e.st;
+              if (x0 < minX) minX = x0; if (x1 > maxX) maxX = x1;
+              if (y0 < minY) minY = y0; if (y1 > maxY) maxY = y1;
+            }
           } else if (e.pts) {
             for (let i = 0; i < e.pts.length; i++) {
               const q = e.pts[i];
@@ -17686,17 +17762,18 @@
           if (q.y < minY) minY = q.y; if (q.y > maxY) maxY = q.y;
         }
       });
-      const view = this._spinViewNow(group);
-      if (!(maxX >= minX) || !(maxY >= minY)) { frame.raster = { empty: true, bytes: 0, view }; return null; }
+      const view = this._spinViewNow(group, dpr);
+      const slot = lo ? 'rasterLo' : 'raster';
+      if (!(maxX >= minX) || !(maxY >= minY)) { frame[slot] = { empty: true, bytes: 0, view }; return null; }
       const pad = Math.ceil(widest * 3 * sc * dpr) + 2;
       const x0 = Math.max(0, Math.floor((minX * sc + this.offsetX) * dpr) - pad);
       const y0 = Math.max(0, Math.floor((minY * sc + this.offsetY) * dpr) - pad);
       const x1 = Math.min(cw, Math.ceil((maxX * sc + this.offsetX) * dpr) + pad);
       const y1 = Math.min(ch, Math.ceil((maxY * sc + this.offsetY) * dpr) + pad);
       const w = x1 - x0; const h = y1 - y0;
-      if (w < 1 || h < 1) { frame.raster = { empty: true, bytes: 0, view }; return null; }
+      if (w < 1 || h < 1) { frame[slot] = { empty: true, bytes: 0, view }; return null; }
       const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
-      return { frame, group, paths, packed, count: packed ? packed.paths.length : paths.length, Job, i: 0, canvas, octx: canvas.getContext('2d'), x0, y0, w, h, view };
+      return { frame, group, lo: !!lo, paths, packed, count: packed ? packed.paths.length : paths.length, Job, i: 0, canvas, octx: canvas.getContext('2d'), x0, y0, w, h, view };
     }
 
     // One slice of a raster job. True when the job is complete (the raster is then on the frame).
@@ -17725,7 +17802,7 @@
       // happens in this slice (off the interaction path) and a drag frame's drawImage is only a copy.
       try { octx.getImageData(0, 0, 1, 1); } catch (err) { /* an unreadable canvas still draws */ }
       if (job.i < job.count) return false;
-      job.frame.raster = { canvas: job.canvas, x0: job.x0, y0: job.y0, w: job.w, h: job.h, bytes: job.w * job.h * 4, view };
+      job.frame[job.lo ? 'rasterLo' : 'raster'] = { canvas: job.canvas, x0: job.x0, y0: job.y0, w: job.w, h: job.h, bytes: job.w * job.h * 4, view };
       return true;
     }
 
@@ -17833,10 +17910,28 @@
       else if (!same) group._spinShown = null;
     }
 
+    // The exact settle that follows a release on a playback frame: while it is in flight the frame's raster stays up (`_spinHold`); once the
+    // scene is settled on the pose the release aimed at, the installed ink IS that frame (same compose key), so the layer goes on
+    // drawing from the frame's raster (`_spinShown`) rather than stroking every vertex of the new ink.
+    _spinHoldResolve(l) {
+      const h = l._spinHold;
+      if (!h) return;
+      const settledAway = l._pathsFromDraft === false && l._sceneSettledKey !== h.fromKey;
+      if (this.rotation3DDrag || performance.now() - h.at > 20000 || !(h.lo ? h.frame.rasterLo : h.frame.raster)) { l._spinHold = null; return; }
+      if (!settledAway) return;
+      l._spinHold = null;
+      const t = h.target;
+      if (t && t.key === l._sceneSettledKey && (t.raster || (!h.lo && h.frame.raster))) {
+        l._spinShown = { frame: t, hold: h.frame !== t ? h.frame : null, key: l._sceneSettledKey, paths: l.scenePaths };
+        if (this._spin && this._spin.groupId === l.id) this._spin.seenKey = t.key;
+        this._spinKickRaster();
+      }
+    }
+
     // drawImage of a frame's raster in place of the layer's vector ink. False = nothing drawn (caller strokes).
     _spinBlit(l) {
       const b = l._spinBlit;
-      const r = b && b.frame && b.frame.raster;
+      const r = b && b.frame && (b.lo ? b.frame.rasterLo : b.frame.raster);
       if (!r) return false;
       if (r.empty) return true;
       const dpr = this.getBackingDpr();
@@ -17865,10 +17960,11 @@
       // was last confirmed against. Any edit recomposes and moves `_sceneSettledKey`; `_spinMaintain` re-validates (hashing, off the gesture).
       if (!target || target.id !== st.targetId || layer._pathsFromDraft !== false || layer._sceneSettledKey !== st.seenKey) return;
       const viewNow = this._spinViewNow(layer);
+      const viewLo = this._spinViewNow(layer, this._spinLoDpr());
       let rastered = 0;
-      st.ring.frames.forEach((f) => { if (this._spinFresh(f, viewNow)) rastered += 1; });
+      st.ring.frames.forEach((f) => { if (this._spinFresh(f, viewNow) || this._spinFreshLo(f, viewLo)) rastered += 1; });
       if (rastered < Math.min(3, st.ring.count)) return; // the window is small (memory budget); the rest is made as the drag moves
-      drag.spin = { ring: st.ring, target, pitch: drag.startPitch, view: viewNow };
+      drag.spin = { ring: st.ring, target, pitch: drag.startPitch, view: viewNow, viewLo };
       this.spinStats.drags += 1;
     }
 
@@ -17883,13 +17979,17 @@
       const warpable = layer._scenePose && SETTINGS.scenePoseWarp !== false;
       if (!f || (f.dist > sp.ring.spacing() * 0.75 && warpable)) { layer._spinBlit = null; this.spinStats.fallbacks += 1; return false; }
       const now = this._spinViewNow(layer);
-      const g = this._spinFresh(f, now) ? f : sp.ring.rasterAt(yaw, (fr) => this._spinFresh(fr, now));
+      // the pose under the pointer: its sharp raster, else its low-res one, else the nearest sharp raster of another pose
+      let g = this._spinFresh(f, now) ? f : null;
+      let lo = false;
+      if (!g && sp.viewLo && this._spinFreshLo(f, sp.viewLo)) { g = f; lo = true; this.spinStats.loBlits = (this.spinStats.loBlits || 0) + 1; }
+      if (!g) g = sp.ring.rasterAt(yaw, (fr) => this._spinFresh(fr, now));
       if (!g) { layer._spinBlit = null; this.spinStats.fallbacks += 1; return false; }
-      if (g !== f) this._spinKickRaster();
+      if (g !== f || lo) this._spinKickRaster();
       sp.target.set(f.yaw); // the camera is at the frame nearest the pointer: that is what release installs
       sp.frame = f;
-      layer._spinBlit = { frame: g };
-      sp.shown = g;
+      layer._spinBlit = { frame: g, lo };
+      sp.shown = g; sp.shownLo = lo;
       this._scheduleSpinDraw();
       return true;
     }
@@ -17913,6 +18013,17 @@
       layer._spinBlit = null;
       if (!g || sp.ring.disposed || !drag.moved) return false;
       sp.target.set(g.yaw);
+      if (g.exact === false) {
+        // A PLAYBACK frame (quantized ink, drawn only): the exact ink is composed by the ordinary settle (a worker compose, nothing on this
+        // thread), and the frame's raster stays on screen until it lands, so release shows the pose at once and sharpens in place.
+        if (g.key === layer._sceneSettledKey) return true; // the scene is already settled on exactly this pose
+        const shown = sp.shown && (sp.shownLo ? sp.shown.rasterLo : sp.shown.raster) ? sp.shown : null;
+        const holdFrame = shown || (g.raster || g.rasterLo ? g : null);
+        const holdLo = holdFrame ? (holdFrame === shown ? !!sp.shownLo : !g.raster) : false;
+        if (holdFrame) layer._spinHold = { frame: holdFrame, lo: holdLo, target: g, fromKey: layer._sceneSettledKey, at: performance.now() };
+        (this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 }).settles = (this.spinStats.settles || 0) + 1;
+        return false;
+      }
       const ok = this.engine.installSpinFrame(layer, g, { trusted: true });
       if (ok && this._spin && this._spin.groupId === layer.id) {
         this._spin.seenKey = g.key; // the ring is still this scene's: no re-hash on the next draw

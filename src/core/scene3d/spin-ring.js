@@ -16,9 +16,11 @@
  *     ring.nearest(yaw) the ready frame closest to `yaw` (circular), or null
  *     ring.dispose()    cancel the in-flight bakes and drop every frame
  *
- * A baked frame keeps the worker's ink PACKED and EXACT (one Float64Array per path, never quantized: what the
- * layer keeps after an install is byte-identical to a fresh render); `maxBytes` caps it (the ring then stops baking and keeps the frames
- * nearest the starting yaw). Cached rasters (the renderer's drawImage layer) hang off `frame.raster` and are
+ * A baked frame keeps the worker's ink PACKED. The first frames to land (`exactBytes`, a third of the cap at most) are EXACT, one Float64Array
+ * per path: installing one is byte-identical to a fresh render. Every other frame is PLAYBACK ink: the finished ink with Uint16 coordinates
+ * (<= 0.0025 mm off, a quarter of the bytes) and no raw copy, so all 72 angles fit the cap that held 17-39 exact ones. A playback frame is
+ * only ever drawn; release re-composes its exact ink (the ordinary settle) while its raster stays on screen. `maxBytes` caps the total (the
+ * ring then stops baking and keeps the frames nearest the starting yaw). Cached rasters (the renderer's drawImage layer) hang off `frame.raster` and are
  * evicted least-recently-used by `trimRasters`.
  */
 (function registerSceneSpinRing() {
@@ -51,6 +53,7 @@
     let n = 0;
     ((packed && packed.paths) || []).forEach((e) => {
       if (e.flat) n += e.flat.byteLength;
+      else if (e.q) n += e.q.byteLength + 24;
       else if (e.pts) n += e.pts.length * 40;
       n += 64;
       if (e.metaJson) {
@@ -133,6 +136,8 @@
     const base = normYaw(target.get());
     const yaws = Array.from({ length: count }, (_, i) => tidy(normYaw(base + i * (360 / count))));
     const maxBytes = Number.isFinite(opts.maxBytes) ? opts.maxBytes : budgetMB('sceneSpinMaxMB', 24, 12) * 1024 * 1024;
+    // the share of the byte cap that may hold EXACT frames (installable on release without a recompose); the rest of the ring is playback ink
+    const exactCap = Number.isFinite(opts.exactBytes) ? opts.exactBytes : Math.min(budgetMB('sceneSpinExactMB', 4, 2) * 1024 * 1024, maxBytes / 3);
     const factory = opts.runnerFactory || (() => {
       const C = Scene3D.ComposeClient;
       return C && C.available() ? C.create() : null;
@@ -158,7 +163,7 @@
       engine, group, target, step: 360 / count, count, base, yaws,
       pitch: opts.pitch, coarse,
       frames: new Map(), // idx -> frame
-      stats: { jobs: 0, baked: 0, failed: 0, bakeMs: 0, startedAt: 0, doneAt: 0, vectorBytes: 0, capped: false, workers: 0 },
+      stats: { jobs: 0, baked: 0, failed: 0, bakeMs: 0, startedAt: 0, doneAt: 0, vectorBytes: 0, exactBytes: 0, playbackFrames: 0, capped: false, workers: 0 },
       disposed: false,
       running: false,
       onFrame: opts.onFrame || null,
@@ -194,17 +199,31 @@
 
     const land = (idx, key, res) => {
       if (ring.disposed) return;
+      const Job = Scene3D.ComposeJob;
       const packed = releaseBuffers(res.packed);
       let finishedPacked = releaseBuffers(res.finishedPacked);
       if (finishedPacked && samePacked(packed, finishedPacked)) finishedPacked = packed; // the finish changed nothing: one copy
-      const bytes = internBytes(packed, pool) + (finishedPacked === packed ? 0 : internBytes(finishedPacked, pool));
+      // EXACT or PLAYBACK. The first frames to land (nearest the starting yaw, within `exactBytes`) are kept exact: Float64 ink that
+      // installs byte for byte. Every later frame is kept as PLAYBACK ink only: the finished ink with Uint16 coordinates (a quarter of
+      // the bytes; at most 0.0025 mm off) and no raw copy, which is all a drag needs to draw it. A playback frame is never installed:
+      // release re-composes its exact ink (the ordinary settle) while the frame's raster stays on screen.
+      let exact = ring.stats.exactBytes < exactCap;
+      let kept = exact ? packed : null;
+      let kept2 = exact ? finishedPacked : Job.quantizePacked(finishedPacked || packed);
+      let bytes = internBytes(kept || kept2, pool) + (exact && kept2 !== kept ? internBytes(kept2, pool) : 0);
+      if (exact && ring.frames.size > 0 && ring.stats.exactBytes + bytes > exactCap) {
+        // would take the exact share past its cap: this one is playback ink
+        exact = false; kept = null; kept2 = Job.quantizePacked(finishedPacked || packed);
+        bytes = internBytes(kept2, pool);
+      }
       // The cap is enforced where a frame LANDS, against what is held: each frame is counted once, and a frame that would take the ring
       // past the cap is dropped (jobs already in flight when the cap was reached land here too). The first frame is always kept.
       if (ring.frames.size > 0 && ring.stats.vectorBytes + bytes > maxBytes) { ring.stats.capped = true; return; }
-      const frame = { idx, yaw: yaws[idx], key, ms: res.ms, packed, finishedPacked, bytes, used: ++clock, raster: null };
+      const frame = { idx, yaw: yaws[idx], key, ms: res.ms, packed: kept, finishedPacked: kept2, exact, bytes, used: ++clock, raster: null };
       ring.frames.set(idx, frame);
       ring.stats.baked += 1; stats.frames += 1;
       ring.stats.vectorBytes += bytes;
+      if (exact) ring.stats.exactBytes += bytes; else ring.stats.playbackFrames += 1;
       ring.stats.bakeMs += res.ms || 0;
       if (ring.stats.vectorBytes + bytes > maxBytes) ring.stats.capped = true; // another frame this size would not fit: stop feeding
       if (ring.onFrame) { try { ring.onFrame(frame, ring); } catch (err) { /* a listener must not stop the bake */ } }
@@ -279,7 +298,9 @@
     };
 
     ring.rasterBytes = () => { let n = 0; ring.frames.forEach((f) => { if (f.raster) n += f.raster.bytes; }); return n; };
-    ring.dropRasters = () => { ring.frames.forEach((f) => { f.raster = null; }); };
+    ring.loBytes = () => { let n = 0; ring.frames.forEach((f) => { if (f.rasterLo) n += f.rasterLo.bytes; }); return n; };
+    ring.loCount = () => { let n = 0; ring.frames.forEach((f) => { if (f.rasterLo) n += 1; }); return n; };
+    ring.dropRasters = () => { ring.frames.forEach((f) => { f.raster = null; f.rasterLo = null; }); };
     // Rasters are evicted by how long ago they were useful: the one farthest (circularly) from the yaw being viewed goes
     // first, which for a turntable dragged one way is also the least recently used. `keep` is never dropped.
     ring.farthestRaster = (yaw, except) => {
@@ -300,7 +321,7 @@
 
     ring.report = () => ({
       count, ready: ring.frames.size, step: ring.step, workers: ring.stats.workers, jobs: ring.stats.jobs, failed: ring.stats.failed,
-      capped: ring.stats.capped, vectorMB: ring.stats.vectorBytes / 1048576, rasterMB: ring.rasterBytes() / 1048576,
+      capped: ring.stats.capped, exact: ring.stats.baked - ring.stats.playbackFrames, vectorMB: ring.stats.vectorBytes / 1048576, rasterMB: ring.rasterBytes() / 1048576, loMB: ring.loBytes() / 1048576, loReady: ring.loCount(),
       bakeWallMs: ring.stats.doneAt && ring.stats.startedAt ? ring.stats.doneAt - ring.stats.startedAt : null,
       composeMsSum: ring.stats.bakeMs,
     });
