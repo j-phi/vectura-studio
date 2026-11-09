@@ -16,8 +16,8 @@
  *     ring.nearest(yaw) the ready frame closest to `yaw` (circular), or null
  *     ring.dispose()    cancel the in-flight bakes and drop every frame
  *
- * A baked frame keeps the worker's ink PACKED (one Float64Array per path) so a ring of dense mezzotint
- * costs tens of MB, not hundreds; `maxBytes` caps it (the ring then stops baking and keeps the frames
+ * A baked frame keeps the worker's ink PACKED and EXACT (one Float64Array per path, never quantized: what the
+ * layer keeps after an install is byte-identical to a fresh render); `maxBytes` caps it (the ring then stops baking and keeps the frames
  * nearest the starting yaw). Cached rasters (the renderer's drawImage layer) hang off `frame.raster` and are
  * evicted least-recently-used by `trimRasters`.
  */
@@ -62,14 +62,10 @@
     return n;
   };
 
-  // Compact a baked frame's packed ink in place: every plain polyline is held as Float32 (half the bytes; the rounding is
-  // under 3e-5 mm at page scale, far below a pen's width) and the transfer-list `buffers` the worker sent are released.
-  const compactPacked = (packed) => {
-    if (!packed) return packed;
-    (packed.paths || []).forEach((e) => {
-      if (e.flat && e.flat.BYTES_PER_ELEMENT === 8) e.flat = Float32Array.from(e.flat);
-    });
-    packed.buffers = [];
+  // Release the transfer-list `buffers` the worker sent (the typed arrays stay as they arrived: Float64, exactly the compose's output, so an
+  // installed frame is byte-identical to a fresh render; memory is bounded by the byte cap instead of by quantizing the ink).
+  const releaseBuffers = (packed) => {
+    if (packed) packed.buffers = [];
     return packed;
   };
   // Value equality of two packed inks (same entries, same coordinates, same props / meta): when the output finish changed nothing the raw
@@ -136,7 +132,6 @@
     const count = Math.max(2, Math.round(360 / step));
     const base = normYaw(target.get());
     const yaws = Array.from({ length: count }, (_, i) => tidy(normYaw(base + i * (360 / count))));
-    const SETTINGS = Vectura.SETTINGS || {};
     const maxBytes = Number.isFinite(opts.maxBytes) ? opts.maxBytes : budgetMB('sceneSpinMaxMB', 24, 12) * 1024 * 1024;
     const factory = opts.runnerFactory || (() => {
       const C = Scene3D.ComposeClient;
@@ -199,19 +194,19 @@
 
     const land = (idx, key, res) => {
       if (ring.disposed) return;
-      const quant = SETTINGS.sceneSpinFloat32 !== false;
-      const packed = quant ? compactPacked(res.packed) : res.packed;
-      let finishedPacked = quant ? compactPacked(res.finishedPacked) : res.finishedPacked;
+      const packed = releaseBuffers(res.packed);
+      let finishedPacked = releaseBuffers(res.finishedPacked);
       if (finishedPacked && samePacked(packed, finishedPacked)) finishedPacked = packed; // the finish changed nothing: one copy
-      const frame = {
-        idx, yaw: yaws[idx], key, ms: res.ms, packed, finishedPacked,
-        bytes: internBytes(packed, pool) + (finishedPacked === packed ? 0 : internBytes(finishedPacked, pool)), used: ++clock, raster: null,
-      };
+      const bytes = internBytes(packed, pool) + (finishedPacked === packed ? 0 : internBytes(finishedPacked, pool));
+      // The cap is enforced where a frame LANDS, against what is held: each frame is counted once, and a frame that would take the ring
+      // past the cap is dropped (jobs already in flight when the cap was reached land here too). The first frame is always kept.
+      if (ring.frames.size > 0 && ring.stats.vectorBytes + bytes > maxBytes) { ring.stats.capped = true; return; }
+      const frame = { idx, yaw: yaws[idx], key, ms: res.ms, packed, finishedPacked, bytes, used: ++clock, raster: null };
       ring.frames.set(idx, frame);
       ring.stats.baked += 1; stats.frames += 1;
-      ring.stats.vectorBytes += frame.bytes;
+      ring.stats.vectorBytes += bytes;
       ring.stats.bakeMs += res.ms || 0;
-      if (ring.stats.vectorBytes + frame.bytes > maxBytes) ring.stats.capped = true;
+      if (ring.stats.vectorBytes + bytes > maxBytes) ring.stats.capped = true; // another frame this size would not fit: stop feeding
       if (ring.onFrame) { try { ring.onFrame(frame, ring); } catch (err) { /* a listener must not stop the bake */ } }
     };
 
@@ -274,11 +269,11 @@
     };
 
     // The nearest ready frame that also has a raster (what a drag frame draws), preferring `frameAt` when it has one.
-    ring.rasterAt = (yaw) => {
+    ring.rasterAt = (yaw, ok) => {
       const f = ring.frameAt(yaw);
-      if (f && f.raster) return f;
+      if (f && f.raster && (!ok || ok(f))) return f;
       let best = null; let bd = Infinity;
-      ring.frames.forEach((g) => { if (!g.raster) return; const d = circDist(g.yaw, yaw); if (d < bd) { bd = d; best = g; } });
+      ring.frames.forEach((g) => { if (!g.raster || (ok && !ok(g))) return; const d = circDist(g.yaw, yaw); if (d < bd) { bd = d; best = g; } });
       if (best) { best.used = ++clock; best.dist = bd; }
       return best;
     };
@@ -322,6 +317,6 @@
     return ring;
   };
 
-  Scene3D.SpinRing = { create, inlineRunner, stats, normYaw, tidy, circDist, budgetMB, isMobile, compactPacked, samePacked };
+  Scene3D.SpinRing = { create, inlineRunner, stats, normYaw, tidy, circDist, budgetMB, isMobile, releaseBuffers, samePacked };
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.SpinRing;
 })();

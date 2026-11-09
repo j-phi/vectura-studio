@@ -2,7 +2,7 @@
  * RGR — pre-baked spin for a 3D Scene (Scene3D.SpinRing).
  *  1. The ring is keyed by the scene minus the swept yaw: a yaw change keeps it valid, any other edit invalidates it.
  *  2. Frames are baked outward from the current yaw; nearest() is circular.
- *  3. Installing a baked frame equals a normal full render at that yaw (byte for byte) and runs no compose.
+ *  3. Installing a baked frame equals a normal full render at that yaw (byte for byte, including memo and plot stats) and runs no compose.
  *  4. A stale frame (scene edited since) is refused.
  * RED (pre-change src): Scene3D.SpinRing, Engine.sceneJobOnly and Engine.installSpinFrame do not exist.
  */
@@ -67,26 +67,33 @@ describe('Scene3D.SpinRing', () => {
     ring.dispose();
   }, 120000);
 
-  test('an installed frame equals a full render at that yaw (to float32 precision) and runs no compose', async () => {
+  // RED (pre-change): frames were held as Float32, so an installed frame differed from a fresh render by up to ~3e-5 mm in the
+  // geometry the layer KEEPS (memo, optimization, export, plot stats), not only in what was drawn.
+  const exact = (a, b) => {
+    expect(a.length).toBe(b.length);
+    a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { if (q.x !== b[i][j].x || q.y !== b[i][j].y) throw new Error(`path ${i} point ${j}: ${q.x},${q.y} vs ${b[i][j].x},${b[i][j].y}`); }); });
+  };
+  test('an installed frame is byte-identical to a full render at that yaw (paths, memo, stats) and runs no compose', async () => {
     const o = make(); const ring = ringOf(o, 90); ring.start(); await wait(ring, 4);
     const f = ring.frames.get(1);
+    ring.frames.forEach((fr) => [fr.packed, fr.finishedPacked].forEach((pk) => pk.paths.forEach((e) => { if (e.flat) expect(e.flat.BYTES_PER_ELEMENT).toBe(8); })));
     o.group.params.camera.yaw = f.yaw;
     const composes = o.engine.sceneComposeStats.composes;
     expect(o.engine.installSpinFrame(o.group, f)).toBe(true);
     expect(o.engine.sceneComposeStats.composes).toBe(composes);
     expect(o.group._pathsFromDraft).toBe(false);
     const installed = hashPaths(o.group.scenePaths);
-    // reference: a fresh engine, same scene, same yaw, plain compose. Frames are held as Float32 (memory), so the installed ink
-    // equals the full render to float32 precision (< 1e-4 mm at page scale), not bit for bit.
+    // reference: a fresh engine, same scene, same yaw, plain compose
     const ref = make(); ref.group.params.camera.yaw = f.yaw; ref.engine.computeAllDisplayGeometry();
-    const a = o.group.scenePaths; const b = ref.group.scenePaths;
-    expect(a.length).toBe(b.length);
-    let worst = 0;
-    a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { worst = Math.max(worst, Math.abs(q.x - b[i][j].x), Math.abs(q.y - b[i][j].y)); }); });
-    expect(worst).toBeLessThan(1e-4);
-    // and the memo it left behind still serves later regenerations identically
+    exact(o.group.scenePaths, ref.group.scenePaths);
+    expect(installed).toBe(hashPaths(ref.group.scenePaths));
+    // the memo it left behind serves later regenerations identically, and equals the fresh memo
     o.engine.computeAllDisplayGeometry();
     expect(hashPaths(o.group.scenePaths)).toBe(installed);
+    exact(o.group.scenePaths, ref.group.scenePaths);
+    // what export and plot stats read is the same: stats of the installed layer equal the fresh render's
+    const sa = JSON.stringify(o.engine.getStats()); const sb = JSON.stringify(ref.engine.getStats());
+    expect(sa).toBe(sb);
     ring.dispose();
   }, 120000);
 
@@ -114,10 +121,10 @@ describe('Scene3D.SpinRing', () => {
     ring.dispose();
   }, 180000);
 
-  test('frames are stored compactly: Float32 ink, raw and finished kept once when the finish changed nothing', async () => {
+  test('frames are stored compactly: exact Float64 ink, raw and finished kept once when the finish changed nothing', async () => {
     const o = make(); const ring = ringOf(o, 180); ring.start(); await wait(ring, 2);
     ring.frames.forEach((f) => {
-      [f.packed, f.finishedPacked].forEach((pk) => pk.paths.forEach((e) => { if (e.flat) expect(e.flat.BYTES_PER_ELEMENT).toBe(4); }));
+      [f.packed, f.finishedPacked].forEach((pk) => pk.paths.forEach((e) => { if (e.flat) expect(e.flat.BYTES_PER_ELEMENT).toBe(8); }));
       expect(f.packed.buffers).toEqual([]);                            // the worker's transfer list is not retained
     });
     const { samePacked } = V.Scene3D.SpinRing;
@@ -140,8 +147,25 @@ describe('Scene3D.SpinRing', () => {
     await new Promise((r) => setTimeout(r, 4000));
     expect(ring.stats.capped).toBe(true);
     expect(ring.frames.size).toBeLessThan(ring.count);
-    expect(ring.stats.vectorBytes).toBeLessThanOrEqual(one * 2.5 + one);   // at most one frame past the cap
+    expect(ring.stats.vectorBytes).toBeLessThanOrEqual(one * 2.5);
     expect(Array.from(ring.frames.keys()).every((i) => i % 2 === 0)).toBe(true);
+    ring.dispose();
+  }, 180000);
+
+  // RED (pre-change): the cap was tested as vectorBytes + frameBytes after adding the frame, and frames already in flight when it was
+  // reached were still stored, so a pool of 3 ended 1-2 frames past the cap.
+  test('the byte cap is strict: each frame counted once, frames in flight past the cap are dropped', async () => {
+    const o = make();
+    const probe = ringOf(o, 45); probe.start(); await wait(probe, 1);
+    const one = probe.frames.get(0).bytes; probe.dispose();
+    const ring = V.Scene3D.SpinRing.create({ engine: o.engine, group: o.group, target: o.target, step: 45, runnerFactory: V.Scene3D.SpinRing.inlineRunner, poolSize: 3, maxBytes: one * 2.5 });
+    ring.start();
+    await new Promise((r) => setTimeout(r, 4000));
+    expect(ring.stats.capped).toBe(true);
+    expect(ring.stats.vectorBytes).toBeLessThanOrEqual(one * 2.5);
+    expect(ring.stats.vectorBytes).toBe(Array.from(ring.frames.values()).reduce((n, fr) => n + fr.bytes, 0));   // each frame counted once
+    expect(ring.frames.size).toBeGreaterThanOrEqual(1);
+    expect(ring.frames.size).toBeLessThan(ring.count);
     ring.dispose();
   }, 180000);
 

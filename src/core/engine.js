@@ -2938,6 +2938,12 @@
         return;
       }
       const memo = memoKey ? this._sceneComposeMemo.get(group) : null;
+      // A worker settle still in flight was posted for a DIFFERENT state than the one composing now (an edit landed after it
+      // was posted): its ink would be a stale pose, so it is cancelled here, at the moment the newer state is composed or
+      // served from the memo. `finishSceneAsync` re-checks the key as well (the belt for a result that is already on its way).
+      if (memoKey && !(options && (options.precomputed || options.captureJob)) && group._sceneAsyncHandle && group._sceneAsyncKey !== memoKey) {
+        this._cancelStaleSettle(group);
+      }
 
       let paths = [];
       this.sceneComposeStats.lastTier = tier;
@@ -3067,6 +3073,7 @@
         return null;
       }
       group._sceneAsyncHandle = handle;
+      group._sceneAsyncKey = job.memoKey;
       return { group, job, token, promise: handle.promise };
     }
 
@@ -3074,14 +3081,22 @@
       const { group, job, token } = ctx;
       if (group._sceneAsyncToken !== token) return false;
       group._sceneAsyncHandle = null;
-      // The scene must still be the one that was posted.
-      group._sceneJob = null;
-      this._composeSceneGroup(group, { captureJob: true });
-      const again = group._sceneJob;
-      group._sceneJob = null;
-      if (again && again.memoKey !== job.memoKey) return false;
-      this._composeSceneGroup(group, { precomputed: res });
+      // The scene must still be the one that was posted. The current state's key is derived WITHOUT consulting the compose memo:
+      // when the newer state is already memoized (an edit followed by a generate while this settle was in flight) a captured
+      // job comes back empty and cannot tell the two apart, so the old pose's ink was installed under the new key.
+      const now = this.sceneJobOnly(group);
+      if (!now || now.memoKey !== job.memoKey) return false;
+      this._composeSceneGroup(group, { precomputed: res, knownKey: job.memoKey });
       return true;
+    }
+
+    // Drop the worker settle in flight for `group` (an edit made it stale). Its promise rejects; callers fall back to a generate.
+    _cancelStaleSettle(group) {
+      group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1;
+      const h = group._sceneAsyncHandle;
+      group._sceneAsyncHandle = null;
+      group._sceneAsyncKey = null;
+      if (h && typeof h.cancel === 'function') { try { h.cancel(); } catch (err) { /* already gone */ } }
     }
 
     generateAsync(layerId) {
