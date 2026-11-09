@@ -38,7 +38,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
   const MAX_POSES = 40; // drawn poses kept per piece (a long drag renders many; the oldest off-rock ones are dropped)
   const D2 = 180 / Math.PI;
   // Mirrors START_PAGE.SCENE_ORBIT (src/config/start-page.js) for a page without the config; the config wins when present.
-  const CFG0 = { heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300 };
+  const CFG0 = { heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500 };
   const cfg = () => Object.assign({}, CFG0, (Vectura.START_PAGE && Vectura.START_PAGE.SCENE_ORBIT) || {});
 
   const reducedMQ = () => { try { return W.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
@@ -96,7 +96,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
     let engaged = false; let home0 = null; let alive = true; let visible = !('IntersectionObserver' in W); let payload = null; let home = null; let homeKey0 = '';
     let target = null; let drag = null; let busy = false; let renders = 0; let failed = false; let lastError = ''; let stage = '';
     let lastAct = performance.now(); let swayT = 0; let tPrev = 0; let timer = 0; let shownKey = '';
-    let lastMs = 0; let lastPageAct = -Infinity; let pumpTimer = 0;
+    let lastMs = 0; let lastPageAct = -Infinity; let lastDragEnd = -Infinity; let pumpTimer = 0;
     const cache = new Map(); // pose key -> Promise<alt art | null (the tile's own art)>
     const ready = new Map(); // pose key -> alt art | null, once drawn
 
@@ -204,7 +204,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       if (!alive || busy || !payload || !visible) return;
       const want = nextWanted(); if (!want) return;
       { /* baked poses wait for a quiet page */
-        const wait = cfg().yieldMs - (performance.now() - lastPageAct);
+        const wait = Math.max(cfg().yieldMs - (performance.now() - lastPageAct), cfg().afterDragMs - (performance.now() - lastDragEnd));
         if (wait > 0) { if (!pumpTimer) pumpTimer = setTimeout(() => { pumpTimer = 0; pump(); }, wait + 1); return; }
       }
       busy = true;
@@ -263,7 +263,7 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
     };
     const onUp = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
-      drag = null; ov.classList.remove('is-drag'); settle(); flushQuiet();
+      drag = null; lastDragEnd = performance.now(); ov.classList.remove('is-drag'); settle(); flushQuiet();
     };
     const onKey = (e) => {
       const K = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];

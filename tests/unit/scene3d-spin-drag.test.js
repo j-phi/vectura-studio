@@ -181,4 +181,49 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     expect(keep.raster).toBeTruthy();
     o.renderer._spinDrop();
   }, 180000);
+
+  // ── a settled Scene whose ink is a baked frame redraws from that frame's raster (hover / release redraws) ───────────
+  // RED (pre-change): no _spinAdopt / _spinIdleFrame; after release the whole scene was re-stroked as vectors (60-140 ms flush).
+  test('idle blit: the settled ink is adopted by its frame, kept after release, and dropped by any edit, zoom or recompose', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    const st = o.renderer._spin;
+    o.renderer._spinMaintain();                                          // adopts the ring's starting frame
+    expect(o.group._spinShown && o.group._spinShown.frame).toBe(ring.frames.get(0));
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(ring.frames.get(0));
+    // a stale zoom strokes vectors until the raster is redone
+    o.renderer.scale = 1.5;
+    expect(o.renderer._spinIdleFrame(o.group)).toBeNull();
+    o.renderer.scale = 1;
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(ring.frames.get(0));
+    // release keeps the shown frame as the idle frame
+    const start = grab(o);
+    for (let i = 1; i <= 6; i++) o.renderer.apply3DRotationDrag({ clientX: start.x + i * 40, clientY: start.y });
+    const shown = o.group._spinBlit.frame;
+    o.renderer.end3DRotationDrag();
+    expect(o.group._spinShown.frame).toBe(shown);
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(shown);
+    // while a drag is in progress the idle path is not used
+    expect(st).toBeTruthy();
+    // any recompose replaces the ink: the frame no longer stands in for it
+    o.engine.computeAllDisplayGeometry();
+    expect(o.renderer._spinIdleFrame(o.group)).toBeNull();
+    o.renderer._spinMaintain();                                          // ...and is adopted again when still equal
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(shown);
+    o.group.params.camera.zoom = 1.4;                                    // an edit: different scene
+    o.engine.generate(o.gid);
+    expect(o.renderer._spinIdleFrame(o.group)).toBeNull();
+    o.renderer._spinDrop();
+    expect(o.group._spinShown).toBeNull();
+  }, 180000);
+
+  test('the ring\'s starting frame stands in for the state the ring began in even when its key differs only by in-place defaults', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    ring.frames.get(0).key = `${ring.frames.get(0).key} `;               // the compose filled defaults into the shared params: key text differs
+    o.group._spinShown = null; o.renderer._spin.adoptTried = null;
+    o.renderer._spinMaintain();
+    expect(o.group._spinShown && o.group._spinShown.frame).toBe(ring.frames.get(0));
+    o.renderer._spinDrop();
+  }, 180000);
 });

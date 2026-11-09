@@ -5644,6 +5644,12 @@
               flushBeforePlain();
               if (this._spinBlit(l)) return;
             }
+          } else if (l._spinShown && !this.rotation3DDrag && !inkPlan && !revealActive && !layerDrawOptimized(l) && !this.groupEditMode
+            && !this.paperPreviewActive() && !dedupe && !(this.tempTransform && this.selectedLayerIds?.has(l.id)) && !this.mirrorDragState?.has(l.id)) {
+            // A settled Scene whose ink IS a baked frame redraws from that frame's cached raster (hover, pan, selection and release redraws of a
+            // dense Scene would otherwise flush 100k+ vertices of canvas strokes: 60-140 ms).
+            const fr = this._spinIdleFrame(l);
+            if (fr) { l._spinBlit = { frame: fr }; flushBeforePlain(); const ok = this._spinBlit(l); l._spinBlit = null; if (ok) return; }
           }
           // Plain-group isolation greys the rest of the document. Morph
           // isolation must NOT (its leaves are consumed, and unrelated layers
@@ -17406,7 +17412,7 @@
       if (st) st.job = null;
       if (st && st.ring) st.ring.dispose();
       this._spin = null;
-      if (this.engine && this.engine.layers) this.engine.layers.forEach((l) => { if (l && l._spinBlit) l._spinBlit = null; });
+      if (this.engine && this.engine.layers) this.engine.layers.forEach((l) => { if (l && l._spinBlit) l._spinBlit = null; if (l && l._spinShown) l._spinShown = null; });
     }
 
     // O(1) per draw: notices that the selected Scene settled, changed or was left, and (re)starts the bake.
@@ -17422,8 +17428,8 @@
       const target = this._spinTarget(group);
       if (!target) { if (st) this._spinDrop(); return; }
       if (st && st.groupId === group.id && st.targetId === target.id) {
-        if (st.seenKey === key) { this._spinView(st); return; }
-        if (st.ring && st.ring.valid()) { st.seenKey = key; this._spinView(st); return; }
+        if (st.seenKey === key) { this._spinView(st); this._spinAdopt(st, group); return; }
+        if (st.ring && st.ring.valid()) { st.seenKey = key; this._spinView(st); this._spinAdopt(st, group); return; }
         this._spinDrop();
       } else if (st) this._spinDrop();
       if (this._spinPending && this._spinPending.groupId === group.id && this._spinPending.key === key && this._spinPending.targetId === target.id) return;
@@ -17454,7 +17460,7 @@
         });
       } catch (err) { ring = null; }
       if (!ring) return;
-      const st = { ring, groupId: group.id, targetId: target.id, seenKey: pending.key, timer: 0, rasterTimer: 0, view: null, viewChangedAt: 0 };
+      const st = { ring, groupId: group.id, targetId: target.id, seenKey: pending.key, baseKey: pending.key, timer: 0, rasterTimer: 0, view: null, viewChangedAt: 0 };
       this._spin = st;
       if (!ring.start()) { this._spinDrop(); return; }
     }
@@ -17524,7 +17530,7 @@
           if (ms > 8) st.sliceBudget = Math.max(250, Math.floor(st.sliceBudget * 0.6));
           else if (ms < 3) st.sliceBudget = Math.min(maxPts, Math.ceil(st.sliceBudget * 1.25));
           rs.sliceMs = (rs.sliceMs || 0) + ms; rs.sliceMaxMs = Math.max(rs.sliceMaxMs || 0, ms);
-          if (done) { st.job = null; rs.rasters = (rs.rasters || 0) + 1; st.ring.trimRasters(cap, j.frame, yaw); }
+          if (done) { st.job = null; rs.rasters = (rs.rasters || 0) + 1; st.rasterGen = (st.rasterGen || 0) + 1; st.ring.trimRasters(cap, j.frame, yaw); if (j.frame.yaw === yaw) { this._spinAdopt(st, group); this._scheduleSpinDraw(); } }
           this._spinKickRaster();
           return;
         }
@@ -17711,6 +17717,38 @@
       if (layerDash) ctx.setLineDash([]);
     }
 
+    // The baked frame whose raster may stand in for a SETTLED Scene's vector ink right now, else null: the ink is still the very array
+    // the frame was adopted with (any recompose replaces it), the scene is settled at the key the frame was baked for, and the raster is
+    // at the current zoom and density (a stale zoom strokes the vectors until the raster is redone).
+    _spinIdleFrame(l) {
+      const sh = l._spinShown;
+      if (!sh) return null;
+      if (l._pathsFromDraft !== false || l.scenePaths !== sh.paths || l._sceneSettledKey !== sh.key) { l._spinShown = null; return null; }
+      const r = sh.frame.raster;
+      if (!r || r.view.scale !== this.scale || r.view.dpr !== this._spinRasterDpr()) return null;
+      return sh.frame;
+    }
+
+    // Adopt the baked frame that equals the Scene's current settled ink (same yaw, same compose key, a fresh raster): called from the
+    // O(1) per-draw maintenance and when a raster lands. Cheap when there is nothing to adopt.
+    _spinAdopt(st, group) {
+      if (!st.ring || st.ring.disposed || group._pathsFromDraft !== false || !group.scenePaths) return;
+      const cur = group._spinShown;
+      if (cur && cur.paths === group.scenePaths && cur.key === group._sceneSettledKey) return;
+      const tried = st.adoptTried;
+      if (tried && tried.paths === group.scenePaths && tried.raster === st.rasterGen) return;
+      st.adoptTried = { paths: group.scenePaths, raster: st.rasterGen };
+      const target = this._spinTarget(group);
+      if (!target) return;
+      const yaw = target.get();
+      const key = group._sceneSettledKey;
+      let hit = null;
+      // The ring's starting frame is the scene as it was settled when the ring began (its compose key can differ only by defaults the
+      // first compose filled into the shared params in place), so it stands in for that state without a key match.
+      st.ring.frames.forEach((f) => { if (!hit && f.raster && f.yaw === yaw && (f.key === key || (f.idx === 0 && st.baseKey === key))) hit = f; });
+      group._spinShown = hit ? { frame: hit, key, paths: group.scenePaths } : null;
+    }
+
     // drawImage of a frame's raster in place of the layer's vector ink. False = nothing drawn (caller strokes).
     _spinBlit(l) {
       const b = l._spinBlit;
@@ -17729,7 +17767,7 @@
         ctx.drawImage(r.canvas, (r.x0 * k - r.view.offsetX * dpr) * s + this.offsetX * dpr, (r.y0 * k - r.view.offsetY * dpr) * s + this.offsetY * dpr, r.w * k * s, r.h * k * s);
       }
       ctx.restore();
-      this.spinStats.blits += 1;
+      (this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 }).blits += 1;
       return true;
     }
 
@@ -17790,7 +17828,11 @@
       if (!g || sp.ring.disposed || !drag.moved) return false;
       sp.target.set(g.yaw);
       const ok = this.engine.installSpinFrame(layer, g, { trusted: true });
-      if (ok && this._spin && this._spin.groupId === layer.id) this._spin.seenKey = g.key; // the ring is still this scene's: no re-hash on the next draw
+      if (ok && this._spin && this._spin.groupId === layer.id) {
+        this._spin.seenKey = g.key; // the ring is still this scene's: no re-hash on the next draw
+        // the installed ink IS this frame: keep drawing its raster after release (no vector re-stroke of the whole scene)
+        layer._spinShown = g.raster ? { frame: g, key: layer._sceneSettledKey, paths: layer.scenePaths } : null;
+      }
       return ok;
     }
 

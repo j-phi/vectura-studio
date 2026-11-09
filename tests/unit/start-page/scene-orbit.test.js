@@ -244,4 +244,16 @@ describe('StartPageSceneOrbit', () => {
     await run(600);
     expect(tile.prepared.length).toBe(1);
   });
+
+  it('no pose render starts within afterDragMs of a release; baking resumes after', async () => {
+    const { el } = await mountScene();
+    await run(1200);
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 100, 100); ptr(ov, 'pointermove', 120, 100); ptr(ov, 'pointerup', 120, 100);
+    const n = renders.length;
+    await run(2200);
+    expect(renders.length).toBe(n);
+    await run(6000);
+    expect(renders.length).toBeGreaterThan(n);
+  });
 });
