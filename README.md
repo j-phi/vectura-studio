@@ -758,6 +758,10 @@ CI lives in `.github/workflows/test.yml`:
 ### Unreleased - Plot-order Play buttons
 - **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
 
+### Unreleased - every angle of a heavy 3D Scene, smooth plates
+- **All 72 angles fit.** A heavy 3D Scene (Mezzotint sphere, box, two objects) now bakes every 5 degrees in 11-23 MB (a few frames stay exact, the rest are compact playback drawings plus a low-res picture each, 40 MB total per scene), so a drag no longer steps 10-20 degrees. Letting go on a compact angle shows it at once and sharpens to the exact drawing a moment later.
+- **Start Page plates stay smooth while they bake.** Scene plates finish each pose in short slices that pause while you scroll or use the page.
+
 ### Unreleased - 3D Scene pre-baked spin
 - **Spin a heavy 3D Scene smoothly.** The editor bakes a selected Scene's exact drawing for 72 angles in background workers and a drag shows the nearest baked frame (about 60 fps); release installs the baked frame nearest your pointer, byte-identical to a normal render (export and plot stats too). Memory per scene is capped (about 24 MB of exact drawings plus 16 MB of pictures; less on a phone, fewer angles under the cap), and baking never blocks editing. A free-orbit drag on a ready ring turns the scene around the vertical axis until you move the pointer vertically by more than 5 degrees of tilt, then the earlier preview takes over (pitch always follows the pointer; the drag snaps to the nearest baked 5 degrees). Paper swatch thumbnails wait for the bake, drag and release to be quiet and fill one swatch at a time. Start Page plates bake their angles ahead around where the piece is now and drag only through baked ones (Up / Down keys render the pitched pose live).
 
