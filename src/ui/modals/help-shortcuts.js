@@ -150,6 +150,12 @@
         the <em>Band pen</em> rows. The rows start on pens 1 to N of the palette. The three-pen styles do the same
         with <strong>Tier pens</strong>. Each pen exports as its own pen group in the SVG, so the plotter changes
         pens between bands. <strong>Layers &rarr; Assign pen</strong> sets the single pen of an object.</p>
+        <p><strong>Turning a heavy scene.</strong> While a Scene is selected and slow to draw, the editor quietly draws it
+        at every 5&deg; of turn in the background (up to a memory limit, so a very heavy scene gets fewer angles). Once those
+        are ready, dragging the orbit pad or the yaw handle snaps to the nearest 5&deg; picture and stays smooth, and letting go
+        keeps that exact angle. The drag turns the scene around the vertical axis: moving the pointer more than 5&deg; of
+        tilt up or down leaves the baked angles for that drag (use the pitch handle or the panel to tilt). Any other
+        edit draws the angles again.</p>
         <p><strong>Hidden edges.</strong> Dashed occluded edges of a wireframe come from <em>Object &rarr; Edge Styles
         &rarr; Hidden &rarr; Occluded</em>. The old <em>Show hidden</em> switch was folded into it.</p>
       </div>`;
