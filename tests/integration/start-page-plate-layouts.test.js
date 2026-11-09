@@ -169,6 +169,9 @@ describe('StartPagePlateLayouts', () => {
   });
 
   it('a 3D Scene keeps its own drawing (the app\'s fills and shadow shapes) and turns it with real renders', async () => {
+    const rectOf = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () { return { width: 300, height: 200, left: 0, top: 0, right: 300, bottom: 200, x: 0, y: 0 }; };
+    try {
     window.eval(SRC('src/ui/start-page/scene-orbit.js'));
     const o3 = []; V.StartPageOrbit3D = { mount: (...a) => { o3.push(a); return null; } };
     const rendered = [];
@@ -184,10 +187,19 @@ describe('StartPagePlateLayouts', () => {
     expect(main._spInk.art.svg).toBe(svg); // exactly the drawing a flat plate shows
     const flat = render('diptych'); document.body.appendChild(flat); await L.mount(flat);
     const body = (n) => n.innerHTML.replace(/sp-g\d+/g, 'sp-g'); // each tile numbers its own gradient
-    // a Scene plate draws its poses as cached bitmaps (ink.useRaster), so it holds a canvas where a flat plate holds the inline SVG;
-    // the drawing both are made from is the same art (asserted above through _spInk.art.svg)
-    expect(main.classList.contains('sp-ink')).toBe(true); // (the harness has no real canvas, so only the flat plate's SVG is inspectable)
-    expect(flat.querySelector('.spl-print .sp-ink-svg')).toBeTruthy();
+    // A Scene plate draws its poses as cached bitmaps (ink.useRaster), so its surface is the tile's canvas where a flat plate holds the
+    // inline SVG. The comparison that matters is therefore on what both are DRAWN FROM and how they are framed: the same art, in the
+    // same window (the flat plate's viewBox is that window), with the same line look.
+    const flatInk = flat.querySelector('.spl-print')._spInk;
+    await Promise.all([main._spInk.ready, flatInk.ready]);
+    expect(main._spInk.art.svg).toBe(flatInk.art.svg);
+    expect(main._spInk.win).toBeTruthy();
+    expect(main.querySelector('canvas.sp-ink-canvas')).toBeTruthy(); // the Scene plate's surface
+    expect(main._spInk.win).toEqual(flatInk.win);
+    expect(flat.querySelector('.spl-print .sp-ink-svg').getAttribute('viewBox')).toBe(flatInk.win.map((v) => +v.toFixed(3)).join(' '));
+    expect(main._spInk.look).toEqual(flatInk.look);
+    expect(main._spInk.fit).toEqual(flatInk.fit);
+    expect(body(flat.querySelector('.spl-print .sp-ink-svg'))).toContain('<path');   // (the flat plate's own svg is the reference surface)
     expect(main._spScene).toBeTruthy();
     expect(main.querySelector('.sp-scene-orbit')).toBeTruthy();
     expect(main.dataset.hint).toBe('Drag to rotate');
@@ -196,6 +208,7 @@ describe('StartPagePlateLayouts', () => {
     L.destroy(el);
     expect(main._spScene).toBeUndefined();
     expect(main.querySelector('.sp-scene-orbit')).toBeNull();
+    } finally { Element.prototype.getBoundingClientRect = rectOf; }
   });
 
   it('knockout fills the word with the art through fillWord', async () => {

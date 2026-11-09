@@ -442,6 +442,12 @@
      * a cached bitmap rather than a fresh raster of its whole drawing. Keyed by the raster size; a resize drops them. */
     const altBmps = new Map(); let ownBmp = null; let altKey = '';
     const rasterKey = () => { const pol = policyFor(h.w, h.h); return `${pol.width}x${pol.height}@${pol.scale}`; };
+    /* An evicted ImageBitmap holds its pixels until closed (garbage collection is not prompt about them), so every drop closes it, unless it is
+     * the one on screen (h.bmp) or the tile's own (ownBmp), which stay live until replaced. */
+    const closeBmp = (b) => { if (b && b !== h.bmp && b !== ownBmp && typeof b.close === 'function') { try { b.close(); } catch (e) { /* already closed */ } } };
+    const dropAlt = (k) => { const b = altBmps.get(k); altBmps.delete(k); closeBmp(b); };
+    const clearAlts = () => { Array.from(altBmps.keys()).forEach(dropAlt); };
+    h._altBmps = altBmps;
     h.raster = () => {
       if (!h.parsed || !h.w || !h.h) return Promise.resolve();
       const gen = ++h._gen; const pol = policyFor(h.w, h.h); const w0 = h.w; const h0 = h.h; const win = h.win;
@@ -452,8 +458,8 @@
         if (!h.alive() || gen !== h._gen) return;
         if (!h.canvas) { h.canvas = D.createElement('canvas'); h.canvas.className = 'sp-ink-canvas'; h.canvas.setAttribute('aria-hidden', 'true'); box.appendChild(h.canvas); }
         h.canvas.width = pol.width; h.canvas.height = pol.height; h.rasterScale = pol.scale; h.bmp = b; h.paint();
-        const key = rasterKey(); if (altKey !== key) { altBmps.clear(); altKey = key; } /* every cached pose was drawn at another size */
-        if (!shown) ownBmp = b; else altBmps.set(shown.art.id, b);
+        const key = rasterKey(); if (altKey !== key) { clearAlts(); altKey = key; } /* every cached pose was drawn at another size */
+        if (!shown) { const old = ownBmp; ownBmp = b; if (old && old !== b) { ownBmp = b; closeBmp(old); } } else { if (altBmps.has(shown.art.id)) dropAlt(shown.art.id); altBmps.set(shown.art.id, b); }
         if (h.colorway.fill && h.colorway.fill.anim && !fillRaf) startFill();
       });
     };
@@ -533,14 +539,14 @@
       if (h.mode === 'svg') return !!altNode(a);
       return parseArt(a).then((parsed) => {
         if (!h.canvas || !h.w || !h.h) return true;
-        const key = rasterKey(); if (altKey !== key) { altBmps.clear(); altKey = key; ownBmp = null; }
+        const key = rasterKey(); if (altKey !== key) { clearAlts(); altKey = key; ownBmp = null; }
         if (altBmps.has(a.id)) return true;
         const pol = policyFor(h.w, h.h);
         return rasterArt(a, parsed, { w: h.w, h: h.h, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win: h.win }).then((b) => {
           if (!h.alive() || altKey !== key) return true;
           altBmps.set(a.id, b);
           const cap = h.altCapacity();
-          for (const k of Array.from(altBmps.keys())) { if (altBmps.size <= cap) break; if (!h.shown || h.shown.art.id !== k) altBmps.delete(k); }
+          for (const k of Array.from(altBmps.keys())) { if (altBmps.size <= cap) break; if (!h.shown || h.shown.art.id !== k) dropAlt(k); }
           return true;
         }, () => true);
       }, () => false);
@@ -576,7 +582,7 @@
     });
     h.shownArt = () => (h.shown ? h.shown.art : art);
     const destroyAlts = h.destroy;
-    h.destroy = () => { alts.clear(); h.shown = null; destroyAlts(); };
+    h.destroy = () => { alts.clear(); h.shown = null; destroyAlts(); const own = ownBmp; const cur = h.bmp; h.bmp = null; ownBmp = null; clearAlts(); [own, cur].forEach((b) => { if (b && typeof b.close === 'function') { try { b.close(); } catch (e) { /* already closed */ } } }); };
 
     if (ro) { resizeTargets.set(box, h); ro.observe(box); }
     h.ready = parseArt(art).then((parsed) => {

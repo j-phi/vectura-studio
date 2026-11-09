@@ -269,4 +269,50 @@ describe('StartPageSceneOrbit', () => {
     expect(renders.length).toBeLessThanOrEqual(8);
     expect(renders.length).toBeGreaterThan(0);
   });
+
+  // ── review fixes (perf/scene3d-instant-drag) ───────────────────────────────────────────────────────────────────────
+  // RED (pre-change): the drag ring was built around the yaw the page FIRST showed (home0), so once turned to its edge nothing
+  // beyond home0 +/- 30 degrees was ever baked and the piece could not be turned further.
+  it('the baked ring follows the turn: after turning to the arc edge the next poses are baked beyond it', async () => {
+    const { el, h } = await mountScene();
+    await run(7000);
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 0, 100);
+    for (let i = 1; i <= 80; i++) { ptr(ov, 'pointermove', i * 4, 100); await run(20); }
+    ptr(ov, 'pointerup', 320, 100);
+    await run(300);
+    const edge = h.home.yaw;
+    expect(edge).toBeLessThan(-55);                                  // turned to the old arc's edge (-32 - 30)
+    const minBefore = Math.min(...renders.map((pl) => pl.state.engine.layers[0].params.camera.yaw));
+    await run(15000);
+    const minAfter = Math.min(...renders.map((pl) => pl.state.engine.layers[0].params.camera.yaw));
+    expect(minAfter).toBeLessThan(minBefore - 8);                     // ring poses (not just the rock's +-6) past the old edge
+    expect(h.stats.drawn).toBeLessThanOrEqual(40);
+    // and a second drag now goes further than the first could
+    ptr(ov, 'pointerdown', 0, 100);
+    for (let i = 1; i <= 80; i++) { ptr(ov, 'pointermove', i * 4, 100); await run(20); }
+    ptr(ov, 'pointerup', 320, 100);
+    expect(h.home.yaw).toBeLessThan(edge - 5);
+  });
+
+  // RED (pre-change): Up / Down were swallowed (`if (!K[0]) return`), so pitch could not be changed from the keyboard.
+  it('Up / Down arrow keys pitch the piece with a live render of that pose', async () => {
+    const { el, h, tile } = await mountScene();
+    await run(300);
+    const ov = el.querySelector('.sp-scene-orbit');
+    const n = renders.length;
+    const ev = new W.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    ov.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await run(800);
+    expect(renders.length).toBeGreaterThan(n);
+    expect(renders.some((pl) => pl.state.engine.layers[0].params.camera.pitch === 17)).toBe(true);
+    expect(h.home.pitch).toBe(17);
+    expect(h.home.yaw).toBe(-32);
+    expect(tile.log[tile.log.length - 1]).toBe(`work:1@${h.poseKey(h.home)}`);
+    ov.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    ov.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    await run(800);
+    expect(h.home.pitch).toBe(27);
+  });
 });

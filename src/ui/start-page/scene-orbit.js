@@ -10,10 +10,10 @@
  *   - idle: after IDLE ms the piece rocks gently (yaw ±SWAY[0]°, pitch ±SWAY[1]°, one back-and-forth per SWAY_P s), stepping
  *     through 2·LEVELS + 1 pre-rendered poses; the rock widens as its poses finish rendering, and parks at home after
  *     SWAY_MAX ms without interaction (pointer enter, focus or scrolling back into view resumes it);
- *   - drag / arrow keys: PRE-BAKED. A ring of poses around home (yaw ±RING° in RING_STEP° steps at home's pitch, plus the rock's fine
+ *   - drag / arrow keys: PRE-BAKED. A ring of poses around the piece's CURRENT yaw, re-centred as it is turned (yaw ±RING° in RING_STEP° steps at home's pitch, plus the rock's fine
  *     poses) is rendered ahead of time (in a worker when there is one), outward from home. A drag only ever shows the nearest pose already
  *     drawn: no render runs on the interaction path, the turn is limited to the baked arc (it widens as poses finish) and the pitch stays at
- *     home's. Releasing makes the shown pose the new home.
+ *     home's (Up / Down arrow keys are a live render of the pitched pose). Releasing makes the shown pose the new home.
  * Cost budget (config START_PAGE.SCENE_ORBIT): every pose render is timed. A scene whose pose takes longer than heavyMs rocks through
  * at most heavyLevels poses each side and bakes a narrower ring (none past haltMs), and does not re-queue a rock after a turn. Rock poses never START within yieldMs of a scroll or a
  * pointer / wheel event, and stop being pre-rendered once the rock has parked (waking it resumes them). Poses are drawn through one
@@ -187,8 +187,11 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
     const parked = (now) => now - lastAct >= IDLE + SWAY_MAX;
     const swayOK = () => visible && !isStill() && !drag && !parked(performance.now());
     const ringPoses = () => {
+      /* The ring is centred on where the piece IS (home snapped to the ring's own grid, so a turn re-uses the poses already drawn and only
+       * the new edge is baked), at home's pitch: the arc follows the turn instead of ending ±RING° from where the page first showed it. */
       const out = []; const lim = lastMs > cfg().haltMs ? 0 : (lastMs > cfg().heavyMs ? RING_HEAVY : RING);
-      for (let a = RING_STEP; a <= lim + 1e-6; a += RING_STEP) for (const sg of [1, -1]) out.push({ yaw: round1(home0.yaw + sg * a), pitch: home0.pitch });
+      const cy = home0.yaw + snap(home.yaw - home0.yaw, RING_STEP);
+      for (let a = RING_STEP; a <= lim + 1e-6; a += RING_STEP) for (const sg of [1, -1]) out.push({ yaw: round1(cy + sg * a), pitch: home.pitch });
       return out;
     };
     function nextWanted() {
@@ -271,7 +274,15 @@ const RING_HEAVY = 10; // the same arc for a scene whose pose takes longer than 
       delete ov.dataset.pointer;
       if (!K || !payload) return; e.preventDefault();
       const s = KEY_STEP * (e.shiftKey ? 2.5 : 1); const base = target || home;
-      if (!K[0]) return; touch(); moveTo({ yaw: base.yaw + K[0] * s, pitch: base.pitch }); settle();
+      touch();
+      if (!K[0]) { /* pitch: only the yaw is baked, so an up / down key is a LIVE render of that pose (shown when it lands) */
+        const pose = { yaw: base.yaw, pitch: round1(clamp(base.pitch + K[1] * s, PITCH[0], PITCH[1])) };
+        if (keyOf(pose) === keyOf(base)) return;
+        target = pose;
+        renderPose(pose).then(() => { if (alive && target === pose) { show(keyOf(pose)); settle(); } }, () => { if (target === pose) target = null; });
+        return;
+      }
+      moveTo({ yaw: base.yaw + K[0] * s, pitch: base.pitch }); settle();
     };
     ov.addEventListener('pointerenter', wake); ov.addEventListener('focus', wake);
     ov.addEventListener('pointerdown', onDown); ov.addEventListener('pointermove', onMove);
