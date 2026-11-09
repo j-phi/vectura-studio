@@ -285,9 +285,41 @@
     }, warmMs);
   };
 
+  // Heavy main-thread work nobody is waiting on (swatch thumbnails) runs one item per task, and only while the editor is not
+  // busy with a Scene spin (a ring baking, a raster slice pending, a rotation drag): a single item can cost 30-90 ms, so it
+  // must never share a frame budget with those. idleSteps(items, fn) calls fn(item) once per task and re-polls every
+  // `pollMs` while busy. Returns a cancel function.
+  const spinBusy = () => {
+    try {
+      const r = window.app && window.app.renderer;
+      return Boolean(r && typeof r.spinBusy === 'function' && r.spinBusy());
+    } catch (_) { return false; }
+  };
+  const idleSteps = (items, fn, opts = {}) => {
+    const queue = Array.from(items || []);
+    const busy = opts.busy || spinBusy;
+    const pollMs = opts.pollMs || 250;
+    const quietMs = opts.quietMs == null ? 1500 : opts.quietMs;   // calm needed after a busy spell (a release must stay clear)
+    let timer = null;
+    let cancelled = false;
+    let wasBusy = false;
+    const step = () => {
+      timer = null;
+      if (cancelled || !queue.length) return;
+      if (busy()) { wasBusy = true; timer = window.setTimeout(step, pollMs); return; }
+      if (wasBusy) { wasBusy = false; timer = window.setTimeout(step, quietMs); return; }
+      try { fn(queue.shift()); } catch (_) { /* a failed swatch stays plain */ }
+      if (queue.length) timer = window.setTimeout(step, 0);
+    };
+    timer = window.setTimeout(step, 0);
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
+  };
+
   UI.utils = {
     editorCovered,
     afterEditorCover,
+    idleSteps,
+    spinBusy,
     editorParked,
     parkTicker,
     scrollCue,

@@ -11835,6 +11835,16 @@
       return acc;
     }
 
+    // True while a Scene spin owns the main thread's frame budget: a rotation drag, a ring still baking, or a raster slice pending.
+    // Deferrable heavy work (paper swatch thumbnails) waits on it.
+    spinBusy() {
+      if (this.rotation3DDrag && this.rotation3DDrag.spin) return true;
+      const st = this._spin;
+      if (!st || !st.ring || st.ring.disposed) return false;
+      if (st.job || st.rasterTimer) return true;
+      return Boolean(st.ring.running && !st.ring.stats.doneAt);
+    }
+
     // Warm the hover / pick caches of the selected, settled Scene while the app is idle, so the first pointer entry does not pay for
     // them (assembleScene for the pick faces, the silhouette hulls). O(1) per draw; one idle task per cache.
     _pickWarm() {
