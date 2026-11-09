@@ -1,7 +1,7 @@
 /*
  * RGR — a Scene orbit drag on a baked ring (Renderer spin mode).
  *  1. Once the ring is baked, a drag composes nothing (counter) and never draws a preview tier: each move snaps the swept
- *     yaw to a baked one and shows that frame's raster; pitch stays at the baked pitch.
+ *     yaw to a baked one and shows that frame's raster;  pitch stays at the baked pitch.
  *  2. Release installs the shown frame: the settled ink equals a normal full render at that yaw (hash) with no compose.
  *  3. The ring is dropped when the scene changes for any reason but yaw, and kept when only yaw changed.
  *  4. Before the ring is ready the drag takes the legacy path (draft/warp) and the pitch is NOT locked.
@@ -46,7 +46,7 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     renderer.draw = () => {};
     renderer.updateCursor = () => {}; renderer.showDragTooltip = () => {}; renderer.hideDragTooltip = () => {};
     // rasters are canvas work; the contract here is WHICH frame is shown, so a raster is a marker
-    renderer._spinRasterBegin = (g, frame) => { frame.raster = { empty: true, bytes: 0, view: { scale: renderer.scale, dpr: renderer.getBackingDpr() } }; return null; };
+    renderer._spinRasterBegin = (g, frame) => { frame.raster = { empty: true, bytes: 0, view: renderer._spinViewNow(g) }; return null; };
     return { engine, renderer, gid, group, child };
   };
   const startRing = async (o) => {
@@ -74,7 +74,7 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     const start = grab(o);
     expect(o.renderer.rotation3DDrag.spin).toBeTruthy();
     for (let i = 1; i <= 8; i++) {
-      o.renderer.apply3DRotationDrag({ clientX: start.x + i * 40, clientY: start.y + i * 5 });
+      o.renderer.apply3DRotationDrag({ clientX: start.x + i * 40, clientY: start.y + (i % 2) * 4 });
       expect(ring.yaws).toContain(o.group.params.camera.yaw);          // always a baked yaw
       expect(o.group.params.camera.pitch).toBe(pitch0);                  // pitch locked
       expect(o.group._spinBlit && o.group._spinBlit.frame.raster).toBeTruthy();
@@ -90,15 +90,12 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     expect(o.engine.sceneComposeStats.spinInstalls).toBe(1);
     expect(o.group._pathsFromDraft).toBe(false);
     expect(o.renderer._sceneSettle).toBeFalsy();                          // no deferred settle compose
-    // identical to a plain full render of the same scene at that yaw
+    // identical to a plain full render of the same scene at that yaw, byte for byte (RED pre-change: frames were Float32)
     const ref = build();
     ref.group.params.camera.yaw = shown.yaw; ref.engine.computeAllDisplayGeometry();
-    // (baked frames are Float32, so equal to float32 precision: < 1e-4 mm)
     const a = o.group.scenePaths; const b = ref.group.scenePaths;
     expect(a.length).toBe(b.length);
-    let worst = 0;
-    a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { worst = Math.max(worst, Math.abs(q.x - b[i][j].x), Math.abs(q.y - b[i][j].y)); }); });
-    expect(worst).toBeLessThan(1e-4);
+    a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { if (q.x !== b[i][j].x || q.y !== b[i][j].y) throw new Error(`path ${i} point ${j} differs`); }); });
     void hashPaths;
     o.renderer._spinDrop(); ref.renderer._spinDrop();
   }, 180000);
@@ -224,6 +221,82 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     o.group._spinShown = null; o.renderer._spin.adoptTried = null;
     o.renderer._spinMaintain();
     expect(o.group._spinShown && o.group._spinShown.frame).toBe(ring.frames.get(0));
+    o.renderer._spinDrop();
+  }, 180000);
+
+  // ── review fixes (perf/scene3d-instant-drag) ───────────────────────────────────────────────────────────────────────
+  // RED (pre-change): a raster was valid for any pan / canvas size / pen / dash / theme (only scale and dpr were compared), so a
+  // panned or re-penned Scene redrew a clipped or wrongly coloured picture.
+  test('a raster is valid only for the view and style it was made in: pan, canvas size, pen colour / width, dash and theme', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    o.renderer._spinMaintain();
+    const f0 = ring.frames.get(0);
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(f0);
+    const flip = (label, change, restore) => {
+      change();
+      expect(o.renderer._spinIdleFrame(o.group), label).toBeNull();
+      restore();
+      expect(o.renderer._spinIdleFrame(o.group), `${label} restored`).toBe(f0);
+    };
+    flip('pan x', () => { o.renderer.offsetX += 7; }, () => { o.renderer.offsetX -= 7; });
+    flip('pan y', () => { o.renderer.offsetY += 3; }, () => { o.renderer.offsetY -= 3; });
+    flip('canvas size', () => { o.renderer.canvas.width += 2; }, () => { o.renderer.canvas.width -= 2; });
+    if (!Array.isArray(V.SETTINGS.pens) || !V.SETTINGS.pens.length) V.SETTINGS.pens = [{ id: 'pen-1', name: 'Pen 1', color: '#000000', width: 0.3 }];
+    const pen = V.SETTINGS.pens[0];
+    const c0 = pen.color; const w0 = pen.width;
+    flip('pen colour', () => { pen.color = '#ff0000'; }, () => { pen.color = c0; });
+    flip('pen width', () => { pen.width = w0 + 0.2; }, () => { pen.width = w0; });
+    flip('layer dash', () => { o.group.dash = { enabled: true, pattern: [2, 1] }; }, () => { delete o.group.dash; });
+    const ui0 = V.SETTINGS.uiTheme;
+    flip('theme (uiTheme)', () => { V.SETTINGS.uiTheme = 'zz-test-theme'; }, () => { V.SETTINGS.uiTheme = ui0; });
+    flip('theme (root attribute)', () => { runtime.window.document.documentElement.setAttribute('data-theme', 'sepia-test'); }, () => { runtime.window.document.documentElement.removeAttribute('data-theme'); });
+    o.renderer._spinDrop();
+  }, 180000);
+
+  // RED (pre-change): release installed the nearest frame THAT HAD A RASTER (any distance away), not the frame nearest the pointer.
+  test('release installs the vector frame nearest the pointer even when its raster is not made yet', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    const start = grab(o);
+    const yaw0 = o.group.params.camera.yaw;
+    const target = ring.frameAt(yaw0 + 80);                              // the pointer ends 80 degrees round: nearest is the +90 frame
+    const others = Array.from(ring.frames.values()).filter((f) => f !== target);
+    expect(target.yaw).not.toBe(yaw0);
+    o.renderer.apply3DRotationDrag({ clientX: start.x + Math.round(40 / 0.45), clientY: start.y });
+    target.raster = null;                                                 // its raster has not been made (evicted / still slicing)
+    o.renderer.apply3DRotationDrag({ clientX: start.x + Math.round(80 / 0.45), clientY: start.y });
+    expect(o.group._spinBlit.frame).not.toBe(target);                    // a neighbour's raster is on screen meanwhile
+    expect(others).toContain(o.group._spinBlit.frame);
+    expect(o.group.params.camera.yaw).toBe(target.yaw);
+    o.renderer.end3DRotationDrag();
+    expect(o.group.params.camera.yaw).toBe(target.yaw);
+    expect(o.group._sceneSettledKey).toBe(target.key);
+    expect(o.group._spinShown.frame).toBe(target);
+    expect(o.group._spinShown.hold).toBeTruthy();
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(o.group._spinShown.hold);   // the stand-in, until the real raster lands
+    target.raster = { empty: true, bytes: 0, view: o.renderer._spinViewNow(o.group) };
+    expect(o.renderer._spinIdleFrame(o.group)).toBe(target);
+    o.renderer._spinDrop();
+  }, 180000);
+
+  // The pitch rule: pitch always follows the pointer. A free-orbit drag on a ready ring holds the baked pitch only while the pointer's
+  // pitch stays within SPIN_PITCH_EPS of the gesture's start; past that the gesture runs on the legacy tiers with the pointer's pitch.
+  // RED (pre-change): the pitch was locked for the whole gesture whenever the ring was ready, and followed the pointer when it was not.
+  test('pitch rule: a ready ring holds pitch within the dead zone, and a deliberate vertical move releases to the legacy path', async () => {
+    const o = build();
+    const ring = await startRing(o);
+    const pitch0 = o.group.params.camera.pitch;
+    const start = grab(o);
+    o.renderer.apply3DRotationDrag({ clientX: start.x + 30, clientY: start.y + 6 });   // 6 px = 2.7 degrees: inside the zone
+    expect(o.renderer.rotation3DDrag.spin).toBeTruthy();
+    expect(o.group.params.camera.pitch).toBe(pitch0);
+    o.renderer.apply3DRotationDrag({ clientX: start.x + 40, clientY: start.y - 60 });  // 27 degrees: outside
+    expect(o.renderer.rotation3DDrag.spin).toBeNull();
+    expect(o.group._spinBlit).toBeNull();
+    expect(o.group.params.camera.pitch).toBeGreaterThan(pitch0 + 20);                     // the pointer's pitch, same as with no ring
+    o.renderer.end3DRotationDrag();
+    expect(ring.disposed).toBe(false);
     o.renderer._spinDrop();
   }, 180000);
 });
