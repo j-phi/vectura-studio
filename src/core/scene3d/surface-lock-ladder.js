@@ -721,7 +721,7 @@
       toneModel: dots ? 'area' : 'pitch',
       scaleRef: r.scaleRef,
       minMarkMM: 2 * r.pen,
-      minSepFrac: C.MIN_SEP_FRAC,
+      sepBarFrac: C.MIN_SEP_FRAC, // O3: informational spacing bar only; no minSepFrac, so the frame cap never thins the ladder
       bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Math.sqrt(rmax2) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
       convex: typeof spec.convex === 'boolean' ? spec.convex : Boolean(CONVEX_MODES[mode]),
       levelsDesigned: L,

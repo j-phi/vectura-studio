@@ -321,14 +321,17 @@ describe('SurfaceLockLadder', () => {
         if (mapper === 'hatch') expect(shared).toBeGreaterThan(0);
       });
     });
-    it('bounds.radius is the true max |p| (<= 1.001 R), and minSepFrac is declared', () => {
+    it('bounds.radius is the true max |p| (<= 1.001 R), and the ladder keeps the current density (O3)', () => {
       const ms = bake(sphere('hatch'));
       let mx = 0;
       for (let v = 0; v < ms.vertexCount; v++) mx = Math.max(mx, Math.hypot(ms.positions[3 * v], ms.positions[3 * v + 1], ms.positions[3 * v + 2]));
       expect(ms.meta.bounds.radius).toBeLessThanOrEqual(20 * 1.001);
       expect(ms.meta.bounds.radius).toBeCloseTo(mx, 4);
-      expect(ms.meta.minSepFrac).toBeGreaterThan(0.5);
-      expect(ms.meta.minSepFrac).toBeLessThanOrEqual(1);
+      // Owner decision O3: the ladder keeps today's density, so it must not declare
+      // minSepFrac (the frame cap would thin it). Its own spacing bar is sepBarFrac.
+      expect(ms.meta.minSepFrac).toBeUndefined();
+      expect(ms.meta.sepBarFrac).toBeGreaterThan(0.5);
+      expect(ms.meta.sepBarFrac).toBeLessThanOrEqual(1);
     });
     it('default sphere hatch keeps ink within 5% of 1077 mm and bakes within budget', () => {
       const t = Date.now(); const ms = L.bake(sphere('hatch', { seed: { salt: 2 } })); const dt = Date.now() - t;
