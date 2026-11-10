@@ -11,13 +11,15 @@ const LAWS = [
 ];
 
 describe('surface lock Level F dispatch', () => {
-  let rt; let V; let SL;
+  let rt; let V; let SL; let realFrameable;
   let R; // the default sphere's radius, read from the leaf the engine creates (never a literal)
   beforeAll(async () => {
     rt = await loadSurfaceLockRuntime(); V = rt.V; SL = V.Scene3D.SurfaceLock;
+    // This file guards Level F (the per-object dispatch); a default sphere is now Level S (scene3d-surface-lock-scene-frame), so switch it off here.
+    realFrameable = SL.frameable; SL.frameable = () => false;
     R = buildSurfaceLockScene(V, { kind: 'sphere', ground: false, shadow: false }).objectsOf()[0].params.params.radius;
   });
-  afterAll(() => rt && rt.cleanup());
+  afterAll(() => { SL.frameable = realFrameable; if (rt) rt.cleanup(); });
 
   const build = (law, extra = {}) => buildSurfaceLockScene(V, {
     kind: 'sphere', toneLaw: law, mapper: 'hatch', markSpace: 'surface', shadow: false, ground: false, ...extra,

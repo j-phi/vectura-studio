@@ -53,7 +53,7 @@
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
     culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0,
-    bakeErrors: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
+    bakeErrors: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
   // The cache counters describe live state, not events: resetStats keeps them in step with the cache.
@@ -531,6 +531,8 @@
     visibility: obj.visibility,
     emissiveCoreBlank: !!(obj.emissive && obj.emissive.enabled && obj.emissive.coreBlank),
     areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
+    // Conservative: the pose path builds its shadow-receive occluder from this flag, so any scene asking for it is pose until W3-C.
+    receiveShadow: !!(p.shadow && p.shadow.shadowReceiveOnObjects),
   });
   const FRAMEABLE = Object.freeze([
     { id: 'hasObjects', test: (p) => Array.isArray(p.objects) && p.objects.length > 0 },
@@ -538,19 +540,39 @@
     { id: 'noBackdrop', test: (p) => !(p.backdrop && p.backdrop.enabled) },
     { id: 'lights', test: (p) => (p.lights || []).every((l) => l && (l.type === 'directional' || l.type === 'ambient')) },
     { id: 'noBorderEmissiveXray', test: (p) => p.objects.every((o) => !(o.border && o.border.enabled) && !(o.emissive && o.emissive.enabled) && o.visibility !== 'xray') },
-    { id: 'edgesDropHidden', test: (p) => !(p.edgeStyles && p.edgeStyles.hidden && p.edgeStyles.hidden.hiddenTreatment && p.edgeStyles.hidden.hiddenTreatment !== 'drop') },
+    {
+      id: 'edgesDropHidden',
+      test: (p) => {
+        const dashes = (h) => !!(h && h.hiddenTreatment && h.hiddenTreatment !== 'drop');
+        if (p.edgeStyles && dashes(p.edgeStyles.hidden)) return false;
+        const by = p.edgeStylesByObject;
+        return !(by && typeof by === 'object' && Object.keys(by).some((id) => by[id] && dashes(by[id].hidden)));
+      },
+    },
     { id: 'noFaceStyles', test: (p) => !(p.styleTable && p.styleTable.byFace && Object.keys(p.styleTable.byFace).length) },
     { id: 'visibilitySupports', test: (p) => { const V = Scene3D.SurfaceLockVisibility; return !!V && typeof V.supports === 'function' && p.objects.every((o) => V.supports(o)); } },
     {
       id: 'fillsLocked',
       test: (p, bounds) => p.objects.every((o) => {
         const st = objectStyleOf(p, o.id);
+        if (st.mapper === 'wireframe') return false; // the mesh edges are not framed
         if (isMapperNoFill(st.mapper)) return true;
         if (st.mapper === 'contourSlice') return false;
         const spec = specOfObject(p, o, bounds, null);
         return effectiveMarkSpace(st.params, Object.assign(exclusionCtx(p, o), { spec, mapper: st.mapper })) === 'surface';
       }),
     },
+    // The ground plate draws its outline only: a fill style on the scene (which the ground inherits) is a pose look.
+    {
+      id: 'groundNoFill',
+      test: (p) => {
+        if (!p.ground || p.ground.enabled === false) return true;
+        const m = objectStyleOf(p, 'ground').mapper;
+        return !m || m === 'none' || m === 'wireframe';
+      },
+    },
+    // A scene with no surface-locked fill stays pose, byte-identical (its outlines and shadow are the pose path's).
+    { id: 'hasLockedFill', test: (p) => p.objects.some((o) => !isMapperNoFill(objectStyleOf(p, o.id).mapper)) },
     {
       id: 'shadow',
       test: (p) => {
@@ -635,53 +657,66 @@
     const GROUND_SEG = { obj: -1, mode: 'fill' };
 
     // 1. shadow, then the ground outline (world-fixed)
+    const cam = p.camera || {};
+    const groundOn = !!(p.ground && p.ground.enabled !== false);
     if (shadowOn) {
       const seed = seedOf('ground');
-      const cam = p.camera || {};
       const persp = camPose.cam.persp;
       const scaleRef = Math.pow(2, Math.round(Math.log2(Math.max(1e-6, num(cam.zoom, 1) * (persp ? camPose.cam.focal / (camPose.cam.focal + camPose.cam.dist) : 1)))));
       const gspec = { width: num(bounds && bounds.width, 200), height: num(bounds && bounds.height, 200), scaleX: num(p.ground.scaleX, 1), scaleZ: num(p.ground.scaleZ, 1), scaleRef };
       const hatch = auxGet(1, JSON.stringify([gspec, p.shadow, penWidth, seed]), () => Sh.bakeGround(gspec, p.shadow, penWidth, seed));
       const L = Scene3D.Lighting;
       const dir = ctx.lightDirWorld || (L && L.lightWorldDir ? L.lightWorldDir(sun) : { x: 0, y: -1, z: 0 });
-      const casters = objects.map((o, i) => casterOf(o, meshes[i], poses[i]));
+      // A per-object cast toggle (obj.shadow.enabled === false) drops that object's shadow, as Shadows.build does.
+      const casting = objects.map((o, i) => i).filter((i) => !(objects[i].shadow && objects[i].shadow.enabled === false));
+      const casters = casting.map((i) => casterOf(objects[i], meshes[i], poses[i]));
       const res = Sh.frameShadow(hatch, casters, dir, camPose);
       if (res && res.runs && res.runs.length) {
         const out = [];
         res.runs.forEach((r) => clipLine(r.pts, GROUND_SEG, false).forEach((q) => out.push(q)));
-        if (out.length) ctx.emitShadow(out);
+        if (out.length) ctx.emitShadow(out, { footprints: res.footprints || [], casterIds: casting.map((i) => objects[i].id), camPose });
       }
-      if (typeof ctx.emitGround === 'function') {
-        const span = Math.max(gspec.width, gspec.height) * 0.75;
-        const hx = span * Math.max(0, gspec.scaleX); const hz = span * Math.max(0, gspec.scaleZ);
-        const corners = [[-hx, hz], [hx, hz], [hx, -hz], [-hx, -hz], [-hx, hz]].map((c) => Scene3D.Scene.projectWorldPoint({ x: c[0], y: 0, z: c[1] }, cam, bounds));
-        if (corners.every((c) => c)) {
-          const out = clipLine(corners, GROUND_SEG, false);
-          if (out.length) ctx.emitGround(out);
-        }
+    }
+    if (groundOn && typeof ctx.emitGround === 'function') {
+      const gw = num(bounds && bounds.width, 200); const gh = num(bounds && bounds.height, 200);
+      const span = Math.max(gw, gh) * 0.75;
+      const hx = span * Math.max(0, num(p.ground.scaleX, 1)); const hz = span * Math.max(0, num(p.ground.scaleZ, 1));
+      const corners = [[-hx, hz], [hx, hz], [hx, -hz], [-hx, -hz], [-hx, hz]].map((c) => Scene3D.Scene.projectWorldPoint({ x: c[0], y: 0, z: c[1] }, cam, bounds));
+      if (corners.every((c) => c)) {
+        const out = clipLine(corners, GROUND_SEG, false);
+        if (out.length) ctx.emitGround(out);
       }
     }
 
     // 2. per object: fills then edges
+    let complete = true;
     objects.forEach((o, i) => {
       const st = objectStyleOf(p, o.id);
       if (!isMapperNoFill(st.mapper)) {
         const spec = specOfObject(p, o, bounds, seedOf(o.id));
-        if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec));
+        if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, meshes[i]));
         const ms = bake(spec);
         if (ms) {
           const toneCtx = { tone: p.tone, penWidth, noHighlight: !!(spec.noHighlight) };
           const tone = toneTable(spec, toneCtx);
-          const lines = frame([ms], poses[i], { toneFn: ctx.toneFnFor(o.id), tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off });
-          const seg = occ ? occ.segFor(meshes[i]) : null;
+          const toneKey = typeof ctx.toneKeyFor === 'function' ? ctx.toneKeyFor(o.id, o) : null;
+          const lines = frame([ms], poses[i], { toneFn: ctx.toneFnFor(o.id), toneKey, tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off });
+          // A lone convex object never occludes its own marks (contract §7): the buffer exists for the shadow, so
+          // its fills skip the per-vertex test.
+          const clipFills = !!occ && (objects.length > 1 || !meshes[i].convex);
+          const seg = clipFills ? occ.segFor(meshes[i]) : null;
           const runs = [];
-          lines.forEach((line) => {
-            const a = line[0]; const b = line[line.length - 1];
-            const closed = line.length > 3 && Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9;
-            clipLine(line, seg, closed).forEach((q) => runs.push(q));
-          });
+          if (!clipFills) {
+            for (let k = 0; k < lines.length; k++) runs.push({ pts: lines[k], visible: true });
+          } else {
+            lines.forEach((line) => {
+              const a = line[0]; const b = line[line.length - 1];
+              const closed = line.length > 3 && Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9;
+              clipLine(line, seg, closed).forEach((q) => runs.push(q));
+            });
+          }
           if (runs.length) ctx.emitFill(o.id, runs);
-        }
+        } else complete = false; // no baker (or a throwing one): the caller renders this scene in pose mode
       }
       if (Vis && typeof Vis.outline === 'function') {
         const ol = Vis.outline(meshes[i], poses[i], occ) || {};
@@ -692,7 +727,7 @@
     });
     const dt = now() - t0;
     stats.msFrameLast = dt;
-    return undefined;
+    return complete ? undefined : false;
   };
 
   Scene3D.SurfaceLock = {

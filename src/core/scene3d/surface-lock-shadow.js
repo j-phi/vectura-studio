@@ -508,7 +508,22 @@
       }
       emit(cs, ce);
     }
-    return { world: Float64Array.from(world), runs };
+    return { world: Float64Array.from(world), runs, footprints: prepared.map((pc) => footprintRing(pc.fp)) };
+  };
+
+  // The world (x, z) ring of a prepared footprint, CCW: the picking polygon of a cast shadow (pose mode emits the same
+  // region ring as `pickPolygon`). An ellipse is sampled at 48 points; a hull is its ring.
+  const footprintRing = (fp) => {
+    if (!fp) return [];
+    if (fp.kind === 'ellipse') {
+      const n = 48; const ring = [];
+      for (let k = 0; k < n; k += 1) {
+        const a = (k / n) * 2 * Math.PI; const ca = Math.cos(a) * fp.A; const sb = Math.sin(a) * fp.B;
+        ring.push({ x: fp.cx + fp.hx * ca + fp.px * sb, z: fp.cz + fp.hz * ca + fp.pz * sb });
+      }
+      return ring;
+    }
+    return (fp.ring || []).map((q) => ({ x: q.x, z: q.z }));
   };
 
   Scene3D.SurfaceLockShadow = {

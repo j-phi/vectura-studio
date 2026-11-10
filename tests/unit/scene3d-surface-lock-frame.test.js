@@ -306,9 +306,12 @@ describe('surface lock frame pipeline', () => {
           camera: { ...CAM, yaw: -30, pitch: 20 },
           lights: [{ type: 'directional', azimuth: 135, elevation: 45, castShadows: true }],
           ground: { enabled: true }, shadow: {}, backdrop: { enabled: false }, groups: [], tone: {},
-          styleTable: { scene: { mapper: 'hatch', params: { markSpace: 'surface', toneLaw: 'ladder' } }, byObject: {}, byFace: {} },
+          // the ground inherits the scene style, so it needs its own: a filled ground is a pose look (groundNoFill)
+          styleTable: { scene: { mapper: 'hatch', params: { markSpace: 'surface', toneLaw: 'ladder' } }, byObject: { ground: { mapper: 'none', params: {} } }, byFace: {} },
         };
         expect(SL.frameable(p, BOUNDS)).toBe(true);
+        const fg = JSON.parse(JSON.stringify(p)); delete fg.styleTable.byObject.ground;
+        expect(SL.frameable(fg, BOUNDS)).toBe(false);
         const bad = JSON.parse(JSON.stringify(p)); bad.lights.push({ type: 'point' });
         expect(SL.frameable(bad, BOUNDS)).toBe(false);
         const bad2 = JSON.parse(JSON.stringify(p)); bad2.objects[1].visibility = 'xray';
