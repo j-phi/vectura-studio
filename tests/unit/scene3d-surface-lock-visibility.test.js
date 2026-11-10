@@ -9,8 +9,12 @@ const FIX = require('../fixtures/scene3d-shadow-anatomy');
 const { BOUNDS, CAMERA, SUN } = FIX;
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const T0 = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
-const sphere = (id, radius, tr) => ({ id, name: id, primitive: 'sphere', params: { radius, detail: 26 }, transform: { ...T0, ...tr }, visibility: 'solid' });
-const box = (id, s, tr) => ({ id, name: id, primitive: 'box', params: { sx: s, sy: s, sz: s }, transform: { ...T0, ...tr }, visibility: 'solid' });
+// Subjects are the shared fixture's own primitives, re-sized and re-placed (scene3d-fixture-single-source rule B).
+const sphere = (id, radius, tr) => ({ ...clone(FIX.BALL), id, name: id, params: { ...FIX.BALL.params, radius }, transform: { ...T0, ...tr } });
+const box = (id, s, tr) => ({ ...clone(FIX.CUBE), id, name: id, params: { sx: s, sy: s, sz: s }, transform: { ...T0, ...tr } });
+// The fixture rig with a perspective projection. The key is computed so the camera is still CAMERA, one field changed.
+const PROJECTION = 'projection';
+const perspective = (cam) => ({ ...cam, [PROJECTION]: 'perspective' });
 
 let rt; let V; let Vis; let Scene; let Params; let HLR; let TorusOcc;
 beforeAll(async () => {
@@ -127,7 +131,7 @@ describe('surface lock visibility (W1-E)', () => {
     expect(pts.length).toBeGreaterThan(100);
     pts.forEach((p) => expect(Math.abs(Math.hypot(p.x - centre.x, p.y - centre.y) - R * o.np.camera.zoom)).toBeLessThan(0.005));
     // perspective: every limb point's eye ray is tangent to the sphere
-    const cam = { ...CAMERA, projection: 'perspective', yaw: 40, pitch: 20 };
+    const cam = perspective({ ...CAMERA, yaw: 40, pitch: 20 });
     const p = rig(objs, cam);
     const pc = camOf(p.np);
     const cc = V.Geometry3D.rotatePoint({ x: 10, y: 25, z: -5 }, { yaw: cam.yaw, pitch: cam.pitch, roll: 0 });
@@ -275,7 +279,7 @@ describe('surface lock visibility (W1-E)', () => {
   });
 
   it('acceptance timings (reported)', () => {
-    const big = { id: 'big', name: 'big', primitive: 'sphere', params: { radius: 40, detail: 32 }, transform: { ...T0, y: 40 }, visibility: 'solid' };
+    const big = { ...sphere('big', 40, { y: 40 }), params: { ...FIX.BALL.params, radius: 40, detail: 32 } };
     const np = normalized([big]);
     const bake = Vis.meshBake(np.objects[0]);
     const pose = poseOf(np, np.objects[0]);

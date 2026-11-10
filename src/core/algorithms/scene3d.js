@@ -1769,6 +1769,9 @@
       // reassigned per record from that object's own style; null is the
       // identity, so an untouched style is byte-identical (Regions.toneShapeOf).
       let activeToneShape = null;
+      // G2 — the surface-lock twin of activeToneShape: same shape, gated on lockToneOn (tone enabled), never on the
+      // draft tier, so a drag frame shapes the tone exactly as the settled frame and the export do.
+      let lockToneShape = null;
       let sceneDepth = null;
       const depthContext = () => {
         if (sceneDepth) return sceneDepth;
@@ -1796,7 +1799,10 @@
       // `!draft` gate, so a drag frame and the settled frame (and the export) compose the same fill.
       const lockToneOn = Boolean(p.tone && p.tone.enabled && Regions && lightDir);
       const lockToneFn = lockToneOn
-        ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        ? (nw, wp) => {
+          const I = Regions.combinedIntensity(nw, wp, activeLights, shadowFn);
+          return lockToneShape ? Regions.shapeTone(I, wp, lockToneShape) : I;
+        }
         : null;
 
       // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
@@ -4283,6 +4289,8 @@
           const toneSp = (resolveStyle(record.id, null) || {}).params;
           activeToneShape = toneOn
             ? Regions.toneShapeOf(toneSp, toneSp && toneSp.depthFade === true ? depthContext() : null) : null;
+          lockToneShape = lockToneOn
+            ? Regions.toneShapeOf(toneSp, toneSp && toneSp.depthFade === true ? depthContext() : null) : null;
         }
         // Emissive self-render config for this object (never the ground).
         const emSrc = objById.get(record.id);
@@ -4822,6 +4830,27 @@
           // (no per-point front support plane on a wrapped surface — design v1).
           const curveBounds = objDepthBounds(record);
           const groups = new Map();
+          // Faces only share a continuous fill region when every parameter that STEERS that fill matches; this is
+          // that key (also read, over ALL faces, by the surface-lock face-style gate below).
+          const fillStyleKey = (st) => {
+            const sp = st.params || {};
+            // The crosshatch family-B controls join the key; for any other mapper they are absent and contribute a
+            // constant suffix (same partition, same output).
+            const crossKey = st.mapper === 'crosshatch'
+              ? `|${finite(sp.crossAngleDelta, 90)}|${finite(sp.crossDensityRatio, 1)}|${sp.tripleHatch === true}` : '';
+            return `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}${crossKey}`;
+          };
+          // G8 — POSE-INDEPENDENT: groups above are built from FRONT faces only, so a back-side override would flip
+          // the surface-lock gate mid-orbit. True when the object carries any per-face style override, or more than
+          // one distinct fill style over ALL its faces.
+          const objectHasFaceStyles = () => {
+            const byFace = styleTable && styleTable.byFace;
+            const prefix = `${record.id}/`;
+            if (byFace && Object.keys(byFace).some((k) => k.startsWith(prefix))) return true;
+            const keys = new Set();
+            record.faces.forEach((face) => { keys.add(fillStyleKey(styleOf(face))); });
+            return keys.size > 1;
+          };
           record.faces.forEach((face, idx) => {
             if (!face.front) return;
             // A face whose SCREEN-SPACE projection is edge-on (zero width —
@@ -4854,9 +4883,7 @@
             // output), and two crosshatch faces only split when they genuinely
             // disagree (which used to render one of them with the other's
             // crossing family).
-            const crossKey = st.mapper === 'crosshatch'
-              ? `|${finite(sp.crossAngleDelta, 90)}|${finite(sp.crossDensityRatio, 1)}|${sp.tripleHatch === true}` : '';
-            const key = `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}${crossKey}`;
+            const key = fillStyleKey(st);
             let g = groups.get(key);
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
@@ -4945,12 +4972,14 @@
             // lines; the clip/emit loop below is unchanged. null (not eligible, no baker, a bake error) falls
             // through to today's path. Deliberately not gated on `draft`.
             const SurfaceLock = Vectura.Scene3D.SurfaceLock;
-            if (sp.markSpace === 'surface' && SurfaceLock && SurfaceFill && groups.size === 1
+            const lockFaceStyles = sp.markSpace === 'surface' ? objectHasFaceStyles() : false;
+            if (sp.markSpace === 'surface' && SurfaceLock && SurfaceFill && groups.size <= 1 && !lockFaceStyles
               && !spiralFlatClip && !contourRegion) {
               const lockObj = objById.get(record.id);
               const spec = surfaceLockSpec(record, lockObj, g, sp);
               if (spec && SurfaceLock.effectiveMarkSpace(sp, {
                 spec,
+                faceStyles: lockFaceStyles,
                 mapper: g.style.mapper,
                 visibility: record.visibility,
                 emissiveCoreBlank,
@@ -4960,10 +4989,18 @@
               }) === 'surface') {
                 const ms = SurfaceLock.bake(spec);
                 if (ms) {
+                  // toneKey: identifies everything the tone function reads besides the camera, so a frame may reuse
+                  // evaluations across camera moves (FX-A). null (never reuse) under a shadow caster or a depth fade.
+                  const lt = lockObj.transform || {};
+                  const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
+                    ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
+                      lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
+                    : null;
                   lines = SurfaceLock.frame([ms],
                     SurfaceLock.poseOf(lockObj.transform, p.camera, bounds),
                     {
                       toneFn: lockToneFn,
+                      toneKey,
                       tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: grpHLOff }),
                       penWidth,
                       objectId: record.id,
