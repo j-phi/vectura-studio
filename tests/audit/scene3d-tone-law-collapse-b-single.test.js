@@ -408,7 +408,7 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
         byFace: {},
       },
     });
-    expect(sanitized.sceneVersion).toBe(5); // no SCENE_VERSION bump — see plan §2.3
+    expect(sanitized.sceneVersion).toBe(6); // SCENE_VERSION 6 (markSpace pose stamp, contract §12)
     const migrated = sanitized.styleTable.byObject['obj-1'].params;
     expect(migrated.toneLaw).toBe('ladder');
     expect(migrated.rungMode).toBe('fine');
