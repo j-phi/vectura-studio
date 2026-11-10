@@ -1687,6 +1687,31 @@
           : { sx: finite(pr.sx, 20), sy: finite(pr.sy, 20), sz: finite(pr.sz, 20) };
         return { mode, sizes, detail };
       };
+      // Surface-locked fills (docs/surface-lock-contract.md §8-§9): the BakeSpec for one object's style group.
+      // Pose-free by construction: nothing here reads the camera yaw/pitch, the light or the draft tier, so the
+      // bake key (and the cache hit) survives every drag frame. Shared with Level S through `ctx.specFor`.
+      const surfaceLockSpec = (record, obj, g, sp) => {
+        const cp = obj ? curvedChartParams(obj) : null;
+        if (!cp) return null;
+        const t = (obj && obj.transform) || {};
+        const s0 = finite(t.scale, 1);
+        const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp)) };
+        delete style.markSpace;
+        // Same zoom reference the camera applies (Scene.buildProjOpts): snapped to a power of two so a wheel zoom
+        // inside one octave keeps the bake.
+        const po = Scene.buildProjOpts(p.camera, { width: bounds.width, height: bounds.height });
+        const persp = Number.isFinite(po.focal) && po.focal > 0;
+        const dist = persp ? finite(po.cameraDist, 0) : 0;
+        const eff = po.scale * (persp ? po.focal / (po.focal + dist) : 1);
+        return {
+          objectId: record.id, primitive: obj.primitive, mode: cp.mode, sizes: cp.sizes, detail: cp.detail,
+          scale: { sx: finite(t.sx, s0), sy: finite(t.sy, s0), sz: finite(t.sz, s0) },
+          mapper: g.style.mapper, toneLaw: Params.resolveToneLaw(sp), style,
+          penWidth: finite(bounds.penWidth, 0.3), convex: record.convex,
+          scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
+          seed: G3.snapshotSeedState(),
+        };
+      };
       const light = (p.lights && p.lights[0]) || {};
       const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
         ? Lighting.lightWorldDir(light) : null;
@@ -1765,6 +1790,12 @@
       };
       const shapeIntensity = (I, wp) => (activeToneShape ? Regions.shapeTone(I, wp, activeToneShape) : I);
       const intensityFn = toneOn
+        ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        : null;
+      // Surface-locked fills read the tone but never the draft tier: the same formula as intensityFn without the
+      // `!draft` gate, so a drag frame and the settled frame (and the export) compose the same fill.
+      const lockToneOn = Boolean(p.tone && p.tone.enabled && Regions && lightDir);
+      const lockToneFn = lockToneOn
         ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
         : null;
 
@@ -4910,7 +4941,37 @@
             const hlActive = toneOn && !grpHLOff && (grpHL.treatment !== 'blank' || grpLD);
             // Shadow sensitivity applies in BOTH modes (default 1 = no-op).
             const grpShadowSens = toneOn ? grpHL.shadowSensitivity : 1;
-            if (chartParams) {
+            // Surface-locked fill (contract §12): a baked MarkSet framed for this pose. It replaces buildObject's
+            // lines; the clip/emit loop below is unchanged. null (not eligible, no baker, a bake error) falls
+            // through to today's path. Deliberately not gated on `draft`.
+            const SurfaceLock = Vectura.Scene3D.SurfaceLock;
+            if (sp.markSpace === 'surface' && SurfaceLock && SurfaceFill && groups.size === 1
+              && !spiralFlatClip && !contourRegion) {
+              const lockObj = objById.get(record.id);
+              const spec = surfaceLockSpec(record, lockObj, g, sp);
+              if (spec && SurfaceLock.effectiveMarkSpace(sp, {
+                spec,
+                mapper: g.style.mapper,
+                visibility: record.visibility,
+                emissiveCoreBlank,
+                csgCarve: record.primitive === 'csg',
+                receiveShadow: typeof shadowFn === 'function',
+                areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
+              }) === 'surface') {
+                const ms = SurfaceLock.bake(spec);
+                if (ms) {
+                  lines = SurfaceLock.frame([ms],
+                    SurfaceLock.poseOf(lockObj.transform, p.camera, bounds),
+                    {
+                      toneFn: lockToneFn,
+                      tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: grpHLOff }),
+                      penWidth,
+                      objectId: record.id,
+                    });
+                }
+              }
+            }
+            if (chartParams && !lines) {
               lines = SurfaceFill.buildObject({
                 mode: chartParams.mode,
                 sizes: chartParams.sizes,
