@@ -342,6 +342,48 @@ describe('SurfaceLockLadder', () => {
     });
   });
 
+  describe('relabel stubs and cut fronts (FX-R, H3)', () => {
+    const keyOf = (ms, v) => `${ms.positions[3 * v].toFixed(5)},${ms.positions[3 * v + 1].toFixed(5)},${ms.positions[3 * v + 2].toFixed(5)}`;
+    // Runs of one ruling chain through a shared vertex (FX-L). A run is "interior" when BOTH its ends are shared with another run.
+    const chains = (ms) => {
+      const starts = new Map(); const ends = new Map();
+      for (let r = 0; r < ms.runCount; r++) { starts.set(keyOf(ms, ms.runStart[r]), r); ends.set(keyOf(ms, ms.runStart[r + 1] - 1), r); }
+      const interior = []; const shared = [];
+      for (let r = 0; r < ms.runCount; r++) {
+        const a = keyOf(ms, ms.runStart[r]); const b = keyOf(ms, ms.runStart[r + 1] - 1);
+        if (ends.has(a) && ends.get(a) !== r && starts.has(b) && starts.get(b) !== r) interior.push(r);
+        if (starts.has(b) && starts.get(b) !== r) shared.push(b);
+      }
+      return { interior, shared };
+    };
+    it('no interior run (both ends shared with a neighbour) is shorter than RELABEL_MIN_MM = 4 mm', () => {
+      const ms = bake(sphere('hatch'));
+      const { interior } = chains(ms);
+      expect(interior.length).toBeGreaterThan(20);
+      const short = interior.filter((r) => runLen(ms, r) < 4 - 1e-6).map((r) => runLen(ms, r).toFixed(2));
+      expect(short, `short interior runs: ${short.join(' ')}`).toEqual([]);
+    });
+    it('the +-48 degree relabel front is staggered: its shared ends spread over >= 3 degrees of latitude', () => {
+      const spec = sphere('hatch');
+      const ms = bake(spec);
+      const M = V.Scene3D.SurfaceLockChart.metric(spec.mode, spec.sizes, spec.scale);
+      const [pa, pb] = [M.sample(0, 0.3), M.sample(1, 0.3)];
+      const ax = [pb.x - pa.x, pb.y - pa.y, pb.z - pa.z]; const al = Math.hypot(...ax);
+      const lats = chains(ms).shared.map((k) => {
+        const p = k.split(',').map(Number);
+        return (Math.asin((p[0] * ax[0] + p[1] * ax[1] + p[2] * ax[2]) / (al * Math.hypot(...p))) * 180) / Math.PI;
+      }).filter((d) => d > 40 && d < 56);
+      expect(lats.length).toBeGreaterThan(8);
+      expect(Math.max(...lats) - Math.min(...lats)).toBeGreaterThanOrEqual(3);
+    });
+    it('hysteresis only moves a stub finer: the 0.8 spacing bar and total ink hold', () => {
+      const ms = bake(sphere('hatch'));
+      let ink = 0; for (let r = 0; r < ms.runCount; r++) ink += runLen(ms, r);
+      expect(ink).toBeGreaterThan(3900); // today 4176 mm over all levels; FX-R may cost at most ~4 %
+      expect(MS.validate(ms)).toEqual([]);
+    });
+  });
+
   describe('budget', () => {
     it('levels stop at the darkest pitch the law can ask for (F-L3): default hatch and stipple bake 4 levels, ~8.5k hatch vertices', () => {
       const h = bake(sphere('hatch'));
