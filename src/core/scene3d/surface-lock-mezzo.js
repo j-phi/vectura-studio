@@ -51,7 +51,7 @@
     PLOT_FLOOR_PEN: 2.2,     // Regions.PLOT_FLOOR_PEN fallback
     LIT_MAX_PITCH_PEN: 12,   // Regions.LIT_MAX_PITCH_PEN fallback
     MAX_VERTICES: 200000,    // contract §2 budget per object per fill group
-    FALLBACK_PER_AREA: 0.5,  // fallback candidates per d_l^2 of surface
+    FALLBACK_PER_AREA: 2,    // fallback candidates per d_l^2 of surface (0.5 left level 1 under-filled once occupancy was dense)
     FALLBACK_MIN: 200,
     FALLBACK_MAX: 5000,
     RANK_FPO_MAX: 6000,      // farthest-point ranking above this many lines falls back to bit reversal
@@ -120,7 +120,9 @@
     const t0 = clock();
     const Chart = sc().SurfaceLockChart; const MS = sc().SurfaceLockMarkSet;
     const MAX_LEVELS = cfg().MAX_LEVELS || 6;
-    const HEADROOM = cfg().ZOOM_HEADROOM || 2;
+    // Zoom headroom: scaleRef keeps s / scaleRef within sqrt(2); 1.5 also covers the perspective spread (review A2).
+    const HEADROOM = 1.5; // TODO(config): ZOOM_HEADROOM is re-set to 1.5 by the config unit; read it then.
+    const PLOT_FLOOR_SLACK = 0.8; // TODO(config): PLOT_FLOOR_SLACK (0.8) is added to the config by another unit.
     const M = Chart.metric(spec.mode, spec.sizes, spec.scale);
     if (!M) throw new Error(`SurfaceLockMezzo.bake: no chart for mode ${spec.mode}`);
     const style = spec.style || {};
@@ -175,8 +177,11 @@
     area /= cnt;
     const Rm = Math.min(maxX - minX, maxY - minY, maxZ - minZ) / 2;
 
-    // Levels: finest level reaches the plot-floor pitch at ZOOM_HEADROOM x scaleRef.
-    let L = clamp(1 + Math.ceil(Math.log2(Math.max(1e-9, (T.PMAX * HEADROOM) / T.FLOOR))), 1, MAX_LEVELS);
+    // Levels (F-M1, contract A2): bake only levels that can be drawn. Level l is drawable at the largest in-octave
+    // scale when its screen pitch PMAX * HEADROOM / 2^l is at least minPitch, the darkest pitch the law can ask for
+    // (coverage <= A_DARK) and not below SLACK x the plot floor. So the finest level is floor(log2(...)).
+    const minPitch = Math.max(PLOT_FLOOR_SLACK * T.FLOOR, T.INK / K.A_DARK);
+    let L = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * HEADROOM) / minPitch)) + 1e-9), 1, MAX_LEVELS);
     const estVerts = (lv) => (nFam * area) / ((p0 / 2 ** (lv - 1)) * 1.1) / STEP;
     while (L > 1 && estVerts(L) > K.MAX_VERTICES * 0.95) L -= 1;
 
@@ -281,6 +286,7 @@
 
     // Per-family state.
     const prevPts = [[], []]; // flat x,y,z of vertices of lower levels, per family
+    const prevStarts = [[], []]; // index into prevPts (3 per vertex) where each run starts
     const builder = MS.createBuilder({ bakerId: 'mezzo', key: String(spec.bakeKey || ''), objectId: spec.objectId, meta: {} });
     let totalVerts = 0;
     let bmin = [Infinity, Infinity, Infinity]; let bmax = [-Infinity, -Infinity, -Infinity]; let brad = 0;
@@ -324,8 +330,34 @@
         px[np] = x; py[np] = y; pz[np] = z; lineOf[np] = line; sOf[np] = s;
         nextP[np] = head[bk]; head[bk] = np; np += 1;
       };
-      const pp = prevPts[fam];
-      for (let i = 0; i < pp.length; i += 3) addPt(pp[i], pp[i + 1], pp[i + 2], -1, 0);
+      // F-M2: occupancy points no sparser than half the stop radius, so a streamline cannot slip between two samples
+      // of another line. Lower-level runs are stored as vertices with run starts and densified here for this level.
+      const occStep = 0.5 * stopR;
+      const addSeg = (x0, y0, z0, x1, y1, z1, line, s0, s1) => {
+        const len = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2);
+        const n = Math.ceil(len / occStep);
+        for (let k = 1; k < n; k++) {
+          const f = k / n;
+          addPt(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, z0 + (z1 - z0) * f, line, s0 + (s1 - s0) * f);
+        }
+      };
+      // True when an interpolated point of the step (x0..x1) is within the stop radius of another line.
+      const segBlocked = (x0, y0, z0, x1, y1, z1, line, s0, s1) => {
+        const len = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2);
+        const n = Math.ceil(len / occStep);
+        for (let k = 1; k < n; k++) {
+          const f = k / n;
+          if (blocked(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, z0 + (z1 - z0) * f, stopR, line, s0 + (s1 - s0) * f)) return true;
+        }
+        return false;
+      };
+      const pp = prevPts[fam]; const ps = prevStarts[fam];
+      for (let i = 0, r = 0; i < pp.length; i += 3) {
+        const isStart = r < ps.length && ps[r] === i;
+        if (isStart) r += 1;
+        addPt(pp[i], pp[i + 1], pp[i + 2], -1, 0);
+        if (!isStart) addSeg(pp[i - 3], pp[i - 2], pp[i - 1], pp[i], pp[i + 1], pp[i + 2], -1, 0, 0);
+      }
       const ownSkip = K.OWN_SKIP * d;
       const blocked = (x, y, z, r, line, s) => {
         const i0 = Math.floor((x - r) * inv) | 0; const j0 = Math.floor((y - r) * inv) | 0; const k0 = Math.floor((z - r) * inv) | 0;
@@ -363,16 +395,17 @@
           for (let i = 0; i < K.MAX_STEPS && totalVerts + out.length < K.MAX_VERTICES; i++) {
             const t = fieldAt(cur.S, fam, prev, r);
             if (!t) break;
-            const half = move(cur, t, STEP / 2);
-            let tm = half ? fieldAt(half.S, fam, t, r) : null;
-            if (!tm) tm = t;
-            const nx = move(cur, tm, STEP);
+            // F-M3: a single Euler step. The field is region-constant, so the error is about kappa h^2 / 2.
+            const nx = move(cur, t, STEP);
             if (!nx) break;
+            const s0 = s;
             s += sgn * nx.dist;
             if (blocked(nx.S.x, nx.S.y, nx.S.z, stopR, line, s)) break;
+            if (segBlocked(cur.S.x, cur.S.y, cur.S.z, nx.S.x, nx.S.y, nx.S.z, line, s0, s)) break;
+            addSeg(cur.S.x, cur.S.y, cur.S.z, nx.S.x, nx.S.y, nx.S.z, line, s0, s);
             addPt(nx.S.x, nx.S.y, nx.S.z, line, s);
-            out.push({ a: nx.a, b: nx.b, S: nx.S, t: tm, s });
-            prev = tm; cur = nx;
+            out.push({ a: nx.a, b: nx.b, S: nx.S, t, s });
+            prev = t; cur = nx;
           }
           return out;
         };
@@ -436,6 +469,7 @@
         const ln = lines[j];
         const rank = n ? Math.min(0.999984, order[j] / n) : 0;
         builder.beginRun(lv, rank, fam, 0);
+        prevStarts[fam].push(pp.length);
         for (let q = 0; q < ln.v.length; q++) {
           const S = ln.v[q].S;
           builder.vertex(S.x, S.y, S.z, S.nx, S.ny, S.nz);
@@ -458,9 +492,12 @@
       bounds: { min: bmin, max: bmax, radius: brad },
       convex: CONVEX.has(spec.primitive),
       msBake: clock() - t0,
-      regions: regs.map((g) => ({ p: [g.x, g.y, g.z], d: g.d.slice(), d2: g.d2.slice() })),
-      regionSep: REG,
-      levelRuns: emitted,
+      // Baker-private data lives only under meta.debug (contract A5).
+      debug: {
+        regions: regs.map((g) => ({ p: [g.x, g.y, g.z], d: g.d.slice(), d2: g.d2.slice() })),
+        regionSep: REG,
+        levelRuns: emitted,
+      },
     };
     return ms;
   };
