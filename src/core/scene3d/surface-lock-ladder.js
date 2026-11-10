@@ -58,6 +58,8 @@
     DOT_CLEAR: 2.4,
     PLOT_FLOOR_SLACK: 0.8,
     ZOOM_HEADROOM: 1.5,
+    RELABEL_MIN_MM: 4, // FX-R: a relabel piece shorter than this (object mm) takes its finer neighbour's label
+    RELABEL_STAGGER: 0.5, // FX-R: relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
   };
   const C = Object.assign({}, DEFAULTS);
   const CONVEX_MODES = { sphere: true, cylinder: true, cone: true, capsule: true };
@@ -302,6 +304,73 @@
     };
     const at = (a, b) => fast(clamp(wrapA(a), 0, 1), clamp(wrapB(b), 0, 1));
 
+
+    // ---- FX-R: relabel stubs and cut fronts (H3) ---------------------------------------------------------------
+    // Both passes only ever RAISE a vertex's effective level (finer = drawn later), so local spacing can only grow.
+    //  1. Stagger: each relabel front moves toward the coarse side by hash(ruling) x RELABEL_STAGGER x the coarse piece,
+    //     so the rulings of one latitude stop ending on one straight line.
+    //  2. Hysteresis: an interior piece (a neighbour on both sides) shorter than RELABEL_MIN_MM takes the finer
+    //     neighbour's label and merges into it; the shared boundary vertex of the FX-L chain is kept.
+    const retime = (verts, m, famId) => {
+      const n = verts.length;
+      const usable = (q) => verts[q].s && verts[q].eff >= 0;
+      const dist = (q) => Math.hypot(verts[q].s.x - verts[q - 1].s.x, verts[q].s.y - verts[q - 1].s.y, verts[q].s.z - verts[q - 1].s.z);
+      const pieces = () => {
+        const out = [];
+        for (let q = 0; q < n;) {
+          if (!usable(q)) { q += 1; continue; }
+          let e = q;
+          while (e + 1 < n && usable(e + 1)) e += 1;
+          let a = q;
+          for (let k = q + 1; k <= e + 1; k++) {
+            if (k > e || verts[k].eff !== verts[a].eff) {
+              out.push({ a, b: k - 1, eff: verts[a].eff, first: a === q, last: k > e });
+              a = k;
+            }
+          }
+          q = e + 1;
+        }
+        return out;
+      };
+      const runLength = (pc) => {
+        let len = 0;
+        const end = pc.last ? pc.b : pc.b + 1;
+        for (let q = pc.a + 1; q <= end; q++) len += dist(q);
+        return len;
+      };
+      const stag = Math.max(0, C.RELABEL_STAGGER);
+      if (stag > 0) {
+        const pcs = pieces(); const eff0 = verts.map((v) => v.eff);
+        for (let i = 0; i + 1 < pcs.length; i++) {
+          const A = pcs[i]; const B = pcs[i + 1];
+          if (A.last || A.b + 1 !== B.a) continue;
+          const coarseIsA = A.eff < B.eff; const coarse = coarseIsA ? A : B; const fine = coarseIsA ? B : A;
+          const reach = stag * SC.hash(salt, 101 + m, 43 + famId) * Math.min(runLength(coarse), runLength(fine));
+          let d = 0;
+          if (coarseIsA) {
+            for (let q = A.b; q >= A.a && eff0[q] === coarse.eff; q--) { d += dist(q + 1); if (d > reach) break; verts[q].eff = Math.max(verts[q].eff, fine.eff); }
+          } else {
+            for (let q = B.a; q <= B.b && eff0[q] === coarse.eff; q++) { if (q > B.a) d += dist(q); if (d > reach) break; verts[q].eff = Math.max(verts[q].eff, fine.eff); }
+          }
+        }
+      }
+      const minLen = Math.max(0, C.RELABEL_MIN_MM);
+      if (minLen > 0) {
+        for (let guard = 0; guard < 64; guard++) {
+          const pcs = pieces(); let changed = false;
+          for (let i = 1; i + 1 < pcs.length && !changed; i++) {
+            const P = pcs[i]; const Pp = pcs[i - 1]; const Pn = pcs[i + 1];
+            if (Pp.b + 1 !== P.a || P.b + 1 !== Pn.a) continue;
+            const target = Math.max(Pp.eff, Pn.eff);
+            if (target <= P.eff || runLength(P) >= minLen) continue;
+            for (let q = P.a; q <= P.b; q++) verts[q].eff = target;
+            changed = true;
+          }
+          if (!changed) break;
+        }
+      }
+    };
+
     // ---- line families on the dyadic intercept grid ------------------------------------------------------
     // theta: tangent-plane angle from the meridian (dP/da), degrees. P: level-0 pitch (local mm).
     let effPitch = 0;
@@ -401,6 +470,7 @@
           }
           if (++guard > 20000) break;
         }
+        if (!(closedLine && allSame)) retime(verts, m, famId);
         if (closedLine && allSame && verts.length > 3) {
           curEff = firstEff;
           for (let q = 0; q < verts.length - 1; q++) xs.push(verts[q].s);
