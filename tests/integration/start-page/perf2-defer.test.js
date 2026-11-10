@@ -134,6 +134,9 @@ describe('Start Page defers the editor paper texture', () => {
     expect(thumbs).toBe(0);
     expect(sw().every((el) => !el.style.backgroundImage)).toBe(true);
     uncover(window);
+    // Fill is one swatch per task (UI.utils.idleSteps), so it lands over a few ticks, not synchronously.
+    expect(thumbs).toBeLessThan(sw().length);
+    for (let i = 0; i < 100 && sw().some((el) => !el.style.backgroundImage) && thumbs < sw().length - 1; i += 1) await tick(10);
     expect(thumbs).toBeGreaterThan(3);
     expect(sw().filter((el) => el.style.backgroundImage).length).toBe(thumbs);
   });
