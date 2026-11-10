@@ -100,6 +100,9 @@ rotation and translation **not** applied. (Object scale is a bake input, §8.)
 | `bounds` | `{ min: [x,y,z], max: [x,y,z], radius }` in scaled local mm |
 | `convex` | boolean (record.convex of the object) |
 | `msBake` | bake wall time (informational; never part of equality) |
+| `debug` | optional; the **only** place a baker may keep private keys (e.g. mezzo `regions`, `regionSep`, `levelRuns`). `validate` and the frame ignore it |
+
+A `CLOSED` run **must not** repeat its first vertex; the closing gap (last vertex to first) is <= the run step (0.5 mm). The frame tolerates a repeat but bakers must not emit one.
 
 Runs are emitted in bake order. Order is part of the determinism contract (§3), plot ordering is not
 (the optimizer re-sorts).
@@ -164,7 +167,7 @@ Lights are never read by `frame`. Tone arrives as a closure (§5) built by the c
 ## 5. Tone gating
 
 Inputs per frame: `view.toneFn(n_w, p_w) -> I` (the record's `intensityFn`: `shapeTone(combinedIntensity(...))`,
-clamped to [0, 1]); a **tone table** `{ lut, scaleFn }` from `baker.toneLUT(spec, toneCtx)`; `floorPitch =
+clamped to [0, 1]; `null` when tone is off, in which case the LUT is still evaluated with `I = 1`, so tone off draws the uniform Density pitch, not the floor); a **tone table** `{ lut, scaleFn }` from `baker.toneLUT(spec, toneCtx)`; `floorPitch =
 PLOT_FLOOR_PEN * penWidth` (screen mm; `Regions.PLOT_FLOOR_PEN`, 2.2).
 
 - `lut`: `Float32Array(TONE_LUT_SIZE + 1)` (257); `lut[k]` = 1 / (target **screen** pitch in mm) at
@@ -172,11 +175,18 @@ PLOT_FLOOR_PEN * penWidth` (screen mm; `Regions.PLOT_FLOOR_PEN`, 2.2).
   tone map (mono laws: `makeCtx` `areaFor`/`pitchFor`; ladder: `Regions.band` + `coverageFor` with the
   tone ladder). The LUT depends on `p.tone`, style and pen width, **not** on the bake; it is memoized by
   `SurfaceLock` on `(bakerId, toneKey)`.
-- `scaleFn(n_w, p_w, e_w) -> [0, 1]` or null: optional view-dependent coverage multiplier (the ladder's
-  specular glint cap; `e_w` = unit vector from `p_w` toward the eye, world space).
+- `scaleFn(n_w, p_w, e_w) -> [0, 1]` or null: optional view-dependent coverage multiplier (`e_w` = unit vector from
+  `p_w` toward the eye, world space). Reserved for a future live glint. Pose mode's glint cap is a function of I
+  only (`coverageForSample`), and the view-dependent blank glint is dormant (`HL_STAGE.toneZones` off), so bakers
+  fold the cap into the LUT and return `scaleFn: null` (the ladder does).
 - Per vertex demand: `t_v = (p0 * s_v * lut(I_v) * scale_v) ^ q`, `q = log2(gain)` (1 for pitch, 2 for area).
-- Foreshortening cap (plot floor): `T_v = (p0 * s_v * c_v / floorPitch) ^ q`; `t_eff_v = min(t_v, T_v)`.
-  Screen spacing of the drawn subset therefore never falls under the floor, however the surface turns.
+- Foreshortening cap (plot floor), **whole-level quantised**: `T0_v = (p0 * s_v * c_v / floorPitch) ^ q`;
+  `T_v = gain ^ floor(log_gain(T0_v / PLOT_FLOOR_SLACK))` for lines (q = 1), `gain^m` with m taken from T0 for area;
+  `PLOT_FLOOR_SLACK` = 0.8 (config key in `SCENE3D_SURFACE_LOCK`; the §14.6 bar). For `T0 < 1`, thin level 0 by
+  `gain^-m`. `t_eff_v = min(t_v, T_v)`. Rationale: a rank-thinned partial level puts neighbours at its own pitch,
+  so a continuous cap would admit up to 0.5 x floor; a whole level is admitted only when its pitch is >= 0.8 x floor.
+  `T` therefore changes stepwise between vertices; the linear interpolation inside one <= 0.5 mm segment can draw a
+  partial level over that segment only.
 - Run key: `k(level 0, r) = r`; `k(L >= 1, r) = gain^(L-1) * (1 + (gain - 1) * r)`. Level 0 spans [0, 1),
   level L spans [gain^(L-1), gain^L), so a larger key is always a finer mark.
 - A point at parameter u of segment i -> i+1 is drawn iff it is visible (§6, §7) and `k < t_eff(u)`, with
@@ -199,7 +209,7 @@ are dropped.
 ### 6.1 Level F output (the `SurfaceFill.buildObject` line contract)
 
 An array of lines; each line is `Array<{ x, y, z }>` (screen mm, camera z) with `line.back = false`.
-A `CLOSED` run whose whole loop is drawn stays closed (first point repeated). A `DOT` run is drawn when
+A `CLOSED` run whose whole loop is drawn stays closed (the frame appends the first point; the MarkSet does not store it, §2). A `DOT` run is drawn when
 its single vertex passes, as a closed `meta.glyph.segs`-gon of screen radius `meta.glyph.r` around the
 projected anchor (screen-round). Order: markSets order, then run order, then along-run order. The
 caller sends the lines through `clipper.clipPath(pts, segCtx)` and `emitRuns` exactly as the curved
@@ -217,7 +227,9 @@ ctx = {
   emitFill(objectId, runs),            // runs: [{ pts: [{x,y,z}], visible: true }] (clipper result shape)
   emitEdge(objectId, edgeClass, runs), // edgeClass 'silhouette' | 'crease' | 'boundary'
   emitShadow(runs),
+  emitGround(runs),                    // world-fixed ground outline, projected
   seedFor(objectId) -> { salt, phase, off },
+  specFor(obj, spec) -> BakeSpec,      // W2-A spec builder hook (replaces the stub spec)
 }
 ```
 
@@ -236,7 +248,27 @@ in `p.objects` order its fills then its edges (the order `generateScene` produce
 
 Frame never performs inter-object occlusion in Level F (that would double-occlude).
 
-Level S depth buffer (`SurfaceLockVisibility.occluder(meshBakes, pose)`): rasterise the cached
+Level S builds the occluder when there is more than one object, any non-convex object (a lone torus needs it for
+self-occlusion), or a cast shadow. Interfaces (`SurfaceLockVisibility`, final):
+
+```
+supports(obj) -> bool
+meshBake(obj) -> MeshBake                       // pose-free; carries objectId, convex, analytic, torus
+occluder(meshBakes[], { cam, objs: [obj pose per bake] }) -> Occ
+  Occ.hiddenAt(x, y, z, seg) -> bool            // seg = Occ.segFor(bake) | { obj: -1, mode: 'fill' } for ground/shadow
+  Occ.segFor(bake) -> { obj, mode: 'fill', f0: -1, f1: -1 }
+  Occ.clipRun(pts /* [{x,y,z}] */, seg) -> [{ pts, visible }]
+  Occ.closedMerge(runs) -> runs                 // for CLOSED loops
+  Occ.indexOf(bake) -> int
+outline(meshBake, pose, occ|null) -> { silhouette, crease, boundary }   // each already runs: [{ pts, visible: true, ... }]
+```
+
+Fills are clipped with `occ.clipRun(line, occ.segFor(bake))` (visible runs kept, `closedMerge` for loops; dropped
+vertices count in `culledOccluded`). Edge runs from `outline` pass straight through. Shadow and ground runs carry
+camera z and are clipped with `{ obj: -1, mode: 'fill' }`. The aux mesh cache is keyed by `objectId` as well as the
+mesh parameters, so two identical objects never share one MeshBake (the occluder indexes bakes by identity).
+
+Level S depth buffer (`SurfaceLockVisibility.occluder`): rasterise the cached
 object-space triangles after the per-frame transform into a face-id + depth buffer of at most 512 x 512
 cells over the projected scene bounds; a point is hidden when the buffer is nearer by more than
 `DEPTH_BIAS_MM` (W1-E sets it in the config, measured against the HLR clipper); visibility changes along
@@ -247,22 +279,26 @@ a run are located to within 0.05 mm. Silhouette rule (all levels): no fill endpo
 
 ```
 BakeSpec = {
-  objectId, primitive, mode, sizes, detail,  // curvedChartParams(obj) + obj.primitive (faceted: faces from the mesh)
+  objectId, primitive, mode, sizes,          // curvedChartParams(obj) + obj.primitive (faceted: faces from the mesh)
   scale: { sx, sy, sz },                     // transform.scale / sx / sy / sz resolved like Scene.applyObjectTransform
   mapper, toneLaw,                           // toneLaw = Params.resolveToneLaw(sp); alias params folded into style
   style,                                     // normalized style params; markSpace removed
   penWidth,                                  // bounds.penWidth
   scaleRef,                                  // 2^round(log2(zoom * (persp ? focal / (focal + dist) : 1)))
-  seed,                                      // Geometry3D.snapshotSeedState() at the record (generateScene sets it per record)
+  seed,                                      // (`detail` is not part of the spec or key while no baker reads it)
+                                             // Geometry3D.snapshotSeedState() at the record (generateScene sets it per record)
 }
 ```
 
-- `bakeKey(spec) = JSON.stringify([BAKE_VERSION, bakerId, primitive, mode, sizes, detail, scale, mapper,
+- `bakeKey(spec) = JSON.stringify([BAKE_VERSION, bakerId, primitive, mode, sizes, scale, mapper,
   toneLaw, stableStyle, penWidth, scaleRef, seed])`, where `stableStyle` has sorted keys. Not in the key,
   and therefore never read by a baker: pose, camera angles, zoom inside one octave, lights, `p.tone`,
-  shadow, ground, other objects, `objectId`.
+  shadow, ground, other objects, `objectId`, `detail`.
 - Zoom: a zoom inside the octave of `scaleRef` does not re-bake; tone stays screen-calibrated through
   `s_v` (§5). The finest level is designed for `scaleRef * ZOOM_HEADROOM`.
+- Object scale is a bake input. During an **active scale gesture** the frame may apply the residual scale
+  `diag(s / s_baked)` to the cached MarkSet (normals through the inverse-transpose) as a preview only; release
+  re-bakes. This is the only sanctioned drag != export case.
 - Cache: module-level LRU in `SurfaceLock`, by bytes (`CACHE_MB`, `CACHE_MB_MOBILE` when
   `SpinRing.isMobile()`), shared across groups, alive in main thread and worker separately. A hit is
   identical to a re-bake by determinism (§3), so the cache can never change output. `clearCache()`
@@ -278,16 +314,23 @@ Baker = {
   FIT: [ { mappers: [...], laws: [...], primitives: [...], refuse?: { <styleKey>: [values] } } ],
   supports(spec) -> boolean,           // true exactly for FIT rows minus refuse rules (a test checks both ways)
   bake(spec) -> MarkSet,               // pure, deterministic, §2 meta filled
-  toneLUT(spec, toneCtx) -> { lut, scaleFn },  // toneCtx = { tone: p.tone (normalized), penWidth, highlight }
+  toneLUT(spec, toneCtx) -> { lut, scaleFn },  // toneCtx = { tone: p.tone (normalized), penWidth, noHighlight }
+                                               // noHighlight = highlightCfg(sp).treatment === 'none' (pose `grpHLOff`)
 }
 ```
+
+`SurfaceLock.bake(spec)` returns `null` when no baker supports the spec **or the baker throws** (counted in `stats.bakeErrors`); the caller then renders pose mode. A baker throw never blanks the layer.
 
 Dispatch: `SurfaceLock.BAKER_KEYS = ['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws',
 'SurfaceLockFaceted']`; the first `supports(spec)` wins.
 
 Level design (all bakers): `p0` = the law's lit maximum screen pitch / `scaleRef`
 (mono: `PMAX = max(FLOOR * 1.6, LIT_MAX_PITCH_PEN * pen / DS)`, `DS = clamp(densityScale, 0.25, 4)`);
-levels `L = 1 + ceil(log2(p0 * scaleRef * ZOOM_HEADROOM / floorPitch))`, capped at `MAX_LEVELS`.
+levels `L = 1 + ceil(log2(p0 * scaleRef * ZOOM_HEADROOM / minPitch))`, capped at `MAX_LEVELS`, with
+`minPitch = max(PLOT_FLOOR_SLACK * floorPitch, the law's darkest pitch at coverage 1)` (tone-independent, so
+bake-key-safe; mono: `INK / A_DARK`; ladder: the master pitch `max(floor, hatchSpacing / 5)`; stipple uses the area
+model). `ZOOM_HEADROOM` = 1.5 (`scaleRef = 2^round(log2 s)` keeps `s / scaleRef` within sqrt 2; the rest covers
+perspective spread). Levels the plot floor can never draw are not baked.
 Level l adds marks so that all levels <= l reach pitch `p0 / gain^l` (lines: `gain` 2, Jobard-Lefer or
 ruling bisection; dots: `gain` 4). Ranks inside a level must make every threshold subset even (bit
 reversal `vdc2` over a spatially ordered index, or greedy farthest-point order). Not a hash.
@@ -299,13 +342,22 @@ reversal `vdc2` over a spatially ordered index, or greedy farthest-point order).
   object +X axis projected into the plane when `|dP/da|` is degenerate). At a point q in that region the
   field is `d_s` projected into q's tangent plane (a line field, sign-continuous). Streamlines integrate
   that field in (a, b) through the chart Jacobian with verified steps (`stepTo` pattern, STEP 0.34 mm,
-  tolerance 2.5x, 5 halvings), stop at `0.80 * d_l` from other lines, seed at `0.95 * d_l`, at most
+  tolerance 2.5x, 5 halvings), stop at `0.80 * d_l` from other lines (occupancy points are kept no sparser than
+  `0.5 * stopR`, so a streamline cannot slip between two points of another line; the separation test measures
+  point-to-densified-run distance), seed at `0.95 * d_l`, at most
   2600 steps per line. Crosshatch: a second family at `+ (CROSS_OBJ_DEG + crossDelta - 90)` degrees with
-  its own occupancy. The look changes on purpose: lines wrap with the form.
+  its own occupancy. The look changes on purpose: lines wrap with the form. Density is an input: the caller folds
+  `densityScale` (`monoDensityScale(monoDensityOf(sp))`, closure-private in `algorithms/scene3d.js`) into
+  `spec.style.densityScale`; the baker reads it (`DS`) and stays pure. Without it the mezzo ignores Density.
 - **Ladder family (W1-D):** hatch, crosshatch, contour, spiral, stipple. Rulings from
   `angleFamily`-style lines in (a, b) with the count set from the object-space metric (not the projected
   median pitch). Ruling i of the finest level gets its level and rank from its index (bit structure,
-  `vdc2`). Resampled by object-mm arc length (step <= 0.5 mm). The 65 degree cross is built in the
+  `vdc2`). **Compression rule:** in a converging chart region (local perpendicular metric ratio `rho = pm / pmRef * chord`
+  below `THIN_RATIO` 0.95) a ruling is relabelled, not cut: a vertex of nominal level `lvl` gets
+  `j = max(0, ceil(log2(THIN_RATIO / rho)))`, effective level `lvl + j`, dropped only when `lvl + j > L - 1`; ranks
+  inside the new level stay nested and even. A cut-only fan is forbidden because it removes tone near poles and
+  torus holes. The baked p0 is the effective pitch after power-of-two ruling counts (up to +-41 % from nominal);
+  `meta.p0` is authoritative. Resampled by object-mm arc length (step <= 0.5 mm). The 65 degree cross is built in the
   tangent plane (it reads near-square at poles; accepted). Stipple dots are `DOT` runs on a nested
   lattice (`gain` 4). The pose-mode `ladderStep` accumulator, feather and hysteresis are not ported (they
   are sequential, not nested); the locked ladder is a new look of the same density law.
@@ -317,7 +369,7 @@ reversal `vdc2` over a spatially ordered index, or greedy farthest-point order).
 - `supports({ shadow, light, ground, casters })`: one directional light with `castShadows`,
   `|lightDir.y| >= Shadows' MIN_ABS_DY`, `shadowLayers: false`, a ground, every caster a chart or box
   primitive. Otherwise the scene is not Level S (Level F keeps `Shadows.build`).
-- `bakeGround(groundSpec, shadowCfg, penWidth, seed) -> GroundHatch`: hatch lines fixed in **world ground
+- `bakeGround(groundSpec, shadowCfg, penWidth, seed) -> GroundHatch`, `groundSpec = { width, height, scaleX, scaleZ, scaleRef }` (the extents `groundHalfExtents` reads): hatch lines fixed in **world ground
   coordinates** (plane y = 0, angle `shadowAngle` about +Y from +X, spacing from `shadowDensity` by the
   same rule `Shadows` uses) over the ground extent, nested by level and rank like a MarkSet (gain 2) for
   the tone-depth grading. Pose-free; key = ground size, shadow config, pen width, seed.
@@ -325,7 +377,12 @@ reversal `vdc2` over a spatially ordered index, or greedy farthest-point order).
   runs: [{ pts, visible: true }] }`: per caster footprint on y = 0 along the light (sphere: exact
   ellipse; convex mesh: convex hull of the projected cached vertices), union by merging per-line
   intervals (no `FillBoolean`), grading by `shadowToneDepth`/`shadowFalloff` as level gating on distance
-  from the contact point, then projection of the interval endpoints (a ground segment stays straight).
+  from the contact point, then projection of the interval endpoints (a ground segment stays straight). Run points
+  carry camera z (`{x, y, z}`) so the caller can clip them against the objects (§7). Casters are world-space records
+  (what `prepareCaster` accepts): `{ primitive, shape: 'sphere', center: {x,y,z}, radius }` (uniform-scale sphere
+  only) or `{ primitive, shape: 'hull', points: [{x,y,z}] }` (`objR * p_scaled + t` over `meshBake.vertices`). The
+  light-thinning factor `thin` is measured at the caster footprint centre (not world origin) and quantised to a
+  power of two (`2^round(log2 thin)`), so the drawn subset is every 2^m-th line, evenly spaced.
   The lines never move under a camera orbit; only the footprint does when light or caster moves.
 - Receive shadow (W3-C): light-space depth map, rebuilt only when an object or the light moves (never on
   a camera orbit), feeding `toneFn` through the record's `shadowFn`.
@@ -346,11 +403,17 @@ Perf tests assert counters and generous clocks (no wall-clock ratios; see `tests
 - Style key `markSpace`: `'pose' | 'surface'`. `clampStyleParam`: `value === 'surface' ? 'surface' : 'pose'`.
   Normalisation never injects it; **absent means 'pose'** at every reader (`sp.markSpace === 'surface'`).
   It is distinct from the existing `wrap: 'surface' | 'flat'` key.
+- Final `SurfaceLock` surface: `effectiveMarkSpace(style, ctx)` with `ctx = { spec (required), mapper, visibility,
+  emissiveCoreBlank, csgCarve, receiveShadow, areaLight }`; `bakeKey(spec)`; `bake(spec) -> MarkSet | null`;
+  `toneTable(spec, toneCtx) -> { lut, scaleFn: null }`; `poseOf(transform, camera, bounds)`;
+  `frame(markSets, pose, view)`; `frameable`, `sceneFrame`; `stats`, `resetStats`, `clearCache`, `setCacheLimitBytes`.
+  Config keys `PLOT_FLOOR_SLACK` (0.8) and `ZOOM_HEADROOM` (1.5) and the `bakeErrors` counter are introduced by the
+  review fix-ups; this document is their source of truth.
 - `SurfaceLock.effectiveMarkSpace(style, ctx)` is `'surface'` iff the style asks for it, some baker
   `supports(spec)`, and no exclusion applies. Exclusions v1 (data in `SurfaceLock.EXCLUSIONS`): x-ray
-  visibility; highlight treatment other than `blank`/`none`; `highlightMode: 'lightDriven'`; `toneBands`
-  > 0; `tierPens`; `wrap: 'flat'`; contour `region`; spiral flat clip; emissive core blank; CSG carve;
-  receive-shadow (until W3-C); area lights; `lawDraft`-only paths. Excluded styles render pose mode.
+  visibility; highlight treatment other than `blank`/`none`, tested **after pose normalisation** (`keep -> none`,
+  unknown or empty -> `blank`); `highlightMode: 'lightDriven'`; `toneBands` >= 2 (pose bands only at >= 2); `tierPens`; `wrap: 'flat'`; contour `region`; spiral flat clip; emissive core blank; CSG carve;
+  receive-shadow (until W3-C); area lights. Excluded styles render pose mode. The lock path never reads `draft`, `lawDraft` or the draft-gated `toneOn` (drag == export, §0), so there is no `lawDraft` exclusion.
 - FIT v1 (rows owned by each baker's `FIT`):
 
 | Fill | Mappers | Fit | Owner |
