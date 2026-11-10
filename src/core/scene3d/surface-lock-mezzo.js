@@ -24,9 +24,9 @@
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
 
-  // TODO(config): move into Vectura.SCENE3D_SURFACE_LOCK (W1-A owns that table). Every value below is the
-  // pose-mode mezzo's own number, or a bake tuning constant, kept in one place.
-  const K = {
+  // Every value below is the pose-mode mezzo's own number, or a bake tuning constant. The live values come from
+  // Vectura.SCENE3D_SURFACE_LOCK.MEZZO (see `sync`); this table is the safe fallback when the config is not loaded.
+  const K_DEFAULTS = {
     STEP_SCREEN: 0.34,       // surface-fill-mono streamFamily STEP (screen mm); object step = / scaleRef
     STEP_TOL: 2.5,           // stepTo verification tolerance
     STEP_HALVINGS: 5,
@@ -56,6 +56,7 @@
     FALLBACK_MAX: 5000,
     RANK_FPO_MAX: 6000,      // farthest-point ranking above this many lines falls back to bit reversal
   };
+  const K = Object.assign({}, K_DEFAULTS);
 
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(['hatch', 'crosshatch', 'contour']),
@@ -73,6 +74,10 @@
 
   const sc = () => Scene3D;
   const cfg = () => Vectura.SCENE3D_SURFACE_LOCK || {};
+  const sync = () => {
+    const own = cfg().MEZZO || {};
+    Object.keys(K_DEFAULTS).forEach((k) => { K[k] = Number.isFinite(own[k]) ? own[k] : K_DEFAULTS[k]; });
+  };
   const regionsLib = () => Scene3D.Regions || {};
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const finite = (v, d) => (Number.isFinite(v) ? v : d);
@@ -108,6 +113,7 @@
   };
 
   const toneLUT = (spec) => {
+    sync();
     const size = cfg().TONE_LUT_SIZE || 256;
     const pitchFor = pitchForFn(toneParams(spec));
     const lut = new Float32Array(size + 1);
@@ -117,12 +123,13 @@
 
   /* ── the bake ──────────────────────────────────────────────────────────── */
   const bake = (spec) => {
+    sync();
     const t0 = clock();
     const Chart = sc().SurfaceLockChart; const MS = sc().SurfaceLockMarkSet;
     const MAX_LEVELS = cfg().MAX_LEVELS || 6;
     // Zoom headroom: scaleRef keeps s / scaleRef within sqrt(2); 1.5 also covers the perspective spread (review A2).
-    const HEADROOM = 1.5; // TODO(config): ZOOM_HEADROOM is re-set to 1.5 by the config unit; read it then.
-    const PLOT_FLOOR_SLACK = 0.8; // TODO(config): PLOT_FLOOR_SLACK (0.8) is added to the config by another unit.
+    const HEADROOM = Number.isFinite(cfg().ZOOM_HEADROOM) ? cfg().ZOOM_HEADROOM : 1.5;
+    const PLOT_FLOOR_SLACK = Number.isFinite(cfg().PLOT_FLOOR_SLACK) ? cfg().PLOT_FLOOR_SLACK : 0.8;
     const M = Chart.metric(spec.mode, spec.sizes, spec.scale);
     if (!M) throw new Error(`SurfaceLockMezzo.bake: no chart for mode ${spec.mode}`);
     const style = spec.style || {};

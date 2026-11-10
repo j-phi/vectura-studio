@@ -33,23 +33,29 @@
   const finite = (v, fallback = 0) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : fallback);
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-  // TODO(config): mirror of shadows.js MIN_ELEVATION_DEG (grazing light stretches the footprint to infinity).
-  const MIN_ELEVATION_DEG = 2;
-  const MIN_ABS_DY = Math.sin(MIN_ELEVATION_DEG * Math.PI / 180);
-  // TODO(config): mirror of shadows.js MIN_RUN_MM; applied in WORLD mm so it never flickers under an orbit.
-  const MIN_RUN_MM = 0.6;
-  // TODO(config): tone-gating look-up resolution over t = distContact / L (the ladder steps resolve to L / LUT_N).
-  const LUT_N = 512;
-  // TODO(config): iterations of the ternary / bisection search for the tone-gated sub-interval of one line.
-  const SEARCH_ITERS = 26;
-  // TODO(config): ellipse samples used for the throw length L of a sphere footprint.
-  const ELLIPSE_SAMPLES = 96;
-  // TODO(config): hard cap on baked lines (a 256x ground at a fine pen would otherwise bake millions).
-  const MAX_LINES = 40000;
-  // TODO(config): the ground hatch never bakes finer than this world pitch (mm).
-  const MIN_PITCH_MM = 0.05;
-  // TODO(config): LRU size of the bake memo (entries are ~tens of kB).
-  const MEMO_MAX = 8;
+  // Tuning values live in Vectura.SCENE3D_SURFACE_LOCK.SHADOW (see `sync`); this table is the safe fallback when the
+  // config is not loaded. MIN_ELEVATION_DEG / MIN_RUN_MM mirror shadows.js (grazing light stretches the footprint to
+  // infinity; the run floor is applied in WORLD mm so it never flickers under an orbit). LUT_N is the tone-gating
+  // look-up resolution over t = distContact / L, SEARCH_ITERS the ternary / bisection depth for the tone-gated
+  // sub-interval of one line, ELLIPSE_SAMPLES the samples for the throw length L of a sphere footprint, MAX_LINES the
+  // hard cap on baked lines, MIN_PITCH_MM the finest world pitch of the ground hatch, MEMO_MAX the bake memo LRU size.
+  const DEFAULTS = {
+    MIN_ELEVATION_DEG: 2,
+    MIN_RUN_MM: 0.6,
+    LUT_N: 512,
+    SEARCH_ITERS: 26,
+    ELLIPSE_SAMPLES: 96,
+    MAX_LINES: 40000,
+    MIN_PITCH_MM: 0.05,
+    MEMO_MAX: 8,
+  };
+  const TUNE = Object.assign({}, DEFAULTS);
+  TUNE.MIN_ABS_DY = Math.sin(TUNE.MIN_ELEVATION_DEG * Math.PI / 180);
+  const sync = () => {
+    const own = (Vectura.SCENE3D_SURFACE_LOCK || {}).SHADOW || {};
+    Object.keys(DEFAULTS).forEach((k) => { TUNE[k] = Number.isFinite(own[k]) ? own[k] : DEFAULTS[k]; });
+    TUNE.MIN_ABS_DY = Math.sin(TUNE.MIN_ELEVATION_DEG * Math.PI / 180);
+  };
   const LUT_SALT = 0x5a17;
   const PERSP_NEAR = 0.05;
 
@@ -88,6 +94,7 @@
   // The flat hatch the pose path draws by default. Anything else (layers, inverse mode, follow-light
   // angle, a non-hatch Fill Style) is a look this module does not reproduce, so the scene is not Level S.
   const supports = ({ shadow, light, ground, casters } = {}) => {
+    sync();
     const bag = shadow || {};
     if (bag.shadowLayers === true) return false;
     if (bag.shadowMode === 'inverse') return false;
@@ -97,7 +104,7 @@
     if (!ground || ground.enabled === false) return false;
     if (!light || Array.isArray(light) || light.type !== 'directional' || light.castShadows === false) return false;
     const d = lightDirOf(light);
-    if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < MIN_ABS_DY) return false;
+    if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < TUNE.MIN_ABS_DY) return false;
     if (!Array.isArray(casters)) return false;
     return casters.every((c) => {
       if (!c || typeof c !== 'object') return false;
@@ -137,10 +144,10 @@
     const maxCov = ladderCoverageAt(1, tone);
     if (maxCov == null || !(maxCov > 0)) return null;
     const sMin = coverageToSpacing(maxCov, penWidth);
-    const lut = new Float64Array(LUT_N + 1);
+    const lut = new Float64Array(TUNE.LUT_N + 1);
     let floor = 1;
-    for (let k = 0; k <= LUT_N; k += 1) {
-      const cov = ladderCoverageAt(1 - k / LUT_N, tone);
+    for (let k = 0; k <= TUNE.LUT_N; k += 1) {
+      const cov = ladderCoverageAt(1 - k / TUNE.LUT_N, tone);
       const sT = coverageToSpacing(cov == null ? maxCov : cov, penWidth);
       const duty = clamp(sMin / sT, 0.02, 1);
       const keep = clamp(1 - depth * (1 - duty), 0.02, 1);
@@ -154,6 +161,7 @@
   const toneKey = (tone) => (tone ? JSON.stringify([tone.enabled, tone.thresholds, tone.ladder]) : 'none');
 
   const bakeGround = (groundSpec, shadowCfg, penWidth, seed) => {
+    sync();
     const spec = groundSpec || {};
     const bag = shadowCfg || {};
     const pw = Math.max(0.05, finite(penWidth, 0.3));
@@ -170,7 +178,7 @@
     const sBase = coverageToSpacing(coverage, pw);
     // Finest world pitch: the pose-mode screen pitch at a top-down view (f = 1). frameShadow thins this
     // nested set to the pitch the current view needs, so the screen density stays at the pose-mode value.
-    const pitch = Math.max(MIN_PITCH_MM, sBase / scaleRef);
+    const pitch = Math.max(TUNE.MIN_PITCH_MM, sBase / scaleRef);
     const key = ['gs1', hx.toFixed(6), hz.toFixed(6), angleDeg.toFixed(6), pitch.toFixed(6), depth.toFixed(6),
       toneKey(tone), pw.toFixed(6), salt, scaleRef.toFixed(6)].join('|');
     if (memo.has(key)) { const hit = memo.get(key); memo.delete(key); memo.set(key, hit); return hit; }
@@ -182,7 +190,7 @@
     // Offset range that touches the rectangle: |d| <= hx |nx| + hz |nz|.
     const dMax = hx * Math.abs(nx) + hz * Math.abs(nz);
     let iMin = Math.ceil(-dMax / pitch - phase); let iMax = Math.floor(dMax / pitch - phase);
-    if (iMax - iMin + 1 > MAX_LINES) { const mid = Math.floor((iMin + iMax) / 2); iMin = mid - MAX_LINES / 2; iMax = iMin + MAX_LINES - 1; }
+    if (iMax - iMin + 1 > TUNE.MAX_LINES) { const mid = Math.floor((iMin + iMax) / 2); iMin = mid - TUNE.MAX_LINES / 2; iMax = iMin + TUNE.MAX_LINES - 1; }
     const maxCount = Math.max(0, iMax - iMin + 1);
     const d = new Float64Array(maxCount); const t0 = new Float64Array(maxCount); const t1 = new Float64Array(maxCount);
     const rank = new Float64Array(maxCount); const level = new Uint8Array(maxCount);
@@ -205,10 +213,10 @@
     const hatch = {
       key, angleDeg, dirX: ux, dirZ: uz, nX: nx, nZ: nz, pitch, phase, iMin, count: maxCount, hx, hz, scaleRef, penWidth: pw,
       toneDepth: depth, falloff, d, t0, t1, rank, level, keepLUT: buildKeepLUT(tone, depth, pw),
-      bytes: maxCount * (8 * 4 + 1) + (depth > 0 ? (LUT_N + 1) * 8 : 0),
+      bytes: maxCount * (8 * 4 + 1) + (depth > 0 ? (TUNE.LUT_N + 1) * 8 : 0),
     };
     memo.set(key, hatch);
-    while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+    while (memo.size > TUNE.MEMO_MAX) memo.delete(memo.keys().next().value);
     return hatch;
   };
 
@@ -286,8 +294,8 @@
   const finishCaster = (fp, contact) => {
     let L = 0;
     if (fp.kind === 'ellipse') {
-      for (let k = 0; k < ELLIPSE_SAMPLES; k += 1) {
-        const a = (k / ELLIPSE_SAMPLES) * 2 * Math.PI;
+      for (let k = 0; k < TUNE.ELLIPSE_SAMPLES; k += 1) {
+        const a = (k / TUNE.ELLIPSE_SAMPLES) * 2 * Math.PI;
         const ca = Math.cos(a) * fp.A; const sb = Math.sin(a) * fp.B;
         L = Math.max(L, contactDist(contact, fp.cx + fp.hx * ca + fp.px * sb, fp.cz + fp.hz * ca + fp.pz * sb));
       }
@@ -347,11 +355,11 @@
   // t* and not beyond. 1 means the whole throw.
   const tStarFor = (lut, rank) => {
     if (!lut) return 1;
-    if (lut[LUT_N] > rank) return 1;
+    if (lut[TUNE.LUT_N] > rank) return 1;
     if (!(lut[0] > rank)) return 0;
-    let lo = 0; let hi = LUT_N; // lut[lo] > rank, lut[hi] <= rank
+    let lo = 0; let hi = TUNE.LUT_N; // lut[lo] > rank, lut[hi] <= rank
     while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (lut[mid] > rank) lo = mid; else hi = mid; }
-    return lo / LUT_N;
+    return lo / TUNE.LUT_N;
   };
 
   // Sub-interval of [a, b] on line (base, u) where contactDist < D (a convex function of s: one interval).
@@ -367,16 +375,16 @@
     }
     const g = (s) => contactDist(contact, bx + ux * s, bz + uz * s);
     let lo = a; let hi = b;
-    for (let i = 0; i < SEARCH_ITERS; i += 1) {
+    for (let i = 0; i < TUNE.SEARCH_ITERS; i += 1) {
       const m1 = lo + (hi - lo) / 3; const m2 = hi - (hi - lo) / 3;
       if (g(m1) < g(m2)) hi = m2; else lo = m1;
     }
     const sMin = (lo + hi) / 2;
     if (!(g(sMin) < D)) return null;
     let left = a;
-    if (!(g(a) < D)) { let x0 = a; let x1 = sMin; for (let i = 0; i < SEARCH_ITERS; i += 1) { const m = (x0 + x1) / 2; if (g(m) < D) x1 = m; else x0 = m; } left = x1; }
+    if (!(g(a) < D)) { let x0 = a; let x1 = sMin; for (let i = 0; i < TUNE.SEARCH_ITERS; i += 1) { const m = (x0 + x1) / 2; if (g(m) < D) x1 = m; else x0 = m; } left = x1; }
     let right = b;
-    if (!(g(b) < D)) { let x0 = sMin; let x1 = b; for (let i = 0; i < SEARCH_ITERS; i += 1) { const m = (x0 + x1) / 2; if (g(m) < D) x0 = m; else x1 = m; } right = x0; }
+    if (!(g(b) < D)) { let x0 = sMin; let x1 = b; for (let i = 0; i < TUNE.SEARCH_ITERS; i += 1) { const m = (x0 + x1) / 2; if (g(m) < D) x0 = m; else x1 = m; } right = x0; }
     return right > left ? [left, right] : null;
   };
 
@@ -415,9 +423,10 @@
   const EMPTY = () => ({ world: new Float64Array(0), runs: [] });
 
   const frameShadow = (hatch, casters, lightDirWorld, pose) => {
+    sync();
     if (!hatch || !hatch.count || !Array.isArray(casters) || !casters.length) return EMPTY();
     const d = lightDirWorld ? normalize3(lightDirWorld) : null;
-    if (!d || Math.abs(d.y) < MIN_ABS_DY) return EMPTY();
+    if (!d || Math.abs(d.y) < TUNE.MIN_ABS_DY) return EMPTY();
     const prepared = [];
     for (let i = 0; i < casters.length; i += 1) { const pc = prepareCaster(casters[i], d); if (pc) prepared.push(pc); }
     if (!prepared.length) return EMPTY();
@@ -482,7 +491,7 @@
       idx.sort((p, q) => iv[2 * p] - iv[2 * q]);
       let cs = iv[2 * idx[0]]; let ce = iv[2 * idx[0] + 1];
       const emit = (s0, s1) => {
-        if (!(s1 - s0 >= MIN_RUN_MM)) return;
+        if (!(s1 - s0 >= TUNE.MIN_RUN_MM)) return;
         const x0 = bx + ux * s0; const z0 = bz + uz * s0; const x1 = bx + ux * s1; const z1 = bz + uz * s1;
         if (project) {
           const p0 = project(x0, z0); const p1 = project(x1, z1);
@@ -508,8 +517,8 @@
     frameShadow,
     receiveMap: () => { throw new Error('SurfaceLockShadow.receiveMap: not implemented (surface-lock unit W3-C)'); },
     clearCache: () => memo.clear(),
-    MIN_ABS_DY,
-    MIN_RUN_MM,
+    get MIN_ABS_DY() { return TUNE.MIN_ABS_DY; },
+    get MIN_RUN_MM() { return TUNE.MIN_RUN_MM; },
     CONVEX_PRIMITIVES,
   };
 })();
