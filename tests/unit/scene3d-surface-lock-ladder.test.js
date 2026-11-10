@@ -124,12 +124,23 @@ describe('SurfaceLockLadder', () => {
     ['hatch', 'contour'].forEach((mapper) => {
       const ms = bake(sphere(mapper));
       const p0 = ms.meta.p0; const P = poles(sphere(mapper));
+      // A ruling is split into sub-runs where its effective level changes (the chart converges); consecutive sub-runs hand
+      // off one chart step (STEP_MM 0.5) apart. Group runs whose end vertices are <= 0.6 mm apart so a ruling is one run.
+      const grp = Array.from({ length: ms.runCount }, (_, r) => r);
+      const find = (x) => { while (grp[x] !== x) { grp[x] = grp[grp[x]]; x = grp[x]; } return x; };
+      const ends = [];
+      for (let r = 0; r < ms.runCount; r++) { const q = runPts(ms, r); ends.push([q[0], r], [q[q.length - 1], r]); }
+      for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+        const a = ends[i][0]; const b = ends[j][0];
+        if (ends[i][1] !== ends[j][1] && Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) <= 0.6) grp[find(ends[i][1])] = find(ends[j][1]);
+      }
       for (let l = 0; l < 5; l++) {
         const H = V.Scene3D.SurfaceLockChart.spatialHash3(p0 / Math.pow(2, l));
         const pts = [];
         for (let r = 0; r < ms.runCount; r++) {
           if (ms.runLevel[r] > l) continue;
-          runPts(ms, r).forEach((p, i) => { if (!nearPole(P, p, 6)) { H.insert(p[0], p[1], p[2], r); pts.push([p, r]); } });
+          const rp = runPts(ms, r);
+          rp.forEach((p) => { if (!nearPole(P, p, 6)) { H.insert(p[0], p[1], p[2], find(r)); pts.push([p, find(r)]); } });
         }
         let minD = Infinity;
         const step = Math.max(1, Math.floor(pts.length / 3000));
@@ -137,7 +148,7 @@ describe('SurfaceLockLadder', () => {
           const [p, r] = pts[i];
           H.near(p[0], p[1], p[2], 0.8 * p0 / Math.pow(2, l), (id, d2) => { if (id !== r) minD = Math.min(minD, Math.sqrt(d2)); return false; });
         }
-        // Closeness is checked against vertices of OTHER runs; same-ruling sub-runs share an id by construction.
+        // Closeness is checked against vertices of OTHER runs (sub-runs of one ruling are grouped).
         expect(minD, `${mapper} level ${l}`).toBeGreaterThanOrEqual(0.8 * p0 / Math.pow(2, l) * 0.999);
       }
     });
@@ -249,7 +260,57 @@ describe('SurfaceLockLadder', () => {
     });
   });
 
+  describe('compression-aware levels (F-L2): ink per band keeps doubling where the chart converges', () => {
+    // Cumulative ink of all levels over level-0 ink, per band of equal surface weight. Bands are chosen per shape from the
+    // geometry (sphere: |cos| to the pole axis = equal area; cylinder: slices along the axis; torus: six sectors of the
+    // minor angle, the inner equator centred in one). The ratio cancels the band area.
+    const bandInk = (ms, shape, spec) => {
+      const P = ms.positions; const NB = shape === 'torus' ? 6 : 5;
+      const ext = [0, 1, 2].map((k) => { let lo = Infinity; let hi = -Infinity; for (let v = 0; v < ms.vertexCount; v++) { lo = Math.min(lo, P[3 * v + k]); hi = Math.max(hi, P[3 * v + k]); } return [lo, hi]; });
+      const span = ext.map((e) => e[1] - e[0]);
+      let ax = 1; if (shape === 'torus') ax = span.indexOf(Math.min(...span)); if (shape === 'cylinder') ax = span.indexOf(Math.max(...span));
+      const o = [0, 1, 2].filter((k) => k !== ax);
+      let R = 0;
+      if (shape === 'torus') { let lo = Infinity; let hi = -Infinity; for (let v = 0; v < ms.vertexCount; v++) { const rho = Math.hypot(P[3 * v + o[0]], P[3 * v + o[1]]); lo = Math.min(lo, rho); hi = Math.max(hi, rho); } R = (lo + hi) / 2; }
+      const ctr = (ext[ax][0] + ext[ax][1]) / 2;
+      const band = (v) => {
+        const h = P[3 * v + ax] - ctr;
+        if (shape === 'sphere') return Math.min(NB - 1, Math.floor((Math.abs(h) / Math.hypot(P[3 * v], P[3 * v + 1], P[3 * v + 2])) * NB));
+        if (shape === 'cylinder') return Math.min(NB - 1, Math.max(0, Math.floor(((h + span[ax] / 2) / span[ax]) * NB)));
+        const rho = Math.hypot(P[3 * v + o[0]], P[3 * v + o[1]]);
+        const phi = Math.atan2(h, R - rho);
+        return Math.floor(((phi + Math.PI) / (2 * Math.PI)) * NB + 0.5) % NB;
+      };
+      const pole = shape === 'sphere' ? poles(spec) : [];
+      const len = Array.from({ length: NB }, () => new Float64Array(ms.levels));
+      for (let r = 0; r < ms.runCount; r++) {
+        for (let v = ms.runStart[r]; v < ms.runStart[r + 1] - 1; v++) {
+          if (pole.length && nearPole(pole, [P[3 * v], P[3 * v + 1], P[3 * v + 2]], 0.5)) continue;
+          const b = band(v); if (b < 0) continue;
+          len[b][ms.runLevel[r]] += Math.hypot(P[3 * v + 3] - P[3 * v], P[3 * v + 4] - P[3 * v + 1], P[3 * v + 5] - P[3 * v + 2]);
+        }
+      }
+      return len.map((row) => { const tot = row.reduce((a, c) => a + c, 0); return { l0: row[0], ratio: tot / Math.max(row[0], 1e-9) }; });
+    };
+    it.each(['sphere', 'cylinder', 'torus'])('hatch on a %s: all levels carry >= 0.5 * 2^(L-1) x the level-0 ink in every band', (shape) => {
+      const spec = sphere('hatch', SHAPES[shape]);
+      const ms = bake(spec);
+      const need = 0.5 * Math.pow(2, ms.levels - 1);
+      bandInk(ms, shape, spec).forEach((b, i) => { expect(b.ratio, `${shape} band ${i} (levels ${ms.levels}, level-0 ink ${b.l0.toFixed(1)})`).toBeGreaterThanOrEqual(need); });
+    });
+  });
+
   describe('budget', () => {
+    it('levels stop at the darkest pitch the law can ask for (F-L3): default hatch and stipple bake 4 levels, ~8.5k hatch vertices', () => {
+      const h = bake(sphere('hatch'));
+      expect(h.levels).toBe(4);
+      expect(h.vertexCount).toBeLessThan(12000);
+      expect(bake(sphere('stipple')).levels).toBe(4);
+      // finest baked pitch at the largest in-octave scale (sqrt2 x 1.5 headroom = 2.12 x scaleRef) must still be drawable:
+      // it is no finer than the master pitch / 1.5 and not under 0.8 x the plot floor.
+      const floor = V.Scene3D.Regions.PLOT_FLOOR_PEN * PEN;
+      expect(h.meta.p0 / Math.pow(2, h.levels - 1)).toBeGreaterThanOrEqual(0.8 * floor);
+    });
     it('default sphere hatch: <= 80k vertices, 4-6 levels, validate clean, bake time reported', () => {
       const t = Date.now();
       const ms = L.bake(sphere('hatch'));
