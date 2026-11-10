@@ -17,11 +17,11 @@
  * Interfaces this module ASSUMES from the neighbours that are still stubs (W1-B / W1-E may differ; W2-C reconciles):
  *   SurfaceLockVisibility.supports(obj) -> bool
  *   SurfaceLockVisibility.meshBake(obj) -> mesh                         pose-free, cached here by (primitive, params, scale)
- *   SurfaceLockVisibility.occluder(items, camPose) -> occ               items = [{ objectId, mesh, pose }]; occ.clip(pts, ownerId) -> pts[][] (optional)
- *   SurfaceLockVisibility.outline(mesh, pose, occ) -> { silhouette, crease, boundary }   each an array of pts arrays
+ *   SurfaceLockVisibility.occluder(meshBakes, { cam, objs }) -> occ     occ.segFor(bake), occ.clipRun(pts, seg) -> [{ pts, visible }], occ.closedMerge(runs)
+ *   SurfaceLockVisibility.outline(mesh, pose, occ) -> { silhouette, crease, boundary }   each an array of visible runs { pts, visible }
  *   SurfaceLockShadow.supports({ shadow, light, lights, ground, casters }) -> bool
  *   SurfaceLockShadow.bakeGround(groundSpec, shadowCfg, penWidth, seed) -> groundHatch
- *   SurfaceLockShadow.frameShadow(groundHatch, casters, lightDirWorld, pose) -> { runs }
+ *   SurfaceLockShadow.frameShadow(groundHatch, casters, lightDirWorld, pose) -> { runs: [{ pts: [{x,y,z}] }] }
  */
 (function registerSceneSurfaceLock() {
   'use strict';
@@ -39,6 +39,7 @@
   const TONE_MEMO_MAX = CFG.TONE_LUT_MEMO_ENTRIES || 32;
   const AUX_CACHE_MAX = CFG.AUX_CACHE_ENTRIES || 16;
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
+  const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
   const FALLBACK_FLOOR_PEN = 2.2;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
@@ -52,7 +53,7 @@
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
     culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0,
-    msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
+    bakeErrors: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
   // The cache counters describe live state, not events: resetStats keeps them in step with the cache.
@@ -64,11 +65,17 @@
 
   // ── exclusions (contract §12): data, each with an example the tests drive ─────────────────────────────────────────
   const truthyList = (v) => (Array.isArray(v) ? v.length > 0 : !!v);
+  // Pose-mode highlightCfg normalisation: 'keep' is an alias of 'none'; an unknown or empty value reads as 'blank'.
+  const HIGHLIGHT_TREATMENTS = Object.freeze(['blank', 'none', 'restyle', 'thin', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut']);
+  const highlightTreatmentOf = (st) => {
+    const raw = st.highlightTreatment === 'keep' ? 'none' : st.highlightTreatment;
+    return HIGHLIGHT_TREATMENTS.indexOf(raw) !== -1 ? raw : 'blank';
+  };
   const EXCLUSIONS = Object.freeze([
     { id: 'xray', test: (st, cx) => cx.visibility === 'xray', example: { ctx: { visibility: 'xray' } } },
-    { id: 'highlightTreatment', test: (st) => st.highlightTreatment != null && st.highlightTreatment !== '' && st.highlightTreatment !== 'blank' && st.highlightTreatment !== 'none', example: { style: { highlightTreatment: 'thin' } } },
+    { id: 'highlightTreatment', test: (st) => { const t = highlightTreatmentOf(st); return t !== 'blank' && t !== 'none'; }, example: { style: { highlightTreatment: 'thin' } } },
     { id: 'highlightLightDriven', test: (st) => st.highlightMode === 'lightDriven', example: { style: { highlightMode: 'lightDriven' } } },
-    { id: 'toneBands', test: (st) => num(st.toneBands, 0) > 0, example: { style: { toneBands: 3 } } },
+    { id: 'toneBands', test: (st) => Math.round(num(st.toneBands, 0)) >= 2, example: { style: { toneBands: 3 } } },
     { id: 'tierPens', test: (st) => truthyList(st.tierPens), example: { style: { tierPens: ['a', 'b'] } } },
     { id: 'wrapFlat', test: (st) => st.wrap === 'flat', example: { style: { wrap: 'flat' } } },
     { id: 'contourRegion', test: (st, cx, mp) => mp === 'contour' && st.contourStyle === 'region', example: { style: { contourStyle: 'region' }, ctx: { mapper: 'contour' } } },
@@ -77,7 +84,6 @@
     { id: 'csgCarve', test: (st, cx) => cx.csgCarve === true, example: { ctx: { csgCarve: true } } },
     { id: 'receiveShadow', test: (st, cx) => cx.receiveShadow === true, example: { ctx: { receiveShadow: true } } }, // lifted by W3-C
     { id: 'areaLight', test: (st, cx) => cx.areaLight === true, example: { ctx: { areaLight: true } } },
-    { id: 'lawDraft', test: (st, cx) => cx.lawDraft === true, example: { ctx: { lawDraft: true } } },
   ]);
 
   const bakerFor = (spec) => {
@@ -154,7 +160,8 @@
     }
     stats.bakeMisses += 1;
     const t0 = now();
-    const ms = baker.bake(spec);
+    let ms = null;
+    try { ms = baker.bake(spec); } catch (e) { ms = null; stats.bakeErrors += 1; }
     stats.msBake += now() - t0;
     if (!ms) return null;
     ms.key = key; // the cache key is authoritative; a baker's own meta.key is informational
@@ -271,15 +278,18 @@
       if (!valid || facing <= 0) { STE[v] = 0; continue; }
       // tone
       let te = Infinity;
-      if (lut && toneFn) {
-        pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
-        nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
-        let I = toneFn(nW, pW);
-        I = I > 0 ? (I < 1 ? I : 1) : 0;
+      if (lut) {
+        let I = 1;
+        if (toneFn) {
+          pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
+          nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
+          I = toneFn(nW, pW);
+          I = I > 0 ? (I < 1 ? I : 1) : 0;
+        }
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
         let dm = p0 * sv * l;
-        if (scaleFn && dm > 0) {
+        if (scaleFn && toneFn && dm > 0) {
           if (persp) {
             const wx = -cx; const wy = -cy; const wz = eyeZ - cz; const wl = Math.sqrt(wx * wx + wy * wy + wz * wz) || 1;
             const ex = wx / wl; const ey = wy / wl; const ez = wz / wl;
@@ -292,9 +302,9 @@
       }
       if (floorPitch > 0) {
         // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
-        // one level-pitch apart, below the floor, so the cap only ever admits complete levels (or a regular 1/gain^m
+        // one level-pitch apart, below the floor, so the cap only ever admits complete levels, each once its pitch is >= FLOOR_SLACK x floor (or a regular 1/gain^m
         // thinning of level 0 below the base pitch). The drawn subset then never falls under the floor.
-        const cr = p0 * sv * facing / floorPitch;
+        const cr = p0 * sv * facing / (floorPitch * FLOOR_SLACK);
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
@@ -504,6 +514,28 @@
     return v;
   };
 
+  // World-space caster record for the shadow module (contract §10): a uniform-scale sphere is analytic, anything else a hull.
+  const casterOf = (o, mesh, pose) => {
+    const t = o.transform || {};
+    const sc = mesh && mesh.scale ? mesh.scale : [1, 1, 1];
+    const tr = { x: num(t.x, 0), y: num(t.y, 0), z: num(t.z, 0) };
+    const uniform = Math.abs(sc[0] - sc[1]) < 1e-9 && Math.abs(sc[1] - sc[2]) < 1e-9;
+    if (o.primitive === 'sphere' && uniform && mesh && mesh.analytic && mesh.analytic.radii) {
+      return { primitive: o.primitive, shape: 'sphere', center: tr, radius: mesh.analytic.radii[0] };
+    }
+    const R = rotMatrix({ yaw: pose.obj.yaw, pitch: pose.obj.pitch, roll: pose.obj.roll });
+    const V = mesh && mesh.vertices ? mesh.vertices : [];
+    const points = [];
+    for (let i = 0; i + 2 < V.length; i += 3) {
+      points.push({
+        x: R[0] * V[i] + R[1] * V[i + 1] + R[2] * V[i + 2] + tr.x,
+        y: R[3] * V[i] + R[4] * V[i + 1] + R[5] * V[i + 2] + tr.y,
+        z: R[6] * V[i] + R[7] * V[i + 1] + R[8] * V[i + 2] + tr.z,
+      });
+    }
+    return { primitive: o.primitive, shape: 'hull', points };
+  };
+
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -511,38 +543,60 @@
     const objects = p.objects || [];
     const penWidth = num(bounds && bounds.penWidth, 0);
     const seedOf = (id) => (typeof ctx.seedFor === 'function' ? ctx.seedFor(id) : null) || { salt: 0, phase: 0, off: false };
-    const meshes = objects.map((o) => auxGet(0, JSON.stringify([o.primitive, o.params, o.transform && [o.transform.scale, o.transform.sx, o.transform.sy, o.transform.sz]]), () => Vis.meshBake(o)));
+    const meshes = objects.map((o) => auxGet(0, JSON.stringify([o.id, o.primitive, o.params, o.transform && [o.transform.scale, o.transform.sx, o.transform.sy, o.transform.sz]]), () => Vis.meshBake(o)));
     const poses = objects.map((o) => poseOf(o.transform, p.camera, bounds));
+    const camPose = poseOf({}, p.camera, bounds);
 
-    // 1. shadow
     const lights = p.lights || [];
     const sun = lights.find((l) => l && l.type === 'directional' && l.castShadows !== false);
-    if (sun && p.ground && p.ground.enabled !== false && Sh && Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })) {
+    const shadowOn = !!(sun && p.ground && p.ground.enabled !== false && Sh && Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects }));
+
+    // Occlusion buffer: several objects, a non-convex one, or a cast shadow to clip (contract §7).
+    let occ = null;
+    if (Vis && typeof Vis.occluder === 'function' && (objects.length > 1 || meshes.some((m) => m && !m.convex) || shadowOn)) {
+      occ = Vis.occluder(meshes, { cam: camPose.cam, objs: poses.map((q) => q.obj) });
+    }
+    const countPts = (runs) => { let n = 0; runs.forEach((r) => { n += r.pts.length; }); return n; };
+    // Clip one polyline against the buffer; keeps the visible runs and counts the dropped vertices.
+    const clipLine = (pts, seg, closed) => {
+      if (!occ) return [{ pts, visible: true }];
+      let runs = occ.clipRun(pts, seg);
+      if (closed && typeof occ.closedMerge === 'function') runs = occ.closedMerge(runs);
+      const kept = runs.filter((r) => r.visible && r.pts.length > 1);
+      stats.culledOccluded += Math.max(0, pts.length - countPts(kept));
+      return kept.map((r) => ({ pts: r.pts, visible: true }));
+    };
+    const GROUND_SEG = { obj: -1, mode: 'fill' };
+
+    // 1. shadow, then the ground outline (world-fixed)
+    if (shadowOn) {
       const seed = seedOf('ground');
-      const hatch = auxGet(1, JSON.stringify([p.ground, p.shadow, penWidth, seed]), () => Sh.bakeGround({ ground: p.ground }, p.shadow, penWidth, seed));
+      const cam = p.camera || {};
+      const persp = camPose.cam.persp;
+      const scaleRef = Math.pow(2, Math.round(Math.log2(Math.max(1e-6, num(cam.zoom, 1) * (persp ? camPose.cam.focal / (camPose.cam.focal + camPose.cam.dist) : 1)))));
+      const gspec = { width: num(bounds && bounds.width, 200), height: num(bounds && bounds.height, 200), scaleX: num(p.ground.scaleX, 1), scaleZ: num(p.ground.scaleZ, 1), scaleRef };
+      const hatch = auxGet(1, JSON.stringify([gspec, p.shadow, penWidth, seed]), () => Sh.bakeGround(gspec, p.shadow, penWidth, seed));
       const L = Scene3D.Lighting;
       const dir = ctx.lightDirWorld || (L && L.lightWorldDir ? L.lightWorldDir(sun) : { x: 0, y: -1, z: 0 });
-      const casters = objects.map((o, i) => ({ objectId: o.id, primitive: o.primitive, transform: o.transform, mesh: meshes[i] }));
-      const res = Sh.frameShadow(hatch, casters, dir, poseOf({}, p.camera, bounds));
-      if (res && res.runs && res.runs.length) ctx.emitShadow(res.runs);
+      const casters = objects.map((o, i) => casterOf(o, meshes[i], poses[i]));
+      const res = Sh.frameShadow(hatch, casters, dir, camPose);
+      if (res && res.runs && res.runs.length) {
+        const out = [];
+        res.runs.forEach((r) => clipLine(r.pts, GROUND_SEG, false).forEach((q) => out.push(q)));
+        if (out.length) ctx.emitShadow(out);
+      }
+      if (typeof ctx.emitGround === 'function') {
+        const span = Math.max(gspec.width, gspec.height) * 0.75;
+        const hx = span * Math.max(0, gspec.scaleX); const hz = span * Math.max(0, gspec.scaleZ);
+        const corners = [[-hx, hz], [hx, hz], [hx, -hz], [-hx, -hz], [-hx, hz]].map((c) => Scene3D.Scene.projectWorldPoint({ x: c[0], y: 0, z: c[1] }, cam, bounds));
+        if (corners.every((c) => c)) {
+          const out = clipLine(corners, GROUND_SEG, false);
+          if (out.length) ctx.emitGround(out);
+        }
+      }
     }
 
-    // 2. occlusion buffer (several objects, or a non-convex one)
-    let occ = null;
-    if (objects.length > 1 && Vis && typeof Vis.occluder === 'function') {
-      occ = Vis.occluder(objects.map((o, i) => ({ objectId: o.id, mesh: meshes[i], pose: poses[i] })), poseOf({}, p.camera, bounds));
-    }
-    const toRuns = (polys) => polys.map((pts) => ({ pts, visible: true }));
-    const clipAll = (polys, id) => {
-      if (!occ || typeof occ.clip !== 'function') return polys;
-      const out = [];
-      let before = 0; let after = 0;
-      polys.forEach((pts) => { before += pts.length; occ.clip(pts, id).forEach((q) => { after += q.length; out.push(q); }); });
-      stats.culledOccluded += Math.max(0, before - after);
-      return out;
-    };
-
-    // 3. per object: fills then edges
+    // 2. per object: fills then edges
     objects.forEach((o, i) => {
       const st = objectStyleOf(p, o.id);
       if (!isMapperNoFill(st.mapper)) {
@@ -550,17 +604,23 @@
         if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec));
         const ms = bake(spec);
         if (ms) {
-          const toneCtx = { tone: p.tone, penWidth, highlight: p.tone && p.tone.specular };
+          const toneCtx = { tone: p.tone, penWidth, noHighlight: !!(spec.noHighlight) };
           const tone = toneTable(spec, toneCtx);
           const lines = frame([ms], poses[i], { toneFn: ctx.toneFnFor(o.id), tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off });
-          const runs = toRuns(clipAll(lines, o.id));
+          const seg = occ ? occ.segFor(meshes[i]) : null;
+          const runs = [];
+          lines.forEach((line) => {
+            const a = line[0]; const b = line[line.length - 1];
+            const closed = line.length > 3 && Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9;
+            clipLine(line, seg, closed).forEach((q) => runs.push(q));
+          });
           if (runs.length) ctx.emitFill(o.id, runs);
         }
       }
       if (Vis && typeof Vis.outline === 'function') {
         const ol = Vis.outline(meshes[i], poses[i], occ) || {};
         ['silhouette', 'crease', 'boundary'].forEach((cls) => {
-          if (ol[cls] && ol[cls].length) ctx.emitEdge(o.id, cls, toRuns(ol[cls]));
+          if (ol[cls] && ol[cls].length) ctx.emitEdge(o.id, cls, ol[cls]);
         });
       }
     });

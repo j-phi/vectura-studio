@@ -219,9 +219,10 @@ describe('surface lock frame pipeline', () => {
       bake: () => { bakes += 1; return small(); },
       toneLUT: () => ({ lut: new Float32Array(257).fill(1), scaleFn: null }),
     };
-    let saved;
-    beforeEach(() => { bakes = 0; supportsOn = true; saved = V.Scene3D.SurfaceLockMezzo; V.Scene3D.SurfaceLockMezzo = fake; SL.setCacheLimitBytes(null); });
-    afterEach(() => { V.Scene3D.SurfaceLockMezzo = saved; SL.setCacheLimitBytes(null); });
+    let saved; let savedLadder;
+    // only the fake baker may support a spec here (the real ladder would otherwise claim a sphere hatch)
+    beforeEach(() => { bakes = 0; supportsOn = true; saved = V.Scene3D.SurfaceLockMezzo; V.Scene3D.SurfaceLockMezzo = fake; savedLadder = V.Scene3D.SurfaceLockLadder; V.Scene3D.SurfaceLockLadder = { supports: () => false }; SL.setCacheLimitBytes(null); });
+    afterEach(() => { V.Scene3D.SurfaceLockMezzo = saved; V.Scene3D.SurfaceLockLadder = savedLadder; SL.setCacheLimitBytes(null); });
 
     it('7. bake cache: one bake per spec, hits counted, key ignores objectId / pose-side fields, LRU evicts by bytes (§8)', () => {
       const a = SL.bake(SPEC()); const b = SL.bake(SPEC());
@@ -256,7 +257,7 @@ describe('surface lock frame pipeline', () => {
       expect(SL.effectiveMarkSpace({}, ctx())).toBe('pose');
       expect(SL.effectiveMarkSpace({ markSpace: 'pose' }, ctx())).toBe('pose');
       expect(SL.effectiveMarkSpace(undefined, ctx())).toBe('pose');
-      expect(SL.EXCLUSIONS.length).toBeGreaterThanOrEqual(13);
+      expect(SL.EXCLUSIONS.length).toBeGreaterThanOrEqual(12);
       SL.EXCLUSIONS.forEach((ex) => {
         const style = { markSpace: 'surface', ...(ex.example.style || {}) };
         expect(SL.effectiveMarkSpace(style, { ...ctx(), ...(ex.example.ctx || {}) }), ex.id).toBe('pose');
@@ -273,13 +274,13 @@ describe('surface lock frame pipeline', () => {
       const calls = [];
       const savedV = V.Scene3D.SurfaceLockVisibility; const savedS = V.Scene3D.SurfaceLockShadow;
       V.Scene3D.SurfaceLockVisibility = {
-        supports: () => true, meshBake: (o) => ({ id: o.id }),
-        occluder: () => ({ clip: (pts) => [pts] }),
-        outline: (mesh, pose) => ({ silhouette: [[pt(0, 0), pt(1, 1)]], crease: pose.obj.x > 10 ? [[pt(2, 2), pt(3, 3)]] : [], boundary: [] }),
+        supports: () => true, meshBake: (o) => ({ objectId: o.id, convex: true, scale: [1, 1, 1], vertices: new Float64Array(0), analytic: null }),
+        occluder: () => ({ segFor: () => ({ obj: 0, mode: 'fill' }), clipRun: (pts) => [{ pts, visible: true }], closedMerge: (r) => r }),
+        outline: (mesh, pose) => ({ silhouette: [{ pts: [pt(0, 0), pt(1, 1)], visible: true }], crease: pose.obj.x > 10 ? [{ pts: [pt(2, 2), pt(3, 3)], visible: true }] : [], boundary: [] }),
       };
       V.Scene3D.SurfaceLockShadow = {
         supports: () => true, bakeGround: () => ({ g: 1 }),
-        frameShadow: () => ({ runs: [{ pts: [pt(0, 0), pt(5, 5)], visible: true }] }),
+        frameShadow: () => ({ runs: [{ pts: [pt(0, 0), pt(5, 5)], visible: true }] }), // points carry z (F-S1)
       };
       try {
         const p = {

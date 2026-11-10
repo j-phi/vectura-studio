@@ -25,7 +25,10 @@
     MAX_LEVELS: 6,
     // Contract §4 — finest baked level reaches the darkest pitch at this multiple of the bake scale
     // (zoom headroom before a re-bake is needed to stay dense).
-    ZOOM_HEADROOM: 2,
+    ZOOM_HEADROOM: 1.5,
+    // Contract §5 (A1) — the plot-floor cap admits a whole density level once its screen pitch is at least this
+    // fraction of the floor pitch (the §14.6 bar: no two drawn runs closer than 0.8 x floor).
+    PLOT_FLOOR_SLACK: 0.8,
     // Contract §8 — module-level bake cache, least-recently-used by bytes.
     CACHE_MB: 64,
     CACHE_MB_MOBILE: 24,
