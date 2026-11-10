@@ -246,8 +246,11 @@ describe('surface lock Level F dispatch', () => {
         const spy = spyFrame();
         try {
           scene.setPose({ camYaw: -30, camPitch: 20 }); scene.composeFull();
-          const { lines, pose: fp } = spy.calls[spy.calls.length - 1];
-          const floorPitch = V.Scene3D.Regions.PLOT_FLOOR_PEN * 0.3;
+          const { lines, pose: fp, ms, view } = spy.calls[spy.calls.length - 1];
+          // Active floor (decision O1): a law may declare its own floor in pen widths (meta.floorPitchPen); else the plot floor.
+          const declared = ms && ms.meta && ms.meta.floorPitchPen;
+          const pen = Number.isFinite(view.penWidth) ? view.penWidth : 0.3;
+          const floorPitch = Number.isFinite(declared) && declared > 0 ? declared * pen : V.Scene3D.Regions.PLOT_FLOOR_PEN * 0.3;
           const camR = rotMat({ yaw: fp.cam.yaw, pitch: fp.cam.pitch, roll: fp.cam.roll });
           const cc = mulV(camR, [fp.obj.x, fp.obj.y, fp.obj.z]);
           const cx = fp.cam.cx + cc[0] * fp.cam.scale; const cy = fp.cam.cy - cc[1] * fp.cam.scale; const rr = R * fp.cam.scale;
@@ -300,16 +303,17 @@ describe('surface lock Level F dispatch', () => {
         } finally { spy.restore(); }
       };
 
-      it('§14.6 drawn runs keep clear of each other (regression bar: 0.6 x the plot-floor pitch)', () => {
+      it('§14.6 drawn runs keep clear of each other (regression bar: 0.6 x the active floor pitch)', () => {
         const { min, where, floorPitch, compared } = minRunGap();
         expect(compared).toBeGreaterThan(1000);
         expect(min, `at ${where}`).toBeGreaterThanOrEqual(0.6 * floorPitch);
       });
 
-      // The contract bar. Today the mezzo run spacing sits at ~0.67 x floor mid-run (W1 baker / prepass spacing, reported
-      // as a follow-up for the baker owners). it.fails keeps the bar visible and turns red the day it is met: then delete
-      // this wrapper and the regression bar above.
-      it.fails('§14.6 CONTRACT BAR: no two drawn runs closer than 0.8 x the plot-floor pitch (known gap)', () => {
+      // The contract bar, against the ACTIVE floor (decision O1). Mezzo declares its own floor (meta.floorPitchPen, the pose
+      // mezzo's dark pitch) and meets 0.8 x it (measured 0.803). The ladder measures ~0.71 x the plot floor mid-run (W1 baker /
+      // prepass spacing, a follow-up for the baker owners): it.fails keeps that bar visible and turns red the day it is met.
+      const contractIt = toneLaw === 'mezzoRegion' ? it : it.fails;
+      contractIt('§14.6 CONTRACT BAR: no two drawn runs closer than 0.8 x the active floor pitch', () => {
         const { min, where, floorPitch } = minRunGap();
         expect(min, `at ${where}`).toBeGreaterThanOrEqual(0.8 * floorPitch);
       });

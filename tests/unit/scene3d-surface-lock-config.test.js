@@ -13,7 +13,8 @@ const FINGERPRINTS = {
   ladderHatch: 'c8e1e4bbdea84ff41344c4c51454142925c47f47',
   ladderStipple: '575f5b4b3315e4818f78478dba5f00510d5572de',
   ladderContour: '9b11ca1c20822af6865da8937e76d77b433bb60f',
-  mezzo: '9cc03d444e397175bf2d785d4a51802901445e03',
+  // Mezzo print re-pinned after FX-M (the mezzo MarkSet changed on purpose).
+  mezzo: '8ded38ee7c8258706c8b3be0cfaf302fda9c3925',
   shadow: '3081b0a9de7f76b704f45c53efca6260579a79aa',
   visibility: 'ef33ad42952a971e66bf301834cf228875c5bcd6',
 };
