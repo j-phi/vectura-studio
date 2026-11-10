@@ -63,35 +63,79 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
     expect(minDot).toBeGreaterThan(0.9999);
   });
 
-  it('2. separation: runs of levels <= l stay 0.8 p0 / 2^l apart in object mm (§9)', () => {
+  it('2. separation: RUNS of levels <= l stay 0.8 p0 / 2^l apart, measured on densified runs (F-M2, §9)', () => {
     const p0 = sphere.meta.p0;
-    const runs = runsOf(sphere);
+    const runs = runsOf(sphere).filter((r) => r.family === 0);
+    const DENS = 0.04; // run-to-run, not vertex-to-vertex: occupancy samples sparser than the stop radius must show up
+    const densify = (r, cb) => {
+      for (let v = r.v0; v < r.v1; v++) {
+        const a = pt(sphere, v);
+        if (v === r.v0) { cb(a); continue; }
+        const b = pt(sphere, v - 1);
+        const n = Math.max(1, Math.ceil(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / DENS));
+        for (let k = 1; k <= n; k++) cb([b[0] + ((a[0] - b[0]) * k) / n, b[1] + ((a[1] - b[1]) * k) / n, b[2] + ((a[2] - b[2]) * k) / n]);
+      }
+    };
     for (let l = 0; l < sphere.levels; l++) {
       const d = (0.8 * p0) / 2 ** l;
-      const cell = d; const grid = new Map(); const key = (i, j, k) => `${i},${j},${k}`;
-      let bad = 0; let checked = 0;
-      runs.filter((r) => r.level <= l && r.family === 0).forEach((r) => {
-        for (let v = r.v0; v < r.v1; v++) {
-          const p = pt(sphere, v);
-          if (Math.abs(p[1]) > 20 - 0.5) continue; // the chart pole, excluded by the plan
+      const cell = d; const grid = new Map();
+      const key = (i, j, k) => ((i + 512) * 1024 + (j + 512)) * 1024 + (k + 512);
+      let bad = 0; let checked = 0; let minD = Infinity;
+      runs.filter((r) => r.level <= l).sort((x, y) => x.level - y.level || x.r - y.r).forEach((r) => {
+        const own = [];
+        densify(r, (p) => {
+          if (Math.abs(p[1]) > 20 - 0.5) return; // the chart pole, excluded by the plan
           const c = p.map((x) => Math.floor(x / cell));
-          for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
-            const list = grid.get(key(c[0] + i, c[1] + j, c[2] + k));
-            if (!list) continue;
-            for (const o of list) {
-              if (o.r === r.r) continue;
-              checked += 1;
-              if (Math.hypot(o.p[0] - p[0], o.p[1] - p[1], o.p[2] - p[2]) < d - 1e-3) bad += 1;
+          if (r.level === l) {
+            for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+              const list = grid.get(key(c[0] + i, c[1] + j, c[2] + k));
+              if (!list) continue;
+              for (const o of list) {
+                checked += 1;
+                const dd = Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]);
+                if (dd < minD) minD = dd;
+                if (dd < d * 0.96) bad += 1; // 4 %: polyline sag between occupancy samples at 0.5 stopR spacing is at most 3.1 %
+              }
             }
           }
-          const kk = key(c[0], c[1], c[2]);
-          if (!grid.has(kk)) grid.set(kk, []);
-          grid.get(kk).push({ r: r.r, p });
-        }
+          own.push([c, p]);
+        });
+        own.forEach(([c, p]) => { const kk = key(c[0], c[1], c[2]); if (!grid.has(kk)) grid.set(kk, []); grid.get(kk).push(p); });
       });
-      expect(bad, `level ${l}`).toBe(0);
+      expect(bad, `level ${l}: ${bad} densified samples closer than ${d.toFixed(3)} to another run (min ${minD.toFixed(3)})`).toBe(0);
       expect(checked, `level ${l} compared something`).toBeGreaterThan(0);
     }
+  });
+
+  it('F-M1. level count: the finest baked level is drawable at the zoom headroom, the next one is not', () => {
+    const R = V.Scene3D.Regions || {};
+    const FLOOR = (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : 2.2) * 0.3;
+    const SLACK = 0.8; // TODO(config): PLOT_FLOOR_SLACK, added to the config by another unit
+    const HEAD = 1.5;
+    const p0 = sphere.meta.p0 * sphere.meta.scaleRef;
+    expect(p0 * HEAD / 2 ** (sphere.levels - 1), 'finest level drawable').toBeGreaterThanOrEqual(SLACK * FLOOR);
+    expect(p0 * HEAD / 2 ** sphere.levels, 'one more level would be undrawable').toBeLessThan(SLACK * FLOOR);
+    expect(sphere.levels).toBe(4);
+  });
+
+  it('F-M3. one Euler step per vertex: sampler calls per output vertex drop below the midpoint-pair figure', () => {
+    const Chart = V.Scene3D.SurfaceLockChart; const orig = Chart.metric;
+    let calls = 0;
+    Chart.metric = (...args) => { const M = orig(...args); if (!M) return M; return { ...M, sample: (a, b) => { calls += 1; return M.sample(a, b); } }; };
+    let ms;
+    try {
+      ms = Z.bake(specOf({ primitive: 'torus', mode: 'torus', sizes: { sx: 34, sy: 9, sz: 9 }, penWidth: 0.1 }));
+    } finally { Chart.metric = orig; }
+    const ratio = calls / ms.vertexCount;
+    // The count includes seeding and rejected lines, so it is well above one: 3.0 with the midpoint pair, 2.6 with one Euler step (torus, pen 0.1).
+    expect(ratio, `${calls} samples for ${ms.vertexCount} vertices`).toBeLessThan(2.85);
+  });
+
+  it('F-M4. baker-private data lives only under meta.debug (A5)', () => {
+    ['regions', 'regionSep', 'levelRuns'].forEach((k) => expect(sphere.meta[k], k).toBeUndefined());
+    expect(sphere.meta.debug.regions.length).toBeGreaterThan(20);
+    expect(sphere.meta.debug.regionSep).toBeGreaterThan(0);
+    expect(Array.isArray(sphere.meta.debug.levelRuns)).toBe(true);
   });
 
   it('3. nesting: total run length of levels <= l grows 2 +- 0.35 per level (§9)', () => {
@@ -108,7 +152,7 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
   });
 
   it('4. directions: inside a region the run tangent is the region direction projected, within 2 degrees (§9)', () => {
-    const regs = sphere.meta.regions;
+    const regs = sphere.meta.debug.regions;
     expect(regs.length).toBeGreaterThan(20);
     expect(regs.length).toBeLessThanOrEqual(200);
     let tested = 0; let worst = 0;
