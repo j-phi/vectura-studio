@@ -14,8 +14,9 @@ const FINGERPRINTS = {
   ladderHatch: 'e631390b04d6f059a49bb7f5f4cf7f741963d111',
   ladderStipple: '575f5b4b3315e4818f78478dba5f00510d5572de',
   ladderContour: '9b11ca1c20822af6865da8937e76d77b433bb60f',
-  // Mezzo print re-pinned after FX-M (the mezzo MarkSet changed on purpose).
-  mezzo: '8ded38ee7c8258706c8b3be0cfaf302fda9c3925',
+  // Mezzo print re-pinned after FX-M (the mezzo MarkSet changed on purpose), then after FX-P (p0 x 1.2, level cap 4,
+  // MIN_MARK_PEN 4 moved into config; FX-P's own print 1d8c9527... was taken with the stale config MIN_MARK_PEN 2 override).
+  mezzo: '20a79de04dd47c7238a047c60346c1908bfee1ea',
   shadow: '3081b0a9de7f76b704f45c53efca6260579a79aa',
   visibility: 'ef33ad42952a971e66bf301834cf228875c5bcd6',
 };
@@ -80,7 +81,8 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
     ['ladderHatch', { ZOOM_HEADROOM: 3 }],
     ['ladderStipple', { LADDER: { DOT_COL_FILL: 0.5, DOT_SEGS: 3 } }],
     ['mezzo', { MEZZO: { STEP_SCREEN: 0.9 } }],
-    ['mezzo', { PLOT_FLOOR_SLACK: 0.3, ZOOM_HEADROOM: 4 }],
+    ['mezzo', { ZOOM_HEADROOM: 0.5 }],
+    ['mezzo', { MEZZO: { P0_SCALE: 1.5 } }],
     ['shadow', { SHADOW: { MAX_LINES: 7 } }],
     ['visibility', { VISIBILITY: { LIMB_MIN_POINTS: 20, LIMB_MAX_POINTS: 20 } }],
   ])('%s bake follows a changed config key %j', (name, patch) => {

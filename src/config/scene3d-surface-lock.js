@@ -14,7 +14,7 @@
 
   Vectura.SCENE3D_SURFACE_LOCK = Object.freeze({
     // Bumped whenever a baker's output for the same bake key changes. Part of every bake key.
-    BAKE_VERSION: 1,
+    BAKE_VERSION: 2,
     // Contract §6 — a vertex whose facing cosine c = n·view is below this is culled (crossing interpolated).
     NZ_CULL: 0.08,
     // Contract §5 — the tone look-up table has TONE_LUT_SIZE + 1 entries for I = k / TONE_LUT_SIZE.
@@ -84,7 +84,10 @@
       NEIGHBOURS: 14,
       GAIN: 2,
       SEED_ARC_STEPS: 2,  // new seeds along an accepted line every max(d_l, this x STEP)
-      MIN_MARK_PEN: 2,  // surface-fill MIN_MARK_PEN (private there)
+      MIN_MARK_PEN: 4,  // surface-fill uses 2; 4 drops the 0.6-1.5 mm specks (H5)
+      SEP_MARGIN: 0.97,  // declared minSepFrac = STOP_FACTOR x this
+      P0_SCALE: 1.2,  // p0 = PMAX x this (O4)
+      MAX_LEVELS_LAW: 4,  // cap on the law-floor level count
       INK_SPREAD: 0.12,  // surface-fill INK_SPREAD (private there)
       A_DARK: 0.90,  // makeCtx dark end of the tone map
       CROSS_OBJ_DEG: 65,  // Regions.CROSS_OBJ_DEG fallback

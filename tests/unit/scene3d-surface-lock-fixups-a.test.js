@@ -351,6 +351,12 @@ describe('surface lock FX-A: frame memo, cap fields, exclusions, bake key', () =
       expect(SL.bakeKey(SPEC({ angle: 31 }))).not.toBe(k0);
     });
 
+    it('bakeKey leads with the configured BAKE_VERSION (a stale MarkSet is never reused)', () => {
+      const v = V.SCENE3D_SURFACE_LOCK.BAKE_VERSION;
+      expect(v).toBeGreaterThanOrEqual(2);
+      expect(JSON.parse(SL.bakeKey(SPEC()))[0]).toBe(v);
+    });
+
     it('the toneTable key still varies with tone-only style keys', () => {
       SL.toneTable(SPEC(), { tone: {}, penWidth: 0.3 });
       SL.toneTable(SPEC({ toneGamma: 1.8 }), { tone: {}, penWidth: 0.3 });

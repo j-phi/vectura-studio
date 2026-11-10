@@ -185,10 +185,8 @@ describe('surface lock Level F dispatch', () => {
       });
 
       // Contract §14.4 tone RANGE: the surface fill's dark/lit density ratio against the pose fill's own (same pose, same
-      // tone function, same measure). Today ~1.5 against ~5.0; it turns green when the mezzo baker (FX-M) spends its ink
-      // on tone. Then delete this wrapper. The ladder baker already meets the bar, so only mezzo is a known gap.
-      const toneRangeIt = toneLaw === 'mezzoRegion' ? it.fails : it;
-      toneRangeIt('§14.4 TONE RANGE: surface dark/lit density ratio >= 0.5 x the pose ratio', () => {
+      // tone function, same measure). Mezzo meets the bar since FX-P (capToneRemap, p0 x 1.2).
+      it('§14.4 TONE RANGE: surface dark/lit density ratio >= 0.5 x the pose ratio', () => {
         const pose = { camYaw: -30, camPitch: 20 };
         const surf = build(toneLaw);
         const spy = spyFrame();

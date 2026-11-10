@@ -497,3 +497,27 @@ Shared rig: `tests/helpers/surface-lock-scene.js` (`buildSurfaceLockScene` throu
 12. Fill Curves (`fillCurves: true`, seeded on every new rounded object) curve-fits every fill path in
     `_applySceneCurveFinish` per compose; its per-frame cost on 30-60k drawn points is unmeasured and may
     dominate Level S (W2-B measures; options in the plan).
+
+## 16. Amendments
+
+- **A1. `stats.toneEvals`, `stats.toneRemapPow` (§11).** `toneEvals` counts per-vertex tone-function evaluations in the pre-pass
+  (a tone-memo hit does not count). `toneRemapPow` counts perspective vertices that took the per-vertex `pow` branch of the cap tone remap
+  (orthographic frames use a per-cap LUT and do not count). Both are deterministic counters.
+- **A2. `meta.minSepFrac`.** A law may declare the minimum screen separation its bake guarantees, as a fraction of the nominal pitch. The
+  frame's min-separation cap uses it; absent means 1. Mezzo declares `STOP_FACTOR x SEP_MARGIN` (0.80 x 0.97).
+- **A3. `meta.floorPitchPen` (decision O1).** A law may declare its own floor pitch in pen widths, which replaces the plot floor in the
+  pre-pass. Contract §14.6 (no two drawn runs closer than 0.8 x the floor pitch) is measured against this ACTIVE floor. Mezzo declares
+  `(INK / A_DARK) / pen`.
+- **A4. `meta.sepBarFrac` (the ladder, decision O3).** The ladder declares an informational spacing bar (`MIN_SEP_FRAC`) and no `minSepFrac`,
+  so the frame cap never thins a ladder fill.
+- **A5. `meta.capToneRemap`.** When true (mezzo), a cap ring squeezes the tone range [m, D] into [m, T] in log space, so tone stays
+  monotone inside a cap instead of clipping at it (§5).
+- **A6. The bake key strips tone-only keys (§8).** `bakeStyle` removes `toneGamma`, `toneContrast`, `shadowSensitivity`, every key starting
+  with `depthFade` or `highlight`, and `markSpace` before the key is built, because tone is applied per frame (§15.3). The tone-table key
+  keeps them. `detail` is not in the key.
+- **A7. Exclusions `faceStyles` and `depthFade` (§12).** An object with per-face style overrides or several fill styles (`faceStyles`) cannot
+  be covered by one MarkSet, and `depthFade` reads the projected record (view dependent), so neither can live in a world-keyed tone memo.
+  Both fall back to pose mode.
+- **A8. `BAKE_VERSION`.** `SCENE3D_SURFACE_LOCK.BAKE_VERSION` is the first element of the bake key. Bump it whenever a baker's output
+  changes, so a cached MarkSet from an older baker is never reused. It is 2 since FX-P (mezzo p0 x 1.2, active-floor level count,
+  `MIN_MARK_PEN` 4).
