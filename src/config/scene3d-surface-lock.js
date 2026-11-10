@@ -32,5 +32,11 @@
     // Contract §11 — frame budgets (ms). Perf tests assert counters; these are the generous clocks.
     FRAME_BUDGET_MS: 8,
     BAKE_BUDGET_MS: 400,
+    // Contract §4 — a perspective vertex with denom <= NEAR_PLANE_FRAC * focal is behind the near plane (culled);
+    // the value Geometry3D.projectPoint clamps at.
+    NEAR_PLANE_FRAC: 0.05,
+    // Contract §5, §13 — memo sizes for tone LUTs and for the Level S mesh / ground-hatch bakes.
+    TONE_LUT_MEMO_ENTRIES: 32,
+    AUX_CACHE_ENTRIES: 16,
   });
 })();
