@@ -266,7 +266,7 @@ function describeSingleParamCluster(label, {
           byFace: {},
         },
       });
-      expect(sanitized.sceneVersion).toBe(5);
+      expect(sanitized.sceneVersion).toBe(6);
       const migrated = sanitized.styleTable.byObject['obj-1'].params;
       expect(migrated.toneLaw).toBe(survivor);
       expect(migrated[key]).toBe(first.value);
