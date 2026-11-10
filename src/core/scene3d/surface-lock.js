@@ -52,7 +52,7 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0,
     bakeErrors: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
@@ -84,6 +84,10 @@
     { id: 'csgCarve', test: (st, cx) => cx.csgCarve === true, example: { ctx: { csgCarve: true } } },
     { id: 'receiveShadow', test: (st, cx) => cx.receiveShadow === true, example: { ctx: { receiveShadow: true } } }, // lifted by W3-C
     { id: 'areaLight', test: (st, cx) => cx.areaLight === true, example: { ctx: { areaLight: true } } },
+    // Pose-independent: the object carries a per-face style override (or several fill styles), so one MarkSet cannot cover it.
+    { id: 'faceStyles', test: (st, cx) => cx.faceStyles === true, example: { ctx: { faceStyles: true } } },
+    // Depth fade reads the projected record (view-dependent), so it cannot live in a world-keyed tone memo.
+    { id: 'depthFade', test: (st) => st.depthFade === true, example: { style: { depthFade: true } } },
   ]);
 
   const bakerFor = (spec) => {
@@ -117,10 +121,22 @@
     delete s.markSpace;
     return stable(s);
   };
+  // Style keys that only shape tone (no baker reads them): they never change a MarkSet, so the bake key drops them.
+  // The tone-table key keeps them (stableStyle).
+  const TONE_ONLY_STYLE_KEYS = Object.freeze(['toneGamma', 'toneContrast', 'shadowSensitivity']);
+  const TONE_ONLY_STYLE_PREFIXES = Object.freeze(['depthFade', 'highlight']);
+  const bakeStyle = (style) => {
+    const s = Object.assign({}, style || {});
+    Object.keys(s).forEach((k) => {
+      if (TONE_ONLY_STYLE_KEYS.indexOf(k) !== -1 || TONE_ONLY_STYLE_PREFIXES.some((pre) => k.indexOf(pre) === 0)) delete s[k];
+    });
+    delete s.markSpace;
+    return stable(s);
+  };
   const bakeKey = (spec) => {
     const baker = bakerFor(spec);
-    return JSON.stringify([BAKE_VERSION, baker ? baker.id : null, spec.primitive, spec.mode, stable(spec.sizes), stable(spec.detail),
-      stable(spec.scale), spec.mapper, spec.toneLaw, stableStyle(spec.style), spec.penWidth, spec.scaleRef, stable(spec.seed)]);
+    return JSON.stringify([BAKE_VERSION, baker ? baker.id : null, spec.primitive, spec.mode, stable(spec.sizes),
+      stable(spec.scale), spec.mapper, spec.toneLaw, bakeStyle(spec.style), spec.penWidth, spec.scaleRef, stable(spec.seed)]);
   };
 
   const cache = new Map(); // key -> { ms, bytes } ; Map order = LRU order (oldest first)
@@ -230,6 +246,18 @@
     return d;
   };
 
+  // Tone memo (contract §11): per MarkSet, the clamped light intensity per vertex, valid for one view.toneKey. The intensity
+  // is a function of world position and normal only, so it survives camera moves; NaN = not evaluated yet.
+  const toneMemoI = new WeakMap();
+  const memoFor = (ms, key) => {
+    let m = toneMemoI.get(ms);
+    if (!m || m.key !== key || m.I.length !== ms.vertexCount) {
+      m = { key, I: new Float64Array(ms.vertexCount).fill(NaN) };
+      toneMemoI.set(ms, m);
+    }
+    return m.I;
+  };
+
   // Per-vertex scratch, grown on demand and shared (a frame is synchronous; the worker has its own copy).
   let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX;
   const ensureScratch = (n) => {
@@ -251,7 +279,11 @@
     const q = gain === 2 ? 1 : (gain === 4 ? 2 : Math.log2(gain));
     const lut = view.tone && view.tone.lut; const scaleFn = (view.tone && !view.specOff) ? view.tone.scaleFn : null;
     const toneFn = typeof view.toneFn === 'function' ? view.toneFn : null;
-    const floorPitch = Number.isFinite(view.floorPitch) ? view.floorPitch : 0;
+    let floorPitch = Number.isFinite(view.floorPitch) ? view.floorPitch : 0;
+    // A law may declare its own floor (pen multiples) and the minimum separation its bake guarantees (fraction of nominal pitch).
+    if (Number.isFinite(meta.floorPitchPen) && meta.floorPitchPen > 0) floorPitch = meta.floorPitchPen * num(view.penWidth, 0);
+    const minSep = Number.isFinite(meta.minSepFrac) && meta.minSepFrac > 0 ? meta.minSepFrac : 1;
+    const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
     const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
@@ -281,10 +313,21 @@
       if (lut) {
         let I = 1;
         if (toneFn) {
-          pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
-          nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
-          I = toneFn(nW, pW);
-          I = I > 0 ? (I < 1 ? I : 1) : 0;
+          const cached = memoI ? memoI[v] : NaN;
+          if (cached === cached) { // memo hit; the world frame is only rebuilt when scaleFn needs it
+            I = cached;
+            if (scaleFn) {
+              pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
+              nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
+            }
+          } else {
+            pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
+            nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
+            I = toneFn(nW, pW);
+            I = I > 0 ? (I < 1 ? I : 1) : 0;
+            stats.toneEvals += 1;
+            if (memoI) memoI[v] = I;
+          }
         }
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
@@ -304,7 +347,7 @@
         // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
         // one level-pitch apart, below the floor, so the cap only ever admits complete levels, each once its pitch is >= FLOOR_SLACK x floor (or a regular 1/gain^m
         // thinning of level 0 below the base pitch). The drawn subset then never falls under the floor.
-        const cr = p0 * sv * facing / (floorPitch * FLOOR_SLACK);
+        const cr = p0 * sv * facing * minSep / (floorPitch * FLOOR_SLACK);
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
@@ -428,6 +471,7 @@
     const sets = Array.isArray(markSets) ? markSets : [markSets];
     const v = Object.assign({}, view || {});
     v.floorPitch = floorPenOf() * num(v.penWidth, 0);
+    v.penWidth = num(v.penWidth, 0);
     const F = frameSetup(pose);
     let total = 0; sets.forEach((ms) => { if (ms) total = Math.max(total, ms.vertexCount || 0); });
     ensureScratch(total);
