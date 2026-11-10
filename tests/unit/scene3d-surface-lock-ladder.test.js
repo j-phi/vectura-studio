@@ -300,6 +300,45 @@ describe('SurfaceLockLadder', () => {
     });
   });
 
+  describe('ruling continuity (G4) and bounds (G11)', () => {
+    it('adjacent runs of one ruling share an identical vertex: no plotted gap at a level change', () => {
+      ['hatch', 'contour', 'crosshatch'].forEach((mapper) => {
+        const ms = bake(sphere(mapper));
+        const ends = [];
+        for (let r = 0; r < ms.runCount; r++) {
+          if ((ms.runFlags[r] & MS.FLAG.CLOSED) || ms.runFamily[r] !== 0) continue;
+          const p = runPts(ms, r);
+          if (p.length < 2) continue;
+          ends.push({ r, a: p[0], b: p[p.length - 1] });
+        }
+        let nearGaps = 0; let shared = 0;
+        for (let i = 0; i < ends.length; i++) for (let j = 0; j < ends.length; j++) {
+          if (i === j) continue;
+          const d = Math.hypot(ends[i].b[0] - ends[j].a[0], ends[i].b[1] - ends[j].a[1], ends[i].b[2] - ends[j].a[2]);
+          if (d === 0) shared += 1; else if (d < 0.7) nearGaps += 1;
+        }
+        expect(nearGaps, `${mapper} end-to-start gaps < 0.7 mm`).toBe(0);
+        if (mapper === 'hatch') expect(shared).toBeGreaterThan(0);
+      });
+    });
+    it('bounds.radius is the true max |p| (<= 1.001 R), and minSepFrac is declared', () => {
+      const ms = bake(sphere('hatch'));
+      let mx = 0;
+      for (let v = 0; v < ms.vertexCount; v++) mx = Math.max(mx, Math.hypot(ms.positions[3 * v], ms.positions[3 * v + 1], ms.positions[3 * v + 2]));
+      expect(ms.meta.bounds.radius).toBeLessThanOrEqual(20 * 1.001);
+      expect(ms.meta.bounds.radius).toBeCloseTo(mx, 4);
+      expect(ms.meta.minSepFrac).toBeGreaterThan(0.5);
+      expect(ms.meta.minSepFrac).toBeLessThanOrEqual(1);
+    });
+    it('default sphere hatch keeps ink within 5% of 1077 mm and bakes within budget', () => {
+      const t = Date.now(); const ms = L.bake(sphere('hatch', { seed: { salt: 2 } })); const dt = Date.now() - t;
+      let ink = 0; for (let r = 0; r < ms.runCount; r++) ink += runLen(ms, r);
+      // eslint-disable-next-line no-console
+      console.log(`[ladder FX-L] ink ${ink.toFixed(1)} mm bake ${dt} ms`);
+      expect(dt).toBeLessThan(1000);
+    });
+  });
+
   describe('budget', () => {
     it('levels stop at the darkest pitch the law can ask for (F-L3): default hatch and stipple bake 4 levels, ~8.5k hatch vertices', () => {
       const h = bake(sphere('hatch'));

@@ -42,6 +42,7 @@
     GLINT_KEEP: 0.6,
     LIT_FLOOR: 0.12,
     THIN_RATIO: 0.95,
+    MIN_SEP_FRAC: 0.84, // measured worst local ruling pitch / nominal (hatch, default sphere); the law's separation bar reads it
     V_EXTRA: 4,
     MAX_VERTS: 150000,
     MAX_CELLS: 4096,
@@ -272,12 +273,13 @@
 
     const builder = SM.createBuilder(meta);
     const FLAG = SM.FLAG;
-    const bmin = [Infinity, Infinity, Infinity]; const bmax = [-Infinity, -Infinity, -Infinity];
+    const bmin = [Infinity, Infinity, Infinity]; const bmax = [-Infinity, -Infinity, -Infinity]; let rmax2 = 0;
     const emit = (s) => {
       builder.vertex(s.x, s.y, s.z, s.nx, s.ny, s.nz);
       if (s.x < bmin[0]) bmin[0] = s.x; if (s.x > bmax[0]) bmax[0] = s.x;
       if (s.y < bmin[1]) bmin[1] = s.y; if (s.y > bmax[1]) bmax[1] = s.y;
       if (s.z < bmin[2]) bmin[2] = s.z; if (s.z > bmax[2]) bmax[2] = s.z;
+      { const r2 = s.x * s.x + s.y * s.y + s.z * s.z; if (r2 > rmax2) rmax2 = r2; }
     };
     const wrapB = (b) => (M.periodicB ? frac(b) : b);
     const wrapA = (a) => (M.periodicA ? frac(a) : a);
@@ -408,7 +410,14 @@
         for (let q = 0; q < verts.length; q++) {
           const ve = verts[q].eff;
           if (ve < 0 || !verts[q].s) { flush(false); continue; }
-          if (ve !== curEff) { flush(false); curEff = ve; }
+          if (ve !== curEff) {
+            // Shared boundary vertex: the old run ends AT this vertex and the new run starts at it (no plotted gap).
+            const share = xs.length > 0;
+            if (share) xs.push(verts[q].s);
+            flush(false); curEff = ve;
+            if (share) xs.push(verts[q].s);
+            continue;
+          }
           xs.push(verts[q].s);
         }
         flush(false);
@@ -712,7 +721,8 @@
       toneModel: dots ? 'area' : 'pitch',
       scaleRef: r.scaleRef,
       minMarkMM: 2 * r.pen,
-      bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Math.hypot(Math.max(Math.abs(bmin[0]), Math.abs(bmax[0])), Math.max(Math.abs(bmin[1]), Math.abs(bmax[1])), Math.max(Math.abs(bmin[2]), Math.abs(bmax[2]))) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
+      minSepFrac: C.MIN_SEP_FRAC,
+      bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Math.sqrt(rmax2) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
       convex: typeof spec.convex === 'boolean' ? spec.convex : Boolean(CONVEX_MODES[mode]),
       levelsDesigned: L,
       msBake: now() - t0,
