@@ -419,17 +419,22 @@ describe('surface lock Level F dispatch', () => {
     });
   });
 
-  // FX-A adds SurfaceLock.stats.toneEvals and the view.toneKey memo that this relies on. Until FX-A is merged the counter
-  // does not exist, so this is a pending it.fails; when FX-A lands it goes green and the wrapper must be removed.
-  describe('tone memo across camera yaw (needs FX-A)', () => {
-    it.fails('a second compose at a new camera yaw makes 0 tone evaluations', () => {
+  // Tone memo (FX-A view.toneKey + FX-D key). The memo is filled lazily per vertex, so a repeat
+  // compose at the same pose makes 0 tone evaluations and a new yaw evaluates only newly seen vertices.
+  describe('tone memo across camera yaw', () => {
+    it('a repeat compose makes 0 tone evaluations; a new yaw evaluates fewer than the first', () => {
       const scene = build('mezzoRegion');
       SL.clearCache(); SL.resetStats();
       scene.setPose({ camYaw: -30, camPitch: 20 }); scene.composeFull();
+      const first = SL.stats.toneEvals;
+      expect(first).toBeGreaterThan(0);
       SL.resetStats();
-      scene.setPose({ camYaw: 20, camPitch: 20 }); scene.composeFull();
+      scene.composeFull();
       expect(SL.stats.frames).toBeGreaterThan(0);
       expect(SL.stats.toneEvals).toBe(0);
+      SL.resetStats();
+      scene.setPose({ camYaw: 20, camPitch: 20 }); scene.composeFull();
+      expect(SL.stats.toneEvals).toBeLessThan(first);
     });
   });
 

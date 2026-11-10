@@ -9,9 +9,10 @@ const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const SLOW = 120000;
 const FINGERPRINTS = {
-  ladderHatch: '87800b510c18908245175d60f15e50783cd6dd19',
-  ladderStipple: 'd4a5949017c883a337853ade31c18ad66b5d76ae',
-  ladderContour: '702ba57e81f62634eea45cba76447cbca36d3a53',
+  // Ladder prints re-pinned after FX-L (shared level-change vertex, true bounds radius) and O3 (sepBarFrac, no minSepFrac).
+  ladderHatch: 'c8e1e4bbdea84ff41344c4c51454142925c47f47',
+  ladderStipple: '575f5b4b3315e4818f78478dba5f00510d5572de',
+  ladderContour: '9b11ca1c20822af6865da8937e76d77b433bb60f',
   mezzo: '9cc03d444e397175bf2d785d4a51802901445e03',
   shadow: '3081b0a9de7f76b704f45c53efca6260579a79aa',
   visibility: 'ef33ad42952a971e66bf301834cf228875c5bcd6',
@@ -26,9 +27,9 @@ const canon = (v) => {
 const fp = (v) => crypto.createHash('sha1').update(JSON.stringify(canon(v))).digest('hex');
 
 const specOf = (o = {}) => ({
-  objectId: 'o1', primitive: 'sphere', mode: 'sphere', sizes: { sx: 20, sy: 20, sz: 20 }, detail: 24,
+  objectId: 'o1', primitive: FIX.BALL.primitive, mode: 'sphere', sizes: { sx: 20, sy: 20, sz: 20 }, detail: 24,
   scale: { sx: 1, sy: 1, sz: 1 }, mapper: 'hatch', toneLaw: undefined,
-  style: { fillAngle: 45, fillDensity: 50, densityScale: 1 }, penWidth: 0.3, scaleRef: 1,
+  style: { fillAngle: 45, fillDensity: 50, densityScale: 1 }, penWidth: FIX.BOUNDS.penWidth, scaleRef: 1,
   seed: { salt: 1, phase: 0, off: 0 }, ...o,
 });
 const SHADOW = { shadowAngle: 45, shadowDensity: 50, shadowToneDepth: 0.75, shadowFalloff: 0.5, shadowLayers: false, shadowToneLaw: 'ladder' };
@@ -56,7 +57,7 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
     shadow: () => { V.Scene3D.SurfaceLockShadow.clearCache(); return V.Scene3D.SurfaceLockShadow.bakeGround(GROUND, SHADOW, 0.3, 1); },
     visibility: () => {
       const Vis = V.Scene3D.SurfaceLockVisibility; const Scene = V.Scene3D.Scene; const Params = V.Scene3D.Params;
-      const obj = { id: 'a', name: 'a', primitive: 'sphere', params: { radius: 20, detail: 26 }, transform: { ...T0 }, visibility: 'solid' };
+      const obj = { ...JSON.parse(JSON.stringify(FIX.BALL)), id: 'a', name: 'a', params: { ...FIX.BALL.params, radius: 20, detail: 26 }, transform: { ...T0 }, visibility: 'solid' };
       const raw = FIX.scene({ objects: [obj], camera: { ...CAMERA }, ground: { enabled: false }, lights: [SUN] })(V);
       const np = Params.normalizeParams(raw);
       const po = Scene.buildProjOpts(np.camera, BOUNDS);
