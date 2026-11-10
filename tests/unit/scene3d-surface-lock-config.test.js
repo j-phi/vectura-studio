@@ -9,8 +9,9 @@ const FIX = require('../fixtures/scene3d-shadow-anatomy');
 
 const SLOW = 120000;
 const FINGERPRINTS = {
-  // Ladder prints re-pinned after FX-L (shared level-change vertex, true bounds radius) and O3 (sepBarFrac, no minSepFrac).
-  ladderHatch: 'c8e1e4bbdea84ff41344c4c51454142925c47f47',
+  // Ladder prints re-pinned after FX-L (shared level-change vertex, true bounds radius) and O3 (sepBarFrac, no minSepFrac);
+  // ladderHatch re-pinned again after FX-R (relabel hysteresis and staggered cut fronts).
+  ladderHatch: 'e631390b04d6f059a49bb7f5f4cf7f741963d111',
   ladderStipple: '575f5b4b3315e4818f78478dba5f00510d5572de',
   ladderContour: '9b11ca1c20822af6865da8937e76d77b433bb60f',
   // Mezzo print re-pinned after FX-M (the mezzo MarkSet changed on purpose).
