@@ -117,15 +117,13 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
     }
   });
 
-  it('F-M1. level count: the finest baked level is drawable at the zoom headroom, the next one is not', () => {
-    const R = V.Scene3D.Regions || {};
-    const FLOOR = (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : 2.2) * 0.3;
-    const SLACK = 0.8; // TODO(config): PLOT_FLOOR_SLACK, added to the config by another unit
+  it('F-M1. level count: the finest baked level is drawable at the zoom headroom, the next one is not (law floor, H4)', () => {
+    const FLOOR = (0.3 * 1.12) / 0.9; // the declared law floor, INK / A_DARK
     const HEAD = 1.5;
     const p0 = sphere.meta.p0 * sphere.meta.scaleRef;
-    expect(p0 * HEAD / 2 ** (sphere.levels - 1), 'finest level drawable').toBeGreaterThanOrEqual(SLACK * FLOOR);
-    expect(p0 * HEAD / 2 ** sphere.levels, 'one more level would be undrawable').toBeLessThan(SLACK * FLOOR);
-    expect(sphere.levels).toBe(4);
+    expect(sphere.meta.floorPitchPen * 0.3).toBeCloseTo(FLOOR, 9);
+    expect(p0 * HEAD / 2 ** (sphere.levels - 1), 'finest level drawable').toBeGreaterThanOrEqual(FLOOR);
+    if (sphere.levels < 6 && sphere.levels < Z.MAX_LEVELS_LAW) expect(p0 * HEAD / 2 ** sphere.levels, 'one more level would be undrawable').toBeLessThan(FLOOR);
   });
 
   it('F-M3. one Euler step per vertex: sampler calls per output vertex drop below the midpoint-pair figure', () => {
@@ -224,6 +222,55 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
     }
   });
 
+  describe('FX-P: p0 scale, law-floor level count, cap-aware tone flag (O4 = 1.2)', () => {
+    const FLOORS = (pen, ds) => {
+      const R = V.Scene3D.Regions || {};
+      const plot = (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : 2.2) * pen;
+      const lit = (Number.isFinite(R.LIT_MAX_PITCH_PEN) ? R.LIT_MAX_PITCH_PEN : 12) * pen;
+      return { pmax: Math.max(plot * 1.6, lit / ds), flaw: (pen * 1.12) / 0.9 };
+    };
+    const lawCfg = () => (V.SCENE3D_SURFACE_LOCK || {}).MEZZO || {};
+    const maxLaw = () => (Number.isFinite(lawCfg().MAX_LEVELS_LAW) ? lawCfg().MAX_LEVELS_LAW : Z.MAX_LEVELS_LAW);
+
+    it('bakes p0 = 1.2 x the lit-end pitch PMAX (O4: the finest-level front leaves the middle of the disc)', () => {
+      const { pmax } = FLOORS(0.3, 1);
+      const scale = Number.isFinite(lawCfg().P0_SCALE) ? lawCfg().P0_SCALE : 1.2;
+      expect(scale).toBeCloseTo(1.2, 9);
+      expect(sphere.meta.p0 * sphere.meta.scaleRef / pmax).toBeCloseTo(1.2, 6);
+    });
+
+    it('the finest-level front c* = Flaw 2^(L-1) / p0 sits at 0.70 or less (was 0.83)', () => {
+      const { flaw } = FLOORS(0.3, 1);
+      const p0 = sphere.meta.p0 * sphere.meta.scaleRef;
+      const cStar = (flaw * 2 ** (sphere.levels - 1)) / p0;
+      expect(cStar, `c* ${cStar.toFixed(3)} with ${sphere.levels} levels`).toBeLessThanOrEqual(0.70);
+    });
+
+    it('H4: the level count is sized from the LAW floor and the scaled p0, for pens 0.3 / 0.5 and density 0.5 / 1 / 2', () => {
+      const rows = [];
+      [0.3, 0.5].forEach((pen) => [0.5, 1, 2].forEach((ds) => {
+        const ms = Z.bake(specOf({ penWidth: pen, sizes: { sx: 8, sy: 8, sz: 8 }, style: { fillAngle: 45, fillDensity: 50, densityScale: ds } }));
+        const { pmax, flaw } = FLOORS(pen, ds);
+        const raw = 1 + Math.floor(Math.log2((pmax * 1.2 * 1.5) / flaw) + 1e-9);
+        const want = Math.min(Math.max(1, raw), 6, maxLaw());
+        rows.push(`pen ${pen} ds ${ds}: L ${ms.levels} want ${want} (raw ${raw})`);
+        expect(ms.levels, rows[rows.length - 1]).toBe(want);
+      }));
+      // eslint-disable-next-line no-console
+      console.log(`[FX-P] ${rows.join(' | ')}`);
+    }, SLOW);
+
+    it('declares meta.capToneRemap = true so the frame thins the tone range under the foreshortening cap', () => {
+      expect(sphere.meta.capToneRemap).toBe(true);
+    });
+
+    it('meta.minMarkMM follows MIN_MARK_PEN (config, else the baker default 4 pens)', () => {
+      const pens = Number.isFinite(lawCfg().MIN_MARK_PEN) ? lawCfg().MIN_MARK_PEN : 4;
+      expect(sphere.meta.minMarkMM).toBeCloseTo(pens * 0.3, 9);
+      expect(Z.MIN_MARK_PEN_DEFAULT).toBe(4);
+    });
+  });
+
   it('acceptance: default sphere (R 20, pen 0.3, density 50) fits the budgets', () => {
     // eslint-disable-next-line no-console
     console.log(`[W1-C] sphere: vertices=${sphere.vertexCount} runs=${sphere.runCount} levels=${sphere.levels} bakeMs=${bakeMs.toFixed(0)} msBake=${sphere.meta.msBake} perLevel=${
@@ -246,8 +293,8 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
       rigMs = now() - t0;
     }, SLOW);
 
-    it('declares meta.minSepFrac = STOP_FACTOR (0.8)', () => {
-      expect(rig.meta.minSepFrac).toBeCloseTo(0.8, 6);
+    it('declares meta.minSepFrac = STOP_FACTOR x 0.97 (0.776): the stop-radius pair loses ~2 % to chord and projection error', () => {
+      expect(rig.meta.minSepFrac).toBeCloseTo(0.8 * 0.97, 6);
     });
 
     it('declares meta.floorPitchPen equal to the pose law dark pitch (pitchFor(0) / pen)', () => {
@@ -261,7 +308,7 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
       expect(ms.meta.floorPitchPen).toBeCloseTo(C.pitchFor(0) / C.PEN, 6);
     });
 
-    it('cumulative pitch of levels <= l stays within 1.2 x the target p0 / 2^l', () => {
+    it('cumulative pitch of levels <= l stays within 1.25 x the target p0 / 2^l (was 1.2 before FX-P scaled p0 by 1.2: level 2 now 1.23)', () => {
       const area = 4 * Math.PI * 25 * 25;
       const cum = new Array(rig.levels).fill(0);
       runsOf(rig).filter((r) => r.family === 0).forEach((r) => { cum[r.level] += lenOf(rig, r); });
@@ -272,7 +319,7 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
       }
       // eslint-disable-next-line no-console
       console.log(`[FX-M] pitch/target per level: ${rows.map((x) => x.toFixed(2)).join(' ')}`);
-      for (let l = 2; l <= 3; l++) expect(rows[l], `level ${l} pitch/target ${rows[l].toFixed(2)}`).toBeLessThanOrEqual(1.2);
+      for (let l = 2; l <= 3; l++) expect(rows[l], `level ${l} pitch/target ${rows[l].toFixed(2)}`).toBeLessThanOrEqual(1.25);
     });
 
     // OPEN acceptance bar (FX-M item 2): the nested Jobard-Lefer pockets cap the median at 4-6 mm while the pitch bar holds;

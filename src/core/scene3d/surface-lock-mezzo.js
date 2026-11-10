@@ -48,7 +48,10 @@
     GAIN: 2,
     SEED_ARC_TIGHT: 0.5,     // the live seed spacing along a line is SEED_ARC_STEPS x this x STEP (denser seeds close more gaps)
     SEED_ARC_STEPS: 2,       // new seeds along an accepted line every max(d_l, this x STEP)
-    MIN_MARK_PEN: 2,         // surface-fill MIN_MARK_PEN (private there)
+    MIN_MARK_PEN: 4,         // surface-fill uses 2; 4 drops the 0.6-1.5 mm specks (H5, review §7.4)
+    SEP_MARGIN: 0.97,        // declared minSepFrac = STOP_FACTOR x this: the screen-space gap of a stop-radius pair loses ~2 % to chord and projection error
+    P0_SCALE: 1.2,           // p0 = PMAX x this (O4): moves the finest-level front from c 0.83 to about 0.69 (H2)
+    MAX_LEVELS_LAW: 4,       // cap on the law-floor level count: the formula asks for 5 at P0_SCALE 1.2, but L5 doubles the bake (1.4 s against 0.65 s); zoom past ~1.4x loses the finest level until the next scaleRef octave re-bakes
     INK_SPREAD: 0.12,        // surface-fill INK_SPREAD (private there)
     A_DARK: 0.90,            // makeCtx dark end of the tone map
     CROSS_OBJ_DEG: 65,       // Regions.CROSS_OBJ_DEG fallback
@@ -138,7 +141,6 @@
     const MAX_LEVELS = cfg().MAX_LEVELS || 6;
     // Zoom headroom: scaleRef keeps s / scaleRef within sqrt(2); 1.5 also covers the perspective spread (review A2).
     const HEADROOM = Number.isFinite(cfg().ZOOM_HEADROOM) ? cfg().ZOOM_HEADROOM : 1.5;
-    const PLOT_FLOOR_SLACK = Number.isFinite(cfg().PLOT_FLOOR_SLACK) ? cfg().PLOT_FLOOR_SLACK : 0.8;
     const M = Chart.metric(spec.mode, spec.sizes, spec.scale);
     if (!M) throw new Error(`SurfaceLockMezzo.bake: no chart for mode ${spec.mode}`);
     const style = spec.style || {};
@@ -146,7 +148,7 @@
     const salt = (seedSpec.salt | 0); const phase = finite(seedSpec.phase, 0);
     const scaleRef = Math.max(1e-6, finite(spec.scaleRef, 1));
     const T = toneParams(spec);
-    const p0 = T.PMAX / scaleRef;
+    const p0 = (T.PMAX * K.P0_SCALE) / scaleRef;
     const STEP = (K.STEP_SCREEN * K.STEP_MULT) / scaleRef;
     const fillAngle = finite(style.fillAngle, 45);
     const crossDeg = (regionsLib().CROSS_OBJ_DEG || K.CROSS_OBJ_DEG) + (clamp(finite(style.crossAngleDelta, 90), 10, 170) - 90);
@@ -193,11 +195,11 @@
     area /= cnt;
     const Rm = Math.min(maxX - minX, maxY - minY, maxZ - minZ) / 2;
 
-    // Levels (F-M1, contract A2): bake only levels that can be drawn. Level l is drawable at the largest in-octave
-    // scale when its screen pitch PMAX * HEADROOM / 2^l is at least minPitch, the darkest pitch the law can ask for
-    // (coverage <= A_DARK) and not below SLACK x the plot floor. So the finest level is floor(log2(...)).
-    const minPitch = Math.max(PLOT_FLOOR_SLACK * T.FLOOR, T.INK / K.A_DARK);
-    let L = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * HEADROOM) / minPitch)) + 1e-9), 1, MAX_LEVELS);
+    // Levels (F-M1, contract A2; H4): bake only levels that can be drawn. Level l is drawable at the largest in-octave
+    // scale when its screen pitch p0 * HEADROOM / 2^l is at least the declared law floor (the darkest pitch the law
+    // can ask for, INK / A_DARK, which is also meta.floorPitchPen x pen). p0 here is the scaled bake pitch.
+    const lawFloor = T.INK / K.A_DARK;
+    let L = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * K.P0_SCALE * HEADROOM) / lawFloor)) + 1e-9), 1, Math.min(MAX_LEVELS, K.MAX_LEVELS_LAW));
     const estVerts = (lv) => (nFam * area) / ((p0 / 2 ** (lv - 1)) * 1.1) / STEP;
     while (L > 1 && estVerts(L) > K.MAX_VERTICES * 0.95) L -= 1;
 
@@ -627,7 +629,9 @@
       p0, gain: K.GAIN, toneModel: 'pitch', scaleRef,
       minMarkMM: K.MIN_MARK_PEN * T.PEN,
       // Contract §5 (O1): the pose mezzo's own legal dark limit, INK / A_DARK in pen widths, replaces the plot floor.
-      minSepFrac: K.STOP_FACTOR,
+      minSepFrac: K.STOP_FACTOR * K.SEP_MARGIN,
+      // Cap-aware tone (review §7.2 R-a): the frame maps the LUT's log-density range onto the foreshortening cap.
+      capToneRemap: true,
       floorPitchPen: (T.INK / K.A_DARK) / T.PEN,
       bounds: { min: bmin, max: bmax, radius: brad },
       convex: CONVEX.has(spec.primitive),
@@ -646,6 +650,8 @@
     id: 'mezzo',
     FIT,
     REFUSED,
+    MIN_MARK_PEN_DEFAULT: K_DEFAULTS.MIN_MARK_PEN,
+    get MAX_LEVELS_LAW() { return K_DEFAULTS.MAX_LEVELS_LAW; },
     supports,
     bake,
     toneLUT,
