@@ -28,11 +28,14 @@
   // Vectura.SCENE3D_SURFACE_LOCK.MEZZO (see `sync`); this table is the safe fallback when the config is not loaded.
   const K_DEFAULTS = {
     STEP_SCREEN: 0.34,       // surface-fill-mono streamFamily STEP (screen mm); object step = / scaleRef
+    STEP_MULT: 1,            // object step = STEP_SCREEN x this / scaleRef (bake cost is about linear in 1 / step)
     STEP_TOL: 2.5,           // stepTo verification tolerance
     STEP_HALVINGS: 5,
     STOP_FACTOR: 0.80,       // a line stops this close (x d_l) to another line
+    SEED_TIGHT: 0.86,        // the live seed radius is SEED_FACTOR x this x d_l: seeding closer than 0.95 fills the nested gaps (FX-M)
     SEED_FACTOR: 0.95,       // a new line starts at least this far (x d_l) from the others
     MAX_STEPS: 2600,         // per direction
+    CELL_F: 2,               // occupancy cell edge, x the larger of the stop and seed radii
     OWN_SKIP: 1.5,           // same-line points within this arc (x d_l) are not "other lines"
     FIELD_MIN: 0.05,         // |projected direction| below this: the field vanishes, the line ends
     REGION_MIN_MM: 3.0,      // REG = max(REGION_MIN_MM, R * REGION_R_FRAC) / scaleRef
@@ -43,6 +46,7 @@
     REGION_ANGLE_STEP: 30,
     NEIGHBOURS: 14,
     GAIN: 2,
+    SEED_ARC_TIGHT: 0.5,     // the live seed spacing along a line is SEED_ARC_STEPS x this x STEP (denser seeds close more gaps)
     SEED_ARC_STEPS: 2,       // new seeds along an accepted line every max(d_l, this x STEP)
     MIN_MARK_PEN: 2,         // surface-fill MIN_MARK_PEN (private there)
     INK_SPREAD: 0.12,        // surface-fill INK_SPREAD (private there)
@@ -55,6 +59,11 @@
     FALLBACK_MIN: 200,
     FALLBACK_MAX: 5000,
     RANK_FPO_MAX: 6000,      // farthest-point ranking above this many lines falls back to bit reversal
+    MIN_LINE_D: 2,           // Jobard-Lefer minimum line length (x d_l): a new level-l line shorter than this is dropped
+    MIN_LINE_MM: 0,          // absolute floor on the minimum line length (object mm / scaleRef)
+    PREV_SEED_D: 4,          // seeds beside lower-level lines every max(seedArc, this x d_l)
+    FALLBACK_SEEDED: 100,    // random fallback candidates for levels > 0 (the lower-level seeds do the filling)
+    CONT_MIN_D: 1,           // a continuation run shorter than this (x d_l) is dropped; the end stays open for the next level
   };
   const K = Object.assign({}, K_DEFAULTS);
 
@@ -138,7 +147,7 @@
     const scaleRef = Math.max(1e-6, finite(spec.scaleRef, 1));
     const T = toneParams(spec);
     const p0 = T.PMAX / scaleRef;
-    const STEP = K.STEP_SCREEN / scaleRef;
+    const STEP = (K.STEP_SCREEN * K.STEP_MULT) / scaleRef;
     const fillAngle = finite(style.fillAngle, 45);
     const crossDeg = (regionsLib().CROSS_OBJ_DEG || K.CROSS_OBJ_DEG) + (clamp(finite(style.crossAngleDelta, 90), 10, 170) - 90);
     const nFam = spec.mapper === 'crosshatch' ? 2 : 1;
@@ -232,6 +241,12 @@
       order.sort((p, q) => p.d - q.d || p.j - q.j);
       return order.slice(0, K.NEIGHBOURS).map((o) => o.j);
     });
+    // A point closer to its region seed than half the distance to the seed's nearest neighbour cannot belong to another
+    // region: the walk skips the neighbour search there (exact, not an approximation).
+    regs.forEach((g, i) => {
+      const j = nbr[i][0];
+      g.safe2 = j === undefined ? Infinity : ((regs[j].x - g.x) ** 2 + (regs[j].y - g.y) ** 2 + (regs[j].z - g.z) ** 2) * 0.25;
+    });
     const nearestBrute = (x, y, z) => {
       let best = 0; let bd = Infinity;
       for (let i = 0; i < regs.length; i++) {
@@ -257,7 +272,8 @@
 
     // The field: the region's constant 3D vector projected into the tangent plane, sign-continuous.
     const fieldAt = (S, fam, prev, reg) => {
-      reg.i = nearestFrom(S.x, S.y, S.z, reg.i);
+      const g0 = regs[reg.i];
+      if ((g0.x - S.x) ** 2 + (g0.y - S.y) ** 2 + (g0.z - S.z) ** 2 >= g0.safe2) reg.i = nearestFrom(S.x, S.y, S.z, reg.i);
       const D = fam ? regs[reg.i].d2 : regs[reg.i].d;
       const dn = D[0] * S.nx + D[1] * S.ny + D[2] * S.nz;
       let x = D[0] - dn * S.nx; let y = D[1] - dn * S.ny; let z = D[2] - dn * S.nz;
@@ -294,6 +310,10 @@
     // Per-family state.
     const prevPts = [[], []]; // flat x,y,z of vertices of lower levels, per family
     const prevStarts = [[], []]; // index into prevPts (3 per vertex) where each run starts
+    const prevRuns = [[], []]; // per emitted run: { chain, sBase, sign, len, open: [start, end], ends: [{a,b,S,dir}, ...] }
+    const CHAIN_BASE = 1e6; // occupancy line id of an emitted chain = CHAIN_BASE + chain (new lines of the current level use small ids)
+    const chainCtr = [0, 0];
+    const prevV = [[], []]; // vertex records { a, b, S } of lower-level runs, aligned with prevPts (seeds for the next level)
     const builder = MS.createBuilder({ bakerId: 'mezzo', key: String(spec.bakeKey || ''), objectId: spec.objectId, meta: {} });
     let totalVerts = 0;
     let bmin = [Infinity, Infinity, Infinity]; let bmax = [-Infinity, -Infinity, -Infinity]; let brad = 0;
@@ -303,10 +323,10 @@
 
     const growLevel = (fam, lv) => {
       const d = p0 / 2 ** lv;
-      const stopR = K.STOP_FACTOR * d; const seedR = K.SEED_FACTOR * d;
+      const stopR = K.STOP_FACTOR * d; const seedR = K.SEED_FACTOR * K.SEED_TIGHT * d;
       // Occupancy: a chained integer hash over cells of one stop radius (a query touches at most 8 cells). Points carry
       // the line they belong to and their signed arc position so a line is not "another line" to itself.
-      const cell = 2 * Math.max(stopR, seedR, 1e-3); const inv = 1 / cell;
+      const cell = K.CELL_F * Math.max(stopR, seedR, 1e-3); const inv = 1 / cell;
       // Dense grid over the (padded) object bounds when it is small enough, else a mixed integer hash.
       const gi0 = Math.floor((minX - 2 * cell) * inv) | 0; const gj0 = Math.floor((minY - 2 * cell) * inv) | 0; const gk0 = Math.floor((minZ - 2 * cell) * inv) | 0;
       const gnx = (Math.floor((maxX + 2 * cell) * inv) | 0) - gi0 + 1; const gny = (Math.floor((maxY + 2 * cell) * inv) | 0) - gj0 + 1;
@@ -314,8 +334,8 @@
       const dense = gnx * gny * gnz <= (1 << 22);
       const TBL = dense ? gnx * gny * gnz : 1 << 17; const MASK = TBL - 1;
       const head = new Int32Array(TBL).fill(-1);
-      let cap = 4096; let px = new Float64Array(cap); let py = new Float64Array(cap); let pz = new Float64Array(cap);
-      let nextP = new Int32Array(cap); let lineOf = new Int32Array(cap); let sOf = new Float64Array(cap); let np = 0;
+      let cap = 4096; let P = new Float64Array(4 * cap); // x, y, z, arc position per occupancy point (one cache line)
+      let nextP = new Int32Array(cap); let lineOf = new Int32Array(cap); let np = 0;
       const bucket = dense
         ? (i, j, k) => {
           const ii = i - gi0; const jj = j - gj0; const kk = k - gk0;
@@ -330,11 +350,11 @@
         if (np === cap) {
           cap *= 2;
           const g = (A, T) => { const B = new T(cap); B.set(A); return B; };
-          px = g(px, Float64Array); py = g(py, Float64Array); pz = g(pz, Float64Array);
-          nextP = g(nextP, Int32Array); lineOf = g(lineOf, Int32Array); sOf = g(sOf, Float64Array);
+          const B = new Float64Array(4 * cap); B.set(P); P = B;
+          nextP = g(nextP, Int32Array); lineOf = g(lineOf, Int32Array);
         }
         const bk = bucket(Math.floor(x * inv) | 0, Math.floor(y * inv) | 0, Math.floor(z * inv) | 0);
-        px[np] = x; py[np] = y; pz[np] = z; lineOf[np] = line; sOf[np] = s;
+        const o = 4 * np; P[o] = x; P[o + 1] = y; P[o + 2] = z; P[o + 3] = s; lineOf[np] = line;
         nextP[np] = head[bk]; head[bk] = np; np += 1;
       };
       // F-M2: occupancy points no sparser than half the stop radius, so a streamline cannot slip between two samples
@@ -358,32 +378,107 @@
         }
         return false;
       };
-      const pp = prevPts[fam]; const ps = prevStarts[fam];
-      for (let i = 0, r = 0; i < pp.length; i += 3) {
+      const pp = prevPts[fam]; const ps = prevStarts[fam]; const pr = prevRuns[fam]; const pv = prevV[fam];
+      // Lower-level vertices keep their chain id and arc position, so a continuation is not blocked by its own parent.
+      for (let i = 0, r = 0, rec = null, sv = 0; i < pp.length; i += 3) {
         const isStart = r < ps.length && ps[r] === i;
-        if (isStart) r += 1;
-        addPt(pp[i], pp[i + 1], pp[i + 2], -1, 0);
-        if (!isStart) addSeg(pp[i - 3], pp[i - 2], pp[i - 1], pp[i], pp[i + 1], pp[i + 2], -1, 0, 0);
+        let sPrev = sv;
+        if (isStart) { rec = pr[r]; r += 1; sv = rec.sBase; sPrev = sv; } else {
+          sv += rec.sign * Math.sqrt((pp[i] - pp[i - 3]) ** 2 + (pp[i + 1] - pp[i - 2]) ** 2 + (pp[i + 2] - pp[i - 1]) ** 2);
+        }
+        const lid = CHAIN_BASE + rec.chain;
+        addPt(pp[i], pp[i + 1], pp[i + 2], lid, sv);
+        if (!isStart) addSeg(pp[i - 3], pp[i - 2], pp[i - 1], pp[i], pp[i + 1], pp[i + 2], lid, sPrev, sv);
       }
       const ownSkip = K.OWN_SKIP * d;
-      const blocked = (x, y, z, r, line, s) => {
+      // Dense grid: clamp the cell range once and walk linear indices (the cells outside the padded bounds are empty).
+      const blockedDense = (x, y, z, r, line, s) => {
+        let i0 = (Math.floor((x - r) * inv) | 0) - gi0; let i1 = (Math.floor((x + r) * inv) | 0) - gi0;
+        let j0 = (Math.floor((y - r) * inv) | 0) - gj0; let j1 = (Math.floor((y + r) * inv) | 0) - gj0;
+        let k0 = (Math.floor((z - r) * inv) | 0) - gk0; let k1 = (Math.floor((z + r) * inv) | 0) - gk0;
+        if (i0 < 0) i0 = 0; if (j0 < 0) j0 = 0; if (k0 < 0) k0 = 0;
+        if (i1 >= gnx) i1 = gnx - 1; if (j1 >= gny) j1 = gny - 1; if (k1 >= gnz) k1 = gnz - 1;
+        const r2 = r * r;
+        for (let k = k0; k <= k1; k++) for (let j = j0; j <= j1; j++) {
+          const base = gnx * (j + gny * k);
+          for (let i = i0; i <= i1; i++) {
+            for (let q = head[base + i]; q >= 0; q = nextP[q]) {
+              const o = 4 * q; const dx = P[o] - x; const dy = P[o + 1] - y; const dz = P[o + 2] - z;
+              if (dx * dx + dy * dy + dz * dz <= r2 && (lineOf[q] !== line || Math.abs(P[o + 3] - s) > ownSkip)) return true;
+            }
+          }
+        }
+        return false;
+      };
+      const blockedHash = (x, y, z, r, line, s) => {
         const i0 = Math.floor((x - r) * inv) | 0; const j0 = Math.floor((y - r) * inv) | 0; const k0 = Math.floor((z - r) * inv) | 0;
         const i1 = Math.floor((x + r) * inv) | 0; const j1 = Math.floor((y + r) * inv) | 0; const k1 = Math.floor((z + r) * inv) | 0;
         const r2 = r * r;
         for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
           for (let q = head[bucket(i, j, k)]; q >= 0; q = nextP[q]) {
-            const dx = px[q] - x; const dy = py[q] - y; const dz = pz[q] - z;
-            if (dx * dx + dy * dy + dz * dz <= r2 && (lineOf[q] !== line || Math.abs(sOf[q] - s) > ownSkip)) return true;
+            const o = 4 * q; const dx = P[o] - x; const dy = P[o + 1] - y; const dz = P[o + 2] - z;
+            if (dx * dx + dy * dy + dz * dz <= r2 && (lineOf[q] !== line || Math.abs(P[o + 3] - s) > ownSkip)) return true;
           }
         }
         return false;
       };
+      const blocked = dense ? blockedDense : blockedHash;
       const lines = []; // each: { v: [vertex records] }
       const stack = [];
-      const seedArc = Math.max(d, K.SEED_ARC_STEPS * STEP);
+      const seedArc = Math.max(d, K.SEED_ARC_STEPS * K.SEED_ARC_TIGHT * STEP);
       let lineId = 0;
       const candN = clamp(Math.ceil((K.FALLBACK_PER_AREA * area) / (d * d)), K.FALLBACK_MIN, K.FALLBACK_MAX);
       let cand = 0;
+      const candLim = lv > 0 ? Math.min(candN, K.FALLBACK_SEEDED) : candN;
+
+      // Walk from a vertex along the field until the stop radius, a chart/field end or the vertex budget.
+      const walkFrom = (st, prevDir, regI, s0, sgn, line) => {
+        const out = [];
+        let cur = { a: st.a, b: st.b, S: st.S }; let prev = prevDir; let s = s0;
+        const r = { i: regI };
+        for (let i = 0; i < K.MAX_STEPS && totalVerts + out.length < K.MAX_VERTICES; i++) {
+          const t = fieldAt(cur.S, fam, prev, r);
+          if (!t) break;
+          // F-M3: a single Euler step. The field is region-constant, so the error is about kappa h^2 / 2.
+          const nx = move(cur, t, STEP);
+          if (!nx) break;
+          const s1 = s;
+          s += sgn * nx.dist;
+          if (blocked(nx.S.x, nx.S.y, nx.S.z, stopR, line, s)) break;
+          if (segBlocked(cur.S.x, cur.S.y, cur.S.z, nx.S.x, nx.S.y, nx.S.z, line, s1, s)) break;
+          addSeg(cur.S.x, cur.S.y, cur.S.z, nx.S.x, nx.S.y, nx.S.z, line, s1, s);
+          addPt(nx.S.x, nx.S.y, nx.S.z, line, s);
+          out.push({ a: nx.a, b: nx.b, S: nx.S, t, s });
+          prev = t; cur = nx;
+        }
+        return out;
+      };
+      // Drop the occupancy points added since np0 (they were pushed last, so each is the head of its bucket).
+      const rollback = (np0) => {
+        for (let q = np - 1; q >= np0; q--) {
+          const bk = bucket(Math.floor(P[4 * q] * inv) | 0, Math.floor(P[4 * q + 1] * inv) | 0, Math.floor(P[4 * q + 2] * inv) | 0);
+          head[bk] = nextP[q];
+        }
+        np = np0;
+      };
+      // A seed is a lazy "move d from V along q": the chart step (a sample) is only taken when it is popped, and a
+      // cheap 3D pre-test drops the seed first when the target is already inside another line's seed radius.
+      const pushSeed = (V, qx, qy, qz) => {
+        if (blocked(V.S.x + qx * d, V.S.y + qy * d, V.S.z + qz * d, seedR * 0.97, -2, 0)) return;
+        stack.push({ V, q: [qx, qy, qz] });
+      };
+      // New seeds along an accepted line, both sides, perpendicular in the tangent plane.
+      const seedAlong = (verts) => {
+        let acc = seedArc;
+        for (let i = 0; i < verts.length; i++) {
+          if (i) acc += Math.sqrt((verts[i].S.x - verts[i - 1].S.x) ** 2 + (verts[i].S.y - verts[i - 1].S.y) ** 2 + (verts[i].S.z - verts[i - 1].S.z) ** 2);
+          if (acc < seedArc) continue;
+          acc = 0;
+          const V = verts[i]; const n = V.S;
+          const qx = n.ny * V.t[2] - n.nz * V.t[1]; const qy = n.nz * V.t[0] - n.nx * V.t[2]; const qz = n.nx * V.t[1] - n.ny * V.t[0];
+          for (let side = -1; side <= 1; side += 2) pushSeed(V, qx * side, qy * side, qz * side);
+        }
+      };
 
       const tryLine = (st) => {
         if (totalVerts >= K.MAX_VERTICES) return;
@@ -393,54 +488,78 @@
         const t0 = fieldAt(S, fam, null, reg);
         if (!t0) return;
         const line = lineId++;
+        const np0 = np;
         addPt(S.x, S.y, S.z, line, 0);
         const seedV = { a: st.a, b: st.b, S, t: t0, s: 0 };
-        const walk = (sgn) => {
-          const out = [];
-          let cur = { a: st.a, b: st.b, S }; let prev = [t0[0] * sgn, t0[1] * sgn, t0[2] * sgn]; let s = 0;
-          const r = { i: reg.i };
-          for (let i = 0; i < K.MAX_STEPS && totalVerts + out.length < K.MAX_VERTICES; i++) {
-            const t = fieldAt(cur.S, fam, prev, r);
-            if (!t) break;
-            // F-M3: a single Euler step. The field is region-constant, so the error is about kappa h^2 / 2.
-            const nx = move(cur, t, STEP);
-            if (!nx) break;
-            const s0 = s;
-            s += sgn * nx.dist;
-            if (blocked(nx.S.x, nx.S.y, nx.S.z, stopR, line, s)) break;
-            if (segBlocked(cur.S.x, cur.S.y, cur.S.z, nx.S.x, nx.S.y, nx.S.z, line, s0, s)) break;
-            addSeg(cur.S.x, cur.S.y, cur.S.z, nx.S.x, nx.S.y, nx.S.z, line, s0, s);
-            addPt(nx.S.x, nx.S.y, nx.S.z, line, s);
-            out.push({ a: nx.a, b: nx.b, S: nx.S, t, s });
-            prev = t; cur = nx;
-          }
-          return out;
-        };
-        const fwd = walk(1); const bwd = walk(-1);
+        const fwd = walkFrom(st, t0, reg.i, 0, 1, line);
+        const bwd = walkFrom(st, [-t0[0], -t0[1], -t0[2]], reg.i, 0, -1, line);
         const verts = bwd.reverse().concat([seedV], fwd);
         // Backward vertices carry tangents pointing the walking way; the line direction is only a line.
-        if (verts.length < 2) return;
+        if (verts.length < 2) { rollback(np0); return; }
+        // Jobard-Lefer minimum line length: a fragment shorter than MIN_LINE_D x d_l is not kept.
+        if (verts[verts.length - 1].s - verts[0].s < Math.max(K.MIN_LINE_D * d, K.MIN_LINE_MM / scaleRef)) { rollback(np0); return; }
         totalVerts += verts.length;
-        lines.push({ v: verts });
-        // New seeds along the line, both sides, perpendicular in the tangent plane.
-        let acc = seedArc;
-        for (let i = 0; i < verts.length; i++) {
-          if (i) acc += Math.sqrt((verts[i].S.x - verts[i - 1].S.x) ** 2 + (verts[i].S.y - verts[i - 1].S.y) ** 2 + (verts[i].S.z - verts[i - 1].S.z) ** 2);
-          if (acc < seedArc) continue;
-          acc = 0;
-          const V = verts[i]; const n = V.S;
-          const px = n.ny * V.t[2] - n.nz * V.t[1]; const py = n.nz * V.t[0] - n.nx * V.t[2]; const pz = n.nx * V.t[1] - n.ny * V.t[0];
-          for (let side = -1; side <= 1; side += 2) {
-            const m = move(V, [px * side, py * side, pz * side], d);
-            if (m) stack.push(m);
+        lines.push({ v: verts, chain: chainCtr[fam]++, sBase: verts[0].s, sign: 1, cont: false });
+        seedAlong(verts);
+      };
+
+      // Continuations (G6): extend each open lower-level line end with this level's smaller stop radius. The run
+      // starts AT the parent's end vertex (shared) and belongs to level lv.
+      const extendEnds = () => {
+        const n0 = pr.length;
+        for (let ri = 0; ri < n0; ri++) {
+          const rec = pr[ri];
+          for (let end = 1; end >= 0; end--) {
+            if (!rec.open[end]) continue;
+            if (totalVerts >= K.MAX_VERTICES) return;
+            const E = rec.ends[end];
+            const sOut = end ? rec.sign : -rec.sign;
+            const sE = end ? rec.sBase + rec.sign * rec.len : rec.sBase;
+            const line = CHAIN_BASE + rec.chain;
+            const np0 = np;
+            const out = walkFrom(E, E.dir, nearestBrute(E.S.x, E.S.y, E.S.z), sE, sOut, line);
+            if (!out.length || Math.abs(out[out.length - 1].s - sE) < K.CONT_MIN_D * d) { rollback(np0); continue; }
+            rec.open[end] = false;
+            totalVerts += out.length;
+            lines.push({ v: [{ a: E.a, b: E.b, S: E.S, t: E.dir, s: sE }].concat(out), chain: rec.chain, sBase: sE, sign: sOut, cont: true });
+            seedAlong(out);
           }
         }
       };
+      // Seeds beside every lower-level line, one level separation d_l away on both sides: the nested ladder places
+      // level l midway between the level l-1 lines, so this fills the gaps systematically instead of by chance.
+      const prevArc = Math.max(seedArc, K.PREV_SEED_D * d);
+      const seedFromPrev = () => {
+        for (let r = 0; r < pr.length; r++) {
+          const v0 = ps[r] / 3; const v1 = r + 1 < ps.length ? ps[r + 1] / 3 : pv.length;
+          let acc = prevArc;
+          for (let q = v0; q < v1; q++) {
+            const V = pv[q];
+            if (q > v0) acc += Math.sqrt((V.S.x - pv[q - 1].S.x) ** 2 + (V.S.y - pv[q - 1].S.y) ** 2 + (V.S.z - pv[q - 1].S.z) ** 2);
+            if (acc < prevArc) continue;
+            acc = 0;
+            const A = pv[Math.max(v0, q - 1)].S; const B = pv[Math.min(v1 - 1, q + 1)].S;
+            const cx = B.x - A.x; const cy = B.y - A.y; const cz = B.z - A.z;
+            const n = V.S;
+            let qx = n.ny * cz - n.nz * cy; let qy = n.nz * cx - n.nx * cz; let qz = n.nx * cy - n.ny * cx;
+            const ql = Math.sqrt(qx * qx + qy * qy + qz * qz);
+            if (!(ql > 1e-12)) continue;
+            qx /= ql; qy /= ql; qz /= ql;
+            for (let side = -1; side <= 1; side += 2) pushSeed(V, qx * side, qy * side, qz * side);
+          }
+        }
+      };
+      if (lv > 0) { seedFromPrev(); extendEnds(); }
 
       for (;;) {
         if (totalVerts >= K.MAX_VERTICES) break;
-        if (stack.length) { tryLine(stack.pop()); continue; }
-        if (cand >= candN) break;
+        if (stack.length) {
+          const sd = stack.pop();
+          const m = sd.V ? move(sd.V, sd.q, d) : sd;
+          if (m) tryLine(m);
+          continue;
+        }
+        if (cand >= candLim) break;
         const c = cand++;
         const a = Chart.hash(c * 13 + 1, 41 + lv * 7 + fam * 3, salt); const b = Chart.hash(c * 13 + 2, 43 + lv * 7 + fam * 3, salt);
         const S = sample(a, b);
@@ -477,10 +596,21 @@
         const rank = n ? Math.min(0.999984, order[j] / n) : 0;
         builder.beginRun(lv, rank, fam, 0);
         prevStarts[fam].push(pp.length);
+        const nv = ln.v.length;
+        const endRec = (q, o) => {
+          const A = ln.v[q].S; const B = ln.v[o].S;
+          const dx = A.x - B.x; const dy = A.y - B.y; const dz = A.z - B.z; const l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+          return { a: ln.v[q].a, b: ln.v[q].b, S: A, dir: [dx / l, dy / l, dz / l] };
+        };
+        const runLen = Math.abs(ln.v[nv - 1].s - ln.v[0].s);
+        prevRuns[fam].push({
+          chain: ln.chain, sBase: ln.sBase, sign: ln.sign, len: runLen,
+          open: [!ln.cont, true], ends: [endRec(0, 1), endRec(nv - 1, nv - 2)],
+        });
         for (let q = 0; q < ln.v.length; q++) {
           const S = ln.v[q].S;
           builder.vertex(S.x, S.y, S.z, S.nx, S.ny, S.nz);
-          pp.push(S.x, S.y, S.z);
+          pp.push(S.x, S.y, S.z); pv.push(ln.v[q]);
           if (S.x < bmin[0]) bmin[0] = S.x; if (S.y < bmin[1]) bmin[1] = S.y; if (S.z < bmin[2]) bmin[2] = S.z;
           if (S.x > bmax[0]) bmax[0] = S.x; if (S.y > bmax[1]) bmax[1] = S.y; if (S.z > bmax[2]) bmax[2] = S.z;
           const rr = Math.sqrt(S.x * S.x + S.y * S.y + S.z * S.z); if (rr > brad) brad = rr;
@@ -496,6 +626,9 @@
     ms.meta = {
       p0, gain: K.GAIN, toneModel: 'pitch', scaleRef,
       minMarkMM: K.MIN_MARK_PEN * T.PEN,
+      // Contract §5 (O1): the pose mezzo's own legal dark limit, INK / A_DARK in pen widths, replaces the plot floor.
+      minSepFrac: K.STOP_FACTOR,
+      floorPitchPen: (T.INK / K.A_DARK) / T.PEN,
       bounds: { min: bmin, max: bmax, radius: brad },
       convex: CONVEX.has(spec.primitive),
       msBake: clock() - t0,

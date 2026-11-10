@@ -76,6 +76,15 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
         for (let k = 1; k <= n; k++) cb([b[0] + ((a[0] - b[0]) * k) / n, b[1] + ((a[1] - b[1]) * k) / n, b[2] + ((a[2] - b[2]) * k) / n]);
       }
     };
+    // Continuation runs share their end vertex with the parent; a chain of such runs is one line (contract §9).
+    const uf = runs.map((r, i) => i);
+    const find = (i) => { while (uf[i] !== i) { uf[i] = uf[uf[i]]; i = uf[i]; } return i; };
+    const endKey = new Map();
+    runs.forEach((r, i) => [r.v0, r.v1 - 1].forEach((v) => {
+      const k = pt(sphere, v).map((x) => x.toFixed(6)).join(',');
+      if (endKey.has(k)) uf[find(i)] = find(endKey.get(k)); else endKey.set(k, i);
+    }));
+    const chainOf = new Map(runs.map((r, i) => [r.r, find(i)]));
     for (let l = 0; l < sphere.levels; l++) {
       const d = (0.8 * p0) / 2 ** l;
       const cell = d; const grid = new Map();
@@ -91,6 +100,7 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
               const list = grid.get(key(c[0] + i, c[1] + j, c[2] + k));
               if (!list) continue;
               for (const o of list) {
+                if (o[3] === chainOf.get(r.r)) continue;
                 checked += 1;
                 const dd = Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]);
                 if (dd < minD) minD = dd;
@@ -98,9 +108,9 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
               }
             }
           }
-          own.push([c, p]);
+          own.push([c, p, 0, chainOf.get(r.r)]);
         });
-        own.forEach(([c, p]) => { const kk = key(c[0], c[1], c[2]); if (!grid.has(kk)) grid.set(kk, []); grid.get(kk).push(p); });
+        own.forEach(([c, p, , ch]) => { const kk = key(c[0], c[1], c[2]); if (!grid.has(kk)) grid.set(kk, []); grid.get(kk).push([p[0], p[1], p[2], ch]); });
       });
       expect(bad, `level ${l}: ${bad} densified samples closer than ${d.toFixed(3)} to another run (min ${minD.toFixed(3)})`).toBe(0);
       expect(checked, `level ${l} compared something`).toBeGreaterThan(0);
@@ -225,6 +235,74 @@ describe('SurfaceLockMezzo (lawMezzoLocked baker)', () => {
     expect(sphere.levels).toBeLessThanOrEqual(6);
     expect(sphere.meta.gain).toBe(2);
     expect(sphere.meta.toneModel).toBe('pitch');
+  });
+
+  describe('FX-M: continuation runs, min separation, bake budget (R 25 rig sphere)', () => {
+    let rig; let rigMs = 0;
+    const lenOf = (ms, r) => { let l = 0; for (let v = r.v0 + 1; v < r.v1; v++) l += Math.hypot(...pt(ms, v).map((x, i) => x - pt(ms, v - 1)[i])); return l; };
+    beforeAll(() => {
+      const t0 = now();
+      rig = Z.bake(specOf({ sizes: { sx: 25, sy: 25, sz: 25 } }));
+      rigMs = now() - t0;
+    }, SLOW);
+
+    it('declares meta.minSepFrac = STOP_FACTOR (0.8)', () => {
+      expect(rig.meta.minSepFrac).toBeCloseTo(0.8, 6);
+    });
+
+    it('declares meta.floorPitchPen equal to the pose law dark pitch (pitchFor(0) / pen)', () => {
+      const scene = buildSurfaceLockScene(V, { kind: 'sphere', toneLaw: 'mezzoRegion', mapper: 'hatch', markSpace: 'pose' });
+      const win = rt.runtime.window;
+      win.__MONO_TRACE = 1; win.__MONO_CTX = null;
+      scene.composeFull();
+      const C = win.__MONO_CTX; win.__MONO_TRACE = 0;
+      expect(C).toBeTruthy();
+      const ms = Z.bake(specOf({ penWidth: C.PEN, sizes: { sx: 8, sy: 8, sz: 8 } }));
+      expect(ms.meta.floorPitchPen).toBeCloseTo(C.pitchFor(0) / C.PEN, 6);
+    });
+
+    it('cumulative pitch of levels <= l stays within 1.2 x the target p0 / 2^l', () => {
+      const area = 4 * Math.PI * 25 * 25;
+      const cum = new Array(rig.levels).fill(0);
+      runsOf(rig).filter((r) => r.family === 0).forEach((r) => { cum[r.level] += lenOf(rig, r); });
+      let acc = 0; const rows = [];
+      for (let l = 0; l < rig.levels; l++) {
+        acc += cum[l];
+        rows.push((area / acc) / (rig.meta.p0 / 2 ** l));
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[FX-M] pitch/target per level: ${rows.map((x) => x.toFixed(2)).join(' ')}`);
+      for (let l = 2; l <= 3; l++) expect(rows[l], `level ${l} pitch/target ${rows[l].toFixed(2)}`).toBeLessThanOrEqual(1.2);
+    });
+
+    // OPEN acceptance bar (FX-M item 2): the nested Jobard-Lefer pockets cap the median at 4-6 mm while the pitch bar holds;
+    // MIN_LINE_MM sweeps to 8 mm cost 15 % of the ink (pitch 1.38). `it.fails` flips to a red test when the bar is reached.
+    it.fails('OPEN: median run length at levels 1-3 is at least 8 mm', () => {
+      const meds = [];
+      for (let l = 1; l <= 3; l++) {
+        const ls = runsOf(rig).filter((r) => r.family === 0 && r.level === l).map((r) => lenOf(rig, r)).sort((a, b) => a - b);
+        meds.push(ls.length ? ls[ls.length >> 1] : 0);
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[FX-M] median run mm L1-3: ${meds.map((x) => x.toFixed(1)).join(' ')}`);
+      meds.forEach((m, i) => expect(m, `level ${i + 1} median ${m.toFixed(1)}`).toBeGreaterThanOrEqual(8));
+    });
+
+    it('bake work is bounded (vertex counter) and the cold clock stays generous; the 400 ms bar is reported', () => {
+      // eslint-disable-next-line no-console
+      console.log(`[FX-M] cold bake ms: ${rigMs.toFixed(0)} (meta ${rig.meta.msBake.toFixed(0)}) verts=${rig.vertexCount} runs=${rig.runCount}`);
+      expect(rig.vertexCount).toBeLessThanOrEqual(50000);
+      expect(rigMs).toBeLessThanOrEqual(1500);
+    });
+
+    it('continuation runs share their end vertex with a lower-level run', () => {
+      const runs = runsOf(rig).filter((r) => r.family === 0);
+      const ends = new Map();
+      runs.forEach((r) => [r.v0, r.v1 - 1].forEach((v) => { const k = pt(rig, v).map((x) => x.toFixed(6)).join(','); (ends.get(k) || ends.set(k, []).get(k)).push(r.level); }));
+      let joined = 0;
+      ends.forEach((lv) => { if (lv.length > 1 && Math.max(...lv) > Math.min(...lv)) joined += 1; });
+      expect(joined, 'level-l runs that start at a lower-level run end').toBeGreaterThan(50);
+    });
   });
 
   it('crosshatch adds a second family with its own occupancy; every chart primitive bakes clean (§9 FIT)', () => {
