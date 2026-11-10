@@ -221,7 +221,8 @@
     renderCustomSwatches(body);
     if (held) {
       U.afterEditorCover(() => {
-        body.querySelectorAll('.paper-swatch[data-paper-type]').forEach((btn) => {
+        // One swatch per task, and none while a Scene spin is baking or dragging (each costs 30-90 ms of texture synthesis).
+        U.idleSteps(Array.from(body.querySelectorAll('.paper-swatch[data-paper-type]')), (btn) => {
           const type = btn.dataset.paperType;
           const el = btn.querySelector('[data-paper-thumb]');
           if (!el || el.style.backgroundImage || type === 'none' || !(PT && PT.thumbDataURL)) return;

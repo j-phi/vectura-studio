@@ -17,6 +17,9 @@ describe('scene compose pipeline — draft tiers, consumed children, memo', () =
   beforeAll(async () => {
     runtime = await loadVecturaRuntime({ includeUi: false });
     V = runtime.window.Vectura;
+    // These tests pin the DRAFT TIERS of the generator; a pose-only preview would be served by the
+    // pose warp instead (covered by scene3d-pose-preview.test.js).
+    V.SETTINGS.scenePoseWarp = false;
   });
   afterAll(() => runtime?.cleanup?.());
   afterEach(() => {

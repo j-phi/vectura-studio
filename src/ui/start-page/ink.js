@@ -438,6 +438,16 @@
       if (h.mode !== 'canvas' || !h.canvas || !h.bmp) return;
       tintInto(h.canvas, h.bmp, h.colorway, h.phase || 0);
     };
+    /* Rastered alternates (canvas mode): a baked pose is rastered once when it is prepared, so showing it is a repaint of
+     * a cached bitmap rather than a fresh raster of its whole drawing. Keyed by the raster size; a resize drops them. */
+    const altBmps = new Map(); let ownBmp = null; let altKey = '';
+    const rasterKey = () => { const pol = policyFor(h.w, h.h); return `${pol.width}x${pol.height}@${pol.scale}`; };
+    /* An evicted ImageBitmap holds its pixels until closed (garbage collection is not prompt about them), so every drop closes it, unless it is
+     * the one on screen (h.bmp) or the tile's own (ownBmp), which stay live until replaced. */
+    const closeBmp = (b) => { if (b && b !== h.bmp && b !== ownBmp && typeof b.close === 'function') { try { b.close(); } catch (e) { /* already closed */ } } };
+    const dropAlt = (k) => { const b = altBmps.get(k); altBmps.delete(k); closeBmp(b); };
+    const clearAlts = () => { Array.from(altBmps.keys()).forEach(dropAlt); };
+    h._altBmps = altBmps;
     h.raster = () => {
       if (!h.parsed || !h.w || !h.h) return Promise.resolve();
       const gen = ++h._gen; const pol = policyFor(h.w, h.h); const w0 = h.w; const h0 = h.h; const win = h.win;
@@ -448,6 +458,8 @@
         if (!h.alive() || gen !== h._gen) return;
         if (!h.canvas) { h.canvas = D.createElement('canvas'); h.canvas.className = 'sp-ink-canvas'; h.canvas.setAttribute('aria-hidden', 'true'); box.appendChild(h.canvas); }
         h.canvas.width = pol.width; h.canvas.height = pol.height; h.rasterScale = pol.scale; h.bmp = b; h.paint();
+        const key = rasterKey(); if (altKey !== key) { clearAlts(); altKey = key; } /* every cached pose was drawn at another size */
+        if (!shown) { const old = ownBmp; ownBmp = b; if (old && old !== b) { ownBmp = b; closeBmp(old); } } else { if (altBmps.has(shown.art.id)) dropAlt(shown.art.id); altBmps.set(shown.art.id, b); }
         if (h.colorway.fill && h.colorway.fill.anim && !fillRaf) startFill();
       });
     };
@@ -512,10 +524,32 @@
       }
       return n;
     };
+    /* How many rastered poses this tile may hold: START_PAGE.SCENE_ORBIT.altBitmapMB (altBitmapMBMobile on a touch / low-memory device) over
+     * the bytes of one bitmap, never fewer than 6 nor more than MAX_ALTS. The scene orbit stops baking poses past it. */
+    h.altCapacity = () => {
+      const C = (Vectura.START_PAGE && Vectura.START_PAGE.SCENE_ORBIT) || {};
+      let mob = false;
+      try { mob = (Number.isFinite(W.navigator && W.navigator.deviceMemory) && W.navigator.deviceMemory <= 4) || !!(W.matchMedia && W.matchMedia('(pointer: coarse)').matches); } catch (e) { mob = false; }
+      const mb = mob ? (C.altBitmapMBMobile || 18) : (C.altBitmapMB || 32);
+      const pol = policyFor(h.w || 1, h.h || 1);
+      return Math.max(6, Math.min(MAX_ALTS, Math.floor(mb * 1048576 / Math.max(1, pol.width * pol.height * 4))));
+    };
     h.prepareArt = (a) => h.ready.then(() => {
       if (!h.alive() || !a || typeof a.svg !== 'string') return false;
       if (h.mode === 'svg') return !!altNode(a);
-      return parseArt(a).then(() => true, () => false);
+      return parseArt(a).then((parsed) => {
+        if (!h.canvas || !h.w || !h.h) return true;
+        const key = rasterKey(); if (altKey !== key) { clearAlts(); altKey = key; ownBmp = null; }
+        if (altBmps.has(a.id)) return true;
+        const pol = policyFor(h.w, h.h);
+        return rasterArt(a, parsed, { w: h.w, h: h.h, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win: h.win }).then((b) => {
+          if (!h.alive() || altKey !== key) return true;
+          altBmps.set(a.id, b);
+          const cap = h.altCapacity();
+          for (const k of Array.from(altBmps.keys())) { if (altBmps.size <= cap) break; if (!h.shown || h.shown.art.id !== k) dropAlt(k); }
+          return true;
+        }, () => true);
+      }, () => false);
     });
     h.showArt = (a) => h.ready.then(() => {
       if (!h.alive() || !h.parsed) return false;
@@ -530,12 +564,25 @@
         h.setViewBox();
         return true;
       }
+      // a cached bitmap at the current raster size: repaint it (no re-raster, no async gap)
+      const cached = h.canvas && altKey === rasterKey() ? (a ? altBmps.get(a.id) : ownBmp) : null;
       h.shown = a ? { art: a } : null;
+      if (cached) { h._gen += 1; h.bmp = cached; h.paint(); return true; }
+      return h.raster().then(() => true);
+    });
+    /* Continue as the crisp raster (what a large piece or a colorway fill already does). A turning 3D Scene asks for it: every baked
+     * pose is rastered once when it is prepared, so turning is a repaint of a cached bitmap instead of swapping a dense inline SVG. */
+    h.useRaster = () => h.ready.then(() => {
+      if (!h.alive() || !h.parsed) return false;
+      if (h.mode === 'canvas') return true;
+      if (h.svg) { h.svg.remove(); h.svg = null; }
+      h.ownSvg = null; alts.clear(); h.shown = null;
+      h.mode = 'canvas'; el.classList.add('sp-ink-raster');
       return h.raster().then(() => true);
     });
     h.shownArt = () => (h.shown ? h.shown.art : art);
     const destroyAlts = h.destroy;
-    h.destroy = () => { alts.clear(); h.shown = null; destroyAlts(); };
+    h.destroy = () => { alts.clear(); h.shown = null; destroyAlts(); const own = ownBmp; const cur = h.bmp; h.bmp = null; ownBmp = null; clearAlts(); [own, cur].forEach((b) => { if (b && typeof b.close === 'function') { try { b.close(); } catch (e) { /* already closed */ } } }); };
 
     if (ro) { resizeTargets.set(box, h); ro.observe(box); }
     h.ready = parseArt(art).then((parsed) => {

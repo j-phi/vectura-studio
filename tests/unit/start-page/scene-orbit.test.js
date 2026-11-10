@@ -77,7 +77,7 @@ const mountScene = async (opts) => {
 
 describe('StartPageSceneOrbit', () => {
   beforeEach(() => { still = false; load(); });
-  afterEach(() => dom.window.close());
+  afterEach(() => { const m = W.document.getElementById('m'); if (m && m._spScene) m._spScene.destroy(); dom.window.close(); });
 
   it('needs a mounted Ink tile that can show alternates', () => {
     const el = W.document.getElementById('m');
@@ -123,49 +123,68 @@ describe('StartPageSceneOrbit', () => {
     expect(timers.length).toBeLessThanOrEqual(scheduled); // the loop has ended
   });
 
-  it('drag turns the camera: the exact pose shows once its render lands and becomes home', async () => {
+  it('drag turns the camera through baked poses: nothing renders during it, the shown pose becomes home on release', async () => {
     const { el, tile, h } = await mountScene();
     const ov = el.querySelector('.sp-scene-orbit');
     expect(ov.getAttribute('role')).toBe('application');
+    await run(6000); // the rock and the drag arc are baked ahead
+    const before = renders.length;
     ptr(ov, 'pointerdown', 100, 100);
     for (let i = 1; i <= 6; i++) { ptr(ov, 'pointermove', 100 + i * 10, 100); await run(30); }
+    expect(renders.length).toBe(before); // no render on the interaction path
     ptr(ov, 'pointerup', 160, 100);
     await run(500);
     expect(h.home.yaw).toBeLessThan(-32 - 10); // 60 px to the right turns the scene well past the sway
-    const key = h.poseKey(h.home);
-    expect(renders.some((pl) => pl.state.engine.layers[0].params.camera.yaw === h.home.yaw)).toBe(true);
-    expect(tile.log[tile.log.length - 1]).toBe(`work:1@${key}`);
+    expect(h.home.pitch).toBe(22);
+    expect(tile.log[tile.log.length - 1]).toBe(`work:1@${h.poseKey(h.home)}`);
+    expect(renders.some((pl) => pl.state.engine.layers[0].params.camera.yaw === h.home.yaw)).toBe(true); // it was baked
+  });
+
+  it('a drag before anything is baked stays on home; the arc widens as poses finish', async () => {
+    const { el, h } = await mountScene();
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 100, 100);
+    ptr(ov, 'pointermove', 200, 100);
+    ptr(ov, 'pointerup', 200, 100);
+    expect(h.home.yaw).toBe(-32);
+    expect(renders.length).toBeLessThanOrEqual(1);
   });
 
   it('a long drag keeps a bounded number of drawn poses (home and the rock\'s poses stay)', async () => {
     const { el, h } = await mountScene();
-    await run(4000); // the rock's poses are drawn
+    await run(6000);
     const ov = el.querySelector('.sp-scene-orbit');
     ptr(ov, 'pointerdown', 0, 100);
     for (let i = 1; i <= 120; i++) { ptr(ov, 'pointermove', i * 2.5, 100); await run(20); }
     ptr(ov, 'pointerup', 300, 100);
     await run(300);
-    expect(renders.length).toBeGreaterThan(40);
     expect(h.stats.drawn).toBeLessThanOrEqual(40);
   });
 
-  it('arrow keys turn it in steps', async () => {
+  it('arrow keys turn it in baked steps', async () => {
     const { el, h } = await mountScene();
+    await run(6000);
+    const n = renders.length;
     el.querySelector('.sp-scene-orbit').dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
-    await run(200);
     expect(h.home.yaw).toBe(-27);
+    expect(renders.length).toBe(n); // the turn itself rendered nothing
   });
 
-  it('Still: no rocking, and dragging still turns it', async () => {
+  it('Still: no rocking and no background baking until engaged; then dragging turns it through baked poses', async () => {
     still = true; dom.window.close(); load();
     const { el, tile, h } = await mountScene();
     await run(8000);
     expect(renders.length).toBe(0);
     expect(tile.log.filter((x) => x !== null)).toEqual([]);
     const ov = el.querySelector('.sp-scene-orbit');
+    ov.dispatchEvent(new W.Event('pointerenter'));
+    await run(8000);
+    expect(renders.length).toBeGreaterThan(0);
+    const n = renders.length;
     ptr(ov, 'pointerdown', 100, 100); ptr(ov, 'pointermove', 140, 100); ptr(ov, 'pointerup', 140, 100);
     await run(300);
-    expect(renders.length).toBe(1);
+    expect(renders.length).toBe(n);
+    expect(h.home.yaw).toBeLessThan(-32);
     expect(tile.log[tile.log.length - 1]).toBe(`work:1@${h.poseKey(h.home)}`);
   });
 
@@ -187,5 +206,113 @@ describe('StartPageSceneOrbit', () => {
     const n = renders.length;
     await run(4000);
     expect(renders.length).toBe(n);
+  });
+
+  // ── per-move work is independent of the number of baked poses (perf/scene3d-instant-drag) ──────────────────────────
+  // RED (pre-change): every pointermove read el.getBoundingClientRect() and scanned + string-split every drawn pose key.
+  it('a drag move does no layout read and no per-pose scan: one sorted index, binary search', async () => {
+    const { el, h } = await mountScene();
+    await run(6000);
+    const ov = el.querySelector('.sp-scene-orbit');
+    let rects = 0;
+    const prev = W.Element.prototype.getBoundingClientRect;
+    W.Element.prototype.getBoundingClientRect = function () { rects += 1; return prev.call(this); };
+    ptr(ov, 'pointerdown', 100, 100);
+    const r0 = rects;
+    const l0 = h.lookup.lookups; const b0 = h.lookup.rebuilds;
+    for (let i = 1; i <= 60; i++) ptr(ov, 'pointermove', 100 + i * 2, 100);
+    expect(rects).toBe(r0);                                   // no forced layout per move
+    expect(h.lookup.lookups - l0).toBe(60);
+    expect(h.lookup.rebuilds - b0).toBeLessThanOrEqual(1);    // the index is built once per change of the baked set
+    ptr(ov, 'pointerup', 220, 100);
+    W.Element.prototype.getBoundingClientRect = prev;
+  });
+
+  it('a pose that lands mid-drag waits for the gesture to end (its main-thread tail never falls inside it)', async () => {
+    let release; const held = [];
+    const gated = (pl) => { const cam = pl.state.engine.layers[0].params.camera; return new Promise((res) => { held.push(() => res({ svg: `<svg data-yaw="${cam.yaw}" data-pitch="${cam.pitch}"/>` })); }); };
+    const { el, tile } = await mountScene({ render: gated });
+    void release;
+    await run(2500);
+    expect(held.length).toBe(1);                              // one pose in flight
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 100, 100);
+    held.shift()();                                           // it lands during the drag
+    await run(400);
+    expect(tile.prepared.length).toBe(0);                     // not prepared (rastered) until the pointer is up
+    ptr(ov, 'pointerup', 100, 100);
+    await run(600);
+    expect(tile.prepared.length).toBe(1);
+  });
+
+  it('no pose render starts within afterDragMs of a release; baking resumes after', async () => {
+    const { el } = await mountScene();
+    await run(1200);
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 100, 100); ptr(ov, 'pointermove', 120, 100); ptr(ov, 'pointerup', 120, 100);
+    const n = renders.length;
+    await run(2200);
+    expect(renders.length).toBe(n);
+    await run(6000);
+    expect(renders.length).toBeGreaterThan(n);
+  });
+
+  // RED (pre-change): a plate baked every pose regardless of memory (a 3x phone plate: ~3.4 MB a pose, 37 poses).
+  it('stops baking when the plate\'s bitmap budget (ink.altCapacity) is spent', async () => {
+    const el = W.document.getElementById('m');
+    const tile = fakeTile(el);
+    tile.altCapacity = () => 8;
+    const h = S.attach(el, { payload: () => DOC(), render });
+    await flush();
+    await run(30000);
+    expect(h.stats.drawn).toBeLessThanOrEqual(8);
+    expect(renders.length).toBeLessThanOrEqual(8);
+    expect(renders.length).toBeGreaterThan(0);
+  });
+
+  // ── review fixes (perf/scene3d-instant-drag) ───────────────────────────────────────────────────────────────────────
+  // RED (pre-change): the drag ring was built around the yaw the page FIRST showed (home0), so once turned to its edge nothing
+  // beyond home0 +/- 30 degrees was ever baked and the piece could not be turned further.
+  it('the baked ring follows the turn: after turning to the arc edge the next poses are baked beyond it', async () => {
+    const { el, h } = await mountScene();
+    await run(7000);
+    const ov = el.querySelector('.sp-scene-orbit');
+    ptr(ov, 'pointerdown', 0, 100);
+    for (let i = 1; i <= 80; i++) { ptr(ov, 'pointermove', i * 4, 100); await run(20); }
+    ptr(ov, 'pointerup', 320, 100);
+    await run(300);
+    const edge = h.home.yaw;
+    expect(edge).toBeLessThan(-55);                                  // turned to the old arc's edge (-32 - 30)
+    const minBefore = Math.min(...renders.map((pl) => pl.state.engine.layers[0].params.camera.yaw));
+    await run(15000);
+    const minAfter = Math.min(...renders.map((pl) => pl.state.engine.layers[0].params.camera.yaw));
+    expect(minAfter).toBeLessThan(minBefore - 8);                     // ring poses (not just the rock's +-6) past the old edge
+    expect(h.stats.drawn).toBeLessThanOrEqual(40);
+    // and a second drag now goes further than the first could
+    ptr(ov, 'pointerdown', 0, 100);
+    for (let i = 1; i <= 80; i++) { ptr(ov, 'pointermove', i * 4, 100); await run(20); }
+    ptr(ov, 'pointerup', 320, 100);
+    expect(h.home.yaw).toBeLessThan(edge - 5);
+  });
+
+  // RED (pre-change): Up / Down were swallowed (`if (!K[0]) return`), so pitch could not be changed from the keyboard.
+  it('Up / Down arrow keys pitch the piece with a live render of that pose', async () => {
+    const { el, h, tile } = await mountScene();
+    await run(300);
+    const ov = el.querySelector('.sp-scene-orbit');
+    const n = renders.length;
+    const ev = new W.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    ov.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await run(800);
+    expect(renders.length).toBeGreaterThan(n);
+    expect(renders.some((pl) => pl.state.engine.layers[0].params.camera.pitch === 17)).toBe(true);
+    expect(h.home.pitch).toBe(17);
+    expect(h.home.yaw).toBe(-32);
+    expect(tile.log[tile.log.length - 1]).toBe(`work:1@${h.poseKey(h.home)}`);
+    ov.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    ov.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    await run(800);
+    expect(h.home.pitch).toBe(27);
   });
 });

@@ -285,6 +285,50 @@
     };
   });
 
+  // ---------------------------------------------------------------- sliced work
+  // A baked pose used to land as one 80-200 ms task (curve finish, then the whole SVG). Everything that is left on the main thread
+  // for a worker-composed pose now runs in slices of SLICE_MS, each its own task, and holds back while the user scrolls or
+  // interacts (QUIET_MS after the last scroll / wheel / pointer / touch / key event), so the page paints and scrolls between them.
+  const tuning = { sliceMs: 4, quietMs: 120 }; // mutable for tests and tools
+  const sliceStat = { slices: 0, maxMs: 0, sumMs: 0, pauses: 0, guardMs: 0, worst: [] }; // worst: the few slowest slices as [ms, phase]
+  let lastInteract = -Infinity;
+  let watching = false;
+  const watchInteraction = () => {
+    if (watching || !G.addEventListener) return;
+    watching = true;
+    const bump = () => { lastInteract = nowMs(); };
+    ['pointermove', 'pointerdown', 'wheel', 'touchmove', 'keydown'].forEach((n) => G.addEventListener(n, bump, { capture: true, passive: true }));
+    if (G.document && G.document.addEventListener) G.document.addEventListener('scroll', bump, { capture: true, passive: true });
+  };
+  // step() -> { done, value }: one slice. Each slice is its own task, run only while the page is quiet.
+  const sliceLoop = (step, phase) => new Promise((resolve, reject) => {
+    watchInteraction();
+    const tick = () => {
+      const quiet = tuning.quietMs - (nowMs() - lastInteract);
+      if (quiet > 0) { sliceStat.pauses += 1; setTimeout(tick, quiet); return; }
+      const t0 = nowMs();
+      let r;
+      try { r = step(); } catch (err) { reject(err); return; }
+      const d = nowMs() - t0;
+      sliceStat.slices += 1; sliceStat.sumMs += d; if (d > sliceStat.maxMs) sliceStat.maxMs = d;
+      if (d > 12) { sliceStat.worst.push([Math.round(d * 10) / 10, `${phase || ''}>${r.done ? 'end' : (r.value || '')}`]); if (sliceStat.worst.length > 12) sliceStat.worst.shift(); }
+      if (r.done) resolve(r.value); else setTimeout(tick, 0);
+    };
+    setTimeout(tick, 0);
+  });
+  // The worker's packed ink as point objects, a few milliseconds of entries per task.
+  const unpackSliced = (packed) => {
+    const Job = Vectura.Scene3D && Vectura.Scene3D.ComposeJob;
+    const entries = (packed && packed.paths) || [];
+    const out = [];
+    let i = 0;
+    return sliceLoop(() => {
+      const t0 = nowMs();
+      while (i < entries.length && nowMs() - t0 < tuning.sliceMs) { out.push(Job.unpackEntry(entries[i])); i += 1; }
+      return i >= entries.length ? { done: true, value: out } : { done: false };
+    }, 'unpack');
+  };
+
   // ---------------------------------------------------------------- scene sessions
   // A turning 3D Scene draws many poses of ONE document. A session builds the private engine once (the same setup as
   // documentJob) and, for each pose, moves only the scene camera and recomputes the display geometry, then builds the SVG
@@ -304,6 +348,7 @@
     if (!state || !state.engine || !state.settings) throw new Error('Not a Vectura document');
     let engine = null;
     let current = null;
+    let settled = false; // the engine has done at least one exact compose (something to warp from)
     let disposed = false;
     const job = (pose) => {
       if (disposed) throw new Error('Scene session disposed');
@@ -324,6 +369,7 @@
           engine.computeAllDisplayGeometry();
         }
         current = { yaw: pose.yaw, pitch: pose.pitch };
+        settled = true;
         const { svg, pathCount } = buildSvg(engine);
         return { svg, pathCount, algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine) };
       } finally {
@@ -331,9 +377,100 @@
         restoreSettings();
       }
     };
+    // Once the session has one exact compose, every further pose is composed in a Web Worker (the same compose the
+    // engine runs, byte-identical): stage A posts the job under the document's settings, stage B installs the result
+    // and builds the SVG under them again. The main thread never runs the generator for a baked pose. No worker, a
+    // scene the worker cannot take, or a stale result: the exact synchronous render below.
+    let client;
+    const workerClient = () => {
+      if (client === undefined) {
+        const C = Vectura.Scene3D && Vectura.Scene3D.ComposeClient;
+        client = C && typeof C.create === 'function' && C.available() ? C.create() : null;
+      }
+      return client;
+    };
+    // Run `fn` with the document's settings and noise images applied, then put the live ones back (the same isolation every render has).
+    const underDoc = (fn) => {
+      const t0 = nowMs();
+      const restoreSettings = snapshotSettings();
+      const restoreImages = snapshotNoiseImages();
+      let inner = 0;
+      try {
+        applyDocumentSettings(state.settings);
+        if (payload.images) loadDocumentImages(payload);
+        const t1 = nowMs();
+        try { return fn(); } finally { inner = nowMs() - t1; }
+      } finally {
+        restoreImages();
+        restoreSettings();
+        sliceStat.guardMs += nowMs() - t0 - inner;
+      }
+    };
+    const SCENE_TREE_TYPES = new Set(['scene3d', 'object3d', 'sceneGround3d', 'sceneLight3d', 'booleanGroup3d']);
+    // The finishing stage of a worker-composed pose, in slices: the worker's finished ink is unpacked a few milliseconds at a time, installed,
+    // and the SVG snapshot and document are built a few milliseconds at a time. Same builders, same bytes; only the task sizes differ.
+    const finishPose = (pose, done, label) => {
+      const Job = Vectura.Scene3D && Vectura.Scene3D.ComposeJob;
+      const B = Vectura.ExportSvgBuilder;
+      if (!B) throw new Error('ExportSvgBuilder is not loaded');
+      const usable = done.filter(Boolean);
+      return Promise.all(usable.map((d) => {
+        const r = d.res || {};
+        // a lazy result keeps its ink packed: unpack the finished ink in slices. An unpacked result (a client that does not do lazy) is used as it is.
+        if (r.finishedPacked && Job) return unpackSliced(r.finishedPacked).then((finished) => ({ paths: [], finished, packed: r.packed, ms: r.ms }));
+        if (r.packed && !r.paths && !r.finished && Job) return Promise.resolve({ paths: Job.unpack(r.packed), finished: null, packed: r.packed, ms: r.ms });
+        return Promise.resolve(r);
+      })).then((results) => {
+        if (disposed) throw new Error('Scene session disposed');
+        let allDelivered = done.length > 0 && usable.length === done.length;
+        let workerMs = 0;
+        underDoc(() => {
+          usable.forEach((d, i) => { if (!engine.finishSceneAsync(d.c, results[i])) allDelivered = false; workerMs += Number(results[i].ms) || 0; });
+          // A scene-only document has nothing else to recompute: the worker's ink is installed and the display geometry would only
+          // compose each scene group a second time (a memo hit that runs the curve finish again on this thread). Anything else - another
+          // layer, an optimized export, a group the worker did not deliver - recomputes exactly as before.
+          const sceneOnly = (engine.layers || []).every((l) => l && SCENE_TREE_TYPES.has(l.type) && !(l.mask && l.mask.enabled));
+          if (!(allDelivered && sceneOnly && !Vectura.SETTINGS.optimizationExport)) engine.computeAllDisplayGeometry();
+        });
+        current = { yaw: pose.yaw, pitch: pose.pitch };
+        const buildOpts = { computeDisplayGeometry: () => {}, optimizeTargets: null, sliceMs: tuning.sliceMs };
+        const snap = B.snapshotSteps(engine, buildOpts);
+        return sliceLoop(() => underDoc(() => snap.next()), 'snapshot').then((snapshot) => {
+          const doc = B.documentSteps(snapshot, { sliceMs: tuning.sliceMs });
+          return sliceLoop(() => underDoc(() => doc.next()), 'document').then((svg) => ({
+            svg, pathCount: B.countPaths(snapshot), algorithm: algorithmOf(engine), ownColors: ownColorsOf(state.settings, engine), worker: true, workerMs, sliced: true,
+          }));
+        });
+      });
+    };
+    const renderPose = (pose, label, gate) => {
+      const sync = () => enqueue(label || 'scene', () => job(pose));
+      if (!engine || !settled || sameCamera(current, pose) || !workerClient()) return sync();
+      return enqueue(`${label || 'scene'}~post`, () => {
+        if (disposed) throw new Error('Scene session disposed');
+        return underDoc(() => {
+          turnCamera(engine.layers, pose);
+          current = null;
+          const begun = [];
+          for (const l of engine.layers) {
+            if (!(l && l.isGroup && l.type === 'scene3d' && l.containerRole === 'scene')) continue;
+            const c = engine.beginSceneAsync(l.id, { client, lazy: true });
+            if (!c) return { begun: null };
+            begun.push(c);
+          }
+          return { begun };
+        });
+      }).then(({ begun }) => {
+        if (!begun) return sync();
+        return Promise.all(begun.map((c) => (c.done ? null : c.promise.then((res) => ({ c, res }), () => null)))).then((done) => Promise.resolve(typeof gate === 'function' ? gate() : undefined).then(() => done)).then((done) => enqueueSliced(`${label || 'scene'}~done`, () => {
+          if (disposed) throw new Error('Scene session disposed');
+          return finishPose(pose, done, label);
+        }));
+      });
+    };
     return {
-      render: (pose, label) => enqueue(label || 'scene', () => job(pose)),
-      dispose: () => { disposed = true; engine = null; current = null; },
+      render: (pose, label, gate) => renderPose(pose, label, gate),
+      dispose: () => { disposed = true; engine = null; current = null; settled = false; if (client) { try { client.terminate(); } catch (e) { /* gone */ } } client = null; },
     };
   };
 
@@ -357,8 +494,30 @@
       stat.count += 1;
       stat.lastMs = ms;
       if (ms > stat.slowestMs) { stat.slowestMs = ms; stat.slowestId = label; }
-      return Object.assign(out, { bytes: bytesOf(out.svg), ms });
+      const total = ms + (Number(out.workerMs) || 0); // a worker-composed pose also owns the compose time it took off this thread
+      return Object.assign(out, { bytes: typeof out.svg === 'string' ? bytesOf(out.svg) : 0, ms: total });
     }));
+    tail = run.then(() => undefined, () => undefined);
+    return run;
+  };
+
+  // Like `enqueue`, for a job that finishes in slices (it returns a promise): it holds the queue until the promise settles, and what it
+  // reports as the slowest render is the longest single TASK it ran (the longest slice), which is what blocks the page.
+  const enqueueSliced = (label, job) => {
+    const run = tail.then(() => onIdle(() => 0)).then(() => {
+      const before = { n: sliceStat.slices, max: sliceStat.maxMs, sum: sliceStat.sumMs };
+      sliceStat.maxMs = 0;
+      const t0 = nowMs();
+      return Promise.resolve().then(job).then((out) => {
+        const wall = nowMs() - t0;
+        const task = sliceStat.maxMs;
+        sliceStat.maxMs = Math.max(before.max, task);
+        stat.count += 1;
+        stat.lastMs = task;
+        if (task > stat.slowestMs) { stat.slowestMs = task; stat.slowestId = label; }
+        return Object.assign(out, { bytes: typeof out.svg === 'string' ? bytesOf(out.svg) : 0, ms: (sliceStat.sumMs - before.sum) + (Number(out.workerMs) || 0), wallMs: wall, sliceMaxMs: task });
+      });
+    });
     tail = run.then(() => undefined, () => undefined);
     return run;
   };
@@ -368,7 +527,8 @@
     sceneSession,
     renderPreset: (preset) => enqueue(preset && preset.id, () => presetJob(preset)),
     presetPayload,
-    stats: () => Object.assign({}, stat),
+    stats: () => Object.assign({}, stat, { slices: sliceStat.slices, sliceMaxMs: sliceStat.maxMs, slicePauses: sliceStat.pauses, sliceGuardMs: sliceStat.guardMs, sliceSumMs: sliceStat.sumMs, sliceWorst: sliceStat.worst.slice() }),
+    tuning,
     PRESET_SHEET,
     PRESET_PEN,
   };
