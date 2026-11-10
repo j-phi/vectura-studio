@@ -294,7 +294,12 @@
     } else {
       fp.ring.forEach((q) => { L = Math.max(L, contactDist(contact, q.x, q.z)); });
     }
-    return { fp, contact, L };
+    let cx = 0; let cz = 0;
+    if (fp.kind === 'ellipse') { cx = fp.cx; cz = fp.cz; } else {
+      fp.ring.forEach((q) => { cx += q.x; cz += q.z; });
+      cx /= fp.ring.length; cz /= fp.ring.length;
+    }
+    return { fp, contact, L, cx, cz };
   };
 
   // Offset range (along the line normal) the footprint spans.
@@ -421,7 +426,11 @@
     // Thinning factor c in (0, 1]: 1 when no pose is given (the full baked set).
     let thin = 1;
     if (project) {
-      const f = screenPitchFactor(project, hatch, 0, 0);
+      // Measured at the footprint (union centre of the casters), not at world (0, 0): under perspective
+      // the screen pitch differs across the ground.
+      let fx = 0; let fz = 0;
+      prepared.forEach((pc) => { fx += pc.cx; fz += pc.cz; });
+      const f = screenPitchFactor(project, hatch, fx / prepared.length, fz / prepared.length);
       thin = clamp(f / hatch.scaleRef, 0, 1);
       if (!(thin > 1e-6)) return EMPTY();
     }
@@ -438,8 +447,13 @@
     const iv = [];
     for (let i = iLo; i <= iHi; i += 1) {
       const k = i - iMin;
-      const r = hatch.rank[k] / thin;
-      if (!(r < 1)) continue;
+      // Even thinning (Bresenham): line k is drawn when floor((k + 1) * thin) steps past floor(k * thin), so gaps
+      // are floor(1 / thin) or ceil(1 / thin) lines and the density is exact. (A power-of-two stride is even too
+      // but off by up to sqrt(2) in density.) The tone rank is the van der Corput rank of the drawn line's
+      // ordinal, so the ladder keeps its nested, evenly spaced look.
+      const j = thin < 1 ? Math.floor(k * thin) : k;
+      if (thin < 1 && !(Math.floor((k + 1) * thin) > j)) continue;
+      const r = thin < 1 ? vdc2(j) : hatch.rank[k];
       const lo0 = hatch.t0[k]; const hi0 = hatch.t1[k];
       if (!(lo0 < hi0)) continue;
       const off = hatch.d[k];
@@ -473,7 +487,7 @@
         if (project) {
           const p0 = project(x0, z0); const p1 = project(x1, z1);
           if (!p0 || !p1) return;
-          runs.push({ pts: [{ x: p0.x, y: p0.y }, { x: p1.x, y: p1.y }], visible: true });
+          runs.push({ pts: [{ x: p0.x, y: p0.y, z: p0.z }, { x: p1.x, y: p1.y, z: p1.z }], visible: true });
         } else {
           runs.push({ pts: [{ x: x0, y: z0 }, { x: x1, y: z1 }], visible: true });
         }
