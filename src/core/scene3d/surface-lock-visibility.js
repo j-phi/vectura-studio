@@ -32,22 +32,30 @@
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
 
-  // TODO(config): move the constants below to SCENE3D_SURFACE_LOCK (orchestrator, after the Wave 1 merge).
-  const DEPTH_BIAS_MM = 0.05;          // cross-object depth margin (the HLR clipper's HLR_BIAS)
-  const SELF_BIAS_MM = 6;              // non-convex own-object margin for marks (hlr.js SELF_OCCLUDE_BIAS)
-  const MAX_CELLS = 512;               // occluder grid, cells per side
-  const CELL_TRIANGLES = 1; // TODO(config): grid cell edge in mean triangle extents
-  const RUN_STEP_MM = 1;               // sample pitch along a run to find visibility changes
-  const RUN_RESOLUTION_MM = 0.05;      // visibility changes are bisected to this length
-  const CREASE_ANGLE_DEG = 28;         // Edges.DEFAULT_CREASE_ANGLE
-  const NEAR_FRACTION = 0.05;          // geometry3d projectPoint near plane: denom <= 0.05 * focal is invalid
-  const LIMB_SAGITTA_MM = 0.002;       // chord error of the analytic limb polyline
-  const LIMB_MIN_POINTS = 72;
-  const LIMB_MAX_POINTS = 1440;
-  const MIN_TRI_AREA2 = 1e-6;          // hlr.js: a footprint below this occludes nothing
-  const TORUS_ANALYTIC = true;         // Torus self-occlusion through TorusOcclusion (contract §7); false = triangle buffer
-  const TORUS_GAP_MM = 8;              // algorithms/scene3d.js TORUS_SELF_OCCLUDE_GAP_MM
-  const TORUS_MARGIN_MM = 1;           // algorithms/scene3d.js TORUS_SELF_OCCLUDE_MARGIN_MM
+  // Tuning values live in Vectura.SCENE3D_SURFACE_LOCK.VISIBILITY (see `sync`); this table is the safe fallback when
+  // the config is not loaded.
+  const DEFAULTS = {
+    DEPTH_BIAS_MM: 0.05,  // cross-object depth margin (the HLR clipper's HLR_BIAS)
+    SELF_BIAS_MM: 6,  // non-convex own-object margin for marks (hlr.js SELF_OCCLUDE_BIAS)
+    MAX_CELLS: 512,  // occluder grid, cells per side
+    CELL_TRIANGLES: 1,  // grid cell edge in mean triangle extents
+    RUN_STEP_MM: 1,  // sample pitch along a run to find visibility changes
+    RUN_RESOLUTION_MM: 0.05,  // visibility changes are bisected to this length
+    CREASE_ANGLE_DEG: 28,  // Edges.DEFAULT_CREASE_ANGLE
+    NEAR_FRACTION: 0.05,  // geometry3d projectPoint near plane: denom <= 0.05 * focal is invalid
+    LIMB_SAGITTA_MM: 0.002,  // chord error of the analytic limb polyline
+    LIMB_MIN_POINTS: 72,
+    LIMB_MAX_POINTS: 1440,
+    MIN_TRI_AREA2: 1e-6,  // hlr.js: a footprint below this occludes nothing
+    TORUS_ANALYTIC: true,  // Torus self-occlusion through TorusOcclusion (contract §7); false = triangle buffer
+    TORUS_GAP_MM: 8,  // algorithms/scene3d.js TORUS_SELF_OCCLUDE_GAP_MM
+    TORUS_MARGIN_MM: 1,  // algorithms/scene3d.js TORUS_SELF_OCCLUDE_MARGIN_MM
+  };
+  const TUNE = Object.assign({}, DEFAULTS);
+  const sync = () => {
+    const own = (Vectura.SCENE3D_SURFACE_LOCK || {}).VISIBILITY || {};
+    Object.keys(DEFAULTS).forEach((k) => { TUNE[k] = typeof own[k] === typeof DEFAULTS[k] && own[k] === own[k] ? own[k] : DEFAULTS[k]; });
+  };
 
   const SUPPORTED = new Set(['sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'superellipsoid', 'pyramid',
     'torus', 'torusKnot', 'box', 'plane', 'solid']);
@@ -115,7 +123,7 @@
     const P = bake.vertices; const A = fr.A; const cT = fr.cT;
     const cz = useScratch ? want('cz', n) : new Float64Array(n); const X = useScratch ? want('X', n) : new Float64Array(n);
     const Y = useScratch ? want('Y', n) : new Float64Array(n); const ok = useScratch ? want('ok', n) : new Uint8Array(n);
-    const near = fr.focal * NEAR_FRACTION;
+    const near = fr.focal * TUNE.NEAR_FRACTION;
     for (let i = 0; i < n; i++) {
       const px = P[3 * i]; const py = P[3 * i + 1]; const pz = P[3 * i + 2];
       const x = A[0] * px + A[1] * py + A[2] * pz + cT[0];
@@ -181,6 +189,7 @@
   };
 
   const meshBake = (obj) => {
+    sync();
     const Scene = Scene3D.Scene;
     if (!supports(obj) || !Scene || typeof Scene.buildPrimitiveMesh !== 'function') {
       throw new Error('SurfaceLockVisibility.meshBake: unsupported object');
@@ -306,7 +315,7 @@
     };
     const projOpts = { centerX: cam.cx, centerY: cam.cy, scale: cam.scale };
     if (cam.persp) { projOpts.focal = cam.focal; projOpts.cameraDist = cam.dist; }
-    return T.buildSelfOcclusionTest(transform, camera, projOpts, bake.torus.sizes, { gapMm: TORUS_GAP_MM, marginMm: TORUS_MARGIN_MM });
+    return T.buildSelfOcclusionTest(transform, camera, projOpts, bake.torus.sizes, { gapMm: TUNE.TORUS_GAP_MM, marginMm: TUNE.TORUS_MARGIN_MM });
   };
 
 
@@ -336,6 +345,7 @@
   };
 
   const occluder = (bakes, pose) => {
+    sync();
     const list = Array.isArray(bakes) ? bakes : [bakes];
     const poses = normalizePoses(list, pose);
     const index = new Map();
@@ -364,7 +374,7 @@
         const { X, Y, cz, ok } = tm;
         // Screen size of this object's mean triangle: object-space extent x projection scale at the object centre.
         if (b.triExtentMean > 0) {
-          const sf = fr.persp ? fr.scale * fr.focal / Math.max(fr.focal * NEAR_FRACTION, fr.focal + fr.dist - fr.cT[2]) : fr.scale;
+          const sf = fr.persp ? fr.scale * fr.focal / Math.max(fr.focal * TUNE.NEAR_FRACTION, fr.focal + fr.dist - fr.cT[2]) : fr.scale;
           extWeighted += b.triExtentMean * sf * b.triCount; extWeight += b.triCount;
         } else needExtent = true;
         for (let t = 0; t < b.triCount; t++) {
@@ -374,7 +384,7 @@
           if (!ok[i0] || !ok[i1] || !ok[i2]) continue;
           const e1x = X[i1] - X[i0]; const e1y = Y[i1] - Y[i0]; const e2x = X[i2] - X[i0]; const e2y = Y[i2] - Y[i0];
           const det = e1x * e2y - e1y * e2x;
-          if (Math.abs(det) < MIN_TRI_AREA2) continue;
+          if (Math.abs(det) < TUNE.MIN_TRI_AREA2) continue;
           const o = 10 * n;
           td[o] = X[i0]; td[o + 1] = Y[i0]; td[o + 2] = e1x; td[o + 3] = e1y; td[o + 4] = e2x; td[o + 5] = e2y;
           td[o + 6] = 1 / det; td[o + 7] = cz[i0]; td[o + 8] = cz[i1] - cz[i0]; td[o + 9] = cz[i2] - cz[i0];
@@ -392,13 +402,13 @@
       cellStart = want('cellStart', 2); cellStart[0] = 0; cellStart[1] = 0; cellTris = want('cellTris', 0);
       if (n > 0) {
         const w = Math.max(maxX - minX, 1e-6); const h = Math.max(maxY - minY, 1e-6);
-        // Cell size follows the triangle size (CELL_TRIANGLES mean triangle extents) but never drops below extent / MAX_CELLS.
+        // Cell size follows the triangle size (TUNE.CELL_TRIANGLES mean triangle extents) but never drops below extent / TUNE.MAX_CELLS.
         let meanExt;
         if (!needExtent && extWeight > 0) meanExt = extWeighted / extWeight;
         else { let extentSum = 0; for (let t = 0; t < n; t++) extentSum += Math.max(tb[4 * t + 2] - tb[4 * t], tb[4 * t + 3] - tb[4 * t + 1]); meanExt = extentSum / n; }
-        cs = Math.max(Math.max(w, h) / MAX_CELLS, CELL_TRIANGLES * meanExt);
+        cs = Math.max(Math.max(w, h) / TUNE.MAX_CELLS, TUNE.CELL_TRIANGLES * meanExt);
         gx0 = minX - cs * 1e-3; gy0 = minY - cs * 1e-3;
-        nx = Math.min(MAX_CELLS, Math.floor((maxX - gx0) / cs) + 1); ny = Math.min(MAX_CELLS, Math.floor((maxY - gy0) / cs) + 1);
+        nx = Math.min(TUNE.MAX_CELLS, Math.floor((maxX - gx0) / cs) + 1); ny = Math.min(TUNE.MAX_CELLS, Math.floor((maxY - gy0) / cs) + 1);
         binTriangles(tb, n, gx0, gy0, cs, nx, ny);
         cellStart = SCR.cellStart; cellTris = SCR.cellTris;
       }
@@ -412,7 +422,7 @@
     const probeFor = (oi) => {
       if (probes[oi] !== undefined) return probes[oi];
       const b = list[oi];
-      probes[oi] = (TORUS_ANALYTIC && b.torus && !b.convex) ? torusProbe(b, poses[oi]) : null;
+      probes[oi] = (TUNE.TORUS_ANALYTIC && b.torus && !b.convex) ? torusProbe(b, poses[oi]) : null;
       return probes[oi];
     };
 
@@ -433,7 +443,7 @@
       for (let k = cellStart[cell]; k < s1; k++) {
         const t = cellTris[k];
         const oi = tObj[t];
-        let bias = DEPTH_BIAS_MM;
+        let bias = TUNE.DEPTH_BIAS_MM;
         if (oi === own) {
           if (edgeMode) {
             const f = tFace[t];
@@ -442,7 +452,7 @@
             const b = list[oi];
             if (b.convex) continue;
             if (probeFor(oi)) continue; // analytic field decides a torus's own occlusion
-            bias = SELF_BIAS_MM;
+            bias = TUNE.SELF_BIAS_MM;
           }
         }
         const o = 10 * t;
@@ -463,7 +473,7 @@
       return -1;
     };
 
-    // Polyline -> visible/hidden runs. Points carry {x, y, z}; a visibility change is bisected to RUN_RESOLUTION_MM.
+    // Polyline -> visible/hidden runs. Points carry {x, y, z}; a visibility change is bisected to TUNE.RUN_RESOLUTION_MM.
     const clipRun = (pts, seg) => {
       const runs = [];
       if (!Array.isArray(pts) || pts.length < 2) return runs;
@@ -476,14 +486,14 @@
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i]; const b = pts[i + 1];
         const len = Math.hypot(b.x - a.x, b.y - a.y);
-        const steps = Math.max(1, Math.ceil(len / RUN_STEP_MM));
+        const steps = Math.max(1, Math.ceil(len / TUNE.RUN_STEP_MM));
         let prevT = 0; let prevVis = curVis;
         for (let k = 1; k <= steps; k++) {
           const tt = k / steps; const p = k === steps ? b : lerp(a, b, tt);
           const vis = visAt(p);
           if (vis !== prevVis) {
             let lo = prevT; let hi = tt; let guard = 0;
-            while ((hi - lo) * len > RUN_RESOLUTION_MM && guard < 24) {
+            while ((hi - lo) * len > TUNE.RUN_RESOLUTION_MM && guard < 24) {
               const m = (lo + hi) / 2;
               if (visAt(lerp(a, b, m)) === prevVis) lo = m; else hi = m;
               guard += 1;
@@ -549,8 +559,8 @@
     const [e1, e2] = tangentBasis(axis);
     // Point count from the largest projected extent.
     const rMax = Math.max(a, b, c) * fr.scale * (fr.persp ? 2 : 1);
-    const N = Math.max(LIMB_MIN_POINTS, Math.min(LIMB_MAX_POINTS, Math.ceil(Math.PI / Math.acos(Math.max(0, 1 - LIMB_SAGITTA_MM / Math.max(rMax, LIMB_SAGITTA_MM * 2))))));
-    const near = fr.focal * NEAR_FRACTION;
+    const N = Math.max(TUNE.LIMB_MIN_POINTS, Math.min(TUNE.LIMB_MAX_POINTS, Math.ceil(Math.PI / Math.acos(Math.max(0, 1 - TUNE.LIMB_SAGITTA_MM / Math.max(rMax, TUNE.LIMB_SAGITTA_MM * 2))))));
+    const near = fr.focal * TUNE.NEAR_FRACTION;
     const pts = [];
     for (let k = 0; k < N; k++) {
       const th = (2 * Math.PI * k) / N; const ct = Math.cos(th) * rad; const st = Math.sin(th) * rad;
@@ -577,6 +587,7 @@
   };
 
   const outline = (bake, pose, occ, opts = {}) => {
+    sync();
     const result = { silhouette: [], crease: [], boundary: [] };
     const fr = frameOf(pose);
     const oi = occ ? occ.indexOf(bake) : -1;
@@ -594,7 +605,7 @@
       return result;
     }
 
-    const creaseDot = Math.cos(degToRad(finite(opts.creaseAngle, CREASE_ANGLE_DEG)));
+    const creaseDot = Math.cos(degToRad(finite(opts.creaseAngle, TUNE.CREASE_ANGLE_DEG)));
     const tm = transformMesh(bake, fr);
     const front = faceFronts(bake, fr);
     for (let e = 0; e < bake.edgeCount; e++) {
@@ -622,7 +633,7 @@
   Scene3D.SurfaceLockVisibility = {
     supports, meshBake, occluder, outline,
     // Test seams.
-    _internals: { frameOf, transformMesh, faceFronts, ellipsoidLimb, DEPTH_BIAS_MM, SELF_BIAS_MM, MAX_CELLS },
+    _internals: { frameOf, transformMesh, faceFronts, ellipsoidLimb, get DEPTH_BIAS_MM() { return TUNE.DEPTH_BIAS_MM; }, get SELF_BIAS_MM() { return TUNE.SELF_BIAS_MM; }, get MAX_CELLS() { return TUNE.MAX_CELLS; } },
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.SurfaceLockVisibility;

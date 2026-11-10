@@ -33,31 +33,32 @@
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
 
-  // ---- constants -------------------------------------------------------------------------------------------
-  // TODO(config): move the literals below to SCENE3D_SURFACE_LOCK (orchestrator, after the Wave 1 merge).
-  const STEP_MM = 0.5;           // arc length between baked vertices (contract §5: sagitta < 0.004 mm for R >= 10)
-  const GRID = 25;               // metric survey grid (GRID x GRID cell centres)
-  const TONE_SUBDIV = 5;         // surface-fill TONE_SUBDIV: the master grid is the user spacing / 5
-  const GLINT_KEEP = 0.6;        // surface-fill GLINT_KEEP (the glint cap never removes more than 40 %)
-  const LIT_FLOOR = 0.12;        // surface-fill LIT_FLOOR (lit band never below this coverage)
-  const THIN_RATIO = 0.95;       // a level is relabelled finer where its local pitch would fall under this x its target
-  // TODO(config): PLOT_FLOOR_SLACK (0.8) is being added to SCENE3D_SURFACE_LOCK by another unit; read it from there afterwards.
-  const PLOT_FLOOR_SLACK = 0.8;  // a level is drawable once its screen pitch is >= this x the plot floor (contract section 14.6)
-  // TODO(config): replaces SCENE3D_SURFACE_LOCK.ZOOM_HEADROOM (2) for the ladder: scaleRef keeps s / scaleRef <= sqrt2, 1.5 adds the perspective spread.
-  const ZOOM_HEADROOM = 1.5;
-  const V_EXTRA = 4;             // extra halvings of coarse rulings kept through a converging region
-  const MAX_VERTS = 150000;      // vertex budget guard (contract §2: 200k per object per fill group)
-  const MAX_CELLS = 4096;        // ruling cells per family
-  const JL_SEED_FRAC = 0.9;      // Jobard-Lefer: a seed must be >= this x dsep from every placed line
-  const JL_STOP_FRAC = 0.85;     // ... and a line stops when it comes closer than this x dsep
-  const JL_HASH_DIV = 2.5;       // occupancy points every dsep / 2.5
-  const JL_MAX_STEPS = 2600;
-  const FD_EPS = 1 / 65536;      // forward-difference step of the fast sampler
-  const FD_EDGE = 2e-3;          // within this of a pole / edge the exact metric is used
-  const GOLDEN = 0.6180339887498949;
-  const DOT_SEGS = 8;
-  const DOT_COL_FILL = 0.85;     // dots: finest column spacing is in [0.85, 1.7) x the finest pitch
-  const DOT_CLEAR = 2.4;         // dots: finest pitch >= 2.4 x the glyph radius (no overlap at the finest level)
+  // ---- constants: tuning values live in Vectura.SCENE3D_SURFACE_LOCK (LADDER namespace + shared keys). The table
+  // below is the safe fallback when the config is not loaded; `sync()` refreshes `C` from the config on every bake.
+  const DEFAULTS = {
+    STEP_MM: 0.5,
+    GRID: 25,
+    TONE_SUBDIV: 5,
+    GLINT_KEEP: 0.6,
+    LIT_FLOOR: 0.12,
+    THIN_RATIO: 0.95,
+    V_EXTRA: 4,
+    MAX_VERTS: 150000,
+    MAX_CELLS: 4096,
+    JL_SEED_FRAC: 0.9,
+    JL_STOP_FRAC: 0.85,
+    JL_HASH_DIV: 2.5,
+    JL_MAX_STEPS: 2600,
+    FD_EPS: 1 / 65536,
+    FD_EDGE: 2e-3,
+    GOLDEN: 0.6180339887498949,
+    DOT_SEGS: 8,
+    DOT_COL_FILL: 0.85,
+    DOT_CLEAR: 2.4,
+    PLOT_FLOOR_SLACK: 0.8,
+    ZOOM_HEADROOM: 1.5,
+  };
+  const C = Object.assign({}, DEFAULTS);
   const CONVEX_MODES = { sphere: true, cylinder: true, cone: true, capsule: true };
 
   const FIT_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
@@ -79,6 +80,11 @@
   const finite = (v, d) => (Number.isFinite(v) ? v : d);
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const cfg = () => Vectura.SCENE3D_SURFACE_LOCK || {};
+  const sync = () => {
+    const t = cfg(); const own = t.LADDER || {};
+    Object.keys(DEFAULTS).forEach((k) => { const v = Object.prototype.hasOwnProperty.call(own, k) ? own[k] : t[k]; C[k] = Number.isFinite(v) ? v : DEFAULTS[k]; });
+    return C;
+  };
   const MS = () => Scene3D.SurfaceLockMarkSet;
   const CH = () => Scene3D.SurfaceLockChart;
   const regions = () => Scene3D.Regions || {};
@@ -144,9 +150,9 @@
   };
   const floorOf = (r) => {
     const f = plotFloorPen() * r.pen;
-    return r.stipple ? Math.max(f, DOT_CLEAR * r.dotR) : f;
+    return r.stipple ? Math.max(f, C.DOT_CLEAR * r.dotR) : f;
   };
-  const masterPitch = (r) => Math.max(floorOf(r), hatchSpacing(r.density) / TONE_SUBDIV);
+  const masterPitch = (r) => Math.max(floorOf(r), hatchSpacing(r.density) / C.TONE_SUBDIV);
   const litCap = (r) => litMaxPitchPen() * r.pen;
   const p0Screen = (r) => Math.max(hatchSpacing(r.density), litCap(r));
 
@@ -159,12 +165,13 @@
     if (b === nB - 1) {
       const raw = cov;
       if (specOn) cov *= clamp(1 - 0.5 * specSize, 0, 1);
-      cov = Math.max(cov, raw * GLINT_KEEP, LIT_FLOOR);
+      cov = Math.max(cov, raw * C.GLINT_KEEP, C.LIT_FLOOR);
     }
     return clamp(cov, 0, 1);
   };
 
   const toneLUT = (spec, toneCtx) => {
+    sync();
     const r = read(spec);
     const ctx = toneCtx || {};
     const tone = ctx.tone || null;
@@ -196,7 +203,7 @@
 
   // ---- chart survey ----------------------------------------------------------------------------------------
   const survey = (M) => {
-    const G = GRID; const n = G * G;
+    const G = C.GRID; const n = G * G;
     const pa = new Float64Array(3 * n); const pb = new Float64Array(3 * n);
     const la = []; const lb = []; const perpA = []; const perpB = [];
     let area = 0; let cnt = 0;
@@ -225,6 +232,7 @@
 
   // ---- the bake --------------------------------------------------------------------------------------------
   const bake = (spec) => {
+    sync();
     const t0 = now();
     const SM = MS(); const SC = CH();
     const r = read(spec);
@@ -252,15 +260,15 @@
     const p0 = p0S / r.scaleRef;                       // level-0 pitch, scaled local mm
     // Level count (contract §9) with a vertex budget guard.
     // minPitch is the darkest screen pitch the law can ever ask for (coverage <= 1): finer levels are never drawn.
-    const minPitch = Math.max(PLOT_FLOOR_SLACK * floor, masterPitch(r));
-    let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * ZOOM_HEADROOM / minPitch))), 1, maxLevels);
+    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, masterPitch(r));
+    let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * C.ZOOM_HEADROOM / minPitch))), 1, maxLevels);
     const families = cross ? 2 : 1;
     const estVerts = (levels) => {
       const pf = p0 / Math.pow(2, levels - 1);
       const share = cross ? (1 + 1 / r.crossRatio) : 1;
-      return dots ? S.area / (pf * pf) : (S.area / pf) * share / STEP_MM;
+      return dots ? S.area / (pf * pf) : (S.area / pf) * share / C.STEP_MM;
     };
-    while (L > 1 && estVerts(L) > MAX_VERTS) L -= 1;
+    while (L > 1 && estVerts(L) > C.MAX_VERTS) L -= 1;
 
     const builder = SM.createBuilder(meta);
     const FLAG = SM.FLAG;
@@ -274,14 +282,14 @@
     const wrapB = (b) => (M.periodicB ? frac(b) : b);
     const wrapA = (a) => (M.periodicA ? frac(a) : a);
     // Fast sampler: forward differences (3 chart evaluations instead of 5); falls back to the exact metric at the
-    // poles / seams / domain edges. Error of the frame ~ FD_EPS * pi rad (< 5e-5), under the octahedral budget.
+    // poles / seams / domain edges. Error of the frame ~ C.FD_EPS * pi rad (< 5e-5), under the octahedral budget.
     const raw = (Scene3D.SurfaceFill && typeof Scene3D.SurfaceFill.chartFor === 'function') ? Scene3D.SurfaceFill.chartFor(mode, spec.sizes || {}) : null;
     const sxs = r.scale.sx; const sys = r.scale.sy; const szs = r.scale.sz; const ori = M.orientation;
     const fast = (a, b) => {
-      if (!raw || a < FD_EDGE || a > 1 - FD_EDGE || b < 0 || b > 1 - 2 * FD_EPS) return M.sample(a, b);
-      const p = raw(a, b); const qa = raw(a + FD_EPS, b); const qb = raw(a, b + FD_EPS);
+      if (!raw || a < C.FD_EDGE || a > 1 - C.FD_EDGE || b < 0 || b > 1 - 2 * C.FD_EPS) return M.sample(a, b);
+      const p = raw(a, b); const qa = raw(a + C.FD_EPS, b); const qb = raw(a, b + C.FD_EPS);
       if (!p || !qa || !qb) return M.sample(a, b);
-      const ia = 1 / FD_EPS;
+      const ia = 1 / C.FD_EPS;
       const dax = (qa.x - p.x) * ia * sxs; const day = (qa.y - p.y) * ia * sys; const daz = (qa.z - p.z) * ia * szs;
       const dbx = (qb.x - p.x) * ia * sxs; const dby = (qb.y - p.y) * ia * sys; const dbz = (qb.z - p.z) * ia * szs;
       let nx = ((day * dbz - daz * dby) * ori) / sxs; let ny = ((daz * dbx - dax * dbz) * ori) / sys; let nz = ((dax * dby - day * dbx) * ori) / szs;
@@ -310,9 +318,9 @@
       const tan = aDom ? [1, K] : [K, 1];
       // pm_ref: median perpendicular mm per unit intercept over the survey.
       const pms = [];
-      for (let i = 0; i < GRID; i++) {
-        for (let j = 0; j < GRID; j++) {
-          const s = M.sample((i + 0.5) / GRID, (j + 0.5) / GRID);
+      for (let i = 0; i < C.GRID; i++) {
+        for (let j = 0; j < C.GRID; j++) {
+          const s = M.sample((i + 0.5) / C.GRID, (j + 0.5) / C.GRID);
           if (!s) continue;
           const tx = tan[0] * s.dax + tan[1] * s.dbx; const ty = tan[0] * s.day + tan[1] * s.dby; const tz = tan[0] * s.daz + tan[1] * s.dbz;
           const pm = aDom ? perpOf(s.dbx, s.dby, s.dbz, tx, ty, tz) : perpOf(s.dax, s.day, s.daz, tx, ty, tz);
@@ -322,7 +330,7 @@
       const pmRef = median(pms);
       if (!(pmRef > 0)) return;
       // n0 is a power of two so every coarser set {ctz >= v} is evenly spaced (a fan thins by halves).
-      const k0 = clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, Math.floor(Math.log2(MAX_CELLS)) - (L - 1));
+      const k0 = clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, Math.floor(Math.log2(C.MAX_CELLS)) - (L - 1));
       const n0 = Math.pow(2, Math.max(0, k0));
       const N = n0 * Math.pow(2, L - 1);
       const logN = Math.round(Math.log2(N));
@@ -332,7 +340,7 @@
       const mTo = (uPeriodic ? N - 1 : N - 1);
       const closedLine = (aDom && K === 0 && M.periodicA) || (rings && M.periodicB);
       for (let m = mFrom; m <= mTo; m++) {
-        const v = Math.min(ctz(m), L - 1 + V_EXTRA, logN);
+        const v = Math.min(ctz(m), L - 1 + C.V_EXTRA, logN);
         const lvl = Math.max(0, L - 1 - v);
         const extra = Math.max(0, v - (L - 1));
         // chord, not arc: around a periodic axis a gap of g of the full circle has chord/arc = sinc(pi g).
@@ -369,19 +377,19 @@
           if (s) {
             const tx = tan[0] * s.dax + tan[1] * s.dbx; const ty = tan[0] * s.day + tan[1] * s.dby; const tz = tan[0] * s.daz + tan[1] * s.dbz;
             const pm = aDom ? perpOf(s.dbx, s.dby, s.dbz, tx, ty, tz) : perpOf(s.dax, s.day, s.daz, tx, ty, tz);
-            // Compression-aware level (contract section 9, A11): where the chart converges, rho < THIN_RATIO and the
+            // Compression-aware level (contract section 9, A11): where the chart converges, rho < C.THIN_RATIO and the
             // ruling's marks sit closer than its level's target. Instead of cutting it, relabel it j levels finer
-            // (it then appears only when the law asks for that much density), j = ceil(log2(THIN_RATIO / rho)).
+            // (it then appears only when the law asks for that much density), j = ceil(log2(C.THIN_RATIO / rho)).
             // Coarse rulings above level 0 first absorb their own `extra` halvings.
             const rho = (pm / pmRef) * chord;
-            const jj = rho >= THIN_RATIO ? 0 : (rho > 1e-9 ? Math.max(0, Math.ceil(Math.log2(THIN_RATIO / rho))) : 99);
+            const jj = rho >= C.THIN_RATIO ? 0 : (rho > 1e-9 ? Math.max(0, Math.ceil(Math.log2(C.THIN_RATIO / rho))) : 99);
             const eff = lvl > 0 ? lvl + jj : Math.max(0, jj - extra);
             const kept = eff <= L - 1;
             verts.push({ s, eff: kept ? eff : -1 });
             if (firstEff === -2) firstEff = kept ? eff : -1;
             if (!kept || eff !== firstEff) allSame = false;
             const tl = Math.hypot(tx, ty, tz);
-            const dTau = tl > 1e-9 ? clamp(STEP_MM / tl, 1e-5, 0.1) : 0.01;
+            const dTau = tl > 1e-9 ? clamp(C.STEP_MM / tl, 1e-5, 0.1) : 0.01;
             if (tau >= tau1) break;
             tau = Math.min(tau1, tau + dTau);
           } else {
@@ -442,10 +450,10 @@
       const placed = []; // all lines in placement order
       for (let level = 0; level < L; level++) {
         const dsep = P / Math.pow(2, level);
-        const stop = JL_STOP_FRAC * dsep; const seedD = JL_SEED_FRAC * dsep;
+        const stop = C.JL_STOP_FRAC * dsep; const seedD = C.JL_SEED_FRAC * dsep;
         const hash = SC.spatialHash3(dsep);
         const insertLine = (ln) => {
-          const sp = dsep / JL_HASH_DIV;
+          const sp = dsep / C.JL_HASH_DIV;
           const pts = ln.s;
           for (let q = 0; q < pts.length; q++) {
             const p = pts[q];
@@ -466,7 +474,7 @@
         const trace = (a0, b0, sign) => {
           const out = [];
           let a = a0; let b = b0; let prev = null;
-          for (let step = 0; step < JL_MAX_STEPS; step++) {
+          for (let step = 0; step < C.JL_MAX_STEPS; step++) {
             const s = at(a, b);
             if (!s) break;
             if (a < 1e-3 || a > 1 - 1e-3) break;
@@ -478,7 +486,7 @@
             if (step > 0 && near(s.x, s.y, s.z, stop)) break;
             out.push({ s, a: wrapA(a), b: wrapB(b) });
             prev = [wx, wy, wz];
-            a += da * STEP_MM; b += db * STEP_MM;
+            a += da * C.STEP_MM; b += db * C.STEP_MM;
             if (!M.periodicA && (a < 0 || a > 1)) break;
           }
           return out;
@@ -503,7 +511,7 @@
           return true;
         };
         const seedAround = (ln) => {
-          const stride = Math.max(1, Math.round(dsep / STEP_MM));
+          const stride = Math.max(1, Math.round(dsep / C.STEP_MM));
           for (let q = 0; q < ln.s.length; q += stride) {
             const s = ln.s[q];
             const f = field(s, null);
@@ -579,7 +587,7 @@
           if (s) pts.push(s);
           if (a >= 1) break;
           const tl = s ? Math.hypot(s.dax + T * s.dbx, s.day + T * s.dby, s.daz + T * s.dbz) : 0;
-          a = Math.min(1, a + (tl > 1e-9 ? clamp(STEP_MM / tl, 1e-6, 0.05) : 0.01));
+          a = Math.min(1, a + (tl > 1e-9 ? clamp(C.STEP_MM / tl, 1e-6, 0.05) : 0.01));
           if (++guard > 400000) break;
         }
         return pts;
@@ -633,7 +641,7 @@
         return (lo + (span > 0 ? (target - cum[lo]) / span : 0)) / AS;
       };
       const R0 = Math.max(1, Math.round(Slen / p0));
-      const Rf = Math.min(MAX_CELLS, R0 * Math.pow(2, L - 1));
+      const Rf = Math.min(C.MAX_CELLS, R0 * Math.pow(2, L - 1));
       const pf = p0 / Math.pow(2, L - 1);
       const phi = SC.hash(salt, 9, 3) * 0.999; const phi2 = SC.hash(salt, 9, 5);
       const rowStart = M.periodicA ? 0 : 1;
@@ -653,10 +661,10 @@
         }
         const c = tab[BS];
         if (!(c > 0)) continue;
-        const k = Math.max(0, Math.min(14, Math.floor(Math.log2(c / (DOT_COL_FILL * pf)))));
+        const k = Math.max(0, Math.min(14, Math.floor(Math.log2(c / (C.DOT_COL_FILL * pf)))));
         const ncols = Math.pow(2, k);
         const coarse = Math.max(1, Math.pow(2, k - (L - 1)));       // columns at level 0
-        const shift = frac(i * GOLDEN + phi2) / coarse;               // fraction of a level-0 column period
+        const shift = frac(i * C.GOLDEN + phi2) / coarse;               // fraction of a level-0 column period
         for (let j = 0; j < ncols; j++) {
           const lc = j === 0 ? 0 : Math.max(0, L - 1 - Math.min(ctz(j), L - 1));
           const lvl = Math.max(lr, lc);
@@ -709,7 +717,7 @@
       levelsDesigned: L,
       msBake: now() - t0,
     };
-    if (dots) ms.meta.glyph = { kind: 'circle', r: r.dotR, segs: DOT_SEGS };
+    if (dots) ms.meta.glyph = { kind: 'circle', r: r.dotR, segs: C.DOT_SEGS };
     void ext;
     return ms;
   };
