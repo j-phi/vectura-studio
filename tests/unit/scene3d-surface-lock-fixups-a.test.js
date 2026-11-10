@@ -222,3 +222,139 @@ describe('surface lock fix-ups F-A1..F-A5', () => {
     });
   });
 });
+
+// FX-A (docs/surface-lock-contract.md §5, §8, §11, §12): tone memo, min-separation cap, law floor, new exclusions, tone-free bake key.
+describe('surface lock FX-A: frame memo, cap fields, exclusions, bake key', () => {
+  let rt; let V; let SL; let sph; let saved;
+  beforeAll(async () => {
+    rt = await loadSurfaceLockRuntime();
+    V = rt.V; SL = V.Scene3D.SurfaceLock;
+    sph = buildSphere(V, {});
+  });
+  afterAll(() => rt && rt.cleanup());
+  beforeEach(() => { SL.resetStats(); SL.clearCache(); saved = V.Scene3D.SurfaceLockMezzo; });
+  afterEach(() => { V.Scene3D.SurfaceLockMezzo = saved; });
+
+  const countVerts = (lines) => lines.reduce((s, l) => s + l.length, 0);
+  const lutOf = (fn) => { const l = new Float32Array(257); for (let k = 0; k <= 256; k++) l[k] = fn(k / 256) / sph.p0; return l; };
+  const TONE_LUT = () => lutOf((i) => 0.4 + 6 * i * i);
+
+  describe('tone memo (G3)', () => {
+    const mkView = (counter, toneKey) => ({
+      toneFn: (n, p) => { counter.n += 1; return 0.5 + 0.5 * Math.sin(2.1 * n.x + 1.3 * n.y + 0.07 * p.z); },
+      tone: { lut: TONE_LUT() }, penWidth: 0, objectId: 'o', toneKey,
+    });
+    const poseAt = (yaw) => SL.poseOf({}, { yaw, pitch: 0.2, roll: 0, zoom: 1, projection: 'orthographic' }, BOUNDS);
+
+    it('a second frame with the same toneKey at a new camera yaw makes 0 toneFn calls and equals the no-memo output', () => {
+      const c1 = { n: 0 }; const c2 = { n: 0 }; const c3 = { n: 0 };
+      SL.frame([sph.ms], poseAt(0.1), mkView(c1, 'k1'));
+      expect(c1.n).toBeGreaterThan(1000);
+      const evals1 = SL.stats.toneEvals;
+      expect(evals1).toBe(c1.n);
+      const memo = SL.frame([sph.ms], poseAt(0.1), mkView(c2, 'k1')); // same pose: every visited vertex is cached
+      expect(c2.n).toBe(0);
+      expect(SL.stats.toneEvals).toBe(evals1);
+      const plain = SL.frame([sph.ms], poseAt(0.1), mkView(c3, null));
+      expect(c3.n).toBeGreaterThan(1000); // mutation proof: no key -> no memo
+      expect(JSON.stringify(memo)).toBe(JSON.stringify(plain));
+    });
+
+    it('a new yaw only evaluates vertices not seen yet; a different toneKey recomputes everything', () => {
+      const a = { n: 0 }; const b = { n: 0 }; const c = { n: 0 };
+      SL.frame([sph.ms], poseAt(0), mkView(a, 'k2'));
+      SL.frame([sph.ms], poseAt(0.05), mkView(b, 'k2'));
+      expect(b.n).toBeLessThan(a.n * 0.2);
+      SL.frame([sph.ms], poseAt(0), mkView(c, 'k3'));
+      expect(c.n).toBe(a.n);
+    });
+  });
+
+  describe('cap fields', () => {
+    const withMeta = (extra) => Object.assign(Object.create(Object.getPrototypeOf(sph.ms)), sph.ms, { meta: Object.assign({}, sph.ms.meta, extra) });
+    const pose = () => SL.poseOf({}, { yaw: 0, pitch: 0, roll: 0, zoom: 1, projection: 'orthographic' }, BOUNDS);
+    const view = (pen) => ({ toneFn: null, tone: null, penWidth: pen, objectId: 'o' });
+    // head-on cr = p0 * scale / (floorPen * pen * 0.8); pick pen so cr = 2.3 (T = 2) at the disc centre
+    const pen23 = () => sph.p0 * pose().cam.scale / (2.3 * 2.2 * 0.8);
+
+    it('meta.minSepFrac 0.8 scales the cap: equal to a 1/0.8 larger floor, and admits fewer vertices', () => {
+      const pen = pen23();
+      const base = SL.frame([sph.ms], pose(), view(pen));
+      const sep = SL.frame([withMeta({ minSepFrac: 0.8 })], pose(), view(pen));
+      const ref = SL.frame([sph.ms], pose(), view(pen / 0.8));
+      expect(countVerts(sep)).toBeLessThan(countVerts(base));
+      expect(JSON.stringify(sep)).toBe(JSON.stringify(ref));
+    });
+
+    it('absent minSepFrac / floorPitchPen keep today\'s behaviour', () => {
+      const pen = pen23();
+      const base = SL.frame([sph.ms], pose(), view(pen));
+      expect(JSON.stringify(SL.frame([withMeta({ minSepFrac: 1 })], pose(), view(pen)))).toBe(JSON.stringify(base));
+    });
+
+    it('O1: a law floor below the strict floor admits more ink, equal to a proportionally smaller pen; absent keeps the strict floor', () => {
+      const pen = pen23();
+      const strict = SL.frame([sph.ms], pose(), view(pen));
+      const law = SL.frame([withMeta({ floorPitchPen: 1.1 })], pose(), view(pen));
+      expect(countVerts(law)).toBeGreaterThan(countVerts(strict));
+      expect(JSON.stringify(law)).toBe(JSON.stringify(SL.frame([sph.ms], pose(), view(pen * 0.5))));
+      expect(JSON.stringify(SL.frame([withMeta({ floorPitchPen: undefined })], pose(), view(pen)))).toBe(JSON.stringify(strict));
+    });
+
+    it('meta.floorPitchPen replaces the plot-floor pen multiplier', () => {
+      const pen = pen23();
+      const r = V.Scene3D.Regions && Number.isFinite(V.Scene3D.Regions.PLOT_FLOOR_PEN) ? V.Scene3D.Regions.PLOT_FLOOR_PEN : 2.2;
+      const law = SL.frame([withMeta({ floorPitchPen: r * 2 })], pose(), view(pen));
+      const ref = SL.frame([sph.ms], pose(), view(pen * 2));
+      expect(JSON.stringify(law)).toBe(JSON.stringify(ref));
+      expect(countVerts(law)).toBeLessThan(countVerts(SL.frame([sph.ms], pose(), view(pen))));
+    });
+  });
+
+  describe('exclusions and bake key', () => {
+    const SPEC = (style) => ({
+      objectId: 'a', primitive: 'sphere', mode: 'chart', sizes: { r: 20 }, detail: 1, scale: { sx: 1, sy: 1, sz: 1 },
+      mapper: 'hatch', toneLaw: 'ladder', style: Object.assign({ markSpace: 'surface', angle: 30 }, style || {}), penWidth: 0.3, scaleRef: 1, seed: { salt: 7, phase: 0 },
+    });
+    let lutCalls = 0;
+    beforeEach(() => {
+      lutCalls = 0;
+      V.Scene3D.SurfaceLockMezzo = {
+        id: 'fake', FIT: [], supports: (spec) => spec.mapper === 'hatch',
+        bake: () => buildSphere(V, { M: 64, levels: 3, step: 2 }).ms,
+        toneLUT: () => { lutCalls += 1; return { lut: new Float32Array(257).fill(1), scaleFn: null }; },
+      };
+    });
+
+    it('faceStyles and depthFade exclusions fall back to pose; their examples are in the data', () => {
+      ['faceStyles', 'depthFade'].forEach((id) => {
+        const ex = SL.EXCLUSIONS.find((e) => e.id === id);
+        expect(ex, id).toBeDefined();
+        expect(ex.example).toBeDefined();
+        const ctx = Object.assign({ primitive: 'sphere', mapper: 'hatch' }, ex.example.ctx || {});
+        const style = Object.assign({ markSpace: 'surface' }, ex.example.style || {});
+        expect(SL.effectiveMarkSpace(style, ctx), id).toBe('pose');
+        expect(SL.effectiveMarkSpace({ markSpace: 'surface' }, { primitive: 'sphere', mapper: 'hatch' })).toBe('surface');
+      });
+      expect(SL.effectiveMarkSpace({ markSpace: 'surface', depthFade: false }, { primitive: 'sphere', mapper: 'hatch', faceStyles: false })).toBe('surface');
+    });
+
+    it('bakeKey ignores tone-only style keys and detail but not geometry keys', () => {
+      const k0 = SL.bakeKey(SPEC());
+      const same = [
+        { toneGamma: 1.8 }, { toneContrast: 0.4 }, { highlightTreatment: 'none' }, { highlightTreatment: 'blank' }, { highlightMode: 'x' },
+        { depthFade: false }, { depthFadeStrength: 0.5 }, { shadowSensitivity: 0.3 },
+      ];
+      same.forEach((s) => expect(SL.bakeKey(SPEC(s)), JSON.stringify(s)).toBe(k0));
+      const d = SPEC(); d.detail = 5;
+      expect(SL.bakeKey(d)).toBe(k0);
+      expect(SL.bakeKey(SPEC({ angle: 31 }))).not.toBe(k0);
+    });
+
+    it('the toneTable key still varies with tone-only style keys', () => {
+      SL.toneTable(SPEC(), { tone: {}, penWidth: 0.3 });
+      SL.toneTable(SPEC({ toneGamma: 1.8 }), { tone: {}, penWidth: 0.3 });
+      expect(lutCalls).toBe(2);
+    });
+  });
+});
