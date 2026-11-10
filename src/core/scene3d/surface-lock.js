@@ -52,7 +52,7 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0,
     bakeErrors: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
@@ -283,6 +283,8 @@
     // A law may declare its own floor (pen multiples) and the minimum separation its bake guarantees (fraction of nominal pitch).
     if (Number.isFinite(meta.floorPitchPen) && meta.floorPitchPen > 0) floorPitch = meta.floorPitchPen * num(view.penWidth, 0);
     const minSep = Number.isFinite(meta.minSepFrac) && meta.minSepFrac > 0 ? meta.minSepFrac : 1;
+    const remap = meta.capToneRemap === true && !!lut;
+    const remapLuts = new Map();
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
@@ -308,6 +310,20 @@
       }
       SX[v] = cxs + cx * sv; SY[v] = cys - cy * sv; SZ[v] = cz; SC[v] = facing;
       if (!valid || facing <= 0) { STE[v] = 0; continue; }
+      let capT = 0; const hasCap = floorPitch > 0;
+      if (hasCap) {
+        // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
+        // one level-pitch apart, below the floor, so the cap only ever admits complete levels, each once its pitch is >= FLOOR_SLACK x floor (or a regular 1/gain^m
+        // thinning of level 0 below the base pitch). The drawn subset then never falls under the floor.
+        const cr = p0 * sv * facing * minSep / (floorPitch * FLOOR_SLACK);
+        const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
+        let T = 0;
+        if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
+          T = 1;
+          if (T0 >= 1) { while (T * gain <= T0) T *= gain; } else { while (T > T0) T /= gain; }
+        }
+        capT = T;
+      }
       // tone
       let te = Infinity;
       if (lut) {
@@ -332,6 +348,24 @@
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
         let dm = p0 * sv * l;
+        if (remap && capT > 0) { // cap-aware tone remap (contract §5): squeeze [m, D] into [m, T] in log space so tone stays monotone inside a cap ring
+          const mD = p0 * sv * lut[LUT_N]; const dD = p0 * sv * lut[0]; const tD = q === 1 ? capT : (q === 2 ? Math.sqrt(capT) : Math.pow(capT, 1 / q));
+          if (mD > 0 && tD > mD && tD < dD) {
+            if (!persp) {
+              let rl = remapLuts.get(capT);
+              if (!rl) {
+                const kk = Math.log(tD / mD) / Math.log(dD / mD);
+                rl = new Float32Array(LUT_N + 1);
+                for (let j = 0; j <= LUT_N; j++) { const dj = p0 * sv * lut[j]; rl[j] = dj > 0 ? mD * Math.pow(dj / mD, kk) : 0; }
+                remapLuts.set(capT, rl);
+              }
+              dm = rl[k0] + (f - k0) * (rl[k0 + 1] - rl[k0]);
+            } else if (dm > 0) {
+              stats.toneRemapPow += 1;
+              dm = mD * Math.pow(dm / mD, Math.log(tD / mD) / Math.log(dD / mD));
+            }
+          }
+        }
         if (scaleFn && toneFn && dm > 0) {
           if (persp) {
             const wx = -cx; const wy = -cy; const wz = eyeZ - cz; const wl = Math.sqrt(wx * wx + wy * wy + wz * wz) || 1;
@@ -343,19 +377,7 @@
         }
         te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
       }
-      if (floorPitch > 0) {
-        // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
-        // one level-pitch apart, below the floor, so the cap only ever admits complete levels, each once its pitch is >= FLOOR_SLACK x floor (or a regular 1/gain^m
-        // thinning of level 0 below the base pitch). The drawn subset then never falls under the floor.
-        const cr = p0 * sv * facing * minSep / (floorPitch * FLOOR_SLACK);
-        const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
-        let T = 0;
-        if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
-          T = 1;
-          if (T0 >= 1) { while (T * gain <= T0) T *= gain; } else { while (T > T0) T /= gain; }
-        }
-        if (T < te) te = T;
-      }
+      if (hasCap && capT < te) te = capT;
       STE[v] = te;
     }
     return undefined;

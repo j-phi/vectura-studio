@@ -142,6 +142,21 @@ describe('surface lock frame pipeline', () => {
     expect(worst).toBeGreaterThanOrEqual(0.8 * floor);
   });
 
+  it('4b. cap-aware tone remap (opt-in meta.capToneRemap): tone stays monotone inside a capped ring; the flag off is unchanged (§5, H1)', () => {
+    const cap = buildSphere(V, { M: 128, levels: 5, thetaMax: 0.3 }); // c in [0.955, 1] everywhere: T = 8 < D = 400
+    const pose = SL.poseOf({}, CAM, BOUNDS);
+    const lut = new Float32Array(257); for (let k = 0; k <= 256; k++) lut[k] = Math.pow(400, 1 - k / 256) / cap.p0;
+    const count = (ms, I) => { SL.clearCache(); const out = SL.frame([ms], pose, { toneFn: () => I, tone: { lut }, penWidth: 0.3, objectId: 'o' }); return { n: flat(out).length, out }; };
+    const off0 = count(cap.ms, 0); const off5 = count(cap.ms, 0.5);
+    expect(off5.n).toBe(off0.n); // today both are pinned at the cap
+    expect(JSON.stringify(off5.out)).toBe(JSON.stringify(off0.out));
+    const on = { ...cap.ms, meta: { ...cap.ms.meta, capToneRemap: true } };
+    const on0 = count(on, 0); const on5 = count(on, 0.5); const on1 = count(on, 1);
+    expect(on0.n).toBe(off0.n); // the darkest tone still takes everything the cap allows
+    expect(on5.n).toBeLessThan(0.9 * on0.n);
+    expect(on1.n).toBeLessThan(on5.n);
+  });
+
   it('5. object-space invariance: inverse-transformed output points lie on the synthetic rings within 1e-6 mm at 8 poses (§14.3)', () => {
     const rot = (a) => { const r = G3.makeRotator(a); const e = [r({ x: 1, y: 0, z: 0 }), r({ x: 0, y: 1, z: 0 }), r({ x: 0, y: 0, z: 1 })]; return [e[0].x, e[1].x, e[2].x, e[0].y, e[1].y, e[2].y, e[0].z, e[1].z, e[2].z]; };
     const tr = (A, x, y, z) => [A[0] * x + A[3] * y + A[6] * z, A[1] * x + A[4] * y + A[7] * z, A[2] * x + A[5] * y + A[8] * z]; // A^T v
