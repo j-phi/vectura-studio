@@ -9,11 +9,14 @@ const LAWS = [
   { name: 'mezzo', toneLaw: 'mezzoRegion' },
   { name: 'ladder hatch', toneLaw: 'ladder' },
 ];
-const R = 20; // default sphere radius, mm
 
 describe('surface lock Level F dispatch', () => {
   let rt; let V; let SL;
-  beforeAll(async () => { rt = await loadSurfaceLockRuntime(); V = rt.V; SL = V.Scene3D.SurfaceLock; });
+  let R; // the default sphere's radius, read from the leaf the engine creates (never a literal)
+  beforeAll(async () => {
+    rt = await loadSurfaceLockRuntime(); V = rt.V; SL = V.Scene3D.SurfaceLock;
+    R = buildSurfaceLockScene(V, { kind: 'sphere', ground: false, shadow: false }).objectsOf()[0].params.params.radius;
+  });
   afterAll(() => rt && rt.cleanup());
 
   const build = (law, extra = {}) => buildSurfaceLockScene(V, {
@@ -118,11 +121,50 @@ describe('surface lock Level F dispatch', () => {
               }
               worst = Math.max(worst, best);
             }
-            // Float32 positions: the MarkSet stores them at 1e-7 relative, well inside the 1e-6 mm bar at R = 20.
+            // Float32 positions: the MarkSet stores them at 1e-7 relative, well inside the 1e-6 mm bar at this R.
             expect(worst, JSON.stringify(pose)).toBeLessThan(1e-6);
           });
         } finally { spy.restore(); }
       });
+
+      // Ink per unit SURFACE area by intensity band (contract §14.4). Ink is measured on the surface (object-space chord
+      // length) and area on the surface too, so foreshortening toward the limb cancels and only the tone law is left.
+      // `sphereZ` places a z-less (pose-mode) screen point on the front hemisphere.
+      const bandDensities = (fp, toneFn, lines, sphereZ) => {
+        const intensityAt = (sx, sy, sz) => {
+          const { obj, objR } = toObject(fp, { x: sx, y: sy, z: sz });
+          const n = mulV(objR, [obj[0] / R, obj[1] / R, obj[2] / R]);
+          const w = mulV(objR, obj);
+          return toneFn({ x: n[0], y: n[1], z: n[2] }, { x: w[0] + fp.obj.x, y: w[1] + fp.obj.y, z: w[2] + fp.obj.z });
+        };
+        const B = 5; const ink = new Array(B).fill(0); const area = new Array(B).fill(0);
+        const bandOf = (I) => Math.max(0, Math.min(B - 1, Math.floor(I * B)));
+        if (fp.cam.persp) throw new Error('this rig is orthographic');
+        const sc = fp.cam.scale; const cell = 0.25;
+        const camR = rotMat({ yaw: fp.cam.yaw, pitch: fp.cam.pitch, roll: fp.cam.roll });
+        const cc = mulV(camR, [fp.obj.x, fp.obj.y, fp.obj.z]);
+        const cx = fp.cam.cx + cc[0] * sc; const cy = fp.cam.cy - cc[1] * sc; const rr = R * sc;
+        const facingAt = (x, y) => { const dx = (x - cx) / sc; const dy = (cy - y) / sc; return Math.sqrt(Math.max(0, R * R - dx * dx - dy * dy)) / R; };
+        const withZ = (pt) => (sphereZ ? { x: pt.x, y: pt.y, z: cc[2] + facingAt(pt.x, pt.y) * R } : pt);
+        lines.forEach((ln) => {
+          for (let i = 1; i < ln.length; i++) {
+            const a = withZ(ln[i - 1]); const b = withZ(ln[i]);
+            const pa = toObject(fp, a).obj; const pb = toObject(fp, b).obj;
+            const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+            ink[bandOf(intensityAt(m.x, m.y, m.z))] += Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
+          }
+        });
+        // Area: a screen grid over the disc; each cell is 1/facing of surface area. The grazing ring the frame culls
+        // (facing < NZ_CULL) is left out of the area as well.
+        for (let x = cx - rr; x <= cx + rr; x += cell) {
+          for (let y = cy - rr; y <= cy + rr; y += cell) {
+            const facing = facingAt(x, y);
+            if (facing < V.SCENE3D_SURFACE_LOCK.NZ_CULL) continue;
+            area[bandOf(intensityAt(x, y, cc[2] + facing * R))] += (cell / sc) * (cell / sc) / facing;
+          }
+        }
+        return { dens: ink.map((l, i) => (area[i] > 40 ? l / area[i] : null)), ink, area };
+      };
 
       it('§14.4 ink per surface area falls as the light intensity I rises (area-normalised bands)', () => {
         const scene = build(toneLaw);
@@ -130,43 +172,8 @@ describe('surface lock Level F dispatch', () => {
         try {
           scene.setPose({ camYaw: -30, camPitch: 20 }); scene.composeFull();
           const { pose: fp, view, lines } = spy.calls[spy.calls.length - 1];
-          const toneFn = view.toneFn;
-          expect(typeof toneFn).toBe('function');
-          const intensityAt = (sx, sy, sz) => {
-            const { obj, objR } = toObject(fp, { x: sx, y: sy, z: sz });
-            const n = mulV(objR, [obj[0] / R, obj[1] / R, obj[2] / R]);
-            const w = mulV(objR, obj);
-            return toneFn({ x: n[0], y: n[1], z: n[2] }, { x: w[0] + fp.obj.x, y: w[1] + fp.obj.y, z: w[2] + fp.obj.z });
-          };
-          const B = 5; const ink = new Array(B).fill(0); const area = new Array(B).fill(0);
-          const bandOf = (I) => Math.max(0, Math.min(B - 1, Math.floor(I * B)));
-          if (fp.cam.persp) throw new Error('this rig is orthographic');
-          // Ink is measured ON THE SURFACE (object-space chord length) and area on the surface too, so foreshortening
-          // toward the limb cancels and only the tone law is left. Each chord is binned by I at its midpoint.
-          lines.forEach((ln) => {
-            for (let i = 1; i < ln.length; i++) {
-              const a = ln[i - 1]; const b = ln[i];
-              const pa = toObject(fp, a).obj; const pb = toObject(fp, b).obj;
-              const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
-              ink[bandOf(intensityAt(m.x, m.y, m.z))] += Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
-            }
-          });
-          // Area: a screen grid over the disc; each cell is 1/facing of surface area. The grazing ring the frame culls
-          // (facing < NZ_CULL) is left out of the area as well.
-          const sc = fp.cam.scale; const cell = 0.25;
-          const camR = rotMat({ yaw: fp.cam.yaw, pitch: fp.cam.pitch, roll: fp.cam.roll });
-          const cc = mulV(camR, [fp.obj.x, fp.obj.y, fp.obj.z]);
-          const cx = fp.cam.cx + cc[0] * sc; const cy = fp.cam.cy - cc[1] * sc; const rr = R * sc;
-          for (let x = cx - rr; x <= cx + rr; x += cell) {
-            for (let y = cy - rr; y <= cy + rr; y += cell) {
-              const dx = (x - cx) / sc; const dy = (cy - y) / sc;
-              const d2 = dx * dx + dy * dy;
-              const facing = Math.sqrt(Math.max(0, R * R - d2)) / R;
-              if (facing < V.SCENE3D_SURFACE_LOCK.NZ_CULL) continue;
-              area[bandOf(intensityAt(x, y, cc[2] + facing * R))] += (cell / sc) * (cell / sc) / facing;
-            }
-          }
-          const dens = ink.map((l, i) => (area[i] > 40 ? l / area[i] : null));
+          expect(typeof view.toneFn).toBe('function');
+          const { dens, ink, area } = bandDensities(fp, view.toneFn, lines, false);
           const have = dens.filter((d) => d !== null);
           expect(have.length, JSON.stringify({ ink, area })).toBeGreaterThanOrEqual(3);
           // The darkest band demands more than the plot floor can draw at the limb (the floor cap, contract §5), so it
@@ -175,6 +182,30 @@ describe('surface lock Level F dispatch', () => {
           for (let i = 2; i < have.length; i++) expect(have[i], JSON.stringify(dens)).toBeLessThanOrEqual(have[i - 1] * 1.08 + 1e-6);
           expect(have[have.length - 1], JSON.stringify(dens)).toBeLessThan(have[0] * 0.85);
         } finally { spy.restore(); }
+      });
+
+      // Contract §14.4 tone RANGE: the surface fill's dark/lit density ratio against the pose fill's own (same pose, same
+      // tone function, same measure). Today ~1.5 against ~5.0; it turns green when the mezzo baker (FX-M) spends its ink
+      // on tone. Then delete this wrapper. The ladder baker already meets the bar, so only mezzo is a known gap.
+      const toneRangeIt = toneLaw === 'mezzoRegion' ? it.fails : it;
+      toneRangeIt('§14.4 TONE RANGE: surface dark/lit density ratio >= 0.5 x the pose ratio', () => {
+        const pose = { camYaw: -30, camPitch: 20 };
+        const surf = build(toneLaw);
+        const spy = spyFrame();
+        let fp; let toneFn; let surfLines;
+        try {
+          surf.setPose(pose); surf.composeFull();
+          ({ pose: fp, lines: surfLines } = spy.calls[spy.calls.length - 1]);
+          toneFn = spy.calls[spy.calls.length - 1].view.toneFn;
+        } finally { spy.restore(); }
+        const ratio = (d) => { const have = d.filter((x) => x !== null); return have[0] / have[have.length - 1]; };
+        const surfRatio = ratio(bandDensities(fp, toneFn, surfLines, false).dens);
+        const flat = build(toneLaw, { markSpace: 'pose' });
+        flat.setPose(pose);
+        const poseLines = flat.fills(flat.composeFull()).map((f) => f.map((pt) => ({ x: pt.x, y: pt.y })));
+        expect(poseLines.length).toBeGreaterThan(20);
+        const poseRatio = ratio(bandDensities(fp, toneFn, poseLines, true).dens);
+        expect(surfRatio, `surface ${surfRatio} vs pose ${poseRatio}`).toBeGreaterThanOrEqual(0.5 * poseRatio);
       });
 
       it('§14.5 no fill endpoint strays more than 0.15 mm outside the silhouette', () => {
@@ -283,22 +314,33 @@ describe('surface lock Level F dispatch', () => {
         expect(min, `at ${where}`).toBeGreaterThanOrEqual(0.8 * floorPitch);
       });
 
-      it('draft parity: fastPreview true and false give identical fill paths for a surface group', () => {
-        const scene = build(toneLaw);
+      // The fill POINTS are the Level F half of drag == export. `sceneTarget.depth` is the nearest-face depth of the
+      // (draft-tessellated) mesh record, an ordering hint outside the lock path, so it is left out of the comparison.
+      const draftParity = (extra) => {
+        const scene = build(toneLaw, extra);
         const reg = V.AlgorithmRegistry.scene3d; const realGen = reg.generate;
         let captured = null;
         reg.generate = (...args) => { captured = args; return realGen(...args); };
+        SL.resetStats();
         try { scene.composeFull(); } finally { reg.generate = realGen; }
         expect(captured, 'the engine called scene3d.generate').toBeTruthy();
+        expect(SL.stats.frames, 'the group is surface-locked').toBeGreaterThan(0);
         const [params, rng, noise, bounds] = captured;
-        // The fill POINTS are the Level F half of drag == export. `sceneTarget.depth` is the nearest-face depth of the
-        // (draft-tessellated) mesh record, an ordering hint outside the lock path, so it is left out of the comparison.
         const strip = (paths) => paths.map((p) => { const q = p.slice(); q.meta = { ...p.meta, sceneTarget: { ...p.meta.sceneTarget, depth: 0 } }; return q; });
         const run = (fastPreview) => signature(strip(reg.generate(params, rng, noise, { ...bounds, fastPreview }).filter((p) => p && p.meta && p.meta.kind === 'sceneFill')));
         const full = run(false); const draft = run(true);
         expect(full.length).toBeGreaterThan(1000);
-        expect(draft === full).toBe(true);
+        return draft === full;
+      };
+
+      it('draft parity: fastPreview true and false give identical fill paths for a surface group', () => {
+        expect(draftParity()).toBe(true);
       });
+
+      // G2: the tone shape (gamma, contrast, depth fade) was gated on the draft tier, so a drag frame drew the identity
+      // curve and the settled frame / export drew the shaped one.
+      it('draft parity holds with toneGamma 1.8', () => { expect(draftParity({ style: { toneGamma: 1.8 } })).toBe(true); });
+      it('draft parity holds with toneContrast 0.4', () => { expect(draftParity({ style: { toneContrast: 0.4 } })).toBe(true); });
 
       it('tone off draws the user Density pitch, not the plot floor (F-A1)', () => {
         const scene = build(toneLaw);
@@ -345,6 +387,49 @@ describe('surface lock Level F dispatch', () => {
         delete scene.objectsOf()[0].params.style.params.markSpace;
         expect(sig === signature(scene.composeFull())).toBe(true);
       });
+    });
+  });
+
+  // G8: the one-group gate was read off the FRONT faces, so an object with a style override on its back side changed mode
+  // mid-orbit. The gate is now a property of the object (any per-face override, or more than one fill style over ALL faces).
+  describe('face-style gate is pose-independent (G8)', () => {
+    it('a yaw sweep of 12 on a sphere with one back-face style override frames the same number of times per compose', () => {
+      const scene = build('ladder');
+      const reg = V.AlgorithmRegistry.scene3d; const realGen = reg.generate;
+      let captured = null;
+      reg.generate = (...args) => { captured = args; return realGen(...args); };
+      try { scene.composeFull(); } finally { reg.generate = realGen; }
+      const [params, , , bounds] = captured;
+      const rec = V.Scene3D.Scene.assembleScene(params, bounds).objects[0];
+      // A back face near the equator, so a camera orbit brings it round to the front (a polar face never would).
+      const back = rec.faces.filter((fc) => !fc.front && fc.normalWorld)
+        .sort((x, y) => Math.abs(x.normalWorld.y) - Math.abs(y.normalWorld.y))[0];
+      expect(back, 'the start pose has a back face').toBeTruthy();
+      const leaf = scene.objectsOf()[0];
+      const base = JSON.parse(JSON.stringify(leaf.params.style));
+      base.params = { ...base.params, fillDensity: 80 };
+      leaf.params.faceStyles = { [back.faceId]: base };
+      const frames = [];
+      for (let i = 0; i < 12; i++) {
+        scene.setPose({ camYaw: i * 30, camPitch: 20 });
+        SL.resetStats(); scene.composeFull();
+        frames.push(SL.stats.frames);
+      }
+      expect(new Set(frames).size, JSON.stringify(frames)).toBe(1);
+    });
+  });
+
+  // FX-A adds SurfaceLock.stats.toneEvals and the view.toneKey memo that this relies on. Until FX-A is merged the counter
+  // does not exist, so this is a pending it.fails; when FX-A lands it goes green and the wrapper must be removed.
+  describe('tone memo across camera yaw (needs FX-A)', () => {
+    it.fails('a second compose at a new camera yaw makes 0 tone evaluations', () => {
+      const scene = build('mezzoRegion');
+      SL.clearCache(); SL.resetStats();
+      scene.setPose({ camYaw: -30, camPitch: 20 }); scene.composeFull();
+      SL.resetStats();
+      scene.setPose({ camYaw: 20, camPitch: 20 }); scene.composeFull();
+      expect(SL.stats.frames).toBeGreaterThan(0);
+      expect(SL.stats.toneEvals).toBe(0);
     });
   });
 
