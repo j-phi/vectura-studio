@@ -127,6 +127,61 @@ describe('surface lock ground shadow', () => {
     ratios.forEach((r) => { expect(Math.abs(r.ratio - 1)).toBeLessThan(0.15); });
   });
 
+  it('F-S1: every projected run point carries the camera depth z (so a caller can occlusion-clip it)', () => {
+    const h = bake();
+    const pose = poseFor(40);
+    const f = SH.frameShadow(h, [SPHERE], dir, pose);
+    expect(f.runs.length).toBeGreaterThan(20);
+    f.runs.forEach((run, i) => {
+      const w = f.world; // [x0, z0, x1, z1] per run
+      run.pts.forEach((pt, e) => {
+        expect(Number.isFinite(pt.z)).toBe(true);
+        const c = V.Geometry3D.rotatePoint({ x: w[4 * i + 2 * e], y: 0, z: w[4 * i + 2 * e + 1] }, { yaw: 40, pitch: 20, roll: 0 });
+        expect(Math.abs(pt.z - c.z)).toBeLessThan(1e-9);
+      });
+    });
+  });
+
+  it('F-S2: the thinned subset is evenly spaced (gaps differ by at most one line) at the density measured at the caster footprint', () => {
+    const h = bake({ ...SHADOW, shadowToneDepth: 0 });
+    const idxOf = (f) => {
+      const set = new Set();
+      for (let q = 0; q < f.world.length; q += 4) set.add(lineIndexOf(h, f.world[q], f.world[q + 1]).k);
+      return Array.from(set).sort((a, b) => a - b);
+    };
+    const casters = [{ ...SPHERE, center: { x: 90, y: 25, z: -70 } }];
+    // perspective makes the screen pitch at the footprint differ from the one at the world origin
+    const cases = [
+      { cam: { yaw: 40, pitch: 20, roll: 0, scale: 1, cx: 160, cy: 110, persp: true, focal: 300, dist: 400 } },
+      { cam: { yaw: -30, pitch: 35, roll: 0, scale: 1, cx: 160, cy: 110, persp: false } },
+      { cam: { yaw: 150, pitch: 10, roll: 0, scale: 1, cx: 160, cy: 110, persp: false } },
+    ];
+    const lightD = dir;
+    cases.forEach((pose, ci) => {
+      const f = SH.frameShadow(h, casters, lightD, pose);
+      const ks = idxOf(f);
+      expect(ks.length).toBeGreaterThan(4);
+      const gaps = new Set(); for (let i = 1; i < ks.length; i += 1) gaps.add(ks[i] - ks[i - 1]);
+      // expected thin: perpendicular screen pitch per unit world pitch at the footprint centre
+      const t = casters[0].center.y / lightD.y;
+      const fx = casters[0].center.x - t * lightD.x; const fz = casters[0].center.z - t * lightD.z;
+      const c = pose.cam;
+      const opts = { centerX: c.cx, centerY: c.cy, scale: c.scale };
+      if (c.persp) { opts.focal = c.focal; opts.cameraDist = c.dist; }
+      const P = (x, z) => V.Geometry3D.projectPoint(V.Geometry3D.rotatePoint({ x, y: 0, z }, { yaw: c.yaw, pitch: c.pitch, roll: 0 }), opts);
+      const o = P(fx, fz); const pu = P(fx + h.dirX, fz + h.dirZ); const pn = P(fx + h.nX, fz + h.nZ);
+      const lu = Math.hypot(pu.x - o.x, pu.y - o.y);
+      const fac = Math.abs((pu.x - o.x) * (pn.y - o.y) - (pu.y - o.y) * (pn.x - o.x)) / lu / h.scaleRef;
+      const want = 1 / Math.min(1, fac);
+      const gl = Array.from(gaps);
+      expect(Math.max(...gl) - Math.min(...gl), `pose ${ci} gaps ${gl}`).toBeLessThanOrEqual(1);
+      expect(Math.min(...gl)).toBeGreaterThanOrEqual(Math.floor(want - 1e-6));
+      expect(Math.max(...gl)).toBeLessThanOrEqual(Math.ceil(want + 1e-6));
+      const mean = (ks[ks.length - 1] - ks[0]) / (ks.length - 1);
+      expect(Math.abs(mean / want - 1)).toBeLessThan(0.08);
+    });
+  });
+
   it('supports: false for area/point/spot lights, shadowLayers, no ground, grazing light; true for the default sun', () => {
     const ok = { shadow: SHADOW, light: SUN, ground: GROUND, casters: [{ primitive: 'sphere' }, { primitive: 'box' }] };
     expect(SH.supports(ok)).toBe(true);

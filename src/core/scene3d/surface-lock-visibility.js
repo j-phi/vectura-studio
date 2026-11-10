@@ -59,6 +59,24 @@
   const finite = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
   const degToRad = (d) => (d * Math.PI) / 180;
 
+  // Module-level scratch (F-V1): the per-frame occluder build reuses these buffers instead of allocating ~10
+  // typed arrays per call. They grow geometrically and are never shrunk. `owner` is the token of the occluder
+  // whose data the live buffers (td/tb/tObj/tFace/cellStart/cellTris) currently hold; an occluder that finds
+  // another owner rebuilds itself before answering (so two live occluders stay correct, just slower).
+  const SCR = {
+    owner: null,
+    cz: new Float64Array(0), X: new Float64Array(0), Y: new Float64Array(0), ok: new Uint8Array(0), front: new Uint8Array(0),
+    td: new Float64Array(0), tb: new Float64Array(0), tObj: new Int32Array(0), tFace: new Int32Array(0),
+    pc: new Int32Array(0), pt: new Int32Array(0), cellStart: new Int32Array(0), cellTris: new Int32Array(0), fill: new Int32Array(0),
+  };
+  const want = (key, n) => {
+    const cur = SCR[key];
+    if (cur.length >= n) return cur;
+    const next = new cur.constructor(Math.max(n, Math.ceil(cur.length * 1.5), 16));
+    SCR[key] = next;
+    return next;
+  };
+
   // ── Linear algebra (row-major 3x3, the PosePreview recipe) ──────────────────────────────────────────────────────────
 
   const rotMatrix = (angles) => {
@@ -92,10 +110,11 @@
   };
 
   // Camera-space vertices, screen positions and validity of a bake under a frame (geometry3d.projectPoint arithmetic).
-  const transformMesh = (bake, fr) => {
+  const transformMesh = (bake, fr, useScratch) => {
     const n = bake.vertexCount;
     const P = bake.vertices; const A = fr.A; const cT = fr.cT;
-    const cz = new Float64Array(n); const X = new Float64Array(n); const Y = new Float64Array(n); const ok = new Uint8Array(n);
+    const cz = useScratch ? want('cz', n) : new Float64Array(n); const X = useScratch ? want('X', n) : new Float64Array(n);
+    const Y = useScratch ? want('Y', n) : new Float64Array(n); const ok = useScratch ? want('ok', n) : new Uint8Array(n);
     const near = fr.focal * NEAR_FRACTION;
     for (let i = 0; i < n; i++) {
       const px = P[3 * i]; const py = P[3 * i + 1]; const pz = P[3 * i + 2];
@@ -117,9 +136,9 @@
   };
 
   // Per-face front flag (scene.js faceRecord): orthographic n_c.z > 0, perspective n_c . (eye - centroid_c) > 0.
-  const faceFronts = (bake, fr) => {
+  const faceFronts = (bake, fr, useScratch) => {
     const F = bake.faceCount; const N = bake.faceNormals; const C = bake.faceCentroids; const A = fr.A; const cT = fr.cT;
-    const out = new Uint8Array(F);
+    const out = useScratch ? want('front', F) : new Uint8Array(F);
     for (let f = 0; f < F; f++) {
       const nx = N[3 * f]; const ny = N[3 * f + 1]; const nz = N[3 * f + 2];
       const ncx = A[0] * nx + A[1] * ny + A[2] * nz;
@@ -245,8 +264,21 @@
     const torus = prim === 'torus'
       ? { sizes: { sx: finite(pr.sx, 20), sy: finite(pr.sy, 20), sz: finite(pr.sz, 20) }, scale: [sx, sy, sz] }
       : null;
+    // Mean of the largest object-space bbox side per triangle: sizes the occluder grid without a per-frame pass.
+    let extSum = 0;
+    for (let t = 0; t < triCount; t++) {
+      const a = triVerts[3 * t]; const b = triVerts[3 * t + 1]; const c = triVerts[3 * t + 2];
+      let ext = 0;
+      for (let k = 0; k < 3; k++) {
+        const va = vertices[3 * a + k]; const vb = vertices[3 * b + k]; const vc = vertices[3 * c + k];
+        const e = Math.max(va, vb, vc) - Math.min(va, vb, vc);
+        if (e > ext) ext = e;
+      }
+      extSum += ext;
+    }
+    const triExtentMean = triCount > 0 ? extSum / triCount : 0;
     return {
-      objectId: obj.id, primitive: prim, convex, analytic, torus,
+      objectId: obj.id, primitive: prim, convex, analytic, torus, triExtentMean,
       scale: [sx, sy, sz],
       vertexCount: V, vertices,
       faceCount: F, faceStart, faceVerts, faceNormals, faceCentroids, faceIds: mesh.faceIds ? mesh.faceIds.slice() : null,
@@ -281,26 +313,26 @@
   // Bins triangles into the nx x ny grid: every cell the bbox of a footprint touches lists the triangle (CSR).
   // (Cells are about one triangle wide, so the bbox is within a few entries of the exact footprint.)
   const binTriangles = (tb, n, gx0, gy0, cs, nx, ny) => {
-    let cap = Math.max(1024, n * 4);
-    let pc = new Int32Array(cap); let pt = new Int32Array(cap); let m = 0;
+    let pc = want('pc', Math.max(1024, n * 4)); let pt = want('pt', Math.max(1024, n * 4)); let m = 0;
     const inv = 1 / cs;
     for (let t = 0; t < n; t++) {
       let c0 = Math.floor((tb[4 * t] - gx0) * inv); let c1 = Math.floor((tb[4 * t + 2] - gx0) * inv);
       let r0 = Math.floor((tb[4 * t + 1] - gy0) * inv); let r1 = Math.floor((tb[4 * t + 3] - gy0) * inv);
       if (c0 < 0) c0 = 0; if (c1 > nx - 1) c1 = nx - 1; if (r0 < 0) r0 = 0; if (r1 > ny - 1) r1 = ny - 1;
-      if (m + (c1 - c0 + 1) * (r1 - r0 + 1) > cap) {
-        while (m + (c1 - c0 + 1) * (r1 - r0 + 1) > cap) cap *= 2;
-        const nc = new Int32Array(cap); nc.set(pc); pc = nc;
-        const nt = new Int32Array(cap); nt.set(pt); pt = nt;
+      const add = (c1 - c0 + 1) * (r1 - r0 + 1);
+      if (m + add > pc.length) {
+        const cap = Math.max(m + add, pc.length * 2);
+        const nc = new Int32Array(cap); nc.set(pc.subarray(0, m)); pc = nc; SCR.pc = nc;
+        const ntt = new Int32Array(cap); ntt.set(pt.subarray(0, m)); pt = ntt; SCR.pt = ntt;
       }
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { pc[m] = r * nx + c; pt[m] = t; m += 1; }
     }
-    const cellStart = new Int32Array(nx * ny + 1);
+    const cells = nx * ny;
+    const cellStart = want('cellStart', cells + 1); cellStart.fill(0, 0, cells + 1);
     for (let i = 0; i < m; i++) cellStart[pc[i] + 1] += 1;
-    for (let c = 0; c < nx * ny; c++) cellStart[c + 1] += cellStart[c];
-    const cellTris = new Int32Array(m); const fill = new Int32Array(nx * ny);
+    for (let c = 0; c < cells; c++) cellStart[c + 1] += cellStart[c];
+    const cellTris = want('cellTris', m); const fill = want('fill', cells); fill.fill(0, 0, cells);
     for (let i = 0; i < m; i++) { const c = pc[i]; cellTris[cellStart[c] + fill[c]] = pt[i]; fill[c] += 1; }
-    return { cellStart, cellTris };
   };
 
   const occluder = (bakes, pose) => {
@@ -309,53 +341,71 @@
     const index = new Map();
     list.forEach((b, i) => { index.set(b, i); if (b.objectId !== undefined && !index.has(b.objectId)) index.set(b.objectId, i); });
 
-    // Pass 0: every front-facing, non-degenerate triangle in screen space.
-    let total = 0;
-    list.forEach((b) => { total += b.triCount; });
-    const td = new Float64Array(10 * Math.max(1, total)); // ax ay e1x e1y e2x e2y invDet az dz1 dz2
-    const tObj = new Int32Array(Math.max(1, total)); const tFace = new Int32Array(Math.max(1, total));
-    const tb = new Float64Array(4 * Math.max(1, total)); // x0 y0 x1 y1 (bbox)
-    let n = 0;
-    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
-    list.forEach((b, oi) => {
-      const fr = frameOf(poses[oi]);
-      const tm = transformMesh(b, fr);
-      const front = faceFronts(b, fr);
-      const { X, Y, cz, ok } = tm;
-      for (let t = 0; t < b.triCount; t++) {
-        const f = b.triFace[t];
-        if (!front[f]) continue;
-        const i0 = b.triVerts[3 * t]; const i1 = b.triVerts[3 * t + 1]; const i2 = b.triVerts[3 * t + 2];
-        if (!ok[i0] || !ok[i1] || !ok[i2]) continue;
-        const e1x = X[i1] - X[i0]; const e1y = Y[i1] - Y[i0]; const e2x = X[i2] - X[i0]; const e2y = Y[i2] - Y[i0];
-        const det = e1x * e2y - e1y * e2x;
-        if (Math.abs(det) < MIN_TRI_AREA2) continue;
-        const o = 10 * n;
-        td[o] = X[i0]; td[o + 1] = Y[i0]; td[o + 2] = e1x; td[o + 3] = e1y; td[o + 4] = e2x; td[o + 5] = e2y;
-        td[o + 6] = 1 / det; td[o + 7] = cz[i0]; td[o + 8] = cz[i1] - cz[i0]; td[o + 9] = cz[i2] - cz[i0];
-        const lx = Math.min(X[i0], X[i1], X[i2]); const hx = Math.max(X[i0], X[i1], X[i2]);
-        const ly = Math.min(Y[i0], Y[i1], Y[i2]); const hy = Math.max(Y[i0], Y[i1], Y[i2]);
-        tb[4 * n] = lx; tb[4 * n + 1] = ly; tb[4 * n + 2] = hx; tb[4 * n + 3] = hy;
-        tObj[n] = oi; tFace[n] = f;
-        if (lx < minX) minX = lx; if (hx > maxX) maxX = hx; if (ly < minY) minY = ly; if (hy > maxY) maxY = hy;
-        n += 1;
-      }
-    });
+    const token = {};
+    let td = SCR.td; let tObj = SCR.tObj; let tFace = SCR.tFace; let tb = SCR.tb;
+    let cellStart = SCR.cellStart; let cellTris = SCR.cellTris;
+    let n = 0; let nx = 1; let ny = 1; let cs = 1; let gx0 = 0; let gy0 = 0;
 
-    // Grid over the projected triangles; cells hold every triangle whose footprint touches them (CSR).
-    let nx = 1; let ny = 1; let cs = 1; let gx0 = 0; let gy0 = 0;
-    let cellStart = new Int32Array(2); let cellTris = new Int32Array(0);
-    if (n > 0) {
-      const w = Math.max(maxX - minX, 1e-6); const h = Math.max(maxY - minY, 1e-6);
-      // Cell size follows the triangle size (CELL_TRIANGLES mean triangle extents) but never drops below extent / MAX_CELLS.
-      let extentSum = 0;
-      for (let t = 0; t < n; t++) extentSum += Math.max(tb[4 * t + 2] - tb[4 * t], tb[4 * t + 3] - tb[4 * t + 1]);
-      cs = Math.max(Math.max(w, h) / MAX_CELLS, CELL_TRIANGLES * (extentSum / n));
-      gx0 = minX - cs * 1e-3; gy0 = minY - cs * 1e-3;
-      nx = Math.min(MAX_CELLS, Math.floor((maxX - gx0) / cs) + 1); ny = Math.min(MAX_CELLS, Math.floor((maxY - gy0) / cs) + 1);
-      const binned = binTriangles(tb, n, gx0, gy0, cs, nx, ny);
-      cellStart = binned.cellStart; cellTris = binned.cellTris;
-    }
+    // Builds the screen-space triangle buffer and its grid into the shared scratch and claims ownership of it.
+    const build = () => {
+      // Pass 0: every front-facing, non-degenerate triangle in screen space.
+      let total = 0;
+      list.forEach((b) => { total += b.triCount; });
+      td = want('td', 10 * Math.max(1, total)); // ax ay e1x e1y e2x e2y invDet az dz1 dz2
+      tObj = want('tObj', Math.max(1, total)); tFace = want('tFace', Math.max(1, total));
+      tb = want('tb', 4 * Math.max(1, total)); // x0 y0 x1 y1 (bbox)
+      n = 0;
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      let extWeighted = 0; let extWeight = 0; let needExtent = false;
+      list.forEach((b, oi) => {
+        const fr = frameOf(poses[oi]);
+        const tm = transformMesh(b, fr, true);
+        const front = faceFronts(b, fr, true);
+        const { X, Y, cz, ok } = tm;
+        // Screen size of this object's mean triangle: object-space extent x projection scale at the object centre.
+        if (b.triExtentMean > 0) {
+          const sf = fr.persp ? fr.scale * fr.focal / Math.max(fr.focal * NEAR_FRACTION, fr.focal + fr.dist - fr.cT[2]) : fr.scale;
+          extWeighted += b.triExtentMean * sf * b.triCount; extWeight += b.triCount;
+        } else needExtent = true;
+        for (let t = 0; t < b.triCount; t++) {
+          const f = b.triFace[t];
+          if (!front[f]) continue;
+          const i0 = b.triVerts[3 * t]; const i1 = b.triVerts[3 * t + 1]; const i2 = b.triVerts[3 * t + 2];
+          if (!ok[i0] || !ok[i1] || !ok[i2]) continue;
+          const e1x = X[i1] - X[i0]; const e1y = Y[i1] - Y[i0]; const e2x = X[i2] - X[i0]; const e2y = Y[i2] - Y[i0];
+          const det = e1x * e2y - e1y * e2x;
+          if (Math.abs(det) < MIN_TRI_AREA2) continue;
+          const o = 10 * n;
+          td[o] = X[i0]; td[o + 1] = Y[i0]; td[o + 2] = e1x; td[o + 3] = e1y; td[o + 4] = e2x; td[o + 5] = e2y;
+          td[o + 6] = 1 / det; td[o + 7] = cz[i0]; td[o + 8] = cz[i1] - cz[i0]; td[o + 9] = cz[i2] - cz[i0];
+          const lx = Math.min(X[i0], X[i1], X[i2]); const hx = Math.max(X[i0], X[i1], X[i2]);
+          const ly = Math.min(Y[i0], Y[i1], Y[i2]); const hy = Math.max(Y[i0], Y[i1], Y[i2]);
+          tb[4 * n] = lx; tb[4 * n + 1] = ly; tb[4 * n + 2] = hx; tb[4 * n + 3] = hy;
+          tObj[n] = oi; tFace[n] = f;
+          if (lx < minX) minX = lx; if (hx > maxX) maxX = hx; if (ly < minY) minY = ly; if (hy > maxY) maxY = hy;
+          n += 1;
+        }
+      });
+
+      // Grid over the projected triangles; cells hold every triangle whose footprint touches them (CSR).
+      nx = 1; ny = 1; cs = 1; gx0 = 0; gy0 = 0;
+      cellStart = want('cellStart', 2); cellStart[0] = 0; cellStart[1] = 0; cellTris = want('cellTris', 0);
+      if (n > 0) {
+        const w = Math.max(maxX - minX, 1e-6); const h = Math.max(maxY - minY, 1e-6);
+        // Cell size follows the triangle size (CELL_TRIANGLES mean triangle extents) but never drops below extent / MAX_CELLS.
+        let meanExt;
+        if (!needExtent && extWeight > 0) meanExt = extWeighted / extWeight;
+        else { let extentSum = 0; for (let t = 0; t < n; t++) extentSum += Math.max(tb[4 * t + 2] - tb[4 * t], tb[4 * t + 3] - tb[4 * t + 1]); meanExt = extentSum / n; }
+        cs = Math.max(Math.max(w, h) / MAX_CELLS, CELL_TRIANGLES * meanExt);
+        gx0 = minX - cs * 1e-3; gy0 = minY - cs * 1e-3;
+        nx = Math.min(MAX_CELLS, Math.floor((maxX - gx0) / cs) + 1); ny = Math.min(MAX_CELLS, Math.floor((maxY - gy0) / cs) + 1);
+        binTriangles(tb, n, gx0, gy0, cs, nx, ny);
+        cellStart = SCR.cellStart; cellTris = SCR.cellTris;
+      }
+      SCR.owner = token;
+    };
+    build();
+    const nBuilt = n; const nxBuilt = nx; const nyBuilt = ny; const csBuilt = cs;
 
     // Lazy per-object analytic torus probes.
     const probes = new Array(list.length).fill(undefined);
@@ -368,6 +418,7 @@
 
     // seg: { obj: index, mode: 'fill' | 'edge', f0, f1 } (f0/f1: faces adjacent to an edge, excluded from its own object's test).
     const hiddenAt = (x, y, z, seg) => {
+      if (SCR.owner !== token) build();
       const own = seg ? seg.obj : -1;
       const edgeMode = seg && seg.mode === 'edge';
       if (own >= 0 && !edgeMode) {
@@ -456,7 +507,7 @@
     };
 
     return {
-      cellCount: nx * ny, triangleCount: n, gridSize: [nx, ny], cellMm: cs,
+      cellCount: nxBuilt * nyBuilt, triangleCount: nBuilt, gridSize: [nxBuilt, nyBuilt], cellMm: csBuilt,
       indexOf: lookup,
       segFor: (bake) => ({ obj: lookup(bake), mode: 'fill', f0: -1, f1: -1 }),
       hiddenAt, clipRun, closedMerge,

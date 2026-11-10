@@ -228,6 +228,52 @@ describe('surface lock visibility (W1-E)', () => {
     expect(Vis.supports({ primitive: 'bogus' })).toBe(false);
   });
 
+  it('F-V1: meshBake precomputes the mean triangle extent used to size the occluder grid', () => {
+    const np = normalized([sphere('s', 30, { y: 30 })]);
+    const bake = Vis.meshBake(np.objects[0]);
+    expect(Number.isFinite(bake.triExtentMean)).toBe(true);
+    expect(bake.triExtentMean).toBeGreaterThan(0.1);
+    expect(bake.triExtentMean).toBeLessThan(30);
+  });
+
+  it('F-V1: repeated occluder builds reuse scratch (no large typed-array allocations once warm)', () => {
+    const r = rig([sphere('a', 40, { y: 40 }), box('b', 30, { x: 60, y: 15 })]);
+    for (let i = 0; i < 3; i++) Vis.occluder(r.bakes, r.poses);
+    // The module runs in the runtime's vm context: patch the constructors on that context's global (and on the
+    // host global, in case a build shares it) and restore exactly what was there.
+    const realms = [rt.runtime.window, globalThis].filter(Boolean);
+    const counts = realms.map(() => 0);
+    const NAMES = ['Float64Array', 'Int32Array', 'Uint8Array'];
+    const saved = realms.map((g) => NAMES.map((n) => ({ n, own: Object.prototype.hasOwnProperty.call(g, n), v: g[n] })));
+    const wrap = (Ctor, k) => {
+      const W = function wrapped(...a) { if (typeof a[0] === 'number' && a[0] >= 2000) counts[k] += 1; return new Ctor(...a); };
+      W.prototype = Ctor.prototype; W.from = Ctor.from.bind(Ctor); W.of = Ctor.of.bind(Ctor);
+      return W;
+    };
+    try {
+      realms.forEach((g, k) => saved[k].forEach((e) => { g[e.n] = wrap(e.v || globalThis[e.n], k); }));
+      for (let i = 0; i < 10; i++) Vis.occluder(r.bakes, r.poses);
+    } finally {
+      realms.forEach((g, k) => saved[k].forEach((e) => { if (e.own) g[e.n] = e.v; else delete g[e.n]; }));
+    }
+    console.log('F-V1 large typed-array allocations over 10 warm occluder builds', JSON.stringify(counts));
+    expect(Math.max(...counts)).toBe(0);
+  });
+
+  it('F-V1: two live occluders stay independent although they share scratch memory', () => {
+    const A = rig([sphere('a', 40, { y: 40 })]);
+    const B = rig([sphere('a', 40, { y: 40 }), box('b', 30, { x: 0, y: 20, z: 60 })]);
+    const pts = sampleFront(A.scn, 150).concat(sampleFront(B.scn, 150));
+    const ref = (occ) => pts.map((q) => occ.hiddenAt(q.x, q.y, q.z + 0.3, { obj: -1, mode: 'fill' }));
+    const a0 = ref(A.occ); const b0 = ref(B.occ);
+    const A2 = Vis.occluder(A.bakes, A.poses); // rebuilds over the shared scratch
+    const B2 = Vis.occluder(B.bakes, B.poses);
+    expect(ref(A.occ)).toEqual(a0);
+    expect(ref(B.occ)).toEqual(b0);
+    expect(ref(A2)).toEqual(a0);
+    expect(ref(B2)).toEqual(b0);
+  });
+
   it('acceptance timings (reported)', () => {
     const big = { id: 'big', name: 'big', primitive: 'sphere', params: { radius: 40, detail: 32 }, transform: { ...T0, y: 40 }, visibility: 'solid' };
     const np = normalized([big]);
@@ -243,6 +289,9 @@ describe('surface lock visibility (W1-E)', () => {
     for (let i = 0; i < N; i++) Vis.outline(dflt.bakes[0], dflt.poses[0], dflt.occ);
     const outMs = (performance.now() - t1) / N;
     // eslint-disable-next-line no-console
+    const dm = []; for (let i = 0; i < 30; i++) { const s0 = performance.now(); Vis.occluder(dflt.bakes, dflt.poses); dm.push(performance.now() - s0); }
+    dm.sort((a, b) => a - b);
+    console.log(`F-V1 default-sphere occluder median ${dm[15].toFixed(2)} ms (p90 ${dm[27].toFixed(2)})`);
     console.log(`W1-E timings: occluder ${bake.triCount} tris -> ${occ.triangleCount} front, grid ${occ.gridSize.join('x')}: ${occMs.toFixed(2)} ms; default sphere outline ${outMs.toFixed(2)} ms`);
     expect(occMs).toBeLessThan(20);
     expect(outMs).toBeLessThan(10);
