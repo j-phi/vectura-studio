@@ -40,7 +40,11 @@
   const TONE_SUBDIV = 5;         // surface-fill TONE_SUBDIV: the master grid is the user spacing / 5
   const GLINT_KEEP = 0.6;        // surface-fill GLINT_KEEP (the glint cap never removes more than 40 %)
   const LIT_FLOOR = 0.12;        // surface-fill LIT_FLOOR (lit band never below this coverage)
-  const THIN_RATIO = 0.95;       // a level is cut where its local pitch would fall under this x its target
+  const THIN_RATIO = 0.95;       // a level is relabelled finer where its local pitch would fall under this x its target
+  // TODO(config): PLOT_FLOOR_SLACK (0.8) is being added to SCENE3D_SURFACE_LOCK by another unit; read it from there afterwards.
+  const PLOT_FLOOR_SLACK = 0.8;  // a level is drawable once its screen pitch is >= this x the plot floor (contract section 14.6)
+  // TODO(config): replaces SCENE3D_SURFACE_LOCK.ZOOM_HEADROOM (2) for the ladder: scaleRef keeps s / scaleRef <= sqrt2, 1.5 adds the perspective spread.
+  const ZOOM_HEADROOM = 1.5;
   const V_EXTRA = 4;             // extra halvings of coarse rulings kept through a converging region
   const MAX_VERTS = 150000;      // vertex budget guard (contract §2: 200k per object per fill group)
   const MAX_CELLS = 4096;        // ruling cells per family
@@ -228,7 +232,6 @@
     const mode = spec.mode || PRIM_MODE[prim];
     const M = SC.metric(mode, spec.sizes || {}, r.scale);
     const maxLevels = cfg().MAX_LEVELS || 6;
-    const headroom = cfg().ZOOM_HEADROOM || 2;
     const salt = finite(r.seed.salt, 0) | 0;
     const phase = Number.isFinite(r.seed.phase) ? frac(r.seed.phase) : SC.hash(salt, 7, 11);
     const dots = r.stipple;
@@ -248,7 +251,9 @@
     const p0S = p0Screen(r);
     const p0 = p0S / r.scaleRef;                       // level-0 pitch, scaled local mm
     // Level count (contract §9) with a vertex budget guard.
-    let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * headroom / floor))), 1, maxLevels);
+    // minPitch is the darkest screen pitch the law can ever ask for (coverage <= 1): finer levels are never drawn.
+    const minPitch = Math.max(PLOT_FLOOR_SLACK * floor, masterPitch(r));
+    let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * ZOOM_HEADROOM / minPitch))), 1, maxLevels);
     const families = cross ? 2 : 1;
     const estVerts = (levels) => {
       const pf = p0 / Math.pow(2, levels - 1);
@@ -329,12 +334,10 @@
       for (let m = mFrom; m <= mTo; m++) {
         const v = Math.min(ctz(m), L - 1 + V_EXTRA, logN);
         const lvl = Math.max(0, L - 1 - v);
-        const idx = lvl === 0 ? (m >> (L - 1)) : (m >> (v + 1));
-        const rank = vdc2(idx);
+        const extra = Math.max(0, v - (L - 1));
         // chord, not arc: around a periodic axis a gap of g of the full circle has chord/arc = sinc(pi g).
         const g = Math.pow(2, v) / N;
         const chord = (uPeriodic && g < 1) ? Math.sin(Math.PI * g) / (Math.PI * g) : 1;
-        const thr = THIN_RATIO / Math.pow(2, Math.max(0, v - (L - 1))) / chord;
         const u = ((m + phi) / N) * w;
         // parameter range along the ruling
         let tau0 = 0; let tau1 = 1;
@@ -346,16 +349,19 @@
         }
         // trace
         const xs = []; // sub-run buffer of samples
-        let tau = tau0; let guard = 0; let prevPass = false; let firstDone = false;
+        let tau = tau0; let guard = 0; let curEff = 0;
+        // Rank inside the effective level: level-0 rulings keep their dyadic index; a relabelled or finer ruling ranks by
+        // its own odd multiple so each band of a level stays nested and evenly spread.
+        const rankOf = (eff) => vdc2(eff === 0 ? (m >> (L - 1)) : (m >> (v + 1)));
         const flush = (closedFull) => {
           if (xs.length >= 2 || (closedFull && xs.length >= 3)) {
-            builder.beginRun(lvl, rank, famId, closedFull ? FLAG.CLOSED : 0);
+            builder.beginRun(curEff, rankOf(curEff), famId, closedFull ? FLAG.CLOSED : 0);
             for (let q = 0; q < xs.length; q++) emit(xs[q]);
             builder.endRun();
           }
           xs.length = 0;
         };
-        let allPass = true; let count = 0;
+        let allSame = true; let firstEff = -2;
         const verts = [];
         for (;;) {
           const ab = chartAt(tau);
@@ -363,29 +369,39 @@
           if (s) {
             const tx = tan[0] * s.dax + tan[1] * s.dbx; const ty = tan[0] * s.day + tan[1] * s.dby; const tz = tan[0] * s.daz + tan[1] * s.dbz;
             const pm = aDom ? perpOf(s.dbx, s.dby, s.dbz, tx, ty, tz) : perpOf(s.dax, s.day, s.daz, tx, ty, tz);
-            const pass = pm / pmRef >= thr;
-            if (!pass) allPass = false;
-            verts.push({ s, pass });
-            count += 1;
+            // Compression-aware level (contract section 9, A11): where the chart converges, rho < THIN_RATIO and the
+            // ruling's marks sit closer than its level's target. Instead of cutting it, relabel it j levels finer
+            // (it then appears only when the law asks for that much density), j = ceil(log2(THIN_RATIO / rho)).
+            // Coarse rulings above level 0 first absorb their own `extra` halvings.
+            const rho = (pm / pmRef) * chord;
+            const jj = rho >= THIN_RATIO ? 0 : (rho > 1e-9 ? Math.max(0, Math.ceil(Math.log2(THIN_RATIO / rho))) : 99);
+            const eff = lvl > 0 ? lvl + jj : Math.max(0, jj - extra);
+            const kept = eff <= L - 1;
+            verts.push({ s, eff: kept ? eff : -1 });
+            if (firstEff === -2) firstEff = kept ? eff : -1;
+            if (!kept || eff !== firstEff) allSame = false;
             const tl = Math.hypot(tx, ty, tz);
             const dTau = tl > 1e-9 ? clamp(STEP_MM / tl, 1e-5, 0.1) : 0.01;
             if (tau >= tau1) break;
             tau = Math.min(tau1, tau + dTau);
           } else {
-            allPass = false; verts.push({ s: null, pass: false });
+            allSame = false; verts.push({ s: null, eff: -1 });
             if (tau >= tau1) break;
             tau = Math.min(tau1, tau + 0.01);
           }
           if (++guard > 20000) break;
         }
-        void count; void prevPass; void firstDone;
-        if (closedLine && allPass && verts.length > 3) {
+        if (closedLine && allSame && verts.length > 3) {
+          curEff = firstEff;
           for (let q = 0; q < verts.length - 1; q++) xs.push(verts[q].s);
           flush(true);
           continue;
         }
         for (let q = 0; q < verts.length; q++) {
-          if (verts[q].pass && verts[q].s) xs.push(verts[q].s); else flush(false);
+          const ve = verts[q].eff;
+          if (ve < 0 || !verts[q].s) { flush(false); continue; }
+          if (ve !== curEff) { flush(false); curEff = ve; }
+          xs.push(verts[q].s);
         }
         flush(false);
       }
@@ -528,7 +544,6 @@
             for (let c = 0; c < nL; c++) {
               const d = Math.hypot(rep[c].x - last.x, rep[c].y - last.y, rep[c].z - last.z);
               if (d < dmin[c]) dmin[c] = d;
-              if (order.indexOf(c) === -1 || false) { /* candidate */ }
             }
             for (let c = 0; c < nL; c++) { if (dmin[c] > bd && !(dmin[c] === 0)) { bd = dmin[c]; best = c; } }
             if (best < 0) break;
