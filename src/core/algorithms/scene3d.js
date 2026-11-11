@@ -1570,9 +1570,27 @@
   // Surface-locked fills (docs/surface-lock-contract.md §8-§9): the BakeSpec for one object's style group.
   // Pose-free by construction: nothing here reads the camera yaw/pitch, the light or the draft tier, so the
   // bake key (and the cache hit) survives every drag frame. Shared with Level S (`composeSurfaceLockScene`) through `ctx.specFor`.
-  const buildSurfaceLockSpec = (p, bounds, record, obj, g, sp) => {
+  // Faceted solids (box, plane, polyhedron) lock through SurfaceLockFaceted: one planar generator per face. The spec's `sizes`
+  // are the parameters that shape the mesh (so an unrelated param never re-bakes); `faceIndex` selects one mesh face (the Level F
+  // per-face dispatch), absent bakes the whole object (Level S).
+  const FACETED_LOCK_KEYS = {
+    box: ['sx', 'sy', 'sz'],
+    plane: ['sx', 'sz'],
+    solid: ['solidType', 'radius', 'sideCount', 'depth', 'frequency', 'taper', 'starRatio', 'expand', 'twist', 'explode', 'extrude', 'shard'],
+  };
+  const facetedLockSizes = (obj, faceIndex) => {
+    const keys = FACETED_LOCK_KEYS[obj.primitive];
+    if (!keys) return null;
+    const pr = obj.params || {};
+    const sizes = {};
+    keys.forEach((k) => { if (pr[k] !== undefined) sizes[k] = pr[k]; });
+    if (Number.isInteger(faceIndex)) sizes.face = faceIndex;
+    return sizes;
+  };
+  const buildSurfaceLockSpec = (p, bounds, record, obj, g, sp, faceIndex) => {
     const cp = obj ? curvedChartParams(obj) : null;
-    if (!cp) return null;
+    const facetedSizes = (!cp && obj) ? facetedLockSizes(obj, faceIndex) : null;
+    if (!cp && !facetedSizes) return null;
     const t = (obj && obj.transform) || {};
     const s0 = finite(t.scale, 1);
     const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp)) };
@@ -1584,7 +1602,8 @@
     const dist = persp ? finite(po.cameraDist, 0) : 0;
     const eff = po.scale * (persp ? po.focal / (po.focal + dist) : 1);
     return {
-      objectId: record.id, primitive: obj.primitive, mode: cp.mode, sizes: cp.sizes, detail: cp.detail,
+      objectId: record.id, primitive: obj.primitive,
+      mode: cp ? cp.mode : 'faceted', sizes: cp ? cp.sizes : facetedSizes, detail: cp ? cp.detail : undefined,
       scale: { sx: finite(t.sx, s0), sy: finite(t.sy, s0), sz: finite(t.sz, s0) },
       mapper: g.style.mapper, toneLaw: Vectura.Scene3D.Params.resolveToneLaw(sp), style,
       penWidth: finite(bounds.penWidth, 0.3), convex: record.convex,
@@ -4852,6 +4871,46 @@
           });
         }
 
+        // Surface-locked faceted fill (W3-A): the framed marks of ONE face, or null when this face renders in pose mode. The
+        // eligibility rule is the curved path's (`effectiveMarkSpace`), with the pose-independent per-face-style gate computed
+        // over the whole object (a back-side override must not flip the lock mid-orbit).
+        const lockedFaceLines = (rec, face, style, styleParams, hlOff, coreBlank) => {
+          const SurfaceLock = Vectura.Scene3D.SurfaceLock;
+          const lockObj = objById.get(rec.id);
+          if (!SurfaceLock || !lockObj || rec.id === 'ground' || styleParams.markSpace !== 'surface') return null;
+          const byFace = styleTable && styleTable.byFace;
+          const prefix = `${rec.id}/`;
+          const lockFaceStyles = !!(byFace && Object.keys(byFace).some((k) => k.startsWith(prefix)));
+          const faceIdx = rec.faces.indexOf(face);
+          if (lockFaceStyles || faceIdx < 0) return null;
+          const spec = buildSurfaceLockSpec(p, bounds, rec, lockObj, { style }, styleParams, faceIdx);
+          if (!spec || SurfaceLock.effectiveMarkSpace(styleParams, {
+            spec,
+            faceStyles: lockFaceStyles,
+            mapper: style.mapper,
+            visibility: rec.visibility,
+            emissiveCoreBlank: coreBlank,
+            csgCarve: rec.primitive === 'csg',
+            receiveShadow: typeof shadowFn === 'function',
+            areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
+          }) !== 'surface') return null;
+          const ms = SurfaceLock.bake(spec);
+          if (!ms) return null;
+          const lt = lockObj.transform || {};
+          const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
+            ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
+              lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
+            : null;
+          const lines = SurfaceLock.frame([ms], SurfaceLock.poseOf(lockObj.transform, p.camera, bounds), {
+            toneFn: lockToneFn,
+            toneKey,
+            tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: hlOff }),
+            penWidth,
+            objectId: rec.id,
+          });
+          return Array.isArray(lines) ? lines : null;
+        };
+
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
           if (!face.front) return;
@@ -4983,7 +5042,14 @@
                 // 3D read; region fills (contour/spiral/stipple) fill the projected
                 // face polygon and are mapped back onto the plane below.
                 let lines;
-                if (draft || !REGION_MAPPERS.has(style.mapper)) {
+                // Surface-locked faceted fill (contract §12, W3-A): this face's baked marks framed for this pose. One MarkSet per
+                // face (spec.sizes.face), so every face keeps its own pick target and HLR owner. null (not eligible, no baker, a
+                // bake error) falls through to the pose fill below. Deliberately not gated on `draft`.
+                const lockedLines = styleParams.markSpace === 'surface'
+                  ? lockedFaceLines(record, face, style, styleParams, faceHL.treatment === 'none', emissiveCoreBlank) : null;
+                if (lockedLines) {
+                  lines = lockedLines;
+                } else if (draft || !REGION_MAPPERS.has(style.mapper)) {
                   // The former `keep` branch (render the highlight face at FULL
                   // density instead of the ladder's cap) is gone with the
                   // treatment: `none` must leave the fill exactly as the ladder
@@ -5040,11 +5106,13 @@
                     fillMetaB = { ...fillMeta, toneBand: band, ...(bp ? { penId: bp } : {}) };
                   }
                 }
+                // Locked marks carry their own camera depth (the frame projects the 3D point); the pose fill is 2D on the face's support plane.
+                if (lockedLines) { fillMeta.surfaceLocked = true; if (fillMetaB !== fillMeta) fillMetaB.surfaceLocked = true; }
                 lines.forEach((line) => {
                   const pts = line.map((pt) => ({
                     x: pt.x,
                     y: pt.y,
-                    z: plane.A * pt.x + plane.B * pt.y + plane.C,
+                    z: lockedLines ? pt.z : plane.A * pt.x + plane.B * pt.y + plane.C,
                   }));
                   const fillClip = clipper.clipPath(pts, segCtx);
                   emitRuns(fillClip.runs, fillMetaB, hiddenTreatment, null, emitTreat);
