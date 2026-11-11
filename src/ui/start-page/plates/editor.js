@@ -8,7 +8,7 @@
  *
  *   open(plateEl, { record, art, mode, index, colorway, placed, specs?, orientation?, onChange(patch), onReset(keys),
  *                   onRemove(), onClose(), onReplay() }) -> { close(), update(record) }
- *     record     a StartPagePlatesStore record; art { id, name, algorithm, collection, svg, model?, ownColors }
+ *     record     a StartPagePlatesStore record; art { id, name, algorithm, collection, svg, is3d?, ownColors }
  *     colorway   the rhythm-placed colorway of this plate; placed = StartPagePlateRhythm.place(...) output of the page
  *     specs      [[label, value]] of the plate (Paper, Pen, Stock, Line, Strokes, Plot time ...), used for suggestions
  *     onChange   called with a store patch for EVERY change ({ layout }, { texts: { word } }, { pin }, { colors: { art } },
@@ -164,7 +164,7 @@
   };
   const orientationOf = (art, plateEl, given) => {
     if (given) return given;
-    if (art && art.model) return '3d';
+    if (art && art.is3d) return '3d';
     if (plateEl && plateEl.dataset && plateEl.dataset.orientation) return plateEl.dataset.orientation;
     try {
       const vb = Geo().parseArtSvg(art.svg).vb; const r = vb[2] / vb[3];
@@ -220,7 +220,7 @@
     const orientation = orientationOf(art, plateEl, o.orientation);
     const sug = suggestionsFor(art, o.specs, orientation);
     const editsColor = mode === 'curated' || mode === 'basic';
-    const is3d = !!(art && art.model) || orientation === '3d';
+    const is3d = !!(art && art.is3d) || orientation === '3d';
     const restoreTo = D.activeElement && D.activeElement !== D.body ? D.activeElement : null;
     let rec = copy(o.record) || {};
     let closedFlag = false;
@@ -488,7 +488,7 @@
 
     /* frame */
     const frBody = section(colB, 'frame', 'Frame art', 'the art fills its shape; drag it to choose the crop', false);
-    const frToggle = h('button', { type: 'button', class: 'spe-btn', 'data-spe-frame-toggle': '', 'aria-pressed': 'false', text: 'Frame art', disabled: is3d, title: is3d ? 'Live 3D models turn instead' : null });
+    const frToggle = h('button', { type: 'button', class: 'spe-btn', 'data-spe-frame-toggle': '', 'aria-pressed': 'false', text: 'Frame art', disabled: is3d, title: is3d ? '3D pieces are framed whole automatically' : null });
     const fitBtns = [['contain', 'Fit'], ['cover', 'Fill']].map(([v, n]) => h('button', { type: 'button', class: 'spe-pt', 'data-spe-fit': v, 'aria-pressed': 'false', text: n }));
     const zoom = h('input', { type: 'range', min: '50', max: '400', step: '5', value: '100', 'data-spe-zoom': '', 'aria-label': 'Scale the art' });
     const zoomOut = h('output', { 'data-spe-zoom-out': '', text: '100%' });
@@ -497,7 +497,7 @@
       h('span', { class: 'spe-seg', role: 'group', 'aria-label': 'Fit or fill' }, fitBtns),
       h('label', { class: 'spe-fr-z' }, 'Scale ', zoom, zoomOut), frReset);
     frBody.append(h('div', { class: 'spe-fr-row' }, frToggle), frCtl,
-      h('p', { class: 'spe-fr-hint', text: is3d ? 'Live 3D models turn when you drag them; framing applies to flat art.' : 'Drag the art · scroll or pinch to scale · arrows move it (Shift: bigger) · + − scale · Enter or Esc to finish · the dashed line is the frame' }));
+      h('p', { class: 'spe-fr-hint', text: is3d ? '3D pieces are framed whole on the plate automatically; framing applies to flat art.' : 'Drag the art · scroll or pinch to scale · arrows move it (Shift: bigger) · + − scale · Enter or Esc to finish · the dashed line is the frame' }));
 
     /* motion */
     const moBody = section(colB, 'motion', 'Motion', "this plate's art; the page default is in Settings", false);

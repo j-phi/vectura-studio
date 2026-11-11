@@ -6,6 +6,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: 3D pieces on the Start Page are still plates, not turning models
+- **No drag to rotate.** A Scene 3D / Object 3D piece (and the other 3D models: Coiled Sphere, High Sierra, Torus Contours) on a plate, in the Portfolio band and in the cover is now a still drawing, like every other plate: no live model, no orbit, no sway, no "Drag to rotate" hint and no "Drawn live in 3D here" copy. It draws in with the same animate-in as the rest (the plate's own style, else the page default; Still shows it finished), takes the same hover effect, and opens on a click like any plate.
+- **Framed on the object.** A 3D piece is framed on the dense body of its drawing with air around it (`fit: 'focus'`, `START_PAGE.PLATE_3D`: 10 % pad, 20 % on a disc), so a ball on a large ground plane reads large instead of tiny: the long sparse strokes (ground edges, light markers) may run off the edge. A flat piece still crops to cover.
+- **Retired.** `StartPageSceneOrbit` (`scene-orbit.js`), the live model `StartPageOrbit3D.mount` (the module now only marks a piece as 3D: `modelFor`, `registerScene`, `sceneFromDoc`), the `ink.js` alternate-pose cache (`showArt` / `prepareArt` / `useRaster`), `StartPageArtRenderer.sceneSession` and its sliced work, `art.getScenePayload`, `START_PAGE.SCENE_ORBIT` / `ORBIT_SWAY`, their specs and CSS. PRH-128 (the band's live model) is obsolete.
+- **No stray lines.** The 3D framing also drops strokes that lie mostly outside the frame (a ground plane's edge), so no partial line pokes in at the plate edge.
+
 ### Added: surface-locked 3D Scene fills
 - **What it is.** A fill with `markSpace: 'surface'` is baked once in object space (`src/core/scene3d/surface-lock*.js`, constants in `src/config/scene3d-surface-lock.js`) and only framed per pose: one transform, cull, tone gate and projection per vertex. A drag frame equals the export by construction. Contract: `docs/surface-lock-contract.md`.
 - **Level S (whole-scene frame).** When every fill in the scene is locked and the lights, shadow and edges fit, the drag path skips the warp preview and the pre-baked spin ring and re-frames the cached MarkSets directly, with no Fill Curves fit. Measured in the app: a drag frame is about 10 ms (Mezzotint) and 12 ms (Hatch); a whole-scene generate is about 8-15 ms, against about 150-230 ms before. A scene with any pose fill keeps the earlier preview (Level F frames each locked fill).

@@ -3,8 +3,8 @@
  *   mosaic (Name in Ink, default): the word set huge, each letter a button filled with its own piece, plotted in
  *     letter by letter, with a key row (01 …) that names the piece on hover / focus;
  *   word (Cover Specimen): one piece fills the whole word;
- *   band (Portfolio band): a full-width band of one piece; a 3D piece (StartPageMotion.modelFor) is a live,
- *     drag-to-rotate StartPageOrbit3D model instead of the drawing.
+ *   band (Portfolio band): a full-width band of one piece; a 3D piece (StartPageMotion.modelFor) is the same still
+ *     drawing as any piece, framed whole (fit 'focus') instead of cropped.
  * Also the cover chrome: info line, click-to-edit name and practice line, and the honest empty
  * state when there is no art yet. Recoloring (setColorway on every tile) never re-fits or re-plots.
  *
@@ -61,8 +61,6 @@
       if (hold) { tiles = tiles.filter((t) => t !== hold.tile); }
       tiles.forEach((t) => {
         try { ink && ink.unmount(t.el); } catch (_) { /* noop */ }
-        if (t.el._sp3d) { try { t.el._sp3d.destroy(); } catch (_) { /* noop */ } t.el._sp3d = null; }
-        if (t.el._spScene) { try { t.el._spScene.destroy(); } catch (_) { /* noop */ } }
       });
       tiles = [];
       if (hold) [...stage.children].forEach((c) => { if (c !== hold.old) c.remove(); });
@@ -223,6 +221,8 @@
         ink.drawIn(el, { style, duration }).then(done, done);
       }, delay);
     };
+    // the band's art box fills its area to the edge (CSS inset, not the tile pad), so a 3D piece gets its air from the frame's zoom
+    const band3dPad = () => 0.04;
     const animates = (animate) => animate && !ctx.still() && !reducedMotion();
 
     /* -------------------------------------------------------------- styles */
@@ -342,34 +342,20 @@
       onOpenClick(tools, () => ctx.onOpen(art, tiles[0].cw));
       const style = band.style;
       style.setProperty('--sp-text', cw.textInk || cw.ink);
-      // A 3D piece is a live, drag-to-rotate model on the right of the band (the same place the drawing sits).
-      const model = Vectura.StartPageMotion ? Vectura.StartPageMotion.modelFor(art) : null;
-      const O3 = Vectura.StartPageOrbit3D;
-      // A 3D Scene is not a live model: the band draws its own drawing (as the app draws it) and turns that (below).
-      const scene = !!(model && O3 && typeof O3.isScene === 'function' && O3.isScene(model));
-      if (model && O3 && !scene) {
-        const host3d = h('div', { class: 'sp-pf-3d' });
-        band.dataset.live = '3d';
-        band.append(host3d);
-        const paint = (c) => { band.style.background = c.paper; band.style.setProperty('--sp-paper', c.paper); band.style.setProperty('--sp-ink', c.ink); };
-        paint(cw);
-        const o3 = O3.mount(host3d, { model, colorway: () => (tiles.find((x) => x.el === band) || t).cw, hint: 'Drag to rotate', paper: false, label: `${art.name.replace(/\.vectura$/, '')}, ${art.algorithm || 'Piece'}` });
-        band._sp3d = { setColorway(c) { paint(c); o3.setColorway(() => c); }, destroy() { o3.destroy(); } };
-        setCwData(t);
-        band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
-        return Promise.resolve();
-      }
-      const p = Ink().mount(band, { id: art.id, svg }, { colorway: cw, fit: 'cover', pad: 0, label: false, frame: (override && override.art.id === art.id && override.frame && override.frame.fit !== 'contain') ? override.frame : null, fill: (override && override.art.id === art.id && override.fill) || null });
+      // A 3D piece is the same still drawing as any other, framed whole (the ink box fits the band's art area with some air)
+      // instead of cropped; it plots in with the same animate-in below. No drag, no orbit.
+      const is3d = !!(Vectura.StartPageMotion && Vectura.StartPageMotion.modelFor(art));
+      const own = override && override.art.id === art.id && override.frame && override.frame.fit !== 'contain' ? override.frame : null;
+      if (is3d) band.dataset.art3d = '1';
+      const G3 = Vectura.StartPageArtGeometry;
+      const svg3 = is3d && !own && G3 && typeof G3.focusSvg === 'function' ? G3.focusSvg(svg) : svg; // drop strokes mostly outside the frame
+      const p = Ink().mount(band, { id: svg3 === svg ? art.id : `${art.id}#focus`, svg: svg3 }, { colorway: cw, fit: is3d && !own ? 'focus' : 'cover', pad: is3d && !own ? band3dPad() : 0, label: false, frame: own || (is3d ? { z: 0.84 } : null), fill: (override && override.art.id === art.id && override.fill) || null });
       setCwData(t);
       // Text rides above the art layer: mount() appended the art box last, so lift the overlay content. The fade
       // that lets the art dissolve under the text is a gradient overlay element (never a CSS mask on the art).
       band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
       return p.then(() => {
         if (animates(animate)) { plotIn(band, { delay: 120, duration: 1800, style: animStyle(ctx.prefs()) }); }
-        const SO = Vectura.StartPageSceneOrbit;
-        if (scene && SO && typeof art.getScenePayload === 'function' && band._spInk) {
-          SO.attach(band, { payload: art.getScenePayload, label: `${art.name.replace(/\.vectura$/, '')}, ${art.algorithm || 'Piece'}` });
-        }
       });
     };
 
@@ -513,7 +499,7 @@
       tiles.forEach((t, i) => {
         const chosen = choiceCw(style, t.k);
         t.cw = withFill(t.art, chosen || cws[i]);
-        const handle = t.el._spWord || t.el._spInk || t.el._sp3d;
+        const handle = t.el._spWord || t.el._spInk;
         if (handle && handle.setColorway) handle.setColorway(t.cw);
         setCwData(t);
       });
@@ -575,7 +561,7 @@
       if (fade) {
         void old.offsetWidth;
         old.style.opacity = '0';
-        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } if (old._sp3d) { try { old._sp3d.destroy(); } catch (_) { /* noop */ } } if (old._spScene) { try { old._spScene.destroy(); } catch (_) { /* noop */ } } old.remove(); stage.style.position = ''; }, 460);
+        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } old.remove(); stage.style.position = ''; }, 460);
       }
     };
     const useAsCover = async (art, o = {}) => {
