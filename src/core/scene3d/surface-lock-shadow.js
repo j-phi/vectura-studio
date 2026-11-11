@@ -48,6 +48,7 @@
     MAX_LINES: 40000,
     MIN_PITCH_MM: 0.05,
     MEMO_MAX: 8,
+    BASE_SUBDIV: 3,          // bake the ground hatch this x finer than the pose pitch (FX-J4)
     SPACING_FLOOR: 0.8,      // closest drawn pair of shadow lines >= this x the pose spacing on screen (owner Q3)
   };
   const TUNE = Object.assign({}, DEFAULTS);
@@ -178,8 +179,10 @@
     const sBase = coverageToSpacing(coverage, pw);
     // Finest world pitch: the pose-mode screen pitch at a top-down view (f = 1). frameShadow thins this
     // nested set to the pitch the current view needs, so the screen density stays at the pose-mode value.
-    const pitch = Math.max(TUNE.MIN_PITCH_MM, sBase / scaleRef);
-    const key = ['gs1', hx.toFixed(6), hz.toFixed(6), angleDeg.toFixed(6), pitch.toFixed(6), depth.toFixed(6),
+    const subdiv = Math.max(1, Math.round(finite(TUNE.BASE_SUBDIV, 4)));
+    // FX-J4: bake BASE_SUBDIV x finer than the pose pitch so frameShadow's whole-stride rounding overshoots by at most 1 / subdiv.
+    const pitch = Math.max(TUNE.MIN_PITCH_MM / subdiv, sBase / scaleRef / subdiv);
+    const key = ['gs2', subdiv, hx.toFixed(6), hz.toFixed(6), angleDeg.toFixed(6), pitch.toFixed(6), depth.toFixed(6),
       toneKey(tone), pw.toFixed(6), salt, scaleRef.toFixed(6)].join('|');
     if (memo.has(key)) { const hit = memo.get(key); memo.delete(key); memo.set(key, hit); return hit; }
 
@@ -211,7 +214,7 @@
       level[k] = Math.min(ctz(k), maxLevels - 1);
     }
     const hatch = {
-      key, angleDeg, dirX: ux, dirZ: uz, nX: nx, nZ: nz, pitch, phase, iMin, count: maxCount, hx, hz, scaleRef, penWidth: pw,
+      key, subdiv, angleDeg, dirX: ux, dirZ: uz, nX: nx, nZ: nz, pitch, phase, iMin, count: maxCount, hx, hz, scaleRef, penWidth: pw,
       toneDepth: depth, falloff, d, t0, t1, rank, level, keepLUT: buildKeepLUT(tone, depth, pw),
       bytes: maxCount * (8 * 4 + 1) + (depth > 0 ? (TUNE.LUT_N + 1) * 8 : 0),
     };
@@ -433,14 +436,16 @@
 
     const project = pose && pose.cam ? makeProjector(pose) : null;
     // Thinning factor c in (0, 1]: 1 when no pose is given (the full baked set).
-    let thin = 1;
+    // The baked set is hatch.subdiv x finer than the pose pitch, so the no-pose / top-down full set is every subdiv-th line.
+    const sub = hatch.subdiv || 1;
+    let thin = 1 / sub;
     if (project) {
       // Measured at the footprint (union centre of the casters), not at world (0, 0): under perspective
       // the screen pitch differs across the ground.
       let fx = 0; let fz = 0;
       prepared.forEach((pc) => { fx += pc.cx; fz += pc.cz; });
       const f = screenPitchFactor(project, hatch, fx / prepared.length, fz / prepared.length);
-      thin = clamp(f / hatch.scaleRef, 0, 1);
+      thin = clamp(f / hatch.scaleRef, 0, 1) / sub;
       if (!(thin > 1e-6)) return EMPTY();
       // Spacing floor: the drawn gap is a whole number of baked lines, so thinning to exactly f / scaleRef would leave
       // gaps of floor(1 / thin) lines, denser than the pose pitch (foreshortened lines compress). Round the stride up

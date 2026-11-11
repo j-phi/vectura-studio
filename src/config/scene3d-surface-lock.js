@@ -124,6 +124,7 @@
       MAX_LINES: 40000,  // hard cap on baked lines (a 256x ground at a fine pen would otherwise bake millions)
       MIN_PITCH_MM: 0.05,  // the ground hatch never bakes finer than this world pitch (mm)
       MEMO_MAX: 8,  // LRU size of the bake memo (entries are ~tens of kB)
+      BASE_SUBDIV: 3,  // the ground hatch bakes this x finer than the pose pitch so the whole-stride floor overshoots <= 1/this
       SPACING_FLOOR: 0.8,  // closest drawn pair of shadow lines >= this x the pose spacing on screen (owner Q3)
     }),
     // surface-lock-laws.js (tone laws: dutyConst, endShorten, mergeLadder, phaseBlue).
