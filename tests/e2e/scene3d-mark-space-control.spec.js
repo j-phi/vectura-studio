@@ -35,11 +35,10 @@ test('toggle locks the marks, changes the canvas, undo restores; hint and disabl
   expect(before.ms).toBe('pose');
   await expect(page.locator('.vs3-markspace-hint')).toHaveAttribute('data-level-s', '0');
 
-  await row(page).getByRole('button', { name: 'On' }).click();
+  await row(page).getByRole('radio', { name: 'On' }).click();
   await expect.poll(async () => (await state(page)).ms).toBe('surface');
-  const on = await state(page);
-  expect(on.levelS).toBe(true);
-  expect(on.n).not.toBe(before.n);
+  await expect.poll(async () => (await state(page)).levelS).toBe(true);
+  await expect.poll(async () => (await state(page)).n).not.toBe(before.n);
   await expect(page.locator('.vs3-markspace-hint')).toHaveAttribute('data-level-s', '1');
 
   await page.evaluate(() => window.app.undo());

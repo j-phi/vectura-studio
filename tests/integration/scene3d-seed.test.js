@@ -30,6 +30,13 @@ describe('scene3d Seed', () => {
     const oid = engine.addObjectToScene(gid, prim);
     const child = engine.getLayerById(oid);
     child.params.style = { penId: null, mapper, params };
+    // addSceneTree seeds a default sphere that is born surface-locked (W3-E). Its marks are salted by the layer's UUID, so
+    // left locked it would make this scene's ink nondeterministic and drift the pre-seed goldens. This file guards the POSE
+    // fill's seed behaviour, so every object the helper did not style is pinned to pose.
+    engine.layers.filter((l) => l.type === 'object3d' && l.id !== oid).forEach((l) => {
+      const st = l.params.style || {};
+      l.params.style = { ...st, params: { ...(st.params || {}), markSpace: 'pose' } };
+    });
     return { engine, gid, oid, child, group: engine.getLayerById(gid) };
   };
   const render = (s) => {
