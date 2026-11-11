@@ -142,4 +142,25 @@ describe('Scene3D panel: Lock marks to surface', () => {
     expect(group.params.styleTable.scene.mapper).toBe('crosshatch');
     expect(group.params.styleTable.scene.params.markSpace).toBe('surface');
   });
+
+  // J11 — under surface, Min rulings (box) and Fidelity (sphere) are inert; the rows say so. Pose keeps them live.
+  const labelled = (container, text) => [...container.querySelectorAll('.vs3-row')].filter((r) => ((r.querySelector('.vs3-lbl') || {}).textContent || '').trim() === text).pop();
+  test('J11: Min rulings is disabled under surface and live under pose', () => {
+    const surf = labelled(mountLeaf('hatch', { markSpace: 'surface' }, 'box').container, 'Min rulings');
+    expect(surf).toBeTruthy();
+    expect(surf.getAttribute('aria-disabled')).toBe('true');
+    expect(surf.getAttribute('title')).toMatch(/locked to the surface/);
+    const pose = labelled(mountLeaf('hatch', { markSpace: 'pose' }, 'box').container, 'Min rulings');
+    expect(pose).toBeTruthy();
+    expect(pose.getAttribute('aria-disabled')).not.toBe('true');
+  });
+  test('J11: Fidelity is disabled under surface and live under pose', () => {
+    const surf = labelled(mountLeaf('hatch', { markSpace: 'surface' }, 'sphere').container, 'Fidelity');
+    expect(surf).toBeTruthy();
+    expect(surf.getAttribute('aria-disabled')).toBe('true');
+    expect(surf.getAttribute('title')).toMatch(/locked to the surface/);
+    const pose = labelled(mountLeaf('hatch', { markSpace: 'pose' }, 'sphere').container, 'Fidelity');
+    expect(pose).toBeTruthy();
+    expect(pose.getAttribute('aria-disabled')).not.toBe('true');
+  });
 });

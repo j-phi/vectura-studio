@@ -1353,11 +1353,14 @@
       onCommit: (v) => write('fillSimplify', v),
     }));
     if (fillFidelityApplies(primitive, mapper, sp)) {
-      comps.push(UI.Slider(row('Fidelity'), {
+      const fidVerdict = gateVerdict('fillFidelity', styleGateCtx(primitive, mapper, sp, opts.gateExtra));
+      const fidCtl = row('Fidelity');
+      comps.push(UI.Slider(fidCtl, {
         value: num('fillFidelity'), min: 0.25, max: 3, step: 0.05, defaultValue: 1,
         ariaLabel: 'Fill line fidelity (samples along each fill line)',
-        onCommit: (v) => write('fillFidelity', v),
+        onCommit: (v) => { if (typeof fidVerdict === 'string') return; write('fillFidelity', v); },
       }));
+      if (typeof fidVerdict === 'string' && fidCtl.parentNode) markRowDisabled(fidCtl.parentNode, fidVerdict);
     }
   };
 
@@ -1426,10 +1429,13 @@
     triple: 'Triple hatch adds a third family only to Fill Styles that draw rung families. Ladder, Continuous Field, Deep Fill and the field-driven styles ignore it.',
     eccentricity: 'Eccentricity has no effect on a curved shape under Ladder or Deep Fill.',
     curvedHL: '— no effect on curved shapes',
+    surfaceLocked: 'Not used while marks are locked to the surface.',
     glintSpiral: 'Centre: Glint draws the Origin Spiral law (a spiral wound from the specular point, spacing from tone). The Fill Style and the other spiral controls do not apply.',
   };
   const CONTROL_GATES = {
-    facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : true)),
+    facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : (surfaceEffective(c) ? GATE_NOTES.surfaceLocked : true))),
+    // Fill Fidelity scales the pose path's per-line sampling; a surface-locked fill is baked in object space.
+    fillFidelity: (c) => (surfaceEffective(c) ? GATE_NOTES.surfaceLocked : true),
     angleRef: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
     linkFill: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
     // U4b: Cross angle is wired into the monoline laws that have a direction;
@@ -1486,6 +1492,8 @@
     depthFade: 'Lock marks to surface is off: Fade by depth depends on the camera. Turn it off to lock.',
     'no baker': 'Lock marks to surface is not available for this shape and Fill Style yet.',
   };
+  // True when this style's marks are effectively surface-locked (asked for AND the engine can honour it).
+  const surfaceEffective = (c) => Boolean(c && c.sp && c.sp.markSpace === 'surface' && markSpaceVerdict(c) === true);
   const markSpaceReasonText = (reason) => MARKSPACE_REASONS[reason] || 'Lock marks to surface is not available for this style.';
   // Returns true (row live) or the note string (row disabled). Fails open when the surface-lock module is absent
   // or the primitive is unknown (scene scope), where only the engine can decide per object.
@@ -2478,7 +2486,7 @@
         if (typeof leafAngleVerdict === 'string') markRowDisabled(angleHost.parentNode, leafAngleVerdict);
         // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
         // hatch/crosshatch only, matching D_FACETFLOOR's MAPPER_CONTROLS entry.
-        const minRulingsVerdict = gateVerdict('facetMinRulings', styleGateCtx(params.primitive, style.mapper, style.params));
+        const minRulingsVerdict = gateVerdict('facetMinRulings', styleGateCtx(params.primitive, style.mapper, style.params, { visibility: params.visibility, ...sceneExclusionsOf(sceneGroupOf(ui, layer), params) }));
         if ((style.mapper === 'hatch' || style.mapper === 'crosshatch') && minRulingsVerdict !== false) {
           slider(host, 'Min rulings', {
             value: Number.isFinite(style.params.facetMinRulings) ? style.params.facetMinRulings : 3,
@@ -2555,6 +2563,7 @@
         primitive: params.primitive,
         mapper: style.mapper,
         params: style.params,
+        gateExtra: { visibility: params.visibility, ...sceneExclusionsOf(sceneGroupOf(ui, layer), params) },
         write: (key, value) => { commit(() => { style.params[key] = value; }); },
       });
 
