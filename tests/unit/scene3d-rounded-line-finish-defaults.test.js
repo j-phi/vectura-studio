@@ -158,6 +158,9 @@ describe('rounded-contour line-finish defaults', () => {
     const id = engine.addObjectToScene(groupId, primitive);
     const layer = engine.getLayerById(id);
     layer.params.style.mapper = mapper; // keep style.params (and its seed) intact
+    // W3-E: this asserts the Fill Curves fit (pose-mode fills). Surface-locked fills skip it by contract
+    // (docs/surface-lock-contract.md: meta.surfaceLocked), and a new object is now born surface, so pin pose here.
+    layer.params.style.params = { ...(layer.params.style.params || {}), markSpace: 'pose' };
     engine.computeAllDisplayGeometry();
     const live = engine.getLayerById(groupId);
     return live.scenePaths || [];
@@ -221,7 +224,7 @@ describe('rounded-contour line-finish defaults', () => {
   });
 
   test('the SCENE version chain is untouched — this default needed no migration', () => {
-    expect(P.SCENE_VERSION).toBe(5);
+    expect(P.SCENE_VERSION).toBe(6);
     expect(Vectura.ALGO_DEFAULTS.object3d.sceneVersion).toBe(P.SCENE_VERSION);
     // And no line-finish key leaked into the factory bag (which a saved layer
     // would then inherit on load).

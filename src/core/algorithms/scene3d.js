@@ -1549,6 +1549,320 @@
   // disclosed non-fix beats a partial one left in the tree. See the report
   // for the full diagnosis.
 
+  // The primitive → chart (mode, sizes, detail) mapping — mirrors Scene.buildPrimitiveMesh so the wrap fill lands on
+  // the rendered surface.
+  const TOPOFORM_MODES = {
+    sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone',
+    torus: 'torus', torusKnot: 'torusKnot', capsule: 'capsule',
+    superellipsoid: 'superellipsoid', pyramid: 'pyramid',
+  };
+  const curvedChartParams = (obj) => {
+    const mode = TOPOFORM_MODES[obj.primitive];
+    if (!mode) return null; // box/plane/solid are faceted, not chart-wrapped
+    const pr = obj.params || {};
+    const detail = Math.max(4, Math.round(finite(pr.detail, 24)));
+    const r = finite(pr.radius, 20);
+    const sizes = obj.primitive === 'sphere'
+      ? { sx: r, sy: r, sz: r }
+      : { sx: finite(pr.sx, 20), sy: finite(pr.sy, 20), sz: finite(pr.sz, 20) };
+    return { mode, sizes, detail };
+  };
+  // Surface-locked fills (docs/surface-lock-contract.md §8-§9): the BakeSpec for one object's style group.
+  // Pose-free by construction: nothing here reads the camera yaw/pitch, the light or the draft tier, so the
+  // bake key (and the cache hit) survives every drag frame. Shared with Level S (`composeSurfaceLockScene`) through `ctx.specFor`.
+  // Faceted solids (box, plane, polyhedron) lock through SurfaceLockFaceted: one planar generator per face. The spec's `sizes`
+  // are the parameters that shape the mesh (so an unrelated param never re-bakes); `faceIndex` selects one mesh face (the Level F
+  // per-face dispatch), absent bakes the whole object (Level S).
+  const FACETED_LOCK_KEYS = {
+    box: ['sx', 'sy', 'sz'],
+    plane: ['sx', 'sz'],
+    solid: ['solidType', 'radius', 'sideCount', 'depth', 'frequency', 'taper', 'starRatio', 'expand', 'twist', 'explode', 'extrude', 'shard'],
+  };
+  const facetedLockSizes = (obj, faceIndex) => {
+    const keys = FACETED_LOCK_KEYS[obj.primitive];
+    if (!keys) return null;
+    const pr = obj.params || {};
+    const sizes = {};
+    keys.forEach((k) => { if (pr[k] !== undefined) sizes[k] = pr[k]; });
+    if (Number.isInteger(faceIndex)) sizes.face = faceIndex;
+    return sizes;
+  };
+  const buildSurfaceLockSpec = (p, bounds, record, obj, g, sp, faceIndex) => {
+    const cp = obj ? curvedChartParams(obj) : null;
+    const facetedSizes = (!cp && obj) ? facetedLockSizes(obj, faceIndex) : null;
+    if (!cp && !facetedSizes) return null;
+    const t = (obj && obj.transform) || {};
+    const s0 = finite(t.scale, 1);
+    const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp)) };
+    delete style.markSpace;
+    // Same zoom reference the camera applies (Scene.buildProjOpts): snapped to a power of two so a wheel zoom
+    // inside one octave keeps the bake.
+    const po = Vectura.Scene3D.Scene.buildProjOpts(p.camera, { width: bounds.width, height: bounds.height });
+    const persp = Number.isFinite(po.focal) && po.focal > 0;
+    const dist = persp ? finite(po.cameraDist, 0) : 0;
+    const eff = po.scale * (persp ? po.focal / (po.focal + dist) : 1);
+    return {
+      objectId: record.id, primitive: obj.primitive,
+      mode: cp ? cp.mode : 'faceted', sizes: cp ? cp.sizes : facetedSizes, detail: cp ? cp.detail : undefined,
+      scale: { sx: finite(t.sx, s0), sy: finite(t.sy, s0), sz: finite(t.sz, s0) },
+      mapper: g.style.mapper, toneLaw: Vectura.Scene3D.Params.resolveToneLaw(sp), style,
+      penWidth: finite(bounds.penWidth, 0.3), convex: record.convex,
+      scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
+      seed: G3.snapshotSeedState(),
+    };
+  };
+
+  // Per-edge-class EdgeStyle resolution (C-06), shared by the pose compositor and Level S.
+  const makeEdgeStyleHelpers = (p, bounds) => {
+    const EDGE_REF_WIDTH = finite(bounds && bounds.penWidth, 0.3);
+    // Polish P-B + X-ray fold — per-object override resolves PER FIELD, not
+    // whole-class: each field is objectOverride[field] ?? sceneEdgeStyle[field]
+    // ?? null (pen / weightMm / dash, plus hiddenTreatment for the hidden class),
+    // resolved INDEPENDENTLY. So an object that overrides only ONE field inherits
+    // the scene class's other fields — and, critically, the X-ray fold's migrated
+    // hidden seed (which sets ONLY hiddenTreatment='dash', leaving pen/weightMm/
+    // dash null) still inherits the scene hidden class's pen/weight/dash OVERLAY,
+    // reproducing pre-fold x-ray byte-for-byte. An object that overrides nothing
+    // falls straight through to the scene class (or null). p.edgeStylesByObject
+    // (assembled by collectSceneParams) keeps ONLY the classes an object touched.
+    const edgeStyleFor = (cls, objectId) => {
+      const byObj = p.edgeStylesByObject;
+      const ov = (objectId && byObj && byObj[objectId]) ? byObj[objectId][cls] : null;
+      const t = p.edgeStyles;
+      const base = (t && t[cls]) || null;
+      if (!ov) return base;
+      if (!base) return ov;
+      const pick = (k) => (ov[k] != null ? ov[k] : (base[k] != null ? base[k] : null));
+      const merged = { pen: pick('pen'), weightMm: pick('weightMm'), dash: pick('dash') };
+      if (cls === 'hidden') merged.hiddenTreatment = ov.hiddenTreatment || base.hiddenTreatment || 'drop';
+      return merged;
+    };
+    // Build a meta overlay (penId / weightScale / strokeDash) from an EdgeStyle,
+    // or null when the style is a pure no-op. penId overrides the object pen;
+    // weightScale/strokeDash are honored by the renderer + SVG export.
+    const edgeStyleMeta = (es) => {
+      if (!es) return null;
+      const m = {};
+      if (es.pen) m.penId = es.pen;
+      if (es.weightMm != null) {
+        const ws = clamp(es.weightMm / (EDGE_REF_WIDTH || 0.3), 0.1, 6);
+        if (ws !== 1) m.weightScale = ws;
+      }
+      if (Array.isArray(es.dash) && es.dash.length) m.strokeDash = es.dash.slice();
+      return Object.keys(m).length ? m : null;
+    };
+    return { edgeStyleFor, edgeStyleMeta };
+  };
+
+  // ── Level S: the whole scene from cached surface-lock data (docs/surface-lock-contract.md §6.2, §13) ────────────────
+  // `SurfaceLock.frameable(p, bounds)` says every object is a surface-locked fill (or draws none), the lights are
+  // directional or ambient, and the cast shadow (if any) is one SurfaceLockShadow can frame. This builds the same
+  // paths `generateScene` would, but from MarkSets, the cached mesh outline and the baked ground hatch: no
+  // `assembleScene`, no edge classification, no HLR, no shadow rebuild. It never reads the draft tier, so a drag frame
+  // is the export. Returns the path list, or null when anything is missing (the caller then composes in pose mode).
+  // pathWithMeta without the JSON round trip: every path owns its meta (the curve finish writes anchors into it), the
+  // picking polygon is shared by reference (nothing writes into it).
+  const levelSPath = (points, meta) => {
+    const path = [];
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+      if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) path.push({ x: pt.x, y: pt.y });
+    }
+    if (meta) {
+      const m = { ...meta };
+      const t = meta.sceneTarget;
+      if (t) {
+        m.sceneTarget = { ...t };
+        if (t.normal) m.sceneTarget.normal = { ...t.normal };
+      }
+      if (Array.isArray(meta.strokeDash)) m.strokeDash = meta.strokeDash.slice();
+      path.meta = m;
+    }
+    return path;
+  };
+  // The seed and BakeSpec resolvers Level S bakes with. ONE definition: the compose (`composeSurfaceLockScene`) and the bake
+  // planner (`levelSBakeSpecs`) must build identical specs, or a planned bake would never be the one the frame looks up.
+  const levelSSpecHelpers = (p, sb, groupSeeds, groupSeeded, resolveStyle, objById) => {
+    const seedFor = (id) => {
+      const src = id === 'ground' ? null : objById.get(id);
+      G3.setSeedState(src && src.seedMode === 'seeded' ? [groupSeeded ? p.seed : -1, 7919, src.seed] : groupSeeds);
+      return G3.snapshotSeedState();
+    };
+    const specFor = (o, stub, mesh) => {
+      const st = resolveStyle(o.id, null);
+      const sp = (st && st.params) || {};
+      const spec = buildSurfaceLockSpec(p, sb, { id: o.id, convex: mesh ? mesh.convex : undefined }, o, { style: st }, sp);
+      if (!spec) return {};
+      spec.seed = seedFor(o.id);
+      spec.noHighlight = sp.highlightTreatment === 'none' || sp.highlightTreatment === 'keep';
+      return spec;
+    };
+    return { seedFor, specFor };
+  };
+  // The BakeSpecs a Level S compose of (params, bounds) would look up in the SurfaceLock cache, in object order. Pose-free (no
+  // camera yaw/pitch, no light), so a drag frame's answer is the same as the settled one. [] when the scene is not Level S.
+  const levelSBakeSpecs = (params, bounds) => {
+    const V3 = Vectura.Scene3D;
+    const SL = V3 && V3.SurfaceLock;
+    if (!SL || typeof SL.sceneBakeSpecs !== 'function') return [];
+    const snap = G3.snapshotSeedState();
+    try {
+      const p = V3.Params.normalizeParams(params);
+      if (typeof SL.frameable !== 'function' || SL.frameable(p, bounds) !== true) return [];
+      const groupSeeded = p.seedMode === 'seeded';
+      const groupSeeds = groupSeeded ? [p.seed] : null;
+      G3.setSeedState(groupSeeds);
+      const sb = Object.assign({}, bounds, { penWidth: finite(bounds && bounds.penWidth, 0.3) });
+      const resolveStyle = makeStyleResolver(p.styleTable);
+      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      const { seedFor, specFor } = levelSSpecHelpers(p, sb, groupSeeds, groupSeeded, resolveStyle, objById);
+      return SL.sceneBakeSpecs(p, sb, { seedFor, specFor });
+    } catch (err) {
+      return [];
+    } finally {
+      G3.restoreSeedState(snap);
+    }
+  };
+  const composeSurfaceLockScene = (p, bounds, groupSeeds, groupSeeded) => {
+    const V3 = Vectura.Scene3D;
+    const SL = V3.SurfaceLock;
+    const Lighting = V3.Lighting; const Regions = V3.Regions; const SceneM = V3.Scene;
+    const sb = Object.assign({}, bounds, { penWidth: finite(bounds && bounds.penWidth, 0.3) });
+    const out = [];
+    const resolveStyle = makeStyleResolver(p.styleTable);
+    const { edgeStyleFor, edgeStyleMeta } = makeEdgeStyleHelpers(p, sb);
+    const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+    const lights = p.lights || [];
+    const light = lights[0] || {};
+    const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function' ? Lighting.lightWorldDir(light) : null;
+    // The pose path's lockToneFn without the draft gate (no emissive lights and no receive shadow in a frameable scene).
+    const lockToneOn = Boolean(p.tone && p.tone.enabled && Regions && lightDir);
+    const shapes = new Map();
+    const shapeFor = (id) => {
+      if (!shapes.has(id)) {
+        const sp = (resolveStyle(id, null) || {}).params;
+        shapes.set(id, lockToneOn ? Regions.toneShapeOf(sp, null) : null);
+      }
+      return shapes.get(id);
+    };
+    const toneFnFor = (id) => {
+      if (!lockToneOn) return null;
+      const shape = shapeFor(id);
+      return (nw, wp) => {
+        const I = Regions.combinedIntensity(nw, wp, lights, null);
+        return shape ? Regions.shapeTone(I, wp, shape) : I;
+      };
+    };
+    // Identifies everything the tone function reads besides the camera (same key as the Level F dispatch).
+    const toneKeyFor = (id, o) => {
+      if (!lockToneOn) return null;
+      const shape = shapeFor(id);
+      if (shape && shape.fade) return null;
+      const lt = (o && o.transform) || {};
+      return JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, lights, shape ? [shape.gamma, shape.contrast] : null]);
+    };
+    const { seedFor, specFor } = levelSSpecHelpers(p, sb, groupSeeds, groupSeeded, resolveStyle, objById);
+    const emitInto = (runs, baseMeta, treat, opts) => {
+      const floor = !(opts && opts.noFloor);
+      for (let ri = 0; ri < runs.length; ri++) {
+        const run = runs[ri];
+        if (floor && runLength(run.pts) < MIN_RUN_MM) continue;
+        const meta = treat.active ? { ...baseMeta } : baseMeta;
+        const pts = applyStrokeTreatment(run.pts, treat, meta, false);
+        const path = levelSPath(pts, meta);
+        if (path.length < 2) continue;
+        out.push(path);
+        if (treat.overstroke) {
+          const dbl = levelSPath(overstrokeCopy(pts), meta);
+          if (dbl.length >= 2) out.push(dbl);
+        }
+      }
+    };
+    const meanZ = (pts) => { let z = 0; pts.forEach((q) => { z += finite(q.z, 0); }); return pts.length ? z / pts.length : 0; };
+    const emitFill = (id, runs) => {
+      const st = resolveStyle(id, null) || FALLBACK_STYLE;
+      let nearZ = -Infinity;
+      for (let ri = 0; ri < runs.length; ri++) {
+        const rp = runs[ri].pts;
+        for (let k = 0; k < rp.length; k++) if (rp[k].z > nearZ) nearZ = rp[k].z;
+      }
+      if (!Number.isFinite(nearZ)) nearZ = 0;
+      emitInto(runs, {
+        algorithm: 'scene3d',
+        kind: 'sceneFill',
+        sceneTarget: sceneTargetMeta(id, null, null, nearZ, false),
+        // The marks are the surface's own: the Fill Curves fit leaves them alone (Engine._applySceneCurveFinish).
+        surfaceLocked: true,
+        ...(st.penId ? { penId: st.penId } : {}),
+      }, strokeTreatment(st.params));
+    };
+    const GROUND_FACE = { faceId: 'face:ground', normalWorld: { x: 0, y: 1, z: 0 } };
+    const emitEdgeRuns = (id, cls, runs, face, split) => {
+      const st = resolveStyle(id, null) || FALLBACK_STYLE;
+      const overlay = edgeStyleMeta(edgeStyleFor(cls, id));
+      const treat = dashOnly(strokeTreatment(st.params));
+      const one = (pts, closed) => {
+        const meta = {
+          algorithm: 'scene3d',
+          kind: 'sceneEdge',
+          ...(pts.length === 2 ? { straight: true } : {}),
+          sceneTarget: sceneTargetMeta(id, face, cls, meanZ(pts), false),
+          ...(st.penId ? { penId: st.penId } : {}),
+          ...(overlay || {}),
+        };
+        emitInto([{ pts, visible: true, closed }], meta, treat, { noFloor: true });
+      };
+      runs.forEach((run) => {
+        if (split) { for (let i = 0; i + 1 < run.pts.length; i++) one([run.pts[i], run.pts[i + 1]], false); } else one(run.pts, run.closed);
+      });
+    };
+    const emitEdge = (id, cls, runs) => {
+      // A crease is part of the wireframe look: pose mode suppresses it under 'none' and under surface fills.
+      if (cls === 'crease') return;
+      emitEdgeRuns(id, cls, runs, null, false);
+    };
+    const emitGround = (runs) => emitEdgeRuns('ground', 'boundary', runs, GROUND_FACE, true);
+    const emitShadow = (runs, info) => {
+      const bag = p.shadow || {};
+      const sceneStyleParams = (p.styleTable && p.styleTable.scene && p.styleTable.scene.params) || {};
+      const treat = strokeTreatment({ ...sceneStyleParams, lineType: bag.shadowLineType || 'solid' });
+      const ids = (info && info.casterIds) || [];
+      const penOverride = (typeof bag.shadowPenId === 'string' && bag.shadowPenId) ? bag.shadowPenId : null;
+      const casterPen = ids.length ? ((resolveStyle(ids[0], null) || {}).penId || null) : null;
+      // Picking polygon: the projected footprint (one caster) or the hull of all footprints.
+      const proj = (ring) => ring.map((q) => SceneM.projectWorldPoint({ x: q.x, y: 0, z: q.z }, p.camera, sb))
+        .filter((q) => q && Number.isFinite(q.x)).map((q) => ({ x: q.x, y: q.y }));
+      const fps = ((info && info.footprints) || []).map(proj).filter((r) => r.length >= 3);
+      let pick = fps.length === 1 ? fps[0] : null;
+      if (!pick && fps.length > 1) {
+        const Sh = V3.Shadows;
+        const all = []; fps.forEach((r) => r.forEach((q) => all.push(q)));
+        pick = Sh && typeof Sh.convexHull === 'function' ? Sh.convexHull(all) : all;
+      }
+      const gz = SceneM.projectWorldPoint({ x: 0, y: 0, z: 0 }, p.camera, sb);
+      const meta = {
+        algorithm: 'scene3d',
+        kind: 'sceneFill',
+        sceneTarget: {
+          objectId: 'ground', faceId: 'face:ground', regionClass: 'castShadow',
+          casterId: ids.length === 1 ? ids[0] : null,
+          pickPolygon: pick || [],
+          edgeClass: null, depth: gz ? -finite(gz.z, 0) : 0,
+          normal: { x: 0, y: 1, z: 0 }, facingUp: true, occluded: false,
+        },
+        ...((penOverride || casterPen) ? { penId: penOverride || casterPen } : {}),
+      };
+      emitInto(runs, meta, treat);
+    };
+
+    const ok = SL.sceneFrame(p, sb, {
+      toneFnFor, toneKeyFor, seedFor, specFor, emitFill, emitEdge, emitShadow, emitGround,
+      lightDirWorld: lightDir || undefined,
+    });
+    G3.setSeedState(groupSeeds);
+    return ok === false ? null : out;
+  };
+
   // Scene Seed (U4a). Wraps the compositor so the shared seed state
   // (Geometry3D.SEED) is ALWAYS restored — a seeded compose can never leak its
   // salt into the next (legacy) one, including on a throw.
@@ -1563,6 +1877,15 @@
 
   window.Vectura.AlgorithmRegistry.scene3d = {
     generate: (params = {}, rng, noise, bounds = {}) => generateWithSeedScope(params, rng, noise, bounds),
+    // Level S gate (contract §13) as a pose-invariant question: would `generate` compose this scene from cached surface-lock
+    // data? Reads no camera and no transform, so one answer holds for a whole drag. The engine uses it to run a drag frame
+    // through the full tier with no pose warp and no spin ring (the frame is the export).
+    levelSBakeSpecs: (params = {}, bounds = {}) => levelSBakeSpecs(params, bounds),
+    levelS: (params = {}, bounds = {}) => {
+      const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
+      if (!SL || typeof SL.frameable !== 'function') return false;
+      try { return SL.frameable(Vectura.Scene3D.Params.normalizeParams(params), bounds) === true; } catch (err) { return false; }
+    },
     generateScene: (params = {}, rng, noise, bounds = {}) => {
       const Params = Vectura.Scene3D.Params;
       const Scene = Vectura.Scene3D.Scene;
@@ -1576,6 +1899,14 @@
       const groupSeeded = p.seedMode === 'seeded';
       const groupSeeds = groupSeeded ? [p.seed] : null;
       G3.setSeedState(groupSeeds);
+      // Level S (surface-lock contract §13): a scene whose every fill is a surface-locked MarkSet composes from cached data.
+      const SurfaceLockS = Vectura.Scene3D.SurfaceLock;
+      if (SurfaceLockS && typeof SurfaceLockS.frameable === 'function' && SurfaceLockS.frameable(p, bounds)) {
+        const levelS = composeSurfaceLockScene(p, bounds, groupSeeds, groupSeeded);
+        if (levelS) return levelS;
+        SurfaceLockS.stats.sceneFallbacks += 1;
+        G3.setSeedState(groupSeeds);
+      }
       const scene = Scene.assembleScene(p, bounds);
       // Per-fragment CSG styling: a combined carve borrows the primary solid's
       // id, so each fragment's source-attributed style (Scene3D.Boolean) is
@@ -1594,43 +1925,7 @@
       // byte-identical output. weightMm is expressed against the layer's base pen
       // width (bounds.penWidth, 0.3mm fallback) and rides the SAME tested
       // meta.weightScale path the silhouette-emphasis passes use.
-      const EDGE_REF_WIDTH = finite(bounds && bounds.penWidth, 0.3);
-      // Polish P-B + X-ray fold — per-object override resolves PER FIELD, not
-      // whole-class: each field is objectOverride[field] ?? sceneEdgeStyle[field]
-      // ?? null (pen / weightMm / dash, plus hiddenTreatment for the hidden class),
-      // resolved INDEPENDENTLY. So an object that overrides only ONE field inherits
-      // the scene class's other fields — and, critically, the X-ray fold's migrated
-      // hidden seed (which sets ONLY hiddenTreatment='dash', leaving pen/weightMm/
-      // dash null) still inherits the scene hidden class's pen/weight/dash OVERLAY,
-      // reproducing pre-fold x-ray byte-for-byte. An object that overrides nothing
-      // falls straight through to the scene class (or null). p.edgeStylesByObject
-      // (assembled by collectSceneParams) keeps ONLY the classes an object touched.
-      const edgeStyleFor = (cls, objectId) => {
-        const byObj = p.edgeStylesByObject;
-        const ov = (objectId && byObj && byObj[objectId]) ? byObj[objectId][cls] : null;
-        const t = p.edgeStyles;
-        const base = (t && t[cls]) || null;
-        if (!ov) return base;
-        if (!base) return ov;
-        const pick = (k) => (ov[k] != null ? ov[k] : (base[k] != null ? base[k] : null));
-        const merged = { pen: pick('pen'), weightMm: pick('weightMm'), dash: pick('dash') };
-        if (cls === 'hidden') merged.hiddenTreatment = ov.hiddenTreatment || base.hiddenTreatment || 'drop';
-        return merged;
-      };
-      // Build a meta overlay (penId / weightScale / strokeDash) from an EdgeStyle,
-      // or null when the style is a pure no-op. penId overrides the object pen;
-      // weightScale/strokeDash are honored by the renderer + SVG export.
-      const edgeStyleMeta = (es) => {
-        if (!es) return null;
-        const m = {};
-        if (es.pen) m.penId = es.pen;
-        if (es.weightMm != null) {
-          const ws = clamp(es.weightMm / (EDGE_REF_WIDTH || 0.3), 0.1, 6);
-          if (ws !== 1) m.weightScale = ws;
-        }
-        if (Array.isArray(es.dash) && es.dash.length) m.strokeDash = es.dash.slice();
-        return Object.keys(m).length ? m : null;
-      };
+      const { edgeStyleFor, edgeStyleMeta } = makeEdgeStyleHelpers(p, bounds);
 
       // ── Occluder set (S6): solid front faces occlude everyone; x-ray front
       // faces occlude only their own object; ground/backdrop never occlude.
@@ -1669,24 +1964,7 @@
       // Correlate a scene record back to its source object (records don't carry
       // params/transform) so SurfaceFill can re-evaluate the object's chart.
       const objById = new Map((p.objects || []).map((o) => [o.id, o]));
-      // The primitive → chart (mode, sizes, detail) mapping — mirrors
-      // Scene.buildPrimitiveMesh so the wrap fill lands on the rendered surface.
-      const TOPOFORM_MODES = {
-        sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone',
-        torus: 'torus', torusKnot: 'torusKnot', capsule: 'capsule',
-        superellipsoid: 'superellipsoid', pyramid: 'pyramid',
-      };
-      const curvedChartParams = (obj) => {
-        const mode = TOPOFORM_MODES[obj.primitive];
-        if (!mode) return null; // box/plane/solid are faceted, not chart-wrapped
-        const pr = obj.params || {};
-        const detail = Math.max(4, Math.round(finite(pr.detail, 24)));
-        const r = finite(pr.radius, 20);
-        const sizes = obj.primitive === 'sphere'
-          ? { sx: r, sy: r, sz: r }
-          : { sx: finite(pr.sx, 20), sy: finite(pr.sy, 20), sz: finite(pr.sz, 20) };
-        return { mode, sizes, detail };
-      };
+      const surfaceLockSpec = (record, obj, g, sp) => buildSurfaceLockSpec(p, bounds, record, obj, g, sp);
       const light = (p.lights && p.lights[0]) || {};
       const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
         ? Lighting.lightWorldDir(light) : null;
@@ -1744,6 +2022,9 @@
       // reassigned per record from that object's own style; null is the
       // identity, so an untouched style is byte-identical (Regions.toneShapeOf).
       let activeToneShape = null;
+      // G2 — the surface-lock twin of activeToneShape: same shape, gated on lockToneOn (tone enabled), never on the
+      // draft tier, so a drag frame shapes the tone exactly as the settled frame and the export do.
+      let lockToneShape = null;
       let sceneDepth = null;
       const depthContext = () => {
         if (sceneDepth) return sceneDepth;
@@ -1766,6 +2047,15 @@
       const shapeIntensity = (I, wp) => (activeToneShape ? Regions.shapeTone(I, wp, activeToneShape) : I);
       const intensityFn = toneOn
         ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        : null;
+      // Surface-locked fills read the tone but never the draft tier: the same formula as intensityFn without the
+      // `!draft` gate, so a drag frame and the settled frame (and the export) compose the same fill.
+      const lockToneOn = Boolean(p.tone && p.tone.enabled && Regions && lightDir);
+      const lockToneFn = lockToneOn
+        ? (nw, wp) => {
+          const I = Regions.combinedIntensity(nw, wp, activeLights, shadowFn);
+          return lockToneShape ? Regions.shapeTone(I, wp, lockToneShape) : I;
+        }
         : null;
 
       // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
@@ -4252,6 +4542,8 @@
           const toneSp = (resolveStyle(record.id, null) || {}).params;
           activeToneShape = toneOn
             ? Regions.toneShapeOf(toneSp, toneSp && toneSp.depthFade === true ? depthContext() : null) : null;
+          lockToneShape = lockToneOn
+            ? Regions.toneShapeOf(toneSp, toneSp && toneSp.depthFade === true ? depthContext() : null) : null;
         }
         // Emissive self-render config for this object (never the ground).
         const emSrc = objById.get(record.id);
@@ -4579,6 +4871,46 @@
           });
         }
 
+        // Surface-locked faceted fill (W3-A): the framed marks of ONE face, or null when this face renders in pose mode. The
+        // eligibility rule is the curved path's (`effectiveMarkSpace`), with the pose-independent per-face-style gate computed
+        // over the whole object (a back-side override must not flip the lock mid-orbit).
+        const lockedFaceLines = (rec, face, style, styleParams, hlOff, coreBlank) => {
+          const SurfaceLock = Vectura.Scene3D.SurfaceLock;
+          const lockObj = objById.get(rec.id);
+          if (!SurfaceLock || !lockObj || rec.id === 'ground' || styleParams.markSpace !== 'surface') return null;
+          const byFace = styleTable && styleTable.byFace;
+          const prefix = `${rec.id}/`;
+          const lockFaceStyles = !!(byFace && Object.keys(byFace).some((k) => k.startsWith(prefix)));
+          const faceIdx = rec.faces.indexOf(face);
+          if (lockFaceStyles || faceIdx < 0) return null;
+          const spec = buildSurfaceLockSpec(p, bounds, rec, lockObj, { style }, styleParams, faceIdx);
+          if (!spec || SurfaceLock.effectiveMarkSpace(styleParams, {
+            spec,
+            faceStyles: lockFaceStyles,
+            mapper: style.mapper,
+            visibility: rec.visibility,
+            emissiveCoreBlank: coreBlank,
+            csgCarve: rec.primitive === 'csg',
+            receiveShadow: typeof shadowFn === 'function',
+            areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
+          }) !== 'surface') return null;
+          const ms = SurfaceLock.bake(spec);
+          if (!ms) return null;
+          const lt = lockObj.transform || {};
+          const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
+            ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
+              lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
+            : null;
+          const lines = SurfaceLock.frame([ms], SurfaceLock.poseOf(lockObj.transform, p.camera, bounds), {
+            toneFn: lockToneFn,
+            toneKey,
+            tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: hlOff }),
+            penWidth,
+            objectId: rec.id,
+          });
+          return Array.isArray(lines) ? lines : null;
+        };
+
         // ── Faces: outlines (closed when fully visible) + hatch fills.
         record.faces.forEach((face) => {
           if (!face.front) return;
@@ -4710,7 +5042,14 @@
                 // 3D read; region fills (contour/spiral/stipple) fill the projected
                 // face polygon and are mapped back onto the plane below.
                 let lines;
-                if (draft || !REGION_MAPPERS.has(style.mapper)) {
+                // Surface-locked faceted fill (contract §12, W3-A): this face's baked marks framed for this pose. One MarkSet per
+                // face (spec.sizes.face), so every face keeps its own pick target and HLR owner. null (not eligible, no baker, a
+                // bake error) falls through to the pose fill below. Deliberately not gated on `draft`.
+                const lockedLines = styleParams.markSpace === 'surface'
+                  ? lockedFaceLines(record, face, style, styleParams, faceHL.treatment === 'none', emissiveCoreBlank) : null;
+                if (lockedLines) {
+                  lines = lockedLines;
+                } else if (draft || !REGION_MAPPERS.has(style.mapper)) {
                   // The former `keep` branch (render the highlight face at FULL
                   // density instead of the ladder's cap) is gone with the
                   // treatment: `none` must leave the fill exactly as the ladder
@@ -4767,11 +5106,13 @@
                     fillMetaB = { ...fillMeta, toneBand: band, ...(bp ? { penId: bp } : {}) };
                   }
                 }
+                // Locked marks carry their own camera depth (the frame projects the 3D point); the pose fill is 2D on the face's support plane.
+                if (lockedLines) { fillMeta.surfaceLocked = true; if (fillMetaB !== fillMeta) fillMetaB.surfaceLocked = true; }
                 lines.forEach((line) => {
                   const pts = line.map((pt) => ({
                     x: pt.x,
                     y: pt.y,
-                    z: plane.A * pt.x + plane.B * pt.y + plane.C,
+                    z: lockedLines ? pt.z : plane.A * pt.x + plane.B * pt.y + plane.C,
                   }));
                   const fillClip = clipper.clipPath(pts, segCtx);
                   emitRuns(fillClip.runs, fillMetaB, hiddenTreatment, null, emitTreat);
@@ -4791,6 +5132,27 @@
           // (no per-point front support plane on a wrapped surface — design v1).
           const curveBounds = objDepthBounds(record);
           const groups = new Map();
+          // Faces only share a continuous fill region when every parameter that STEERS that fill matches; this is
+          // that key (also read, over ALL faces, by the surface-lock face-style gate below).
+          const fillStyleKey = (st) => {
+            const sp = st.params || {};
+            // The crosshatch family-B controls join the key; for any other mapper they are absent and contribute a
+            // constant suffix (same partition, same output).
+            const crossKey = st.mapper === 'crosshatch'
+              ? `|${finite(sp.crossAngleDelta, 90)}|${finite(sp.crossDensityRatio, 1)}|${sp.tripleHatch === true}` : '';
+            return `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}${crossKey}`;
+          };
+          // G8 — POSE-INDEPENDENT: groups above are built from FRONT faces only, so a back-side override would flip
+          // the surface-lock gate mid-orbit. True when the object carries any per-face style override, or more than
+          // one distinct fill style over ALL its faces.
+          const objectHasFaceStyles = () => {
+            const byFace = styleTable && styleTable.byFace;
+            const prefix = `${record.id}/`;
+            if (byFace && Object.keys(byFace).some((k) => k.startsWith(prefix))) return true;
+            const keys = new Set();
+            record.faces.forEach((face) => { keys.add(fillStyleKey(styleOf(face))); });
+            return keys.size > 1;
+          };
           record.faces.forEach((face, idx) => {
             if (!face.front) return;
             // A face whose SCREEN-SPACE projection is edge-on (zero width —
@@ -4823,9 +5185,7 @@
             // output), and two crosshatch faces only split when they genuinely
             // disagree (which used to render one of them with the other's
             // crossing family).
-            const crossKey = st.mapper === 'crosshatch'
-              ? `|${finite(sp.crossAngleDelta, 90)}|${finite(sp.crossDensityRatio, 1)}|${sp.tripleHatch === true}` : '';
-            const key = `${st.penId || ''}|${st.mapper}|${finite(sp.fillAngle, 45)}|${finite(sp.fillDensity, 50)}${crossKey}`;
+            const key = fillStyleKey(st);
             let g = groups.get(key);
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
@@ -4910,7 +5270,49 @@
             const hlActive = toneOn && !grpHLOff && (grpHL.treatment !== 'blank' || grpLD);
             // Shadow sensitivity applies in BOTH modes (default 1 = no-op).
             const grpShadowSens = toneOn ? grpHL.shadowSensitivity : 1;
-            if (chartParams) {
+            // Surface-locked fill (contract §12): a baked MarkSet framed for this pose. It replaces buildObject's
+            // lines; the clip/emit loop below is unchanged. null (not eligible, no baker, a bake error) falls
+            // through to today's path. Deliberately not gated on `draft`.
+            const SurfaceLock = Vectura.Scene3D.SurfaceLock;
+            let lockedFill = false;
+            const lockFaceStyles = sp.markSpace === 'surface' ? objectHasFaceStyles() : false;
+            if (sp.markSpace === 'surface' && SurfaceLock && SurfaceFill && groups.size <= 1 && !lockFaceStyles
+              && !spiralFlatClip && !contourRegion) {
+              const lockObj = objById.get(record.id);
+              const spec = surfaceLockSpec(record, lockObj, g, sp);
+              if (spec && SurfaceLock.effectiveMarkSpace(sp, {
+                spec,
+                faceStyles: lockFaceStyles,
+                mapper: g.style.mapper,
+                visibility: record.visibility,
+                emissiveCoreBlank,
+                csgCarve: record.primitive === 'csg',
+                receiveShadow: typeof shadowFn === 'function',
+                areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
+              }) === 'surface') {
+                const ms = SurfaceLock.bake(spec);
+                if (ms) {
+                  // toneKey: identifies everything the tone function reads besides the camera, so a frame may reuse
+                  // evaluations across camera moves (FX-A). null (never reuse) under a shadow caster or a depth fade.
+                  const lt = lockObj.transform || {};
+                  const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
+                    ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
+                      lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
+                    : null;
+                  lines = SurfaceLock.frame([ms],
+                    SurfaceLock.poseOf(lockObj.transform, p.camera, bounds),
+                    {
+                      toneFn: lockToneFn,
+                      toneKey,
+                      tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: grpHLOff }),
+                      penWidth,
+                      objectId: record.id,
+                    });
+                  lockedFill = Array.isArray(lines);
+                }
+              }
+            }
+            if (chartParams && !lines) {
               lines = SurfaceFill.buildObject({
                 mode: chartParams.mode,
                 sizes: chartParams.sizes,
@@ -5157,6 +5559,11 @@
               sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), highlight: true },
               ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
             };
+            // Level F marks are the surface's own: the Fill Curves fit leaves them alone (Engine._applySceneCurveFinish).
+            if (lockedFill) {
+              fillMeta.surfaceLocked = true; hlMeta.surfaceLocked = true;
+              if (backMeta !== fillMeta) backMeta.surfaceLocked = true;
+            }
             // U7 `toneBands`: split plain front lines by the tone under them.
             const bandN = outBandCount(sp);
             const bandSampler = bandN ? makeToneBandSampler(record, g.faces, bandN) : null;

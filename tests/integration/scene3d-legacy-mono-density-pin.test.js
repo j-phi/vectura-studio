@@ -31,6 +31,8 @@ describe('legacy documents keep their look under a monoline law (Density pin)', 
     const gid = engine.addSceneTree();
     const oid = engine.addObjectToScene(gid, prim);
     engine.getLayerById(gid).params.seed = 4242;
+    // W3-E: the seed sphere addSceneTree creates is now born surface-locked; this suite measures the legacy (pose) look, so pin it.
+    engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d').forEach((l) => { l.params.style.params = { ...(l.params.style.params || {}), markSpace: 'pose' }; });
     const child = engine.getLayerById(oid);
     child.params.seed = 1717;
     child.params.style = { penId: null, mapper: 'hatch', params: { toneLaw, fillDensity: density } };

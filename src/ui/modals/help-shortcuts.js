@@ -133,6 +133,16 @@
         </ul>
         <p>A control that does nothing for the current shape or Fill Style stays visible but greyed. Hover the
         <strong>(i)</strong> badge to see why.</p>
+        <p><strong>Lock marks to surface</strong> (Hatch, Crosshatch, Contour, Spiral, Stipple, Mezzotint and the
+        fixed-pitch styles) draws the marks on the object itself, so they stay put while you turn the camera. New
+        objects start with the row <strong>On</strong>; a scene saved before it existed stays off until you switch it on,
+        and one undo step puts it back. The row is greyed, with the reason beside the <strong>(i)</strong> badge, when
+        the style cannot lock: the object receives a cast shadow, an area light, Wrap set to Flat, Tone bands, Tier
+        pens, an x-ray object, a light-driven or treated highlight, Fade by depth, a per-face style, a carved
+        (boolean) solid, or a Fill Style or shape that has no locked version yet. Under the row, <em>Fast drag</em>
+        means every fill in the scene is locked and turning the camera is a cheap re-frame; <em>Full redraw while
+        dragging</em> means at least one fill is not locked, so the scene redraws in full. After an edit to a locked
+        fill, the previous drawing stays for a moment while the new marks bake; export and save are always exact.</p>
         <p><strong>Seed</strong> (Transform section) and <strong>RANDOMIZE</strong> change every random choice in the
         fill: jitter, dither, stripe phase. A fill with no random choice does not change. A document saved before
         the Seed was wired keeps its old look until you edit the Seed.</p>

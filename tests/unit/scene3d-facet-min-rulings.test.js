@@ -117,6 +117,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
     const gid = engine.addLayer('scene3d');
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     const prev = obj.params.primitive;
     if (primitive !== prev) {
       obj.params.primitive = primitive;
@@ -332,6 +333,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
         const gid = eng.addLayer('scene3d');
         const grp = eng.getLayerById(gid);
         const obj = eng.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+        obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
         obj.params.primitive = 'solid';
         obj.params.params = {
           ...(V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.solid || {}),

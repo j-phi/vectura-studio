@@ -886,11 +886,13 @@
       this.profileKey = SETTINGS.paperSize || 'a4';
       this.currentProfile = this.resolveProfile();
       this.onLayerRemoved = null;
+      this.onSceneInkReady = null; // (group) => void: a worker bake settle installed ink (the app redraws)
+      this.sceneBakeClient = null; // the worker client of the preview bake settles (lazy ComposeClient.create(); tests inject)
       // NEW-3 — per scene group: { key, fn, paths } of the last FULL compose.
       // A WeakMap so a removed group (or an undo-restored copy) drops its entry.
       this._sceneComposeMemo = new WeakMap();
       // Diagnostics for tests / perf harnesses: real composes vs memo hits.
-      this.sceneComposeStats = { composes: 0, hits: 0, warps: 0, lastTier: null, spinInstalls: 0 };
+      this.sceneComposeStats = { composes: 0, hits: 0, warps: 0, lastTier: null, spinInstalls: 0, bakeHolds: 0, bakeSettles: 0 };
     }
 
     // Announce every removed layer id to the host (e.g. the on-canvas text
@@ -2627,7 +2629,9 @@
         if (layer._morphConsumed) delete layer._morphConsumed;
         // Scene-tree Increment B: clear last pass's scene compose flags so the
         // consumed markers + composed paths are re-derived deterministically.
-        if (layer.scenePaths) delete layer.scenePaths;
+        // FX-J2: a held commit (app.regen) keeps this pass's ink so a bake the worker has not delivered yet shows the previous ink.
+        if (layer._sceneInkPrev) layer._sceneInkPrev = null;
+        if (layer.scenePaths) { if (this._holdBakesActive && layer.scenePaths.length) layer._sceneInkPrev = layer.scenePaths; delete layer.scenePaths; }
         if (layer._sceneConsumed) delete layer._sceneConsumed;
         if (layer._sceneAssembled) delete layer._sceneAssembled;
         // Morph groups borrow the first child's pen/style as a render/export
@@ -2820,7 +2824,8 @@
       this.layers.forEach((group) => {
         if (!group || !group.isGroup) return;
         if (group.type !== 'scene3d' || group.containerRole !== 'scene') return;
-        this._composeSceneGroup(group);
+        // FX-J2: an interactive commit (app.regen) holds the previous ink while the worker bakes; every other caller composes exactly.
+        this._composeSceneGroup(group, this._holdBakesActive ? { holdBakes: true } : {});
       });
     }
 
@@ -2892,11 +2897,31 @@
       // 'full' = the settled compose, 'law' = full compose with ribbons drawn
       // as weighted centrelines and mono laws at a coarser lattice (the Fill
       // Style stays visible), 'flat' = the legacy fastPreview silhouette hatch.
-      const tier = options && options.preview === true ? this._sceneDraftTier(group) : 'full';
-      const bounds = {
+      const isPreview = options && options.preview === true;
+      // FX-J2: an interactive commit holds like a preview frame (never for a captured/precomputed/job compose: those are exact).
+      const holdCommit = !isPreview && options && options.holdBakes === true;
+      const baseBounds = {
         width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
-        truncate: SETTINGS.truncate, fastPreview: tier === 'flat', preview3dQuality: SETTINGS.preview3dQuality,
+        truncate: SETTINGS.truncate, fastPreview: false, preview3dQuality: SETTINGS.preview3dQuality,
       };
+      // LEVEL S (surface-lock contract §13): a scene whose every fill is a surface-locked MarkSet composes from cached data
+      // and ignores the draft tier, so a drag frame IS the export. Such a frame runs the full tier with no pose warp (it
+      // would only approximate ink that is already exact) and keeps no pose snapshot. The gate is pose-invariant. A scene
+      // whose Level S compose fell back (below) is not Level S until its next settled compose. Partly frameable scenes
+      // (levelS false) keep today's warp / draft tiers.
+      let levelS = false;
+      if (typeof algo.levelS === 'function') {
+        if (!isPreview) group._sceneLevelSFell = false;
+        if (!isPreview && !(options && (options.captureJob || options.jobOnly))) group._sceneBakeOffFailed = false;
+        try { levelS = !group._sceneLevelSFell && algo.levelS(assembled, baseBounds) === true; } catch (err) { levelS = false; }
+      }
+      group._sceneLevelS = levelS;
+      // A Level S drag frame composes at the SETTLED quality: the renderer's draft drag quality would change the ink and give
+      // the frame a different memo key than the release settle (which could then not be a memo hit).
+      if (!isPreview) group._sceneExportQuality = baseBounds.preview3dQuality;
+      else if (levelS && baseBounds.preview3dQuality === 'draft' && group._sceneExportQuality) baseBounds.preview3dQuality = group._sceneExportQuality;
+      const tier = isPreview && !levelS ? this._sceneDraftTier(group) : 'full';
+      const bounds = tier === 'full' ? baseBounds : Object.assign(baseBounds, { fastPreview: tier === 'flat' });
       if (tier === 'law') bounds.lawDraft = true;
 
       // POSE WARP — a preview frame whose scene differs from the last settled
@@ -2905,7 +2930,7 @@
       // O(vertices), no generator run. The settled compose is never touched, so
       // the release / idle render stays byte-identical.
       const PosePreview = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.PosePreview;
-      if (options && options.preview === true && PosePreview && group._scenePose && SETTINGS.scenePoseWarp !== false) {
+      if (isPreview && !levelS && PosePreview && group._scenePose && SETTINGS.scenePoseWarp !== false) {
         let warped = null;
         try {
           const now = PosePreview.compatible(group._scenePose, assembled, bounds);
@@ -2938,6 +2963,20 @@
         return;
       }
       const memo = memoKey ? this._sceneComposeMemo.get(group) : null;
+      const modules = memoKey ? sceneModuleFingerprint(algo) : null;
+      const memoHit = !!(memo && memo.key === memoKey && sameFingerprint(memo.modules, modules));
+      // OFF-THREAD BAKE (W2-B2). A Level S preview frame whose MarkSets are not cached would bake on the main thread (0.1-0.65 s
+      // for a mezzo sphere): it composes nothing, keeps the previous ink on screen (owner Q4: no look flip) and has the worker
+      // bake and compose this state; the bakes are adopted and the ink installed when it lands. A slider scrub therefore never
+      // holds the main thread for a bake, and every tick after the first coalesces into one follow-up job.
+      const heldInk = group.scenePaths && group.scenePaths.length ? group.scenePaths : (holdCommit ? group._sceneInkPrev : null);
+      if ((isPreview || holdCommit) && levelS && !memoHit && memoKey && !(options && (options.precomputed || options.captureJob || options.jobOnly))
+        && heldInk && heldInk.length && !group._sceneBakeOffFailed && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
+        group.scenePaths = heldInk;
+        this.sceneComposeStats.bakeHolds += 1;
+        this.sceneComposeStats.lastTier = 'hold';
+        return;
+      }
       // A worker settle still in flight was posted for a DIFFERENT state than the one composing now (an edit landed after it
       // was posted): its ink would be a stale pose, so it is cancelled here, at the moment the newer state is composed or
       // served from the memo. `finishSceneAsync` re-checks the key as well (the belt for a result that is already on its way).
@@ -2947,8 +2986,7 @@
 
       let paths = [];
       this.sceneComposeStats.lastTier = tier;
-      const modules = memoKey ? sceneModuleFingerprint(algo) : null;
-      if (memo && memo.key === memoKey && sameFingerprint(memo.modules, modules)) {
+      if (memoHit) {
         // A worker-composed memo keeps its ink packed until a hit actually needs it.
         if (memo.lazy && !memo.paths) {
           memo.paths = window.Vectura.Scene3D.ComposeJob.unpack(memo.lazy);
@@ -2967,8 +3005,12 @@
         const t0 = nowMs();
         let failed = false;
         const pre = options && options.precomputed;
+        const SLStats = levelS && !pre ? (window.Vectura?.Scene3D?.SurfaceLock?.stats || null) : null;
+        const fallbacks0 = SLStats ? SLStats.sceneFallbacks : 0;
         try {
           paths = pre ? pre.paths : (algo.generate(assembled, rng, noise, bounds) || []);
+          // Level S generate fell back to the pose compose (a missing bake): the next frames use the pose machinery.
+          if (SLStats && SLStats.sceneFallbacks !== fallbacks0) { group._sceneLevelS = false; group._sceneLevelSFell = true; }
         } catch (err) {
           console.error('[Engine] Scene group compose failed:', err);
           paths = [];
@@ -3007,13 +3049,14 @@
         ? options.precomputed.finished
         : this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      group._sceneInkPrev = null;
       if (tier === 'full') group._sceneSettledKey = memoKey;
       // Lift the settled ink for the drag preview (null when the scene is not
       // warpable; never throws into the compose).
       if (tier === 'full') {
         group._scenePose = null;
         if (group._scenePoseLift) { group._scenePoseLift.cancel(); group._scenePoseLift = null; }
-        if (PosePreview && SETTINGS.scenePoseWarp !== false) {
+        if (PosePreview && SETTINGS.scenePoseWarp !== false && !group._sceneLevelS) {
           try {
             if (options && options.precomputed) {
               // after a worker settle the lift is time-sliced so it never holds the main thread
@@ -3037,6 +3080,64 @@
       this._invalidateGroupOptimization(group);
     }
 
+    // The Level S MarkSets of this scene state that are not in the SurfaceLock cache (the BakeSpecs). Read-only.
+    _sceneBakeMissing(group, assembled, bounds) {
+      const algo = Algorithms && Algorithms.scene3d;
+      const SLock = window.Vectura?.Scene3D?.SurfaceLock;
+      if (!algo || typeof algo.levelSBakeSpecs !== 'function' || !SLock || typeof SLock.missingBakes !== 'function') return [];
+      try { return SLock.missingBakes(algo.levelSBakeSpecs(assembled, bounds)); } catch (err) { return []; }
+    }
+
+    // The worker client the preview bake settles run on: its own worker (never the release settle's, whose single in-flight job a
+    // second `run` would orphan). Tests may set `engine.sceneBakeClient`.
+    _sceneBakeClient() {
+      if (this.sceneBakeClient) return this.sceneBakeClient;
+      const Client = window.Vectura?.Scene3D?.ComposeClient;
+      if (!Client || typeof Client.create !== 'function' || !Client.available()) return null;
+      this.sceneBakeClient = Client.create();
+      return this.sceneBakeClient;
+    }
+
+    // True when this Level S preview frame must wait for a worker bake (the caller then keeps the previous ink). Also schedules it.
+    _sceneBakeHold(group, algo, assembled, bounds) {
+      if (SETTINGS.sceneBakeOffThread === false) return false;
+      const noiseImages = window.Vectura?.NOISE_IMAGES;
+      if (noiseImages && Object.keys(noiseImages).length) return false;
+      const client = this._sceneBakeClient();
+      if (!client || !client.available()) return false;
+      if (!this._sceneBakeMissing(group, assembled, bounds).length) return false;
+      this._scheduleBakeSettle(group);
+      return true;
+    }
+
+    // One worker bake+compose at a time per group; every preview state that lands while it runs only flags a follow-up for the
+    // LATEST state (a worker is never cancelled mid-scrub: terminating it would reload every module).
+    _scheduleBakeSettle(group) {
+      const st = group._sceneBakeSettle || (group._sceneBakeSettle = { running: false, again: false });
+      if (st.running) { st.again = true; return; }
+      st.running = true; st.again = false;
+      const finish = (installed, failed) => {
+        st.running = false;
+        if (failed) group._sceneBakeOffFailed = true;
+        if (installed) this._notifySceneInk(group);
+        if (st.again && !failed) this._scheduleBakeSettle(group);
+      };
+      let ctx = null;
+      try { ctx = this.beginSceneAsync(group.id, { client: this._sceneBakeClient(), lazy: true }); } catch (err) { ctx = null; }
+      if (!ctx) { finish(false, true); return; }
+      this.sceneComposeStats.bakeSettles += 1;
+      if (ctx.done) { finish(true, false); return; }
+      ctx.promise.then((res) => this._unpackFinishedSliced(res)).then((res) => this.finishSceneAsync(ctx, res))
+        .then((ok) => finish(!!ok, false), () => finish(false, true));
+    }
+
+    _notifySceneInk(group) {
+      try {
+        if (typeof this.onSceneInkReady === 'function') this.onSceneInkReady(group);
+        else if (window.app && typeof window.app.render === 'function') window.app.render();
+      } catch (err) { /* a redraw failure must not break the engine */ }
+    }
+
     // Non-blocking settle. Composes the scene group that owns `layerId` in a Web Worker
     // (Scene3D.ComposeClient) and installs the result exactly as a synchronous full compose would:
     // the same prefix runs here, the generator runs there, so the ink is byte-identical.
@@ -3056,6 +3157,12 @@
       const job = group._sceneJob;
       group._sceneJob = null;
       if (!job) return { done: true, group };  // a memo hit: already composed
+      // A Level S compose whose MarkSets are all cached (a worker bake was adopted) is one cheap frame (~10-25 ms): the worker
+      // would only bake them again in its own cold cache, so it is composed here.
+      if (job.tier === 'full' && job.memoKey && group._sceneLevelS && !this._sceneBakeMissing(group, job.assembled, job.bounds)) {
+        this._composeSceneGroup(group, {});
+        return { done: true, group };
+      }
       if (!job.memoKey || job.tier !== 'full') return null;
       const V = window.Vectura || {};
       const token = (group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1);
@@ -3079,6 +3186,9 @@
 
     finishSceneAsync(ctx, res) {
       const { group, job, token } = ctx;
+      // The worker's bakes are content-addressed, so they are valid whatever became of the state they were baked for.
+      const SLock = window.Vectura?.Scene3D?.SurfaceLock;
+      if (res && res.bakes && res.bakes.length && SLock && typeof SLock.adopt === 'function') SLock.adopt(res.bakes);
       if (group._sceneAsyncToken !== token) return false;
       group._sceneAsyncHandle = null;
       // The scene must still be the one that was posted. The current state's key is derived WITHOUT consulting the compose memo:
@@ -3114,7 +3224,7 @@
           const t0 = now();
           while (i < entries.length && now() - t0 < 4) out.push(Job.unpackEntry(entries[i++]));
           if (i < entries.length) setTimeout(step, 0);
-          else resolve({ paths: [], finished: out, packed: res.packed, ms: res.ms });
+          else resolve({ paths: [], finished: out, packed: res.packed, bakes: res.bakes || [], ms: res.ms });
         };
         setTimeout(step, 0);
       });
@@ -3472,6 +3582,9 @@
         const oid = ownerOf(path);
         const s = oid ? active.get(oid) : null;
         if (!s) return path;
+        // Surface-locked marks (Level S / Level F) are the surface's own: a refit would move ink the lock already placed
+        // exactly, and costs 6-19 ms a frame on the default sphere. Border and edge curves are unchanged.
+        if (isFill(path) && path.meta.surfaceLocked === true) return path;
         const set = isFill(path) ? s.fill : s.border;
         if (!wants(set)) return path;
         return simplifyOne(fitOne(path, set), set);
@@ -3781,7 +3894,15 @@
       this.currentProfile = this.resolveProfile();
     }
 
+    // FX-J2: `holdBakes: true` (app.regen on every UI commit) keeps the previous Level S ink while a worker bakes the new one, so a
+    // commit never bakes on the main thread. Export, save and import never pass it and stay synchronous and exact.
     generate(layerId, options = {}) {
+      const prevHold = this._holdBakesActive;
+      this._holdBakesActive = !!(options && options.holdBakes === true && !isPreviewRequest(options));
+      try { return this._generateImpl(layerId, options); } finally { this._holdBakesActive = prevHold; }
+    }
+
+    _generateImpl(layerId, options = {}) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       if (layer.isGroup) {
@@ -3793,7 +3914,7 @@
         // orbits, touch drags and panel slider drags get a draft tier instead
         // of a full-quality compose per pointer move.
         if (layer.type === 'scene3d' && layer.containerRole === 'scene') {
-          this._composeSceneGroup(layer, { preview: isPreviewRequest(options) });
+          this._composeSceneGroup(layer, { preview: isPreviewRequest(options), holdBakes: options && options.holdBakes === true });
         }
         return;
       }

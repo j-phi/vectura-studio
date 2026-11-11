@@ -417,8 +417,8 @@
       return Promise.all(usable.map((d) => {
         const r = d.res || {};
         // a lazy result keeps its ink packed: unpack the finished ink in slices. An unpacked result (a client that does not do lazy) is used as it is.
-        if (r.finishedPacked && Job) return unpackSliced(r.finishedPacked).then((finished) => ({ paths: [], finished, packed: r.packed, ms: r.ms }));
-        if (r.packed && !r.paths && !r.finished && Job) return Promise.resolve({ paths: Job.unpack(r.packed), finished: null, packed: r.packed, ms: r.ms });
+        if (r.finishedPacked && Job) return unpackSliced(r.finishedPacked).then((finished) => ({ paths: [], finished, packed: r.packed, ms: r.ms, bakes: r.bakes || [] }));
+        if (r.packed && !r.paths && !r.finished && Job) return Promise.resolve({ paths: Job.unpack(r.packed), finished: null, packed: r.packed, ms: r.ms, bakes: r.bakes || [] });
         return Promise.resolve(r);
       })).then((results) => {
         if (disposed) throw new Error('Scene session disposed');

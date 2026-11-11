@@ -439,6 +439,17 @@
     options: [{ value: 'surface', label: 'Surface' }, { value: 'flat', label: 'Flat' }],
     readValue: (sp, ctx) => (isFlatWrap(sp, ctx && ctx.mapper) ? 'flat' : 'surface'),
   };
+  // W3-D — surface-locked marks (docs/surface-lock-contract.md). A toggle over the style key `markSpace`
+  // ('surface' | 'pose'). seed:false: the key's ABSENCE is a pose style (saved documents are stamped 'pose' by
+  // the v6 migration), and a Type swap must not write it. The row is gated by CONTROL_GATES.markSpace, which
+  // asks SurfaceLock.explainMarkSpace why the style cannot lock.
+  const D_MARKSPACE = {
+    key: 'markSpace', kind: 'toggle', label: 'Lock marks to surface', seed: false, default: false,
+    ariaLabel: 'Lock marks to surface: the marks stay on the object when the camera turns',
+    readValue: (sp) => (sp && sp.markSpace === 'surface'),
+    toStored: (on) => (on ? 'surface' : 'pose'),
+    help: 'On: the hatch lines are drawn on the object itself, so they stay put when you turn the camera and the scene drags faster. Off: the lines are re-drawn for each camera angle.',
+  };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
   // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
   // MARK CLASS plus a description block; the roster and the taxonomy both come
@@ -458,9 +469,9 @@
     help: 'The fewest rulings a facet may be given when Density asks for less. Lower (1-2) keeps the tone ladder\'s contrast but leaves facets nearly bare; higher (4-8) fills the lit facets at the cost of that contrast. No effect on smooth shapes, on contour/spiral/stipple fills, or on the ground.',
   };
   const MAPPER_CONTROLS = {
-    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_WRAP, D_ANGLEREF, D_LINKFILL, D_FACETFLOOR],
+    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_WRAP, D_MARKSPACE, D_ANGLEREF, D_LINKFILL, D_FACETFLOOR],
     crosshatch: [
-      D_ANGLE, D_DENSITY, D_TONELAW, D_WRAP, D_ANGLEREF, D_LINKFILL,
+      D_ANGLE, D_DENSITY, D_TONELAW, D_WRAP, D_MARKSPACE, D_ANGLEREF, D_LINKFILL,
       { key: 'crossAngleDelta', kind: 'dial', label: 'Cross angle', ariaLabel: 'Crosshatch angle delta', min: 10, max: 170, step: 1, default: 90 },
       { key: 'crossDensityRatio', kind: 'slider', label: 'Cross density', ariaLabel: 'Second family density ratio', min: 0.25, max: 2, step: 0.05, default: 1 },
       { key: 'tripleHatch', kind: 'toggle', label: 'Triple hatch', ariaLabel: 'Triple hatch in darkest band', default: false },
@@ -468,7 +479,7 @@
     ],
     contour: [
       D_DENSITY, D_TONELAW,
-      D_WRAP,
+      D_WRAP, D_MARKSPACE,
     ],
     spiral: [
       D_DENSITY, D_TONELAW,
@@ -476,13 +487,14 @@
       { key: 'spiralEccentricity', kind: 'slider', label: 'Eccentricity', ariaLabel: 'Spiral eccentricity', min: 0.3, max: 3, step: 0.05, default: 1, seed: false },
       { key: 'spiralCenter', kind: 'seg', label: 'Centre', ariaLabel: 'Spiral centre', default: 'centroid', options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }, { value: 'highlight', label: 'Glint' }] },
       { key: 'axisSnap', kind: 'toggle', label: 'Axis snap', ariaLabel: 'Squared spiral', default: false },
-      D_WRAP,
+      D_WRAP, D_MARKSPACE,
     ],
     stipple: [
       D_DENSITY, D_TONELAW,
       { key: 'dotShape', kind: 'select', label: 'Dot', ariaLabel: 'Dot shape', default: 'dot', options: DOT_SHAPE_OPTS },
       { key: 'dotSize', kind: 'slider', label: 'Dot size', ariaLabel: 'Dot size', min: 0.1, max: 3, step: 0.05, default: 0.7, seed: false },
       { key: 'stippleJitter', kind: 'slider', label: 'Jitter', ariaLabel: 'Stipple jitter', min: 0, max: 100, step: 1, default: 40 },
+      D_MARKSPACE,
       { key: 'dotAngle', kind: 'dial', label: 'Dot angle', ariaLabel: 'Dot mark angle', min: 0, max: 360, step: 1, default: 0 },
       // U5 (M9b): Stipple varies the dot COUNT with tone. The Dot Screen fill style (Type
       // Hatch) varies the dot SIZE on a hex lattice: a different engine, so it stays
@@ -551,7 +563,7 @@
   // bare test process; an absent/empty STYLE_PARAMS ({} in U0) yields exactly
   // the static 3-key list this replaces — a provable no-op today.
   const persistentStyleKeys = () => {
-    const base = ['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings'];
+    const base = ['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings', 'markSpace'];
     const R = Vectura.SCENE3D_TONE_LAWS;
     const SP = R && R.STYLE_PARAMS;
     if (!SP) return base;
@@ -962,7 +974,24 @@
     return { commit, liveSlider };
   };
 
+  // Whole-scene fast-path flag from the engine (undefined when the group has not composed yet).
+  const levelSOf = (group) => (group && typeof group._sceneLevelS === 'boolean' ? group._sceneLevelS : undefined);
+
   // Walk up to the owning scene GROUP (type 'scene3d' + isGroup) of a child.
+  // FX-J5: the scene/object flags that keep a fill in pose (the engine's exclusionCtx), read from the owning group
+  // and the leaf, so the Lock row never says On where the engine draws per camera angle.
+  const sceneExclusionsOf = (group, objParams) => {
+    const gp = (group && group.params) || {};
+    const op = objParams || {};
+    const byFace = gp.styleTable && gp.styleTable.byFace;
+    return {
+      receiveShadow: !!(gp.shadow && gp.shadow.shadowReceiveOnObjects),
+      areaLight: (gp.lights || []).some((l) => l && l.type === 'area'),
+      emissiveCoreBlank: !!(op.emissive && op.emissive.enabled && op.emissive.coreBlank),
+      csgCarve: false,
+      faceStyles: !!(byFace && Object.keys(byFace).length),
+    };
+  };
   const sceneGroupOf = (ui, layer) => {
     const engine = ui.app && ui.app.engine;
     if (!engine || !engine.getLayerById) return null;
@@ -1324,11 +1353,14 @@
       onCommit: (v) => write('fillSimplify', v),
     }));
     if (fillFidelityApplies(primitive, mapper, sp)) {
-      comps.push(UI.Slider(row('Fidelity'), {
+      const fidVerdict = gateVerdict('fillFidelity', styleGateCtx(primitive, mapper, sp, opts.gateExtra));
+      const fidCtl = row('Fidelity');
+      comps.push(UI.Slider(fidCtl, {
         value: num('fillFidelity'), min: 0.25, max: 3, step: 0.05, defaultValue: 1,
         ariaLabel: 'Fill line fidelity (samples along each fill line)',
-        onCommit: (v) => write('fillFidelity', v),
+        onCommit: (v) => { if (typeof fidVerdict === 'string') return; write('fillFidelity', v); },
       }));
+      if (typeof fidVerdict === 'string' && fidCtl.parentNode) markRowDisabled(fidCtl.parentNode, fidVerdict);
     }
   };
 
@@ -1375,9 +1407,10 @@
     const law = FS.effectiveLaw ? FS.effectiveLaw(survivor, shown) : survivor;
     return { survivor, law };
   };
-  const styleGateCtx = (primitive, mapper, sp) => {
+  // `extra` (optional): { visibility, levelS } for the Lock marks row (W3-D).
+  const styleGateCtx = (primitive, mapper, sp, extra) => {
     const { survivor, law } = lawsOf(sp);
-    return { cls: primClassOf(primitive), primitive, mapper, sp: sp || {}, survivor, law, mono: isMonoLaw(law) };
+    return { cls: primClassOf(primitive), primitive, mapper, sp: sp || {}, survivor, law, mono: isMonoLaw(law), ...(extra || {}) };
   };
   const monoAngleDead = (c) => {
     const FS = Vectura.SCENE_FILL_STYLES;
@@ -1396,10 +1429,13 @@
     triple: 'Triple hatch adds a third family only to Fill Styles that draw rung families. Ladder, Continuous Field, Deep Fill and the field-driven styles ignore it.',
     eccentricity: 'Eccentricity has no effect on a curved shape under Ladder or Deep Fill.',
     curvedHL: '— no effect on curved shapes',
+    surfaceLocked: 'Not used while marks are locked to the surface.',
     glintSpiral: 'Centre: Glint draws the Origin Spiral law (a spiral wound from the specular point, spacing from tone). The Fill Style and the other spiral controls do not apply.',
   };
   const CONTROL_GATES = {
-    facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : true)),
+    facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : (surfaceEffective(c) ? GATE_NOTES.surfaceLocked : true))),
+    // Fill Fidelity scales the pose path's per-line sampling; a surface-locked fill is baked in object space.
+    fillFidelity: (c) => (surfaceEffective(c) ? GATE_NOTES.surfaceLocked : true),
     angleRef: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
     linkFill: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
     // U4b: Cross angle is wired into the monoline laws that have a direction;
@@ -1427,6 +1463,9 @@
     axisSnap: (c) => (c.sp.spiralCenter === 'highlight' ? GATE_NOTES.glintSpiral : true),
     toneLaw: (c) => ((c.mapper === 'spiral' && c.sp.spiralCenter === 'highlight') ? GATE_NOTES.glintSpiral : true),
     spiralEccentricity: (c) => (c.sp.spiralCenter === 'highlight' ? GATE_NOTES.glintSpiral : (c.cls === 'curved' && c.survivor === 'ladder' ? GATE_NOTES.eccentricity : true)),
+    // W3-D: Lock marks to surface. Ask the engine's own rule (SurfaceLock.explainMarkSpace) as if the style asked for
+    // 'surface'; a structural reason (an exclusion id, or no baker for this shape + Fill Style) disables the row.
+    markSpace: (c) => markSpaceVerdict(c),
     dotAngle: (c) => { const s = c.sp.dotShape || 'dot'; return s !== 'dot' && s !== 'ring'; },
     // Hidden-but-live keys exposed by U3 (r3 §5). Each is shown only where it
     // measurably changes output.
@@ -1435,6 +1474,49 @@
     toneQuantLevels: (c) => c.law === 'contFieldQuant' && c.cls !== 'faceted',
     wobbleScale: (c) => (Number(c.sp.wobble) > 0) && c.mapper !== 'spiral' && c.mapper !== 'stipple' && c.cls !== 'curved',
   };
+  // W3-D — plain-words reasons for SurfaceLock.explainMarkSpace().reason (an EXCLUSIONS id, or 'no baker').
+  const MARKSPACE_REASONS = {
+    xray: 'Lock marks to surface is off: an x-ray object shows its hidden side, which locked marks cannot draw.',
+    highlightTreatment: 'Lock marks to surface is off: this highlight treatment re-draws marks per camera angle. Set the highlight treatment to Blank or Keep to lock.',
+    highlightLightDriven: 'Lock marks to surface is off: a light-driven highlight moves with the camera.',
+    toneBands: 'Lock marks to surface is off: Tone bands split the fill per pen. Set Tone bands to Off to lock.',
+    tierPens: 'Lock marks to surface is off: Tier pens split the fill per pen.',
+    wrapFlat: 'Lock marks to surface is off: Wrap is Flat, which draws in screen space. Set Wrap to Surface to lock.',
+    contourRegion: 'Lock marks to surface is off: Region contours are drawn in screen space.',
+    spiralFlatClip: 'Lock marks to surface is off: a flat-clip spiral is drawn in screen space.',
+    emissiveCoreBlank: 'Lock marks to surface is off: this glowing object blanks its core per camera angle.',
+    csgCarve: 'Lock marks to surface is off: a carved (boolean) solid has no single surface to lock to.',
+    receiveShadow: 'Lock marks to surface is off: this object receives cast shadows, which are drawn per camera angle.',
+    areaLight: 'Lock marks to surface is off: an area light shades per camera angle.',
+    faceStyles: 'Lock marks to surface is off: this object has per-face styles, so one set of marks cannot cover it.',
+    depthFade: 'Lock marks to surface is off: Fade by depth depends on the camera. Turn it off to lock.',
+    'no baker': 'Lock marks to surface is not available for this shape and Fill Style yet.',
+  };
+  // True when this style's marks are effectively surface-locked (asked for AND the engine can honour it).
+  const surfaceEffective = (c) => Boolean(c && c.sp && c.sp.markSpace === 'surface' && markSpaceVerdict(c) === true);
+  const markSpaceReasonText = (reason) => MARKSPACE_REASONS[reason] || 'Lock marks to surface is not available for this style.';
+  // Returns true (row live) or the note string (row disabled). Fails open when the surface-lock module is absent
+  // or the primitive is unknown (scene scope), where only the engine can decide per object.
+  const markSpaceVerdict = (c) => {
+    const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
+    if (!c || !SL || typeof SL.explainMarkSpace !== 'function') return true;
+    const sp = c.sp || {};
+    const style = { ...sp, markSpace: 'surface' };
+    if (isFlatWrap(sp, c.mapper)) style.wrap = 'flat';
+    const spec = { mapper: c.mapper, toneLaw: c.law, primitive: c.primitive, style };
+    const ex = SL.explainMarkSpace(style, {
+      spec, mapper: c.mapper, visibility: c.visibility,
+      receiveShadow: c.receiveShadow === true, areaLight: c.areaLight === true,
+      emissiveCoreBlank: c.emissiveCoreBlank === true, csgCarve: c.csgCarve === true, faceStyles: c.faceStyles === true,
+    });
+    if (ex.mode === 'surface') return true;
+    if (ex.reason === 'no baker' && !c.primitive) return true;
+    return markSpaceReasonText(ex.reason);
+  };
+  // The Level S read-out under the row: whether the WHOLE scene takes the fast path (group._sceneLevelS).
+  const levelSHint = (levelS) => (levelS === true
+    ? 'Fast drag: every fill in this scene is surface-locked, so turning the camera is a cheap re-frame.'
+    : 'Not fast drag: at least one fill in this scene is not surface-locked, so turning the camera redraws it in full.');
   const gateVerdict = (key, ctx) => {
     const g = CONTROL_GATES[key];
     if (!g || !ctx) return true;
@@ -1728,7 +1810,8 @@
     } else if (d.kind === 'toggle') {
       o.comps.push(UI.SegCtrl(o.row(d.label), {
         options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-        value: raw === true ? 'on' : 'off', ariaLabel: aria, onChange: (v) => write(v === 'on'),
+        value: raw === true ? 'on' : 'off', ariaLabel: aria,
+        onChange: (v) => write(typeof d.toStored === 'function' ? d.toStored(v === 'on') : v === 'on'),
       }));
     } else if (d.kind === 'action') {
       const host = o.row(d.label);
@@ -1757,8 +1840,18 @@
       const el = o.host.children[i];
       if (!el || !el.classList || !el.classList.contains('vs3-row')) continue;
       if (!firstRow) firstRow = el;
+      if (d.key === 'markSpace') el.classList.add('vs3-row-long-lbl');
       if (d.help && !disabledNote) el.setAttribute('title', d.help);
       if (disabledNote) markRowDisabled(el, disabledNote);
+    }
+    if (d.key === 'markSpace' && o.ctx && typeof o.ctx.levelS === 'boolean') {
+      const hint = document.createElement('div');
+      hint.className = 'vs3-markspace-hint';
+      hint.dataset.levelS = o.ctx.levelS ? '1' : '0';
+      hint.setAttribute('role', 'note');
+      hint.textContent = o.ctx.levelS ? 'Fast drag' : 'Full redraw while dragging';
+      hint.title = levelSHint(o.ctx.levelS);
+      o.host.appendChild(hint);
     }
     return firstRow;
   };
@@ -2393,7 +2486,7 @@
         if (typeof leafAngleVerdict === 'string') markRowDisabled(angleHost.parentNode, leafAngleVerdict);
         // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
         // hatch/crosshatch only, matching D_FACETFLOOR's MAPPER_CONTROLS entry.
-        const minRulingsVerdict = gateVerdict('facetMinRulings', styleGateCtx(params.primitive, style.mapper, style.params));
+        const minRulingsVerdict = gateVerdict('facetMinRulings', styleGateCtx(params.primitive, style.mapper, style.params, { visibility: params.visibility, ...sceneExclusionsOf(sceneGroupOf(ui, layer), params) }));
         if ((style.mapper === 'hatch' || style.mapper === 'crosshatch') && minRulingsVerdict !== false) {
           slider(host, 'Min rulings', {
             value: Number.isFinite(style.params.facetMinRulings) ? style.params.facetMinRulings : 3,
@@ -2447,7 +2540,7 @@
         comps,
         row: (lbl) => labeledRow(host, lbl),
         sp: style.params,
-        ctx: styleGateCtx(params.primitive, style.mapper, style.params),
+        ctx: styleGateCtx(params.primitive, style.mapper, style.params, { visibility: params.visibility, levelS: levelSOf(sceneGroupOf(ui, layer)), ...sceneExclusionsOf(sceneGroupOf(ui, layer), params) }),
         pens,
         header: true,
         write: (key, value) => { commit(() => { style.params[key] = value; }); renderStyle(); },
@@ -2470,6 +2563,7 @@
         primitive: params.primitive,
         mapper: style.mapper,
         params: style.params,
+        gateExtra: { visibility: params.visibility, ...sceneExclusionsOf(sceneGroupOf(ui, layer), params) },
         write: (key, value) => { commit(() => { style.params[key] = value; }); },
       });
 
@@ -5270,7 +5364,7 @@
       // by the Object 3D leaf panel), wired here to the whole-style commit at
       // the CURRENT scope (CONTRACT C, one undo per gesture). `gate` carries
       // the measured reachability rules (CONTROL_GATES).
-      const gate = styleGateCtx(scopePrimitiveMode(scope), resolved.mapper, resolved.params || {});
+      const gate = styleGateCtx(scopePrimitiveMode(scope), resolved.mapper, resolved.params || {}, { levelS: levelSOf(layer) });
       const shared = {
         host: styleHost,
         comps: styleComps,

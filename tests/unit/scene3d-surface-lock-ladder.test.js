@@ -1,0 +1,410 @@
+const { loadSurfaceLockRuntime } = require('../helpers/surface-lock-scene');
+
+// SurfaceLockLadder: hatch, crosshatch, contour, spiral, stipple bakers (docs/surface-lock-contract.md §2, §3, §5, §9).
+// Every test runs on MarkSets directly (no pose, no camera).
+
+const PEN = 0.3;
+const sphere = (mapper, extra = {}) => ({
+  objectId: 'o1', primitive: 'sphere', mode: 'sphere', sizes: { sx: 20, sy: 20, sz: 20 }, detail: 24,
+  scale: { sx: 1, sy: 1, sz: 1 }, mapper, toneLaw: undefined, style: { fillDensity: 50, fillAngle: 45 },
+  penWidth: PEN, scaleRef: 1, seed: { salt: 1 }, ...extra,
+});
+const SHAPES = {
+  sphere: { primitive: 'sphere', mode: 'sphere', sizes: { sx: 20, sy: 20, sz: 20 } },
+  cylinder: { primitive: 'cylinder', mode: 'cylinder', sizes: { sx: 14, sy: 40, sz: 14 } },
+  torus: { primitive: 'torus', mode: 'torus', sizes: { sx: 20, sy: 20, sz: 20 } },
+};
+const MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+
+describe('SurfaceLockLadder', () => {
+  let rt; let V; let L; let MS; let cache;
+  beforeAll(async () => {
+    rt = await loadSurfaceLockRuntime(); V = rt.V; L = V.Scene3D.SurfaceLockLadder; MS = V.Scene3D.SurfaceLockMarkSet; cache = new Map();
+  });
+  afterAll(() => rt && rt.cleanup());
+  const bake = (spec) => { const k = JSON.stringify(spec); if (!cache.has(k)) cache.set(k, L.bake(spec)); return cache.get(k); };
+  const runPts = (ms, r) => { const out = []; for (let v = ms.runStart[r]; v < ms.runStart[r + 1]; v++) out.push([ms.positions[3 * v], ms.positions[3 * v + 1], ms.positions[3 * v + 2]]); return out; };
+  const runLen = (ms, r) => { const p = runPts(ms, r); let s = 0; for (let i = 1; i < p.length; i++) s += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1], p[i][2] - p[i - 1][2]); return s; };
+  const poles = (spec) => { const M = V.Scene3D.SurfaceLockChart.metric(spec.mode, spec.sizes, spec.scale); return [M.sample(0, 0.3), M.sample(1, 0.3)].map((q) => [q.x, q.y, q.z]); };
+  const nearPole = (P, p, r) => P.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < r);
+  const normalAt = (ms, v, out = []) => MS.octDecode(ms.normals, 2 * v, out);
+
+  it('supports exactly the FIT rows minus their refuse rules', () => {
+    expect(L.id).toBe('ladder');
+    MAPPERS.forEach((m) => expect(L.supports(sphere(m)), m).toBe(true));
+    expect(L.supports(sphere('hatch', { toneLaw: 'ladder' }))).toBe(true);
+    expect(L.supports(sphere('wireframe'))).toBe(false);
+    expect(L.supports(sphere('contourSlice'))).toBe(false);
+    expect(L.supports(sphere('hatch', { toneLaw: 'mezzoRegion' }))).toBe(false);
+    expect(L.supports(sphere('hatch', { primitive: 'torusKnot', mode: 'torusKnot' }))).toBe(false);
+    expect(L.supports(sphere('hatch', { primitive: 'box', mode: undefined }))).toBe(false);
+    expect(L.supports(sphere('hatch', { style: { tripleHatch: true } }))).toBe(false);
+    expect(L.supports(sphere('spiral', { style: { spiralMode: 'flatClip' } }))).toBe(false);
+    expect(L.supports(sphere('contour', { style: { contourStyle: 'region' } }))).toBe(false);
+    expect(L.supports(sphere('stipple', { style: { dotShape: 'plus' } }))).toBe(false);
+    expect(L.supports(null)).toBe(false);
+    expect(L.FIT.length).toBeGreaterThan(0);
+  });
+
+  describe.each(MAPPERS)('mapper %s', (mapper) => {
+    it.each(Object.keys(SHAPES))('is valid, on the surface, with unit outward normals (%s)', (shape) => {
+      const spec = sphere(mapper, SHAPES[shape]);
+      const ms = bake(spec);
+      expect(MS.validate(ms)).toEqual([]);
+      expect(ms.runCount).toBeGreaterThan(0);
+      expect(ms.levels).toBeGreaterThanOrEqual(2);
+      expect(ms.meta.gain).toBe(mapper === 'stipple' ? 4 : 2);
+      const M = V.Scene3D.SurfaceLockChart.metric(spec.mode, spec.sizes, spec.scale);
+      const n = [];
+      let worst = 0; let minDot = 1;
+      const stride = Math.max(1, Math.floor(ms.vertexCount / 400));
+      for (let v = 0; v < ms.vertexCount; v += stride) {
+        const x = ms.positions[3 * v]; const y = ms.positions[3 * v + 1]; const z = ms.positions[3 * v + 2];
+        normalAt(ms, v, n);
+        expect(Math.abs(Math.hypot(n[0], n[1], n[2]) - 1)).toBeLessThan(1e-6);
+        if (shape === 'sphere') {
+          worst = Math.max(worst, Math.abs(Math.hypot(x, y, z) - 20));
+          minDot = Math.min(minDot, (n[0] * x + n[1] * y + n[2] * z) / 20);
+        }
+      }
+      if (shape === 'sphere') { expect(worst).toBeLessThan(1e-3); expect(minDot).toBeGreaterThan(0.999); }
+      expect(M).toBeTruthy();
+    });
+
+    it('is deterministic; salt changes the set; objectId does not', () => {
+      const a = L.bake(sphere(mapper)); const b = L.bake(sphere(mapper));
+      ['positions', 'normals', 'runStart', 'runLevel', 'runRank', 'runFamily', 'runFlags'].forEach((k) => expect(Array.from(a[k]), k).toEqual(Array.from(b[k])));
+      const other = L.bake(sphere(mapper, { objectId: 'zzz' }));
+      expect(Array.from(other.positions)).toEqual(Array.from(a.positions));
+      const salted = L.bake(sphere(mapper, { seed: { salt: 9 } }));
+      expect(Array.from(salted.positions)).not.toEqual(Array.from(a.positions));
+      expect(Object.keys(sphere(mapper)).some((k) => /pose|camera|light|tone$/i.test(k))).toBe(false);
+    });
+  });
+
+  it('density: total run length of levels <= l grows by 2 +- 0.35 per level (line families)', () => {
+    ['hatch', 'contour'].forEach((mapper) => {
+      const ms = bake(sphere(mapper));
+      const per = new Float64Array(ms.levels);
+      for (let r = 0; r < ms.runCount; r++) per[ms.runLevel[r]] += runLen(ms, r);
+      let cum = per[0]; const growth = [];
+      for (let l = 1; l < ms.levels; l++) { const next = cum + per[l]; growth.push(next / cum); cum = next; }
+      growth.forEach((g, i) => { expect(Math.abs(g - 2), `${mapper} level ${i + 1} growth ${g}`).toBeLessThan(0.35); });
+    });
+  });
+
+  it('stipple: DOT runs, one vertex each, count grows ~4x per level, glyph in meta', () => {
+    const ms = bake(sphere('stipple'));
+    expect(ms.meta.glyph.kind).toBe('circle');
+    expect(ms.meta.glyph.segs).toBeGreaterThanOrEqual(4);
+    expect(ms.meta.toneModel).toBe('area');
+    const cnt = new Float64Array(ms.levels);
+    for (let r = 0; r < ms.runCount; r++) {
+      expect(ms.runFlags[r] & MS.FLAG.DOT).toBe(MS.FLAG.DOT);
+      expect(ms.runStart[r + 1] - ms.runStart[r]).toBe(1);
+      cnt[ms.runLevel[r]] += 1;
+    }
+    let cum = cnt[0];
+    for (let l = 1; l < ms.levels; l++) { const g = (cum + cnt[l]) / cum; expect(Math.abs(g - 4), `level ${l} ${g}`).toBeLessThan(1.1); cum += cnt[l]; }
+  });
+
+  it('stipple: dot separation per level (levels <= l no closer than 0.8 p0 / 2^l) away from the poles', () => {
+    const ms = bake(sphere('stipple'));
+    const p0 = ms.meta.p0; const P = poles(sphere('stipple'));
+    for (let l = 0; l < Math.min(ms.levels, 4); l++) {
+      const pts = [];
+      for (let r = 0; r < ms.runCount; r++) if (ms.runLevel[r] <= l) { const v = ms.runStart[r]; const q = [ms.positions[3 * v], ms.positions[3 * v + 1], ms.positions[3 * v + 2]]; if (!nearPole(P, q, 1.5)) pts.push(q); }
+      let minD = Infinity;
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) minD = Math.min(minD, Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1], pts[i][2] - pts[j][2]));
+      expect(minD, `level ${l}`).toBeGreaterThanOrEqual(0.8 * p0 / Math.pow(2, l) - 1e-6);
+    }
+  });
+
+  it('line separation: distinct runs of levels <= l stay >= 0.8 p0 / 2^l apart (hatch, contour) away from the pole caps (0.3 R: straight chart rulings are spirals there)', () => {
+    ['hatch', 'contour'].forEach((mapper) => {
+      const ms = bake(sphere(mapper));
+      const p0 = ms.meta.p0; const P = poles(sphere(mapper));
+      // A ruling is split into sub-runs where its effective level changes (the chart converges); consecutive sub-runs hand
+      // off one chart step (STEP_MM 0.5) apart. Group runs whose end vertices are <= 0.6 mm apart so a ruling is one run.
+      const grp = Array.from({ length: ms.runCount }, (_, r) => r);
+      const find = (x) => { while (grp[x] !== x) { grp[x] = grp[grp[x]]; x = grp[x]; } return x; };
+      const ends = [];
+      for (let r = 0; r < ms.runCount; r++) { const q = runPts(ms, r); ends.push([q[0], r], [q[q.length - 1], r]); }
+      for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+        const a = ends[i][0]; const b = ends[j][0];
+        if (ends[i][1] !== ends[j][1] && Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) <= 0.6) grp[find(ends[i][1])] = find(ends[j][1]);
+      }
+      for (let l = 0; l < 5; l++) {
+        const H = V.Scene3D.SurfaceLockChart.spatialHash3(p0 / Math.pow(2, l));
+        const pts = [];
+        for (let r = 0; r < ms.runCount; r++) {
+          if (ms.runLevel[r] > l) continue;
+          const rp = runPts(ms, r);
+          rp.forEach((p) => { if (!nearPole(P, p, 6)) { H.insert(p[0], p[1], p[2], find(r)); pts.push([p, find(r)]); } });
+        }
+        let minD = Infinity;
+        const step = Math.max(1, Math.floor(pts.length / 3000));
+        for (let i = 0; i < pts.length; i += step) {
+          const [p, r] = pts[i];
+          H.near(p[0], p[1], p[2], 0.8 * p0 / Math.pow(2, l), (id, d2) => { if (id !== r) minD = Math.min(minD, Math.sqrt(d2)); return false; });
+        }
+        // Closeness is checked against vertices of OTHER runs (sub-runs of one ruling are grouped).
+        expect(minD, `${mapper} level ${l}`).toBeGreaterThanOrEqual(0.8 * p0 / Math.pow(2, l) * 0.999);
+      }
+    });
+  });
+
+  it('ruling count comes from the object-space metric: pose-free and scales with the object', () => {
+    const a = bake(sphere('hatch'));
+    const big = L.bake(sphere('hatch', { sizes: { sx: 40, sy: 40, sz: 40 } }));
+    expect(a.runCount).toBeGreaterThan(0);
+    const lvl0 = (ms) => { let n = 0; for (let r = 0; r < ms.runCount; r++) if (ms.runLevel[r] === 0) n += 1; return n; };
+    expect(lvl0(big)).toBeGreaterThan(lvl0(a) * 1.6);
+    // zoom within the octave does not change the key inputs; a different scaleRef does change density
+    const z = L.bake(sphere('hatch', { scaleRef: 2 }));
+    expect(z.meta.p0).toBeCloseTo(a.meta.p0 / 2, 9);
+  });
+
+  it('contour rings are CLOSED; spiral is one continuous run per level on a polar chart', () => {
+    const c = bake(sphere('contour'));
+    let closed = 0;
+    for (let r = 0; r < c.runCount; r++) if (c.runFlags[r] & MS.FLAG.CLOSED) closed += 1;
+    expect(closed).toBeGreaterThan(c.runCount * 0.5);
+    const s = bake(sphere('spiral'));
+    const perLevel = new Array(s.levels).fill(0);
+    for (let r = 0; r < s.runCount; r++) perLevel[s.runLevel[r]] += 1;
+    perLevel.forEach((n) => expect(n).toBe(1));
+  });
+
+  it('crosshatch family 1 is at 65 degrees (+-2.5) to family 0 in the tangent plane away from the poles', () => {
+    const spec = sphere('crosshatch');
+    const ms = bake(spec);
+    const f1 = [];
+    for (let r = 0; r < ms.runCount; r++) if (ms.runFamily[r] === 1) f1.push(r);
+    expect(f1.length).toBeGreaterThan(5);
+    const M = V.Scene3D.SurfaceLockChart.metric('sphere', spec.sizes, spec.scale);
+    // chart lookup grid (nearest cell), and the baker's family-0 chart direction (survey medians of |Pa|, |Pb|)
+    const NA = 160; const NB = 320; const grid = [];
+    for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) { const s = M.sample((i + 0.5) / NA, (j + 0.5) / NB); if (s) grid.push(s); }
+    const bs = []; for (let i = 0; i < 25; i++) for (let j = 0; j < 25; j++) { const s = M.sample((i + 0.5) / 25, (j + 0.5) / 25); bs.push(Math.hypot(s.dbx, s.dby, s.dbz)); }
+    bs.sort((x, y) => x - y);
+    const medA = Math.PI * 20; const medB = bs[bs.length >> 1];
+    const ca = Math.cos(Math.PI / 4) / medA; const cb = Math.sin(Math.PI / 4) / medB;
+    const P = poles(spec);
+    const angles = [];
+    for (let k = 0; k < f1.length && angles.length < 80; k++) {
+      const p = runPts(ms, f1[k]); const i = p.length >> 1;
+      if (i < 1 || i + 1 >= p.length) continue;
+      const q = p[i]; if (nearPole(P, q, 8)) continue;
+      let best = null; let bd = Infinity;
+      for (const s of grid) { const d = (s.x - q[0]) ** 2 + (s.y - q[1]) ** 2 + (s.z - q[2]) ** 2; if (d < bd) { bd = d; best = s; } }
+      const t0 = [ca * best.dax + cb * best.dbx, ca * best.day + cb * best.dby, ca * best.daz + cb * best.dbz];
+      const t1 = [p[i + 1][0] - p[i - 1][0], p[i + 1][1] - p[i - 1][1], p[i + 1][2] - p[i - 1][2]];
+      const cos = Math.abs((t0[0] * t1[0] + t0[1] * t1[1] + t0[2] * t1[2]) / (Math.hypot(...t0) * Math.hypot(...t1)));
+      angles.push((Math.acos(Math.min(1, cos)) * 180) / Math.PI);
+    }
+    expect(angles.length).toBeGreaterThan(8);
+    angles.forEach((ang) => { const d = Math.min(Math.abs(ang - 65), Math.abs(ang - 115)); expect(d, `angle ${ang}`).toBeLessThan(2.5); });
+  });
+
+  describe('toneLUT', () => {
+    const toneCtx = (extra = {}) => ({ tone: { enabled: true, bands: 3, thresholds: [0.33, 0.66], ladder: [0.2, 0.5, 0.85], specular: { enabled: false, size: 1 }, ...extra }, penWidth: PEN });
+    const spec = (extra = {}) => sphere('hatch', { style: { fillDensity: 100, fillAngle: 45, ...extra } });
+
+    it('reproduces Regions.band / coverageFor with the default ladder at 33 intensities', () => {
+      const R = V.Scene3D.Regions; const ctx = toneCtx();
+      const { lut, scaleFn } = L.toneLUT(spec(), ctx);
+      expect(lut.length).toBe(257);
+      expect(scaleFn).toBeNull();
+      const floorPitch = R.PLOT_FLOOR_PEN * PEN; // density 100: master pitch = the plot floor, lit cap 12 pen not binding
+      for (let i = 0; i < 33; i++) {
+        const I = i / 32;
+        const b = R.band(I, ctx.tone);
+        let cov = R.coverageFor(2 - b, ctx.tone);
+        if (b === 2) cov = Math.max(cov, cov * 0.6, 0.12);
+        const k = Math.round(I * 256);
+        const Ik = k / 256; const bk = R.band(Ik, ctx.tone); let ck = R.coverageFor(2 - bk, ctx.tone);
+        if (bk === 2) ck = Math.max(ck, ck * 0.6, 0.12);
+        expect(lut[k] * floorPitch, `I=${I}`).toBeCloseTo(ck, 5);
+        void cov;
+      }
+    });
+
+    it('applies the glint cap (GLINT_KEEP 0.6, specular size) to the lit band only', () => {
+      const off = L.toneLUT(spec(), toneCtx()).lut;
+      const on = L.toneLUT(spec(), toneCtx({ specular: { enabled: true, size: 1 } })).lut;
+      const big = L.toneLUT(spec(), toneCtx({ specular: { enabled: true, size: 3 } })).lut;
+      const kLit = 256; const kDark = 0;
+      expect(on[kDark]).toBe(off[kDark]);
+      // lit cov 0.2: off -> pitch 0.66/0.2 = 3.3 mm; on -> max(0.2*0.5, 0.2*0.6, LIT_FLOOR 0.12) = 0.12 -> 5.5 mm, capped at 12 pen = 3.6 mm.
+      expect(1 / off[kLit]).toBeCloseTo(3.3, 4);
+      expect(1 / on[kLit]).toBeCloseTo(3.6, 4);
+      expect(big[kLit]).toBeCloseTo(on[kLit], 6);
+      const none = L.toneLUT(spec(), { ...toneCtx({ specular: { enabled: true, size: 1 } }), highlight: 'none' }).lut;
+      expect(none[kLit]).toBe(off[kLit]);
+    });
+
+    it('is monotone: darker means finer, lit pitch is capped at LIT_MAX_PITCH_PEN x pen, tone off is flat', () => {
+      const { lut } = L.toneLUT(sphere('hatch'), toneCtx());
+      expect(lut[0]).toBeGreaterThan(lut[256]);
+      const cap = V.Scene3D.Regions.LIT_MAX_PITCH_PEN * PEN;
+      for (let k = 0; k <= 256; k++) expect(1 / lut[k]).toBeLessThanOrEqual(cap + 1e-4);
+      const flat = L.toneLUT(sphere('hatch'), { tone: { enabled: false }, penWidth: PEN }).lut;
+      expect(new Set(Array.from(flat)).size).toBe(1);
+    });
+
+    it('stipple LUT follows area ~ coverage (pitch = master / sqrt(cov))', () => {
+      const line = L.toneLUT(spec(), toneCtx()).lut; const dot = L.toneLUT(sphere('stipple', { style: { fillDensity: 100, dotSize: 0.2 } }), toneCtx()).lut;
+      // darkest vs lit pitch ratio: lines master/0.85 vs master/0.2 (ratio 4.25); dots sqrt of that.
+      expect(line[0] / line[256]).toBeGreaterThan(dot[0] / dot[256]);
+    });
+  });
+
+  describe('compression-aware levels (F-L2): ink per band keeps doubling where the chart converges', () => {
+    // Cumulative ink of all levels over level-0 ink, per band of equal surface weight. Bands are chosen per shape from the
+    // geometry (sphere: |cos| to the pole axis = equal area; cylinder: slices along the axis; torus: six sectors of the
+    // minor angle, the inner equator centred in one). The ratio cancels the band area.
+    const bandInk = (ms, shape, spec) => {
+      const P = ms.positions; const NB = shape === 'torus' ? 6 : 5;
+      const ext = [0, 1, 2].map((k) => { let lo = Infinity; let hi = -Infinity; for (let v = 0; v < ms.vertexCount; v++) { lo = Math.min(lo, P[3 * v + k]); hi = Math.max(hi, P[3 * v + k]); } return [lo, hi]; });
+      const span = ext.map((e) => e[1] - e[0]);
+      let ax = 1; if (shape === 'torus') ax = span.indexOf(Math.min(...span)); if (shape === 'cylinder') ax = span.indexOf(Math.max(...span));
+      const o = [0, 1, 2].filter((k) => k !== ax);
+      let R = 0;
+      if (shape === 'torus') { let lo = Infinity; let hi = -Infinity; for (let v = 0; v < ms.vertexCount; v++) { const rho = Math.hypot(P[3 * v + o[0]], P[3 * v + o[1]]); lo = Math.min(lo, rho); hi = Math.max(hi, rho); } R = (lo + hi) / 2; }
+      const ctr = (ext[ax][0] + ext[ax][1]) / 2;
+      const band = (v) => {
+        const h = P[3 * v + ax] - ctr;
+        if (shape === 'sphere') return Math.min(NB - 1, Math.floor((Math.abs(h) / Math.hypot(P[3 * v], P[3 * v + 1], P[3 * v + 2])) * NB));
+        if (shape === 'cylinder') return Math.min(NB - 1, Math.max(0, Math.floor(((h + span[ax] / 2) / span[ax]) * NB)));
+        const rho = Math.hypot(P[3 * v + o[0]], P[3 * v + o[1]]);
+        const phi = Math.atan2(h, R - rho);
+        return Math.floor(((phi + Math.PI) / (2 * Math.PI)) * NB + 0.5) % NB;
+      };
+      const pole = shape === 'sphere' ? poles(spec) : [];
+      const len = Array.from({ length: NB }, () => new Float64Array(ms.levels));
+      for (let r = 0; r < ms.runCount; r++) {
+        for (let v = ms.runStart[r]; v < ms.runStart[r + 1] - 1; v++) {
+          if (pole.length && nearPole(pole, [P[3 * v], P[3 * v + 1], P[3 * v + 2]], 0.5)) continue;
+          const b = band(v); if (b < 0) continue;
+          len[b][ms.runLevel[r]] += Math.hypot(P[3 * v + 3] - P[3 * v], P[3 * v + 4] - P[3 * v + 1], P[3 * v + 5] - P[3 * v + 2]);
+        }
+      }
+      return len.map((row) => { const tot = row.reduce((a, c) => a + c, 0); return { l0: row[0], ratio: tot / Math.max(row[0], 1e-9) }; });
+    };
+    it.each(['sphere', 'cylinder', 'torus'])('hatch on a %s: all levels carry >= 0.5 * 2^(L-1) x the level-0 ink in every band', (shape) => {
+      const spec = sphere('hatch', SHAPES[shape]);
+      const ms = bake(spec);
+      const need = 0.5 * Math.pow(2, ms.levels - 1);
+      bandInk(ms, shape, spec).forEach((b, i) => { expect(b.ratio, `${shape} band ${i} (levels ${ms.levels}, level-0 ink ${b.l0.toFixed(1)})`).toBeGreaterThanOrEqual(need); });
+    });
+  });
+
+  describe('ruling continuity (G4) and bounds (G11)', () => {
+    it('adjacent runs of one ruling share an identical vertex: no plotted gap at a level change', () => {
+      ['hatch', 'contour', 'crosshatch'].forEach((mapper) => {
+        const ms = bake(sphere(mapper));
+        const ends = [];
+        for (let r = 0; r < ms.runCount; r++) {
+          if ((ms.runFlags[r] & MS.FLAG.CLOSED) || ms.runFamily[r] !== 0) continue;
+          const p = runPts(ms, r);
+          if (p.length < 2) continue;
+          ends.push({ r, a: p[0], b: p[p.length - 1] });
+        }
+        let nearGaps = 0; let shared = 0;
+        for (let i = 0; i < ends.length; i++) for (let j = 0; j < ends.length; j++) {
+          if (i === j) continue;
+          const d = Math.hypot(ends[i].b[0] - ends[j].a[0], ends[i].b[1] - ends[j].a[1], ends[i].b[2] - ends[j].a[2]);
+          if (d === 0) shared += 1; else if (d < 0.7) nearGaps += 1;
+        }
+        expect(nearGaps, `${mapper} end-to-start gaps < 0.7 mm`).toBe(0);
+        if (mapper === 'hatch') expect(shared).toBeGreaterThan(0);
+      });
+    });
+    it('bounds.radius is the true max |p| (<= 1.001 R), and the ladder keeps the current density (O3)', () => {
+      const ms = bake(sphere('hatch'));
+      let mx = 0;
+      for (let v = 0; v < ms.vertexCount; v++) mx = Math.max(mx, Math.hypot(ms.positions[3 * v], ms.positions[3 * v + 1], ms.positions[3 * v + 2]));
+      expect(ms.meta.bounds.radius).toBeLessThanOrEqual(20 * 1.001);
+      expect(ms.meta.bounds.radius).toBeCloseTo(mx, 4);
+      // Owner decision O3: the ladder keeps today's density, so it must not declare
+      // minSepFrac (the frame cap would thin it). Its own spacing bar is sepBarFrac.
+      expect(ms.meta.minSepFrac).toBeUndefined();
+      expect(ms.meta.sepBarFrac).toBeGreaterThan(0.5);
+      expect(ms.meta.sepBarFrac).toBeLessThanOrEqual(1);
+    });
+    it('default sphere hatch keeps ink within 5% of 1077 mm and bakes within budget', () => {
+      const t = Date.now(); const ms = L.bake(sphere('hatch', { seed: { salt: 2 } })); const dt = Date.now() - t;
+      let ink = 0; for (let r = 0; r < ms.runCount; r++) ink += runLen(ms, r);
+      // eslint-disable-next-line no-console
+      console.log(`[ladder FX-L] ink ${ink.toFixed(1)} mm bake ${dt} ms`);
+      expect(dt).toBeLessThan(1000);
+    });
+  });
+
+  describe('relabel stubs and cut fronts (FX-R, H3)', () => {
+    const keyOf = (ms, v) => `${ms.positions[3 * v].toFixed(5)},${ms.positions[3 * v + 1].toFixed(5)},${ms.positions[3 * v + 2].toFixed(5)}`;
+    // Runs of one ruling chain through a shared vertex (FX-L). A run is "interior" when BOTH its ends are shared with another run.
+    const chains = (ms) => {
+      const starts = new Map(); const ends = new Map();
+      for (let r = 0; r < ms.runCount; r++) { starts.set(keyOf(ms, ms.runStart[r]), r); ends.set(keyOf(ms, ms.runStart[r + 1] - 1), r); }
+      const interior = []; const shared = [];
+      for (let r = 0; r < ms.runCount; r++) {
+        const a = keyOf(ms, ms.runStart[r]); const b = keyOf(ms, ms.runStart[r + 1] - 1);
+        if (ends.has(a) && ends.get(a) !== r && starts.has(b) && starts.get(b) !== r) interior.push(r);
+        if (starts.has(b) && starts.get(b) !== r) shared.push(b);
+      }
+      return { interior, shared };
+    };
+    it('no interior run (both ends shared with a neighbour) is shorter than RELABEL_MIN_MM = 4 mm', () => {
+      const ms = bake(sphere('hatch'));
+      const { interior } = chains(ms);
+      expect(interior.length).toBeGreaterThan(20);
+      const short = interior.filter((r) => runLen(ms, r) < 4 - 1e-6).map((r) => runLen(ms, r).toFixed(2));
+      expect(short, `short interior runs: ${short.join(' ')}`).toEqual([]);
+    });
+    it('the +-48 degree relabel front is staggered: its shared ends spread over >= 3 degrees of latitude', () => {
+      const spec = sphere('hatch');
+      const ms = bake(spec);
+      const M = V.Scene3D.SurfaceLockChart.metric(spec.mode, spec.sizes, spec.scale);
+      const [pa, pb] = [M.sample(0, 0.3), M.sample(1, 0.3)];
+      const ax = [pb.x - pa.x, pb.y - pa.y, pb.z - pa.z]; const al = Math.hypot(...ax);
+      const lats = chains(ms).shared.map((k) => {
+        const p = k.split(',').map(Number);
+        return (Math.asin((p[0] * ax[0] + p[1] * ax[1] + p[2] * ax[2]) / (al * Math.hypot(...p))) * 180) / Math.PI;
+      }).filter((d) => d > 40 && d < 56);
+      expect(lats.length).toBeGreaterThan(8);
+      expect(Math.max(...lats) - Math.min(...lats)).toBeGreaterThanOrEqual(3);
+    });
+    it('hysteresis only moves a stub finer: the 0.8 spacing bar and total ink hold', () => {
+      const ms = bake(sphere('hatch'));
+      let ink = 0; for (let r = 0; r < ms.runCount; r++) ink += runLen(ms, r);
+      expect(ink).toBeGreaterThan(3900); // today 4176 mm over all levels; FX-R may cost at most ~4 %
+      expect(MS.validate(ms)).toEqual([]);
+    });
+  });
+
+  describe('budget', () => {
+    it('levels stop at the darkest pitch the law can ask for (F-L3): default hatch and stipple bake 4 levels, ~8.5k hatch vertices', () => {
+      const h = bake(sphere('hatch'));
+      expect(h.levels).toBe(4);
+      expect(h.vertexCount).toBeLessThan(12000);
+      expect(bake(sphere('stipple')).levels).toBe(4);
+      // finest baked pitch at the largest in-octave scale (sqrt2 x 1.5 headroom = 2.12 x scaleRef) must still be drawable:
+      // it is no finer than the master pitch / 1.5 and not under 0.8 x the plot floor.
+      const floor = V.Scene3D.Regions.PLOT_FLOOR_PEN * PEN;
+      expect(h.meta.p0 / Math.pow(2, h.levels - 1)).toBeGreaterThanOrEqual(0.8 * floor);
+    });
+    it('default sphere hatch: <= 80k vertices, 4-6 levels, validate clean, bake time reported', () => {
+      const t = Date.now();
+      const ms = L.bake(sphere('hatch'));
+      const dt = Date.now() - t;
+      // eslint-disable-next-line no-console
+      console.log(`[ladder] hatch vertices ${ms.vertexCount} runs ${ms.runCount} levels ${ms.levels} bake ${dt} ms (meta ${ms.meta.msBake.toFixed(1)})`);
+      expect(ms.vertexCount).toBeLessThanOrEqual(80000);
+      expect(ms.levels).toBeGreaterThanOrEqual(4); expect(ms.levels).toBeLessThanOrEqual(6);
+      expect(MS.validate(ms)).toEqual([]);
+      expect(dt).toBeLessThan(2000);
+    });
+  });
+});

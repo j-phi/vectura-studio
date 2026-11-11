@@ -6,6 +6,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: surface-locked 3D Scene fills
+- **What it is.** A fill with `markSpace: 'surface'` is baked once in object space (`src/core/scene3d/surface-lock*.js`, constants in `src/config/scene3d-surface-lock.js`) and only framed per pose: one transform, cull, tone gate and projection per vertex. A drag frame equals the export by construction. Contract: `docs/surface-lock-contract.md`.
+- **Level S (whole-scene frame).** When every fill in the scene is locked and the lights, shadow and edges fit, the drag path skips the warp preview and the pre-baked spin ring and re-frames the cached MarkSets directly, with no Fill Curves fit. Measured in the app: a drag frame is about 10 ms (Mezzotint) and 12 ms (Hatch); a whole-scene generate is about 8-15 ms, against about 150-230 ms before. A scene with any pose fill keeps the earlier preview (Level F frames each locked fill).
+- **Bakers.** Curved primitives lock Hatch, Crosshatch, Contour, Spiral, Stipple, Mezzotint (capped at 4 levels), constant dash (`dutyConst`) and shortened ends (`endShorten`); the faceted baker locks Hatch and Crosshatch on box, plane and polyhedron. The `mergeLadder` and `phaseBlue` laws are baked but dormant (no style selects them).
+- **Worker bake.** Bakes run in a Web Worker and are adopted with `SurfaceLock.adopt`; an edit holds the previous ink until the new bake is ready, including interactive commits. Export and save always compose exactly. The locked ground shadow uses world-fixed lines with a spacing floor.
+- **Lock marks to surface control** in the Style tab of the fill panel, with a plain-words reason when the row is unavailable (receive shadow, area lights, Wrap Flat, x-ray, per-face styles, Tone bands and the other `EXCLUSIONS` in `surface-lock.js`) and a "Fast drag" / "Full redraw while dragging" hint.
+- **Look differences from pose fills.** Locked Mezzotint wraps with the form and draws about 40% of the pose ink in strokes of about 5 mm (PRH-129); locked fills get no curve smoothing; lit constant dashes can vanish near the limb (PRH-134).
+- **Versions.** `SCENE_VERSION` is 6: a v5 scene migrates with `markSpace: 'pose'` stamped on every fill, so saved files and presets render byte-identically (pose goldens unchanged). `BAKE_VERSION` is 4 (dutyConst MarkSets carry a per-ruling cap rank).
+- **Known limits (logged in `docs/pre-release-hardening-log.md`).** Scale drag does not preview live; it re-bakes on release (PRH-131). Receive shadow on objects (PRH-130), the `creviceAO` / `jitterOverdraw` / `transReserveMono` laws, pyramid, imported meshes and the shard deformer stay pose (PRH-132, PRH-133).
+
+### Changed: new 3D Scene objects start surface-locked
+- New objects default to `markSpace: 'surface'` where the fill supports it (the Lock marks to surface row starts On). Existing scenes and presets keep `pose` and look identical.
+
 ### Fixed: nightly touch roster (WebKit) goes green
 - **Parameter switches are a finger tall in the left pane.** A checkbox parameter (for example Wavetable **Flat Top/Bottom**) drew its switch on a line under its label row, so the label row above and the next control below each covered part of the switch's 44 px touch extension (measured 44 x 34 on iPhone landscape). The label and the switch now share one 44 px row.
 - **Touch test stability.** The pen double-tap specs send both taps in one batch (no round trip between them), and the Scene 3D pinch spec runs its eight pinches as four tests of two, so no test outruns its 60 s budget. No timeout, retry or threshold changed.

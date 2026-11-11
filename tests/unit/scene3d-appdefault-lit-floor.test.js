@@ -70,6 +70,7 @@ describe('Scene3D — the APP DEFAULT scene keeps ink on the lit side', () => {
     const gid = engine.addLayer('scene3d');      // === addSceneTree()
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     if (mapper && mapper !== 'hatch') obj.params.style = { penId: null, mapper, params: {} };
     engine.computeAllDisplayGeometry();
     return { engine, group, obj, paths: group.scenePaths || [] };

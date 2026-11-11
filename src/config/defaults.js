@@ -2073,7 +2073,7 @@
       //        circumradius (it used to come out 13.1% small). Only OLD (pre-v4)
       //        saved scenes get their stored radius scaled back down to match.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 5,
+      sceneVersion: 6,
       // sf-w4/C4 — Stroke Fill Style. A variable-width fill style draws its
       // ruling as a real ribbon OUTLINE stroked with the real pen, then fills
       // that outline with a pen-width-pitched continuous stroke; this picks the
@@ -2197,7 +2197,7 @@
       // sanitizeParamTree only walks keys the saved payload actually has, so an
       // old leaf still arrives without a sceneVersion and still migrates.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 5,
+      sceneVersion: 6,
       // sf-w4/C4 — kept in lockstep with ALGO_DEFAULTS.scene3d above: a
       // standalone object3d leaf delegates to the same scene3d pipeline, so it
       // must resolve the same Stroke Fill Style. Vocabulary + the bucket gate
@@ -2229,7 +2229,11 @@
       // looked like an empty cube outline. Hatch puts real ink on the surface
       // the moment the object appears. Every mapper (wireframe included) is
       // still one pick away in the object Style flyout.
-      style: { penId: null, mapper: 'hatch', params: {} },
+      // W3-E creation default (docs/surface-lock-contract.md §12): a NEW object is born markSpace 'surface', so a fresh
+      // scene's fills lock to the surface and the scene drags Level S. This is a creation default only: every saved file,
+      // preset and Start Page plate is stamped / read as 'pose' (SCENE_MIGRATIONS[5]; absent key = pose), and ground /
+      // scene-level styles are left alone (they inherit the scene style).
+      style: { penId: null, mapper: 'hatch', params: { markSpace: 'surface' } },
       faceStyles: {}, // faceId -> Style (per-face overrides)
     },
     // Scene-tree Increment A — booleanGroup3d: a CONTAINER stub for the fused

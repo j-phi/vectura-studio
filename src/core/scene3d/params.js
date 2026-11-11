@@ -43,7 +43,7 @@
   // ~15.1% on open. SCENE_MIGRATIONS[3] multiplies a pre-v4 buckyball's stored
   // radius by that same measured factor, so it renders BYTE-IDENTICALLY; new
   // buckyballs get the true radius.
-  const SCENE_VERSION = 5;
+  const SCENE_VERSION = 6;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -661,6 +661,9 @@
   const SLICE_VISIBILITIES = ['visibleOnly', 'fullContour'];
   const clampStyleParam = (key, value) => {
     switch (key) {
+      // Surface-locked marks (docs/surface-lock-contract.md §12). Absent means
+      // 'pose' at every reader; normalisation never injects the key.
+      case 'markSpace': return value === 'surface' ? 'surface' : 'pose';
       case 'lineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
       case 'dashScale': return clamp(finite(value, 1), 0.25, 4);
       case 'wobble': return clamp(finite(value, 0), 0, 100);
@@ -2080,6 +2083,42 @@
     return src;
   };
   SCENE_MIGRATIONS[4] = migrateWireframeShowHidden;
+
+  // ── SCENE_MIGRATIONS[5] — pin markSpace: 'pose' (v5 → v6). ─────────────────
+  // Surface-locked marks (contract §12). Every style object that predates the
+  // key is stamped 'pose' so a later change to the creation default can never
+  // re-render a saved document. Only EXISTING style objects are stamped (an
+  // absent byObject/byFace entry means "inherit" and stays absent); a style
+  // that already carries a markSpace is untouched. Version-gated.
+  const stampMarkSpace = (style) => {
+    if (!isObject(style)) return style;
+    const sp = isObject(style.params) ? style.params : {};
+    if (sp.markSpace !== undefined) return style;
+    return { ...style, params: { ...sp, markSpace: 'pose' } };
+  };
+  const stampMarkSpaceMap = (map) => {
+    if (!isObject(map)) return map;
+    const out = {};
+    Object.keys(map).forEach((k) => { out[k] = stampMarkSpace(map[k]); });
+    return out;
+  };
+  const migrateMarkSpacePose = (params) => {
+    const src = isObject(params) ? params : {};
+    const out = { ...src };
+    if (isObject(src.styleTable)) {
+      const t = src.styleTable;
+      const table = { ...t };
+      if (isObject(t.scene)) table.scene = stampMarkSpace(t.scene);
+      if (isObject(t.byObject)) table.byObject = stampMarkSpaceMap(t.byObject);
+      if (isObject(t.byFace)) table.byFace = stampMarkSpaceMap(t.byFace);
+      out.styleTable = table;
+    }
+    // object3d / booleanGroup3d LEAF shape.
+    if (isObject(src.style)) out.style = stampMarkSpace(src.style);
+    if (isObject(src.faceStyles)) out.faceStyles = stampMarkSpaceMap(src.faceStyles);
+    return out;
+  };
+  SCENE_MIGRATIONS[5] = migrateMarkSpacePose;
 
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).
