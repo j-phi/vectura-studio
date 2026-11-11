@@ -13,9 +13,9 @@ describe('Scene3D panel: Lock marks to surface', () => {
   afterAll(() => runtime.cleanup());
 
   const fire = (el, type, init = {}) => el.dispatchEvent(new window.Event(type, { bubbles: true, ...init }));
-  const mountLeaf = (mapper = 'hatch', styleParams = {}, primitive = 'sphere', levelS) => {
+  const mountLeaf = (mapper = 'hatch', styleParams = {}, primitive = 'sphere', levelS, groupParams) => {
     const { UI } = window.Vectura;
-    const group = { id: 'g1', type: 'scene3d', isGroup: true, _sceneLevelS: levelS };
+    const group = { id: 'g1', type: 'scene3d', isGroup: true, _sceneLevelS: levelS, params: groupParams };
     const layer = {
       id: 'obj-leaf', type: 'object3d', name: 'Ball', visible: true, parentId: 'g1',
       params: {
@@ -93,5 +93,34 @@ describe('Scene3D panel: Lock marks to surface', () => {
     expect(src).toMatch(/Lock marks to surface/);
     expect(src).toMatch(/Fast drag/);
     expect(src).not.toMatch(/Level [SF]\b/);
+  });
+
+  test('FX-J5: a scene that receives shadows or has an area light disables the row with the engine reason', () => {
+    const rs = row(mountLeaf('hatch', {}, 'sphere', false, { shadow: { shadowReceiveOnObjects: true } }).container);
+    expect(rs.getAttribute('aria-disabled')).toBe('true');
+    expect(rs.getAttribute('title')).toMatch(/receives cast shadows/);
+    const al = row(mountLeaf('hatch', { markSpace: 'surface' }, 'sphere', false, { lights: [{ type: 'area' }] }).container);
+    expect(al.getAttribute('aria-disabled')).toBe('true');
+    expect(al.getAttribute('title')).toMatch(/area light/);
+    expect(row(mountLeaf('hatch', {}, 'sphere', false, { shadow: { shadowReceiveOnObjects: false } }).container).getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  test('FX-J6: a scene-scope Type swap keeps markSpace', () => {
+    const { UI } = window.Vectura;
+    const group = {
+      id: 'g1', type: 'scene3d', isGroup: true,
+      params: { objects: [], styleTable: { scene: { mapper: 'hatch', params: { markSpace: 'surface' } }, byObject: {} } },
+    };
+    const ui = { app: { pushHistory: vi.fn(), regen: vi.fn(), engine: { getLayerById: () => null } }, storeLayerParams: vi.fn() };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, group, container);
+    fire(container.querySelector('.tab-btn[data-value="style"]'), 'click');
+    const sel = container.querySelector('[aria-label="Style mapper"]');
+    const native = sel.tagName === 'SELECT' ? sel : sel.querySelector('select');
+    native.value = 'crosshatch';
+    fire(native, 'change');
+    expect(group.params.styleTable.scene.mapper).toBe('crosshatch');
+    expect(group.params.styleTable.scene.params.markSpace).toBe('surface');
   });
 });
