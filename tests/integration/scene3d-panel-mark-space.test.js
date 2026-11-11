@@ -88,6 +88,25 @@ describe('Scene3D panel: Lock marks to surface', () => {
     expect(mountLeaf('hatch').container.querySelector('.vs3-markspace-hint')).toBeFalsy();
   });
 
+  test('W3-E: an engine-created leaf mounts with the row On and the Fast drag hint', () => {
+    const { UI, VectorEngine } = window.Vectura;
+    const eng = new VectorEngine();
+    eng.currentProfile = { width: 320, height: 220, name: 'w3e' };
+    const gid = eng.addLayer('scene3d');
+    eng.computeAllDisplayGeometry();
+    const group = eng.getLayerById(gid);
+    const leaf = eng.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    const ui = { app: { pushHistory: vi.fn(), regen: vi.fn(), engine: eng }, storeLayerParams: vi.fn() };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    UI.Scene3DPanel.build(ui, leaf, container);
+    fire(container.querySelector('.tab-btn[data-value="style"]'), 'click');
+    expect(group._sceneLevelS).toBe(true);
+    const on = [...row(container).querySelectorAll('button')].find((b) => (b.dataset.value || b.textContent.trim().toLowerCase()) === 'on');
+    expect(on.getAttribute('aria-pressed') === 'true' || on.classList.contains('active') || on.classList.contains('is-active')).toBe(true);
+    expect(container.querySelector('.vs3-markspace-hint').textContent).toBe('Fast drag');
+  });
+
   test('the in-app help documents the control', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/ui/modals/help-shortcuts.js'), 'utf8');
     expect(src).toMatch(/Lock marks to surface/);

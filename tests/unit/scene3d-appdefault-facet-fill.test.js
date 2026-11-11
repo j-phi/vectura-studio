@@ -59,6 +59,7 @@ describe('Scene3D — the APP DEFAULT scene fills its FACETED faces', () => {
     const gid = engine.addLayer('scene3d');      // === addSceneTree()
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     if (primitive && primitive !== obj.params.primitive) {
       const P = V.Scene3D.Params;
       const prev = obj.params.primitive;

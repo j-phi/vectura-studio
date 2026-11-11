@@ -448,8 +448,9 @@ describe('surface lock Level F dispatch', () => {
       build('ladder', { style: { highlightTreatment: 'keep' } }).composeFull();
       expect(SL.stats.frames, "'keep' is surface").toBeGreaterThan(0);
 
-      SL.resetStats();
+      // W3-E: addLayer now bakes the freshly born (surface) scene before the style is applied, so zero the counters AFTER build.
       const thin = build('ladder', { style: { highlightTreatment: 'thin' } });
+      SL.resetStats();
       const thinSig = signature(thin.composeFull());
       expect(SL.stats.frames, "'thin' never frames").toBe(0);
       delete thin.objectsOf()[0].params.style.params.markSpace;
@@ -457,8 +458,9 @@ describe('surface lock Level F dispatch', () => {
     });
 
     it('a pose-mode style never touches SurfaceLock', () => {
-      SL.resetStats();
-      build('ladder', { markSpace: 'pose' }).composeFull();
+      const poseScene = build('ladder', { markSpace: 'pose' });
+      SL.resetStats(); // W3-E: after build (addLayer's creation compose is surface); only the pose compose is measured
+      poseScene.composeFull();
       expect(SL.stats.bakes + SL.stats.frames).toBe(0);
     });
   });

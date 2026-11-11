@@ -160,6 +160,7 @@ describe('Scene3D faceted density calibration — plane/box carrier grant (W-15/
     const gid = engine.addLayer('scene3d');
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     const prev = obj.params.primitive;
     if (primitive !== prev) {
       obj.params.primitive = primitive;

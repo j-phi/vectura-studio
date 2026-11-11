@@ -100,7 +100,8 @@ describe('surface lock ground shadow', () => {
     const ratios = [];
     try {
       [-30, 40, 150].forEach((yaw) => {
-        const s = buildSurfaceLockScene(V, { kind: 'sphere' });
+        // W3-E: this is the POSE-mode arm (it captures Shadows.build), so pin pose; a fresh scene is now born surface
+        const s = buildSurfaceLockScene(V, { kind: 'sphere', markSpace: 'pose' });
         s.setPose({ camYaw: yaw, camPitch: 20 });
         s.composeFull();
         const ink = (paths) => paths.reduce((t, q) => { let L = 0; for (let i = 1; i < q.length; i += 1) L += Math.hypot(q[i].x - q[i - 1].x, q[i].y - q[i - 1].y); return t + L; }, 0);
