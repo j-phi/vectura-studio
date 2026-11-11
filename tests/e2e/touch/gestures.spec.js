@@ -210,10 +210,10 @@ test.describe('TUX-017 gesture arbiter', () => {
     { name: 'Select on the selected object (VERIFY-FIRST: zooms today, regression coverage)', tool: 'select', selectObject: true, at: 'obj' },
   ];
 
-  const runPinches = async (page, testInfo, c, staggerMs) => {
+  const runPinches = async (page, testInfo, c, staggerMs, from = 0, to = RUNS) => {
     const { view } = await fixture(page, testInfo, c);
     const project = testInfo.project.name;
-    for (let i = 0; i < RUNS; i += 1) {
+    for (let i = from; i < to; i += 1) {
       const pts = await prepare(page, view);
       const target = c.at === 'obj' ? { x: pts.obj.x + PINCH.startDist / 2, y: pts.obj.y } : pts.empty;
       await precondition(page, target, PINCH.startDist, project);
@@ -238,8 +238,15 @@ test.describe('TUX-017 gesture arbiter', () => {
 
   test.describe('pinch anywhere', () => {
     cases.forEach((c) => {
-      test(`${c.name}: ${RUNS} staggered pinches`, async ({ page }, testInfo) => {
-        await runPinches(page, testInfo, c, 60);
+      // A Scene 3D pinch redraws and re-serialises a whole scene on every run: eight of them in one test outran the 60 s test
+      // budget twice on hosted WebKit (nightly 42382624584, attempt and retry). The same eight pinches now run as four tests of
+      // two, each with its own fixture and budget. No timeout was raised and no run was dropped.
+      const chunks = c.scene ? [[0, 2], [2, 4], [4, 6], [6, RUNS]] : [[0, RUNS]];
+      chunks.forEach(([from, to]) => {
+        const title = c.scene ? `${c.name}: pinches ${from + 1}-${to} of ${RUNS} staggered` : `${c.name}: ${RUNS} staggered pinches`;
+        test(title, async ({ page }, testInfo) => {
+          await runPinches(page, testInfo, c, 60, from, to);
+        });
       });
     });
   });

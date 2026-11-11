@@ -78,6 +78,20 @@ const done = (page) => page.evaluate(() => window.__penDone.slice());
 const layerCount = (page) => page.evaluate(() => window.app.engine.layers.length);
 const gap = (page, ms = 700) => page.waitForTimeout(ms);
 
+// Two finger taps with no harness round trip between them (touch.touchSequence). Two touch.tap calls are two round trips: on a
+// slow hosted WebKit runner the second tap landed after the 400 ms double-tap window and the draft never finished (nightly
+// 42491336189). WebKit dispatches both taps in one page task, so the event.timeStamp gap is dispatch time only.
+const quickTaps = async (page, first, second) => {
+  // Warm the CDP session / WebKit shim first (the first call awaits setup and would reorder the queue).
+  await touch.touchPhase(page, 'end', []).catch(() => {});
+  await touch.touchSequence(page, [
+    { phase: 'start', points: [{ ...first, id: 0 }] },
+    { phase: 'end', points: [{ ...first, id: 0 }] },
+    { phase: 'start', points: [{ ...second, id: 0 }] },
+    { phase: 'end', points: [{ ...second, id: 0 }] },
+  ]);
+};
+
 // Place three anchors with gaps so no pair of taps counts as a double-tap.
 const threeAnchors = async (page, c) => {
   await touch.tap(page, at(c, A1));
@@ -157,8 +171,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
       await touch.tap(page, at(c, A2));
       await gap(page);
       // Third anchor and its double-tap, back to back.
-      await touch.tap(page, at(c, A3));
-      await touch.tap(page, at(c, { x: A3.x + drift, y: A3.y }));
+      await quickTaps(page, at(c, A3), at(c, { x: A3.x + drift, y: A3.y }));
       await gap(page, 300);
       expect(await done(page)).toEqual([{ n: 3, closed: false }]);
       expect(await draft(page)).toBeNull();
@@ -185,8 +198,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
     await gap(page);
     await touch.tap(page, at(c, A2));
     await gap(page);
-    await touch.tap(page, at(c, A3));
-    await touch.tap(page, at(c, { x: A3.x + 4, y: A3.y }));
+    await quickTaps(page, at(c, A3), at(c, { x: A3.x + 4, y: A3.y }));
     await gap(page, 300);
     expect(await done(page)).toEqual([{ n: 3, closed: false }]);
     const info = await page.evaluate(() => {
