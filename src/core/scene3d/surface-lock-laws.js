@@ -45,6 +45,9 @@
     MERGE_TOUCH_INK: 0.98,
     BANDS: 4,               // centre-out dash bands per cell (duty resolution; more = more, shorter runs)
     JIT_FRAC: 0.2,          // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch (keeps the 0.8 bar)
+    V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
+    V2_MAX_SEG_MM: 2.0,     // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
+    V2_PAPER_BAND: 0.15,    // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
     MAX_VERTS: 200000,      // contract §2 budget
     HATCH_D_MAX: 100,
     GOLDEN: 0.6180339887498949,
@@ -127,14 +130,48 @@
     return { mOf, pitchOfM, period: PERIOD, minDuty, pitchAt: (I) => pitchOfM(mOf(I)), lutAt: (I) => { const m = mOf(I); return m * PERIOD < T.MARKMIN ? 0 : 1 / pitchOfM(m); } };
   };
 
-  const toneLUT = (spec) => {
+  // ---- tone model (light-realism U4) -----------------------------------------------------------------------------
+  // `spec.toneModel` ('legacy' | 'v2'; the hub copies p.tone.model there) is part of the bake: dutyConst v2 bakes whole-cell
+  // runs, so it is v2 only when the spec says so. A law whose v2 bake is the legacy MarkSet (endShorten) may also take the
+  // model from the toneCtx (`light.model`, else `tone.model`). Absent everywhere = legacy, byte-identical.
+  const bakeIsV2 = (spec) => !!spec && spec.toneModel === 'v2';
+  const lutIsV2 = (spec, toneCtx) => {
+    if (bakeIsV2(spec)) return true;
+    if (spec && spec.toneLaw === 'dutyConst') return false;
+    if (spec && typeof spec.toneModel === 'string') return false;
+    const c = toneCtx || {};
+    return ((c.light && c.light.model) || (c.tone && c.tone.model)) === 'v2';
+  };
+  const toneIsOff = (toneCtx) => !!toneCtx && ((toneCtx.tone && toneCtx.tone.enabled === false)
+    || (toneCtx.light && Array.isArray(toneCtx.light.lights) && toneCtx.light.lights.length === 0));
+  // v2 target: the law's own L*-linear span (areaFor) mapped to [0, 1] with NO lit floor (paper at the lightest tones),
+  // times a short roll-off so the last PAPER_BAND of the tone range reaches paper. Coverage ~ this x the full-duty ink.
+  const targetOf = (T) => {
+    const aL = T.areaFor(1); const aD = T.areaFor(0);
+    const band = Math.max(1e-3, K.V2_PAPER_BAND);
+    return (I) => {
+      const x = clamp(finite(I, 0), 0, 1);
+      const d = clamp((T.areaFor(x) - aL) / Math.max(1e-6, aD - aL), 0, 1);
+      const u = clamp((1 - x) / band, 0, 1);
+      return d * u * u * (3 - 2 * u);
+    };
+  };
+
+  const toneLUT = (spec, toneCtx) => {
     sync();
     const T = toneParams(spec);
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
     const law = spec && spec.toneLaw;
     let fn;
-    if (law === 'dutyConst') { const M = dutyModel(T); fn = (I) => M.theta(I) / M.pitch; }
+    if ((law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx)) {
+      const pitch = (law === 'dutyConst' ? dutyModel(T) : endModel(T)).pitch;
+      if (toneIsOff(toneCtx)) { // contract §5: tone off draws the uniform Density = the ladder's own tone-off ink (one ruling per lit pitch)
+        const off = clamp(pitch / T.PMAX, 0, 1) / pitch;
+        fn = () => off;
+      } else { const D = targetOf(T); fn = (I) => D(I) / pitch; }
+    }
+    else if (law === 'dutyConst') { const M = dutyModel(T); fn = (I) => M.theta(I) / M.pitch; }
     else if (law === 'endShorten') { const M = endModel(T); fn = (I) => M.theta(I) / M.pitch; }
     else if (law === 'mergeLadder') { fn = mergeModel(T).lutAt; }
     else if (law === 'phaseBlue') { fn = (I) => 1 / T.pitchFor(I); }
@@ -228,6 +265,71 @@
     B.endRun();
   };
 
+  // ---- tone model v2 helpers: decimated polylines (vertices are the frame's cost, contract §2) ---------------------------
+  const vdc2 = (i) => { let x = 0; let f = 0.5; let n = i | 0; while (n > 0) { if (n & 1) x += f; n >>= 1; f *= 0.5; } return x; };
+  const rawPoints = (R) => {
+    const P = new Array(R.n);
+    for (let i = 0; i < R.n; i++) P[i] = [R.px[i], R.py[i], R.pz[i], R.nx[i], R.ny[i], R.nz[i]];
+    return P;
+  };
+  const lerpPt = (a, b, u) => {
+    let nx = a[3] + (b[3] - a[3]) * u; let ny = a[4] + (b[4] - a[4]) * u; let nz = a[5] + (b[5] - a[5]) * u;
+    const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+    return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u, nx, ny, nz];
+  };
+  // Points of the ruling between arc lengths sa and sb: interpolated ends plus the original vertices strictly inside.
+  const cellPoints = (R, sa, sb) => {
+    const at = (x) => {
+      let lo = 0; let hi = R.n - 2;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (R.s[mid] <= x) lo = mid; else hi = mid - 1; }
+      return lo;
+    };
+    const pt = (x) => {
+      const i = at(x); const d = R.s[i + 1] - R.s[i]; const u = d > 0 ? clamp((x - R.s[i]) / d, 0, 1) : 0;
+      return lerpPt([R.px[i], R.py[i], R.pz[i], R.nx[i], R.ny[i], R.nz[i]], [R.px[i + 1], R.py[i + 1], R.pz[i + 1], R.nx[i + 1], R.ny[i + 1], R.nz[i + 1]], u);
+    };
+    const out = [pt(sa)];
+    for (let i = at(sa) + 1; i < R.n && R.s[i] < sb - 1e-9; i++) if (R.s[i] > sa + 1e-9) out.push([R.px[i], R.py[i], R.pz[i], R.nx[i], R.ny[i], R.nz[i]]);
+    out.push(pt(sb));
+    return out;
+  };
+  const segDist = (p, a, b) => {
+    const abx = b[0] - a[0]; const aby = b[1] - a[1]; const abz = b[2] - a[2];
+    const l2 = abx * abx + aby * aby + abz * abz;
+    const u = l2 > 0 ? clamp(((p[0] - a[0]) * abx + (p[1] - a[1]) * aby + (p[2] - a[2]) * abz) / l2, 0, 1) : 0;
+    return Math.hypot(p[0] - a[0] - u * abx, p[1] - a[1] - u * aby, p[2] - a[2] - u * abz);
+  };
+  // Douglas-Peucker to `tol`, then no segment longer than `maxSeg` (the tone is sampled at vertices, so long straight runs
+  // would be gated by their two ends only).
+  const decimate = (P, tol, maxSeg) => {
+    const n = P.length; const keep = new Uint8Array(n); keep[0] = 1; keep[n - 1] = 1;
+    const stack = [[0, n - 1]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      let worst = -1; let wi = -1;
+      for (let i = a + 1; i < b; i++) { const d = segDist(P[i], P[a], P[b]); if (d > worst) { worst = d; wi = i; } }
+      if (wi >= 0 && worst > tol) { keep[wi] = 1; stack.push([a, wi], [wi, b]); }
+    }
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      if (!keep[i]) continue;
+      if (out.length) {
+        const a = out[out.length - 1]; const len = Math.hypot(P[i][0] - a[0], P[i][1] - a[1], P[i][2] - a[2]);
+        const k = Math.ceil(len / maxSeg);
+        for (let j = 1; j < k; j++) out.push(lerpPt(a, P[i], j / k));
+      }
+      out.push(P[i]);
+    }
+    return out;
+  };
+  const emitPoly = (B, P, key, fam, flags, capRank, tmp) => {
+    const e = encodeKey(key);
+    B.beginRun(e.level, e.rank, fam, flags || 0, capRank);
+    for (let i = 0; i < P.length; i++) B.vertex(P[i][0], P[i][1], P[i][2], P[i][3], P[i][4], P[i][5]);
+    tmp.count += P.length;
+    B.endRun();
+  };
+
   // Centre-out band edges in duty: [0, minDuty, ... 1], BANDS bands. Band j >= 1 switches on at its midpoint.
   const bandEdges = (minDuty) => {
     const nb = Math.max(2, Math.round(K.BANDS)); const e = [0, minDuty];
@@ -260,6 +362,7 @@
     const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
     const litCap = (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * T.PEN;
     const fixed = law === 'dutyConst' || law === 'endShorten';
+    const v2 = fixed && bakeIsV2(spec);
     let model = null; let lstar = 0; let p0Screen;
     if (fixed) {
       model = law === 'dutyConst' ? dutyModel(T) : endModel(T);
@@ -282,12 +385,45 @@
       // Fixed-pitch laws: tone is a function of the light alone, so the frame reads it at the bake scale (contract §16 A10).
       meta.toneScaleFree = true;
       let idx = 0;
+      if (v2) { meta.toneModelV2 = true; meta.v2Tol = K.V2_TOL_MM; }
       if (law === 'endShorten') {
         for (let r = 0; r < nr; r++) {
           if (lad.runLevel[r] > lstar) continue;
+          const closedRun = (lad.runFlags[r] & SM.FLAG.CLOSED) !== 0;
+          if (v2 && !closedRun) {
+            const R = readRun(lad, r, out);
+            emitPoly(B, decimate(rawPoints(R), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * keyOfRun(lad, r) / gate, lad.runFamily[r], lad.runFlags[r], undefined, tmp);
+            if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+            continue;
+          }
           copyRun(B, lad, r, rho * keyOfRun(lad, r) / gate, lad.runFamily[r], tmp);
           if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
         }
+      } else if (v2) {
+        // v2 dutyConst: one run per period cell (2 vertices on a gentle surface). The tone is the FRACTION of cells drawn:
+        // a cell is on iff the target duty exceeds its low-discrepancy key, so coverage is exactly graded from a continuous
+        // ruling in the shadow to paper in the light (no minimum-dash cliff) and the on-cells of a tone are a subset of the
+        // on-cells of every darker tone (monotone by construction). Touching cells are joined by the frame (A11).
+        const cellLen = model.period / scaleRef;
+        const minCell = T.MARKMIN / scaleRef;
+        let idx = 0;
+        for (let r = 0; r < nr; r++) {
+          if (lad.runLevel[r] > lstar) continue;
+          const R = readRun(lad, r, out);
+          const capRank = keyOfRun(lad, r) / gate;
+          const ph = frac((idx + 1) * K.GOLDEN + phase);
+          let c = 0;
+          for (let c0 = -ph * cellLen; c0 < R.total; c0 += cellLen, c++) {
+            const sa = clamp(c0, 0, R.total); const sb = clamp(c0 + cellLen, 0, R.total);
+            if (!(sb - sa >= minCell)) continue;
+            emitPoly(B, decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * frac(vdc2(c) + ph), lad.runFamily[r], 0, capRank, tmp);
+          }
+          if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+          idx += 1;
+        }
+        meta.minMarkMM = T.MARKMIN;
+        meta.capKey = 'ruling';
+        meta.joinTouching = true;
       } else {
         const edges = bandEdges(model.minDuty);
         const mids = edges.map((e, j) => (j === 0 ? 0 : (e + edges[j + 1] ) / 2)); // last entry unused
