@@ -111,8 +111,8 @@
               // `lazy` keeps the ink packed (one Float64Array per path): the spin baker stores frames this way
               // and unpacks only the one it installs.
               p.resolve(p.lazy
-                ? { packed: m.packed, finishedPacked: m.finished || null, ms: m.ms }
-                : { paths: Scene3D.ComposeJob.unpack(m.packed), finished: m.finished ? Scene3D.ComposeJob.unpack(m.finished) : null, packed: m.packed, ms: m.ms });
+                ? { packed: m.packed, finishedPacked: m.finished || null, bakes: m.bakes || [], ms: m.ms }
+                : { paths: Scene3D.ComposeJob.unpack(m.packed), finished: m.finished ? Scene3D.ComposeJob.unpack(m.finished) : null, packed: m.packed, bakes: m.bakes || [], ms: m.ms });
             } catch (err) { p.reject(err); }
             stats.lastUnpackMs = (globalScope.performance || Date).now() - tU;
           } else if (m.type === 'error') {

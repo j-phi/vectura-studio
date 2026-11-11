@@ -104,11 +104,15 @@
     return { paths, buffers: [], compact: true };
   };
 
-  // job = { assembled, seed, bounds, globals? }. Returns { packed, ms }.
-  const run = (job) => {
+  // job = { assembled, seed, bounds, globals? }. Returns { packed, finished, bakes, ms }.
+  // `bakes` is what the compose baked into the SurfaceLock cache ([{ key, ms: MarkSet }]); the main thread adopts it so its own
+  // cache is warm for the next frame. `opts.release` (the worker) drops them from this cache so their buffers can be transferred.
+  const run = (job, opts) => {
     const V = globalScope.Vectura;
     const algo = V.Algorithms && V.Algorithms.scene3d;
     if (!algo || typeof algo.generate !== 'function') throw new Error('scene3d algorithm is not loaded');
+    const SL = V.Scene3D && V.Scene3D.SurfaceLock;
+    if (SL && typeof SL.takeFreshBakes === 'function') SL.takeFreshBakes(); // only this job's own bakes are handed back
     const g = job.globals || {};
     if ('silProtoOff' in g) globalScope.__SIL_PROTO_OFF = g.silProtoOff;
     if ('silProtoTorusOn' in g) globalScope.__SIL_PROTO_TORUS_ON = g.silProtoTorusOn;
@@ -127,9 +131,17 @@
       const fin = V.VectorEngine.prototype._applySceneCurveFinish.call({ currentProfile: { width: job.bounds.width, height: job.bounds.height } }, paths, job.assembled, objectLayers, { params: job.finish.groupParams });
       finished = pack(fin);
     }
-    return { packed, finished, ms };
+    const bakes = SL && typeof SL.takeFreshBakes === 'function' ? SL.takeFreshBakes({ release: !!(opts && opts.release) }) : [];
+    return { packed, finished, bakes, ms };
+  };
+  // The ArrayBuffers of a bake list (for a transfer).
+  const bakeBuffers = (bakes) => {
+    const MS = globalScope.Vectura && globalScope.Vectura.Scene3D && globalScope.Vectura.Scene3D.SurfaceLockMarkSet;
+    const out = [];
+    (bakes || []).forEach((b) => { if (MS && b && b.ms) MS.transferList(b.ms).forEach((buf) => out.push(buf)); });
+    return out;
   };
 
-  Scene3D.ComposeJob = { run, pack, unpack, unpackRange, unpackEntry, entryPoints, quantizePacked, QUANT_STEP };
+  Scene3D.ComposeJob = { run, bakeBuffers, pack, unpack, unpackRange, unpackEntry, entryPoints, quantizePacked, QUANT_STEP };
   if (typeof module !== 'undefined' && module.exports) module.exports = Scene3D.ComposeJob;
 })();

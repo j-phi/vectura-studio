@@ -11,6 +11,10 @@
  *   frame(markSets, pose, view) -> lines                      contract §5-§6 (Level F output, §6.1)
  *   frameable(p, bounds) -> boolean                           contract §13 (Level S gate; FRAMEABLE is data)
  *   sceneFrame(p, bounds, ctx) -> undefined                   contract §13 (Level S output, §6.2)
+ *   takeFreshBakes(opts) -> [{ key, ms }]                    the MarkSets baked since the last take (a worker hands them to the main thread)
+ *   adopt(entries) -> n                                       installs baked MarkSets into the cache (no bake, no stat bump)
+ *   missingBakes(specs) -> specs                              the specs whose MarkSet is not cached (the cache is not touched)
+ *   sceneBakeSpecs(p, bounds, ctx) -> specs                   the BakeSpec of every filled object (what sceneFrame would bake)
  *   stats, resetStats(), clearCache(), setCacheLimitBytes()   contract §8, §11
  *
  * Neighbour modules are looked up lazily at call time (Vectura.Scene3D.X), never at load (contract §1).
@@ -42,6 +46,7 @@
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
   const FALLBACK_FLOOR_PEN = 2.2;
+  const FRESH_MAX = 256;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
   // Each is its own Scene3D namespace so Engine's sceneModuleFingerprint sees its functions.
@@ -54,7 +59,7 @@
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
     culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0,
-    bakeErrors: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
+    bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
   // The cache counters describe live state, not events: resetStats keeps them in step with the cache.
@@ -154,6 +159,7 @@
 
   const cache = new Map(); // key -> { ms, bytes } ; Map order = LRU order (oldest first)
   let cacheBytes = 0;
+  const freshKeys = []; // keys baked here since the last takeFreshBakes (a worker's handoff list; capped)
   let limitOverride = null;
   const cacheLimitBytes = () => {
     if (limitOverride !== null) return limitOverride;
@@ -172,7 +178,7 @@
     stats.cacheBytes = cacheBytes; stats.cacheEntries = cache.size;
   }
   const clearCache = () => {
-    cache.clear(); cacheBytes = 0; toneMemo.clear(); auxCaches.forEach((m) => m.clear());
+    cache.clear(); cacheBytes = 0; freshKeys.length = 0; toneMemo.clear(); auxCaches.forEach((m) => m.clear());
     stats.cacheBytes = 0; stats.cacheEntries = 0;
   };
 
@@ -197,9 +203,47 @@
     const MS = Scene3D.SurfaceLockMarkSet;
     const bytes = MS && MS.byteSize ? MS.byteSize(ms) : 0;
     cache.set(key, { ms, bytes }); cacheBytes += bytes;
+    if (freshKeys.length < FRESH_MAX) freshKeys.push(key);
     evictToLimit(key);
     return ms;
   };
+
+  // OFF-THREAD BAKE HANDOFF (W2-B2). A worker's compose bakes into the WORKER's cache; the main thread's cache stays cold, so
+  // the next Level S frame there would bake again (0.1-0.65 s). The job therefore returns what it baked and the main thread
+  // adopts it. A MarkSet is content-addressed (its key is the whole bake input) and its typed arrays are its own buffers
+  // (the builder slices them), so adopting is a Map insert. `release` drops the taken entries from THIS cache so a worker
+  // can transfer their buffers without leaving detached arrays behind.
+  const takeFreshBakes = (opts) => {
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < freshKeys.length; i++) {
+      const key = freshKeys[i];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const e = cache.get(key);
+      if (e) out.push({ key, ms: e.ms });
+    }
+    freshKeys.length = 0;
+    if (opts && opts.release) {
+      out.forEach((e) => { const c = cache.get(e.key); if (c) { cache.delete(e.key); cacheBytes -= c.bytes; } });
+      stats.cacheBytes = cacheBytes; stats.cacheEntries = cache.size;
+    }
+    return out;
+  };
+  const adopt = (entries) => {
+    const MS = Scene3D.SurfaceLockMarkSet;
+    let n = 0;
+    (entries || []).forEach((e) => {
+      if (!e || typeof e.key !== 'string' || !e.ms || !e.ms.positions || cache.has(e.key)) return;
+      e.ms.key = e.key;
+      const bytes = MS && MS.byteSize ? MS.byteSize(e.ms) : 0;
+      cache.set(e.key, { ms: e.ms, bytes }); cacheBytes += bytes; n += 1; stats.adopted += 1;
+      evictToLimit(e.key);
+    });
+    return n;
+  };
+  // The specs among `specs` that would bake (a baker exists) but are not cached. Read-only: no LRU touch, no stat.
+  const missingBakes = (specs) => (specs || []).filter((spec) => spec && bakerFor(spec) && !cache.has(bakeKey(spec)));
 
   const toneMemo = new Map();
   const toneTable = (spec, toneCtx) => {
@@ -687,6 +731,22 @@
     return pr.concat([pr[0]]).map((q) => ({ x: q.x, y: q.y, z: q.z }));
   };
 
+  // The BakeSpec of every filled object, built exactly as sceneFrame builds it (so the keys are the frame's keys).
+  const sceneBakeSpecs = (p, bounds, ctx) => {
+    const Vis = Scene3D.SurfaceLockVisibility;
+    const penWidth = num(bounds && bounds.penWidth, 0);
+    const seedOf = (id) => (typeof ctx.seedFor === 'function' ? ctx.seedFor(id) : null) || { salt: 0, phase: 0, off: false };
+    const specs = [];
+    (p.objects || []).forEach((o) => {
+      const st = objectStyleOf(p, o.id);
+      if (isMapperNoFill(st.mapper)) return;
+      const mesh = auxGet(0, JSON.stringify([o.id, o.primitive, o.params, o.transform && [o.transform.scale, o.transform.sx, o.transform.sy, o.transform.sz]]), () => Vis.meshBake(o));
+      const spec = specOfObject(p, o, Object.assign({}, bounds, { penWidth }), seedOf(o.id));
+      if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, mesh));
+      specs.push(spec);
+    });
+    return specs;
+  };
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -810,6 +870,10 @@
     frameable,
     bakeKey,
     bake,
+    takeFreshBakes,
+    adopt,
+    missingBakes,
+    sceneBakeSpecs,
     toneTable,
     poseOf,
     frame,
