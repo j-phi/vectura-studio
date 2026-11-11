@@ -176,6 +176,32 @@ describe('StartPageArtRenderer.sceneSession', () => {
     }
   }, 240000);
 
+  // FX-J3: the worker's bakes reach SurfaceLock.adopt through the Start Page session (finishPose carried them nowhere before).
+  test('a Level S plate pose adopts the worker bakes into the main cache', async () => {
+    const C = V.Scene3D.ComposeClient;
+    const SL = V.Scene3D.SurfaceLock;
+    const saved = { available: C.available, create: C.create };
+    C.available = () => true;
+    C.create = () => ({ available: () => true, isReady: () => true, terminate() {}, run(job, opts) {
+      const out = V.Scene3D.ComposeJob.run(job, { release: true });
+      return { cancel() {}, promise: Promise.resolve({ packed: out.packed, finishedPacked: out.finished, bakes: out.bakes, ms: out.ms }) };
+    } });
+    try {
+      const doc = treeDoc();
+      doc.state.engine.layers.filter((l) => l.type === 'object3d').forEach((l) => {
+        l.params.style = Object.assign({ mapper: 'hatch' }, l.params.style || {});
+        l.params.style.mapper = 'hatch';
+        l.params.style.params = Object.assign({}, l.params.style.params || {}, { toneLaw: 'mezzoRegion', markSpace: 'surface' });
+      });
+      const session = R.sceneSession(doc);
+      await session.render({ yaw: -30, pitch: 20 }, 'first');
+      SL.clearCache(); SL.resetStats();
+      await session.render({ yaw: -20, pitch: 20 }, 'worker');
+      expect(SL.stats.adopted).toBeGreaterThan(0);
+      session.dispose();
+    } finally { Object.assign(C, saved); }
+  }, 240000);
+
   test('a document with another layer still recomputes its display geometry after a worker pose', async () => {
     const C = V.Scene3D.ComposeClient;
     const saved = { available: C.available, create: C.create };

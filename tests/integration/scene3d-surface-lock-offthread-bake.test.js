@@ -147,6 +147,76 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
     expect(s.eng.sceneComposeStats.lastTier).toBe('full');
   });
 
+  // FX-J2: an interactive COMMIT (app.regen -> engine.generate({ holdBakes: true })) holds exactly like a preview tick.
+  it('FX-J2: a held commit does 0 main-thread bakes, schedules one worker settle, and settles to the fresh generate; without the flag it bakes on main', async () => {
+    const s = mezzo();
+    s.composeFull();
+    const client = fakeWorker(); s.eng.sceneBakeClient = client;
+    const leaf = s.objectsOf()[0];
+    const inkBefore = s.group.scenePaths;
+    leaf.params.style.params.fillDensity = 77;
+    SL.resetStats();
+    s.eng.generate(leaf.id, { holdBakes: true });
+    expect(SL.stats.bakeMisses - client.jobBakeMisses).toBe(0);
+    expect(SL.stats.bakes).toBe(client.jobBakeMisses);
+    expect(s.group.scenePaths).toBe(inkBefore);
+    expect(s.eng.sceneComposeStats.bakeHolds).toBeGreaterThanOrEqual(1);
+    expect(client.runs).toBe(1);
+    client.pending[0].land(); await flush();
+    expect(SL.stats.bakeMisses - client.jobBakeMisses).toBe(0);
+    const settled = signature(s.group.scenePaths);
+    expect(settled).not.toBe(signature(inkBefore));
+    s.eng.sceneBakeClient = null; SL.clearCache();
+    expect(signature(s.composeFull())).toBe(settled);
+    // mutation proof: the same edit without the flag bakes on the main thread
+    SL.clearCache(); // the settle above cached the density-77 bake by content; the mutation proof needs it cold
+    const s2 = mezzo(); s2.composeFull();
+    const c2 = fakeWorker(); s2.eng.sceneBakeClient = c2;
+    s2.objectsOf()[0].params.style.params.fillDensity = 77;
+    SL.resetStats();
+    s2.eng.generate(s2.objectsOf()[0].id, {});
+    expect(SL.stats.bakeMisses - c2.jobBakeMisses).toBe(1);
+    expect(c2.runs).toBe(0);
+  }, 120000);
+
+  it('FX-J2: export/save requested while a bake is held get the exact new ink (they compose synchronously, never the held ink)', async () => {
+    const s = mezzo();
+    s.composeFull();
+    const client = fakeWorker(); s.eng.sceneBakeClient = client;
+    const leaf = s.objectsOf()[0];
+    const stale = signature(s.group.scenePaths);
+    leaf.params.style.params.fillDensity = 81;
+    s.eng.generate(leaf.id, { holdBakes: true });
+    expect(signature(s.group.scenePaths)).toBe(stale); // held: the screen still shows the old ink
+    // export / save path: computeAllDisplayGeometry (no hold flag) bakes in place and installs the exact state
+    s.eng.computeAllDisplayGeometry();
+    const exported = signature(s.group.scenePaths);
+    expect(exported).not.toBe(stale);
+    const B = V.ExportSvgBuilder;
+    if (B && typeof B.countPaths === 'function' && typeof B.snapshotSteps === 'function') {
+      const n = B.countPaths(B.snapshotSteps(s.eng, { computeDisplayGeometry: () => {}, optimizeTargets: null }));
+      expect(n).toBeGreaterThan(0);
+    }
+    // the in-flight worker settle (same state) lands afterwards: the ink is unchanged
+    client.pending[0].land(); await flush();
+    expect(signature(s.group.scenePaths)).toBe(exported);
+    s.eng.sceneBakeClient = null; SL.clearCache();
+    expect(signature(s.composeFull())).toBe(exported);
+  }, 120000);
+
+  it('FX-J2: pose mode (markSpace pose) and a first compose are never held by a commit', () => {
+    const s = buildSurfaceLockScene(V, { kind: 'sphere', toneLaw: 'mezzoRegion', mapper: 'hatch', markSpace: 'pose' });
+    s.composeFull();
+    const client = fakeWorker(); s.eng.sceneBakeClient = client;
+    const leaf = s.objectsOf()[0];
+    leaf.params.style.params.fillDensity = 77;
+    const ink = s.group.scenePaths;
+    s.eng.generate(leaf.id, { holdBakes: true });
+    expect(s.group.scenePaths).not.toBe(ink);
+    expect(s.eng.sceneComposeStats.bakeHolds).toBe(0);
+    expect(client.runs).toBe(0);
+  }, 60000);
+
   it('with no worker the preview bakes in place, as before', () => {
     const s = mezzo();
     s.composeFull();
