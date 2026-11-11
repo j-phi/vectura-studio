@@ -21,7 +21,8 @@ const FINGERPRINTS = {
   visibility: 'ef33ad42952a971e66bf301834cf228875c5bcd6',
   // Added by the config clean-up (cfg2): pinned against the pre-move modules (laws constants, shadow SPACING_FLOOR).
   // Re-pinned by W3-B: meta gains toneScaleFree and joinTouching, and the dash bands are emitted in order along the ruling.
-  lawsDutyConst: '2487ef42777fc62995331413c4a104308b9c1724',
+  // Re-pinned by FX-J1: the dutyConst MarkSet gains runCapRank and meta.capKey 'ruling' (BAKE_VERSION 4); geometry unchanged.
+  lawsDutyConst: '96ef981cef9c7eaf08ffe18897d6a47468013c16',
   frameShadow: '0be72550cc4496e9fd15757e89a6ac61e8d58874',
   // Added by W3-B: the faceted baker's constants moved into the FACETED namespace (output byte-identical to the module-local values).
   facetedBox: '6f1ac4b47d5e2f6519d58ef4ff0baa70d0e26b5f',

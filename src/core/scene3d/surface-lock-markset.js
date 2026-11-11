@@ -6,7 +6,7 @@
  * nested by level and ranked inside each level, with an object-space unit normal per vertex.
  *
  *   createBuilder(meta) -> builder
- *     builder.beginRun(level, rank, family, flags)   rank in [0, 1)
+ *     builder.beginRun(level, rank, family, flags, capRank?)   rank in [0, 1); capRank (optional, [0, 1)) keys the plot-floor cap (contract §2, A13)
  *     builder.vertex(x, y, z, nx, ny, nz)            normal need not be unit (it is normalised)
  *     builder.endRun()                               runs with < 1 vertex are dropped; non-dot runs need >= 2
  *     builder.finish() -> MarkSet
@@ -70,16 +70,22 @@
     let pos = new Float32Array(3 * 1024); let nrm = new Int16Array(2 * 1024); let nv = 0;
     let start = new Uint32Array(256); let level = new Uint8Array(256); let rank = new Uint16Array(256);
     let family = new Uint8Array(256); let flags = new Uint8Array(256); let nr = 0;
+    let capRank = null; // allocated on the first run that carries a capRank; absent otherwise (contract A13)
     let open = null;
     const levelCounts = new Uint32Array(MAX_LEVELS);
     const b = {
-      beginRun(lv, r, fam, fl) {
+      beginRun(lv, r, fam, fl, cap) {
         if (open) throw new Error('SurfaceLockMarkSet: beginRun inside an open run');
         const L = lv | 0;
         if (L < 0 || L >= MAX_LEVELS) throw new Error(`SurfaceLockMarkSet: level ${lv} outside 0..${MAX_LEVELS - 1}`);
         const rr = Number(r);
         if (!(rr >= 0 && rr < 1)) throw new Error(`SurfaceLockMarkSet: rank ${r} outside [0, 1)`);
-        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0 };
+        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null };
+        if (cap !== undefined && cap !== null) {
+          const cc = Number(cap);
+          if (!(cc >= 0 && cc < 1)) throw new Error(`SurfaceLockMarkSet: capRank ${cap} outside [0, 1)`);
+          open.cap = Math.min(RANK_SCALE - 1, Math.round(cc * RANK_SCALE));
+        }
       },
       vertex(x, y, z, nx, ny, nz) {
         if (!open) throw new Error('SurfaceLockMarkSet: vertex outside a run');
@@ -95,6 +101,8 @@
         if (n < 1 || (!dot && n < 2)) { nv = open.v0; open = null; return false; }
         start = grow(start, nr + 2); level = grow(level, nr + 1); rank = grow(rank, nr + 1);
         family = grow(family, nr + 1); flags = grow(flags, nr + 1);
+        if (open.cap !== null && !capRank) capRank = new Uint16Array(Math.max(256, level.length));
+        if (capRank) { capRank = grow(capRank, nr + 1); capRank[nr] = open.cap === null ? 0 : open.cap; }
         start[nr] = open.v0; level[nr] = open.level; rank[nr] = open.rank; family[nr] = open.family; flags[nr] = open.flags;
         levelCounts[open.level] += 1;
         nr += 1; start[nr] = nv; open = null;
@@ -105,7 +113,7 @@
         let levels = 0;
         for (let i = 0; i < MAX_LEVELS; i++) if (levelCounts[i]) levels = i + 1;
         const m = meta || {};
-        return {
+        const out = {
           layout: LAYOUT_VERSION,
           bakerId: String(m.bakerId || ''),
           key: String(m.key || ''),
@@ -122,6 +130,9 @@
           runFlags: flags.slice(0, nr),
           meta: Object.assign({}, m.meta || {}),
         };
+        // A run that lacks a capRank while its siblings carry one reads 0 (never capped): only laws that stamp every run use it.
+        if (capRank) out.runCapRank = capRank.slice(0, nr);
+        return out;
       },
     };
     return b;
@@ -137,6 +148,7 @@
     if (ms.normals.length !== 2 * nv) bad.push('normals length');
     if (ms.runStart.length !== nr + 1) bad.push('runStart length');
     ['runLevel', 'runRank', 'runFamily', 'runFlags'].forEach((k) => { if (ms[k].length !== nr) bad.push(`${k} length`); });
+    if (ms.runCapRank && ms.runCapRank.length !== nr) bad.push('runCapRank length');
     if (ms.runStart[0] !== 0 && nr) bad.push('runStart[0]');
     if (ms.runStart[nr] !== nv) bad.push('runStart[last]');
     for (let r = 0; r < nr; r++) {
@@ -149,8 +161,9 @@
   };
 
   const ARRAYS = ['positions', 'normals', 'runStart', 'runLevel', 'runRank', 'runFamily', 'runFlags'];
-  const byteSize = (ms) => ARRAYS.reduce((s, k) => s + (ms && ms[k] ? ms[k].byteLength : 0), 0);
-  const transferList = (ms) => ARRAYS.map((k) => ms[k].buffer);
+  const OPTIONAL = ['runCapRank'];
+  const byteSize = (ms) => ARRAYS.concat(OPTIONAL).reduce((s, k) => s + (ms && ms[k] ? ms[k].byteLength : 0), 0);
+  const transferList = (ms) => ARRAYS.concat(OPTIONAL.filter((k) => ms[k])).map((k) => ms[k].buffer);
 
   Scene3D.SurfaceLockMarkSet = {
     LAYOUT_VERSION, FLAG, RANK_SCALE, createBuilder, octEncode, octDecode, validate, byteSize, transferList, rankOf,

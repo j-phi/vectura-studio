@@ -142,6 +142,48 @@ describe('surface lock frame pipeline', () => {
     expect(worst).toBeGreaterThanOrEqual(0.8 * floor);
   });
 
+  it('4a. capKey "ruling" (A13): the cap thins RULINGS by runCapRank, never the duty bands inside one ruling; absent runCapRank is unchanged', () => {
+    const pen = 0.3; const floor = 2.2 * pen;
+    const pose = SL.poseOf({}, CAM, BOUNDS);
+    // Constant c = 1 (normal +z, front view), s = 1: T0 = p0 / (floor * 0.8). p0 = 0.7 * 0.8 * floor gives T0 = 0.7 => T = 0.5.
+    const p0 = 0.7 * 0.8 * floor;
+    const lut = new Float32Array(257).fill(1e6);
+    const build = (runs, meta) => {
+      const B = MS.createBuilder({ bakerId: 'fake', key: 'k', objectId: 'o' });
+      runs.forEach((r) => {
+        B.beginRun(0, r.rank, 0, 0, r.cap);
+        [[r.x0, r.y], [r.x1, r.y]].forEach(([x, y]) => B.vertex(x, y, 0, 0, 0, 1));
+        B.endRun();
+      });
+      const ms = B.finish(); ms.meta = { p0, gain: 2, ...meta };
+      return ms;
+    };
+    const lenOf = (ls) => ls.reduce((s, l) => s + Math.hypot(l[l.length - 1].x - l[0].x, l[l.length - 1].y - l[0].y), 0);
+    const view = { toneFn: () => 0.5, tone: { lut }, penWidth: pen, objectId: 'o' };
+    // Two rulings; ruling 2 holds TWO bands (same cap rank 0.5). All bands carry tone key 0.
+    const runs = [
+      { rank: 0, cap: 0, x0: -5, x1: 5, y: -3 },
+      { rank: 0, cap: 0.5, x0: -5, x1: 0, y: 3 }, { rank: 0, cap: 0.5, x0: 0, x1: 5, y: 3 },
+    ];
+    const ms = build(runs, { capKey: 'ruling' });
+    expect(MS.validate(ms)).toEqual([]);
+    expect(ms.runCapRank.constructor.name).toBe('Uint16Array');
+    const lines = SL.frame([ms], pose, view);
+    expect(lines.length).toBe(1);               // ruling 2 (both bands) dropped whole
+    expect(lenOf(lines)).toBeCloseTo(10, 6);    // ruling 1 keeps its full dash length
+    // Without runCapRank (legacy MarkSet) the cap is folded into the tone key and keys are all 0: nothing is dropped.
+    const legacy = build(runs.map((r) => ({ ...r, cap: undefined })), {});
+    expect(legacy.runCapRank).toBeUndefined();
+    expect(SL.frame([legacy], pose, view).length).toBe(3);
+    // transferList / byteSize carry the optional array (the worker adopt path)
+    expect(MS.transferList(ms)).toHaveLength(8);
+    expect(MS.transferList(legacy)).toHaveLength(7);
+    expect(MS.byteSize(ms)).toBeGreaterThan(MS.byteSize(legacy));
+    // A cap that falls across a run clips at the crossing (second linear clip), not at a whole-run boundary.
+    const tilt = build([{ rank: 0, cap: 0.5, x0: -5, x1: 5, y: 0 }], { capKey: 'ruling' });
+    expect(SL.frame([tilt], pose, view).length).toBe(0);
+  });
+
   it('4b. cap-aware tone remap (opt-in meta.capToneRemap): tone stays monotone inside a capped ring; the flag off is unchanged (§5, H1)', () => {
     const cap = buildSphere(V, { M: 128, levels: 5, thetaMax: 0.3 }); // c in [0.955, 1] everywhere: T = 8 < D = 400
     const pose = SL.poseOf({}, CAM, BOUNDS);

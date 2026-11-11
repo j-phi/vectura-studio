@@ -14,7 +14,7 @@
 
   Vectura.SCENE3D_SURFACE_LOCK = Object.freeze({
     // Bumped whenever a baker's output for the same bake key changes. Part of every bake key.
-    BAKE_VERSION: 3,
+    BAKE_VERSION: 4,
     // Contract §6 — a vertex whose facing cosine c = n·view is below this is culled (crossing interpolated).
     NZ_CULL: 0.08,
     // Contract §5 — the tone look-up table has TONE_LUT_SIZE + 1 entries for I = k / TONE_LUT_SIZE.

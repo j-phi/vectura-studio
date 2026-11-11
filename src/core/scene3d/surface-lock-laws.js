@@ -209,7 +209,7 @@
       B.vertex(R.px[i] + (R.px[i + 1] - R.px[i]) * u, R.py[i] + (R.py[i + 1] - R.py[i]) * u, R.pz[i] + (R.pz[i + 1] - R.pz[i]) * u, ax, ay, az);
     };
     const e = encodeKey(key);
-    B.beginRun(e.level, e.rank, fam, 0);
+    B.beginRun(e.level, e.rank, fam, 0, tmp.capRank);
     pt(sa);
     for (let i = at(sa) + 1; i < R.n && R.s[i] < sb - 1e-9; i++) if (R.s[i] > sa + 1e-9) B.vertex(R.px[i], R.py[i], R.pz[i], R.nx[i], R.ny[i], R.nz[i]);
     pt(sb);
@@ -295,11 +295,16 @@
         for (let r = 0; r < nr; r++) {
           if (lad.runLevel[r] > lstar) continue;
           const R = readRun(lad, r, out);
+          // Every band of ruling r carries the ruling's own ladder rank as its CAP key (contract A13): the plot-floor cap thins
+          // RULINGS (their key space), never duty bands (which would shrink every dash to its centre band).
+          tmp.capRank = keyOfRun(lad, r) / gate;
           dashRun(B, R, model.period / scaleRef, frac((idx + 1) * K.GOLDEN + phase), edges, (j) => (j === 0 ? 0 : rho * mids[j]), lad.runFamily[r], tmp);
+          tmp.capRank = undefined;
           idx += 1;
         }
         meta.minMarkMM = 0;
         meta.minDuty = model.minDuty;
+        meta.capKey = 'ruling';
         meta.joinTouching = true; // the duty bands of one dash are separate runs; the frame joins the ones that touch (A11)
       }
     } else if (law === 'mergeLadder') {
