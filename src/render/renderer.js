@@ -13580,7 +13580,7 @@
     beginSceneLightDrag(hit, event) {
       if (!hit || !hit.layer) return false;
       const layer = hit.layer;
-      const light = this._sceneLight(layer, true);
+      const light = this._sceneLight(layer); // read-only: begin must not write the document (a pinch can cancel it)
       const control = hit.control || this.getSceneLightControl(layer);
       if (!control) return false;
       this._sceneLightDrag = {
@@ -13627,7 +13627,7 @@
     beginSceneShadowDrag(hit, event) {
       if (!hit || !hit.layer) return false;
       const layer = hit.layer;
-      const light = this._sceneLight(layer, true);
+      const light = this._sceneLight(layer); // read-only: begin must not write the document (a pinch can cancel it)
       // Origin: the caster object's path-bbox center; falls back to the shadow
       // polygon centroid for a merged (casterId null) union shadow.
       let origin = null;
@@ -13770,7 +13770,8 @@
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer) {
-        this._writeSceneLight(layer, drag.startLight);
+        // Nothing was written until the first move, so an unmoved drag has nothing to restore.
+        if (drag.moved) this._writeSceneLight(layer, drag.startLight);
         if (drag.moved) {
           if (this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
             this.app.history.pop();
