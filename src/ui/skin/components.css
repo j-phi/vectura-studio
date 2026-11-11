@@ -14308,6 +14308,14 @@ html.kb-open .export-settings-scroll {
     width: var(--touch-target-min); height: var(--touch-target-min);
   }
   [data-ui-skin] #left-pane .sw-toggle { position: relative; }
+  /* A parameter switch that sits under its label row (algo-config checkbox def) shares the line with the label instead, so the
+   * pair is one finger-tall row and the switch's 44 px ::before stays inside it. Stacked, the label row above and the next
+   * control below both covered part of the extension (Flat Top/Bottom measured 44 x 34 on iPhone landscape). */
+  [data-ui-skin] #left-pane :is(.mb-4, .noise-control):has(> .sw-toggle) {
+    display: flex; align-items: center; justify-content: space-between; min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] #left-pane :is(.mb-4, .noise-control):has(> .sw-toggle) > :not(.sw-toggle) { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+  [data-ui-skin] #left-pane :is(.mb-4, .noise-control):has(> .sw-toggle) > .sw-toggle { margin: 0 7px; }
 
   /* On short coarse viewports (landscape phones) the header, search bar and draw-order bar used
    * to squeeze the list to a sliver. The list keeps room for two finger-tall rows and the tab
