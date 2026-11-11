@@ -13136,7 +13136,8 @@
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const R = 60 * unit;         // move-arrow length (doc units → constant on-screen)
       const ringR = R * 0.92;
-      const project = (w) => { const r = this._rotateCam(w, cam); return { x: r.x, y: -r.y, z: r.z }; };
+      const L = this._sceneXfLinear(target); // arrows and rings turn (and scale) with the Scene's Transform, like its ink
+      const project = (w) => { const r = this._rotateCam(w, cam); const v = L ? L.fwd({ x: r.x, y: -r.y }) : { x: r.x, y: -r.y }; return { x: v.x, y: v.y, z: r.z }; };
       const AX = [
         { key: 'x', world: { x: 1, y: 0, z: 0 }, perp: [{ x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }] },
         { key: 'y', world: { x: 0, y: 1, z: 0 }, perp: [{ x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 0 }] },
@@ -13321,8 +13322,8 @@
       if (!obj || !obj.transform) { this._sceneObjectGizmoDrag = null; return false; }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
-      const dx = world.x - drag.startWorld.x;
-      const dy = world.y - drag.startWorld.y;
+      let dx = world.x - drag.startWorld.x;
+      let dy = world.y - drag.startWorld.y;
       if (!drag.moved && Math.hypot(dx, dy) < 1 / (this.scale || 1)) return true;
       if (!drag.historyPushed) {
         if (this.app?.pushHistory) this.app.pushHistory();
@@ -13334,7 +13335,10 @@
       const s = drag.start;
       const round2 = (val) => Math.round(val * 100) / 100;
       if (drag.type === 'move') {
-        // Ground-drag mapping (yaw-rotated screen delta), constrained to the axis.
+        // Ground-drag mapping (yaw-rotated screen delta), constrained to the axis. The delta is first taken back through the
+        // Scene's Transform (the arrows are drawn through it).
+        const Lx = this._sceneXfLinear(layer);
+        if (Lx) { const v = Lx.inv({ x: dx, y: dy }); dx = v.x; dy = v.y; }
         const cy = Math.cos(drag.camYaw); const sy = Math.sin(drag.camYaw);
         if (drag.axis === 'x') t.x = round2(s.x + (dx * cy + dy * sy));
         else if (drag.axis === 'z') t.z = round2(s.z + (-dx * sy + dy * cy));
@@ -13834,7 +13838,35 @@
       const cam = (layer && layer.params && layer.params.camera) || {};
       let bounds = {};
       try { if (this.engine && this.engine.getBounds) bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
-      return Scene.projectWorldPoint(world, cam, bounds);
+      const pt = Scene.projectWorldPoint(world, cam, bounds);
+      const L = pt ? this._sceneXfLinear(layer) : null; // the Scene's own Transform moves the drawn ink: its helpers follow
+      return L ? L.map(pt) : pt;
+    }
+
+    // The scene group's Transform (Engine#sceneGroupPointMap) as an affine map on doc points (`map`), its linear part on
+    // doc vectors (`fwd`) and that part's inverse (`inv`), or null at the identity. `rigid`: no scale (a raster drawn
+    // through it keeps its stroke weight).
+    _sceneXfLinear(layer) {
+      const xf = layer && this.engine && typeof this.engine.sceneGroupPointMap === 'function' ? this.engine.sceneGroupPointMap(layer) : null;
+      if (!xf) return null;
+      const o = xf.transform({ x: 0, y: 0 }); const ex = xf.transform({ x: 1, y: 0 }); const ey = xf.transform({ x: 0, y: 1 });
+      const a = ex.x - o.x; const b = ex.y - o.y; const c = ey.x - o.x; const d = ey.y - o.y;
+      const det = a * d - b * c;
+      if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+      const eps = 1e-9;
+      return {
+        a, b, c, d, t: o, map: xf.transform,
+        fwd: (v) => ({ x: a * v.x + c * v.y, y: b * v.x + d * v.y }),
+        inv: (v) => ({ x: (d * v.x - c * v.y) / det, y: (-b * v.x + a * v.y) / det }),
+        rigid: Math.abs(a * a + b * b - 1) < eps && Math.abs(c * c + d * d - 1) < eps && Math.abs(a * c + b * d) < eps,
+      };
+    }
+
+    // A Transform the spin ring cannot draw its rasters through exactly (a scale): the ring stands down.
+    _spinXfBlocks(group) {
+      if (!group || group._sceneXfActive !== true) return false;
+      const L = this._sceneXfLinear(group);
+      return !!L && !L.rigid;
     }
 
     // Gizmo geometry (doc coords) for the selected light, or null. Point/spot are
@@ -13850,7 +13882,8 @@
       const cam = (target.params && target.params.camera) || {};
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const R = 60 * unit;
-      const project = (w) => { const r = this._rotateCam(w, cam); return { x: r.x, y: -r.y, z: r.z }; };
+      const L = this._sceneXfLinear(target);
+      const project = (w) => { const r = this._rotateCam(w, cam); const v = L ? L.fwd({ x: r.x, y: -r.y }) : { x: r.x, y: -r.y }; return { x: v.x, y: v.y, z: r.z }; };
       let center = null;
       let coneTip = null;
       let baseR = null;
@@ -13945,12 +13978,14 @@
       if (!light) { this._sceneLightGizmoDrag = null; return false; }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
-      const dx = world.x - drag.startWorld.x;
-      const dy = world.y - drag.startWorld.y;
+      let dx = world.x - drag.startWorld.x;
+      let dy = world.y - drag.startWorld.y;
       if (!drag.moved && Math.hypot(dx, dy) < 1 / (this.scale || 1)) return true;
       if (!drag.historyPushed) { this._scenePushHistory(); drag.historyPushed = true; }
       drag.moved = true;
-      // Screen doc-delta → world delta along the chosen axis (object-gizmo math).
+      // Screen doc-delta → world delta along the chosen axis (object-gizmo math), back through the Scene's Transform first.
+      const Lx = this._sceneXfLinear(layer);
+      if (Lx) { const v = Lx.inv({ x: dx, y: dy }); dx = v.x; dy = v.y; }
       const cy = Math.cos(drag.camYaw); const sy = Math.sin(drag.camYaw);
       let dWorld;
       if (drag.axis === 'x') dWorld = dx * cy + dy * sy;
@@ -17555,8 +17590,8 @@
       if (!group) { if (st) this._spinDrop(); return; }
       // Level S (surface-lock contract §13): a drag frame is the export and a cold compose is the bake, not a slow scene, so
       // no ring is ever started, whatever the last full compose cost.
-      if (group._sceneLevelS === true || group._sceneXfActive === true) {
-        // (A transformed scene's raster frames are untransformed ink: no ring until the Transform is back at identity.)
+      if (group._sceneLevelS === true || this._spinXfBlocks(group)) {
+        // (A ring frame is untransformed ink drawn through the Scene's Transform: exact for a move / turn, not for a scale.)
         if (st) this._spinDrop();
         if (this._spinPending) { if (this._spinPending.timer) clearTimeout(this._spinPending.timer); this._spinPending = null; }
         return;
@@ -17956,7 +17991,13 @@
       const ctx = this.ctx;
       const s = this.scale / r.view.scale;
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // The raster is the frame's untransformed ink: draw it through backing(Transform(backing^-1(px))) so it lands where the
+      // transformed vector ink is drawn. Only a rigid Transform reaches here (_spinXfBlocks), so stroke weights are kept.
+      const L = l._sceneXfActive === true ? this._sceneXfLinear(l) : null;
+      if (L) {
+        const lo = L.fwd({ x: this.offsetX, y: this.offsetY });
+        ctx.setTransform(L.a, L.b, L.c, L.d, dpr * (this.offsetX - lo.x + this.scale * L.t.x), dpr * (this.offsetY - lo.y + this.scale * L.t.y));
+      } else ctx.setTransform(1, 0, 0, 1, 0, 0);
       if (s === 1 && r.view.dpr === dpr) {
         ctx.drawImage(r.canvas, r.x0 + Math.round((this.offsetX - r.view.offsetX) * dpr), r.y0 + Math.round((this.offsetY - r.view.offsetY) * dpr));
       } else {
@@ -17972,7 +18013,7 @@
       this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 };
       if (drag.type === 'pitch' || drag.type === 'roll') return;
       if (layer._sceneLevelS === true) return; // Level S: the frame is the export, no raster ring
-      if (layer._sceneXfActive === true) return; // a transformed scene's raster frames are untransformed ink
+      if (this._spinXfBlocks(layer)) return; // a scaled Transform would change the raster's stroke weight
       const st = this._spin;
       if (!st || !st.ring || st.ring.disposed || st.groupId !== layer.id) return;
       const target = this._spinTarget(layer);
