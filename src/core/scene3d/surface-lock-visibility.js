@@ -50,6 +50,8 @@
     TORUS_ANALYTIC: true,  // Torus self-occlusion through TorusOcclusion (contract §7); false = triangle buffer
     TORUS_GAP_MM: 8,  // algorithms/scene3d.js TORUS_SELF_OCCLUDE_GAP_MM
     TORUS_MARGIN_MM: 1,  // algorithms/scene3d.js TORUS_SELF_OCCLUDE_MARGIN_MM
+    CONVEXITY_BUDGET: 3000000,
+    CONVEXITY_EPS: 1e-6,
   };
   const TUNE = Object.assign({}, DEFAULTS);
   const sync = () => {
@@ -61,8 +63,6 @@
     'torus', 'torusKnot', 'box', 'plane', 'solid']);
   const ALWAYS_CONVEX = new Set(['box', 'plane', 'sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'pyramid']);
   const ALWAYS_NONCONVEX = new Set(['torus', 'torusKnot']);
-  const CONVEXITY_BUDGET = 3000000;
-  const CONVEXITY_EPS = 1e-6;
 
   const finite = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
   const degToRad = (d) => (d * Math.PI) / 180;
@@ -170,7 +170,7 @@
   const isConvexMesh = (verts, faces) => {
     const V = verts.length / 3; const F = faces.length;
     if (V < 4 || F < 2) return true;
-    if (V * F > CONVEXITY_BUDGET) return false;
+    if (V * F > TUNE.CONVEXITY_BUDGET) return false;
     for (let fi = 0; fi < F; fi++) {
       const face = faces[fi];
       if (face.length < 3) continue;
@@ -182,7 +182,7 @@
       nx /= l; ny /= l; nz /= l;
       for (let vi = 0; vi < V; vi++) {
         const d = nx * (verts[3 * vi] - verts[3 * a]) + ny * (verts[3 * vi + 1] - verts[3 * a + 1]) + nz * (verts[3 * vi + 2] - verts[3 * a + 2]);
-        if (d > CONVEXITY_EPS) return false;
+        if (d > TUNE.CONVEXITY_EPS) return false;
       }
     }
     return true;

@@ -45,8 +45,8 @@
   const AUX_CACHE_MAX = CFG.AUX_CACHE_ENTRIES || 16;
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
-  const FALLBACK_FLOOR_PEN = 2.2;
-  const FRESH_MAX = 256;
+  const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
+  const FRESH_MAX = CFG.FRESH_MAX || 256;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
   // Each is its own Scene3D namespace so Engine's sceneModuleFingerprint sees its functions.
