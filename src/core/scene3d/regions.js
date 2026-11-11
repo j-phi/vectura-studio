@@ -472,6 +472,84 @@
     return clamp(best, 0, 1);
   };
 
+  // ── Light model v2 (light realism, U1) ─────────────────────────────────────
+  //
+  // One function shades a world point: L* = clamp(A + D + R) is the DIFFUSE
+  // luminance (view independent, so it may be memoized per vertex), S is the
+  // separate view-dependent specular channel that REMOVES ink (the glint is
+  // paper). `model 'legacy'` is `combinedIntensity` byte for byte with S = 0.
+  // Tunables are exported so the hub / panel / baker read one source of truth.
+  const SHADE_DEFAULTS = Object.freeze({
+    a0: 0.08,  // model default ambient fill (no lit floor: paper is reachable)
+    r0: 0.12,  // bounce lift on the attached-shadow side, r0 * max(0, -n.L)
+    ks: 1,     // specular strength
+    s0: 0.55,  // glint soft edge: S below s0 keeps full ink
+    s1: 0.9,   // S at/above s1 is paper
+    size: 1,   // default highlight size -> shininessForSize(size)
+  });
+
+  // Specular ink multiplier shared by every consumer (scaleFn, pose laws).
+  const specularKeep = (S, s0 = SHADE_DEFAULTS.s0, s1 = SHADE_DEFAULTS.s1) => 1 - smoothstep(s0, s1, S);
+
+  const lightDirAt = (light, P) => {
+    if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
+      const to = sub(light.position || v(0, 0, 0), P);
+      const d = Math.hypot(to.x, to.y, to.z);
+      return d > 1e-9 ? mul(to, 1 / d) : v(0, 1, 0);
+    }
+    return towardLight(light);
+  };
+
+  // shade(nw, wp, lights, opts) -> { L, D, A, S }
+  // opts = { model: 'legacy'|'v2', eye (unit, toward camera) | null, shadowFn,
+  //          ambient, bounce, shininess, ks }
+  const shade = (nw, wp, lights, opts) => {
+    const o = opts || {};
+    const list = Array.isArray(lights) ? lights : (lights ? [lights] : []);
+    if (o.model !== 'v2') {
+      const I = combinedIntensity(nw, wp, list, o.shadowFn);
+      return { L: I, D: I, A: 0, S: 0 };
+    }
+    const n = normalize(nw || v(0, 0, 1));
+    const P = wp && Number.isFinite(wp.x) && Number.isFinite(wp.y) && Number.isFinite(wp.z) ? wp : v(0, 0, 0);
+    const direct = [];
+    let A = finite(o.ambient, SHADE_DEFAULTS.a0);
+    for (let i = 0; i < list.length; i++) {
+      const light = list[i];
+      if (!light) continue;
+      if (light.type === 'ambient') A += finite(light.intensity, 1); // never shadowed
+      else direct.push(light);
+    }
+    const D = combinedIntensity(n, P, direct, o.shadowFn);
+    // Bounce: the strongest back-facing light lifts the rim that Lambert clamps to 0.
+    const r0 = finite(o.bounce, SHADE_DEFAULTS.r0);
+    let back = 0;
+    for (let i = 0; i < direct.length; i++) {
+      const light = direct[i];
+      const nl = -dot(n, lightDirAt(light, P));
+      if (nl > 0) back = Math.max(back, nl * clamp(finite(light.intensity, 1), 0, 1));
+    }
+    const L = clamp(A + D + r0 * back, 0, 1);
+    // Specular: Blinn-Phong, view dependent, gated by shadow and n.L > 0.
+    let S = 0;
+    const e = o.eye;
+    if (e && Number.isFinite(e.x) && Number.isFinite(e.y) && Number.isFinite(e.z)) {
+      const ev = normalize(e);
+      const sh = Math.max(1, finite(o.shininess, shininessForSize(SHADE_DEFAULTS.size)));
+      const ks = finite(o.ks, SHADE_DEFAULTS.ks);
+      for (let i = 0; i < direct.length; i++) {
+        const light = direct[i];
+        const Ld = lightDirAt(light, P);
+        if (dot(n, Ld) <= 0) continue;
+        if (typeof o.shadowFn === 'function' && o.shadowFn(P, light)) continue;
+        const H = normalize(v(Ld.x + ev.x, Ld.y + ev.y, Ld.z + ev.z));
+        const s = ks * clamp(finite(light.intensity, 1), 0, 1) * Math.pow(Math.max(0, dot(n, H)), sh);
+        if (s > S) S = s;
+      }
+    }
+    return { L, D, A: clamp(A, 0, 1), S: clamp(S, 0, 1) };
+  };
+
   // ── FORM ZONES (design spec §5.1–§5.3) ─────────────────────────────────────
   //
   // The object's own shading is a SIX-zone ladder, and its defining feature is
@@ -868,6 +946,9 @@
   const Regions = {
     intensity,
     combinedIntensity,
+    shade,
+    specularKeep,
+    SHADE_DEFAULTS,
     toneCurve,
     toneShapeOf,
     shapeTone,
