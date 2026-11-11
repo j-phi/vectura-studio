@@ -25,7 +25,7 @@ describe('START_PAGE config', () => {
   it('carries the 3D Scene budget and the orbit sway rates, and the modules mirror them for a page without the config', () => {
     expect(Object.isFrozen(SP.SCENE_ORBIT)).toBe(true);
     expect(Object.isFrozen(SP.ORBIT_SWAY)).toBe(true);
-    expect(SP.SCENE_ORBIT).toEqual({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300 });
+    expect(SP.SCENE_ORBIT).toEqual({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500, altBitmapMB: 32, altBitmapMBMobile: 18 });
     expect(SP.ORBIT_SWAY).toEqual({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 });
     const so = fs.readFileSync(path.join(ROOT, 'src/ui/start-page/scene-orbit.js'), 'utf8');
     const ob = fs.readFileSync(path.join(ROOT, 'src/ui/start-page/orbit3d.js'), 'utf8');

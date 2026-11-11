@@ -890,7 +890,7 @@
       // A WeakMap so a removed group (or an undo-restored copy) drops its entry.
       this._sceneComposeMemo = new WeakMap();
       // Diagnostics for tests / perf harnesses: real composes vs memo hits.
-      this.sceneComposeStats = { composes: 0, hits: 0, lastTier: null };
+      this.sceneComposeStats = { composes: 0, hits: 0, warps: 0, lastTier: null, spinInstalls: 0 };
     }
 
     // Announce every removed layer id to the host (e.g. the on-canvas text
@@ -2871,6 +2871,7 @@
         }
       });
 
+      const prevAssembled = group._sceneAssembled;
       const assembled = Params.collectSceneParams(group.params, collected);
       // Scene-tree — publish the COLLECTED input so consumers that need to
       // re-derive the scene (the renderer's per-pixel pick-face pass) use the
@@ -2898,39 +2899,98 @@
       };
       if (tier === 'law') bounds.lawDraft = true;
 
+      // POSE WARP — a preview frame whose scene differs from the last settled
+      // compose only by pose (object transform, camera angles / zoom) is served
+      // by carrying the settled ink through the new pose (Scene3D.PosePreview):
+      // O(vertices), no generator run. The settled compose is never touched, so
+      // the release / idle render stays byte-identical.
+      const PosePreview = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.PosePreview;
+      if (options && options.preview === true && PosePreview && group._scenePose && SETTINGS.scenePoseWarp !== false) {
+        let warped = null;
+        try {
+          const now = PosePreview.compatible(group._scenePose, assembled, bounds);
+          if (now) warped = PosePreview.warp(group._scenePose, now);
+        } catch (err) {
+          warped = null;
+        }
+        if (warped) {
+          this.sceneComposeStats.warps += 1;
+          this.sceneComposeStats.lastTier = 'warp';
+          group._pathsFromDraft = true;
+          group.scenePaths = warped;
+          this._invalidateGroupOptimization(group);
+          return;
+        }
+      }
+
       // NEW-3 — compose memo. Twenty-odd callers recompose every scene group
       // through computeAllDisplayGeometry (export, layer reorder, pens panel,
       // mirror-guide drags...) without touching the scene. A FULL compose whose
       // complete input signature matches the last one reuses its output; draft
       // tiers are never cached, so a draft frame can never be served as final.
-      const memoKey = tier === 'full' ? this._sceneComposeKey(algo, assembled, bounds, group) : null;
+      // `knownKey`: the caller already holds this exact state's compose key (a trusted spin-frame install), so the scene is not hashed again.
+      const memoKey = tier === 'full' ? ((options && options.knownKey) || this._sceneComposeKey(algo, assembled, bounds, group)) : null;
+      // SPIN BAKE — hand the compose input of THIS state to the caller without touching the group at all
+      // (no memo read, no installed ink, `_sceneAssembled` put back): the baker aims it at poses the scene is not in.
+      if (options && options.jobOnly === true) {
+        group._sceneAssembled = prevAssembled;
+        group._sceneJob = memoKey ? { assembled, bounds, seed: group.params.seed, memoKey, tier, objects: Array.from(objectLayers).map(([id, l]) => [id, l.params]) } : null;
+        return;
+      }
       const memo = memoKey ? this._sceneComposeMemo.get(group) : null;
+      // A worker settle still in flight was posted for a DIFFERENT state than the one composing now (an edit landed after it
+      // was posted): its ink would be a stale pose, so it is cancelled here, at the moment the newer state is composed or
+      // served from the memo. `finishSceneAsync` re-checks the key as well (the belt for a result that is already on its way).
+      if (memoKey && !(options && (options.precomputed || options.captureJob)) && group._sceneAsyncHandle && group._sceneAsyncKey !== memoKey) {
+        this._cancelStaleSettle(group);
+      }
+
       let paths = [];
       this.sceneComposeStats.lastTier = tier;
       const modules = memoKey ? sceneModuleFingerprint(algo) : null;
       if (memo && memo.key === memoKey && sameFingerprint(memo.modules, modules)) {
+        // A worker-composed memo keeps its ink packed until a hit actually needs it.
+        if (memo.lazy && !memo.paths) {
+          memo.paths = window.Vectura.Scene3D.ComposeJob.unpack(memo.lazy);
+          memo.lazy = null;
+        }
         paths = cloneScenePaths(memo.paths);
         this.sceneComposeStats.hits += 1;
       } else {
+        // Async settle (generateAsync): hand the compose input to the caller instead of running it.
+        if (options && options.captureJob === true) {
+          group._sceneJob = { assembled, bounds, seed: group.params.seed, memoKey, tier, objects: Array.from(objectLayers).map(([id, l]) => [id, l.params]) };
+          return;
+        }
         const rng = new SeededRNG(group.params.seed);
         const noise = new SimpleNoise(group.params.seed);
         const t0 = nowMs();
         let failed = false;
+        const pre = options && options.precomputed;
         try {
-          paths = algo.generate(assembled, rng, noise, bounds) || [];
+          paths = pre ? pre.paths : (algo.generate(assembled, rng, noise, bounds) || []);
         } catch (err) {
           console.error('[Engine] Scene group compose failed:', err);
           paths = [];
           failed = true;
         }
-        const ms = nowMs() - t0;
-        this.sceneComposeStats.composes += 1;
+        const ms = pre ? pre.ms : nowMs() - t0;
+        // a baked spin frame is a compose that already happened (in the worker): counted apart
+        if (pre && pre.spin) this.sceneComposeStats.spinInstalls += 1; else this.sceneComposeStats.composes += 1;
         if (tier === 'full') {
           group._sceneLastFullMs = ms;
+          // A scene this slow will settle through the worker after its next drag: start it now, off
+          // the interaction path, so the modules are loaded by the time they are needed.
+          if (ms > 100 && !pre) {
+            const Client = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient;
+            if (Client && Client.available()) Client.warm().catch(() => {});
+          }
           // A fresh settled measurement re-arms the law tier for the next drag.
           group._sceneLastLawDraftMs = null;
           if (memoKey && !failed) {
-            this._sceneComposeMemo.set(group, { key: memoKey, modules, paths: cloneScenePaths(paths) });
+            this._sceneComposeMemo.set(group, pre && pre.packed
+              ? { key: memoKey, modules, paths: null, lazy: pre.packed }
+              : { key: memoKey, modules, paths: cloneScenePaths(paths) });
           }
         } else if (tier === 'law') {
           group._sceneLastLawDraftMs = ms;
@@ -2943,8 +3003,30 @@
       // BEFORE divisions, so a dashed object dashes along the true curve rather
       // than along the chords it was fitted from (divideChain flattens via the
       // layer's own `curves` flag, which _applyObjectDivisions already reads).
-      const finished = this._applySceneCurveFinish(paths, assembled, objectLayers, group);
+      const finished = options && options.precomputed && options.precomputed.finished
+        ? options.precomputed.finished
+        : this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      if (tier === 'full') group._sceneSettledKey = memoKey;
+      // Lift the settled ink for the drag preview (null when the scene is not
+      // warpable; never throws into the compose).
+      if (tier === 'full') {
+        group._scenePose = null;
+        if (group._scenePoseLift) { group._scenePoseLift.cancel(); group._scenePoseLift = null; }
+        if (PosePreview && SETTINGS.scenePoseWarp !== false) {
+          try {
+            if (options && options.precomputed) {
+              // after a worker settle the lift is time-sliced so it never holds the main thread
+              const settledPaths = group.scenePaths;
+              const seq = (group._sceneSeq = (group._sceneSeq || 0) + 1);
+              group._scenePoseLift = PosePreview.snapshotSliced(assembled, bounds, settledPaths, (snap) => {
+                group._scenePoseLift = null;
+                if (group._sceneSeq === seq) group._scenePose = snap;
+              });
+            } else { group._sceneSeq = (group._sceneSeq || 0) + 1; group._scenePose = PosePreview.snapshot(assembled, bounds, group.scenePaths); }
+          } catch (err) { group._scenePose = null; }
+        }
+      }
       // The composed ink is the source of truth; anything derived from the
       // PREVIOUS compose is now stale. generate() recomposes a scene group
       // outside the optimize pass (Increment D — scene-object drags), so
@@ -2953,6 +3035,160 @@
       // computeAllDisplayGeometry re-runs optimizeLayers immediately after its
       // own compose pass, so nothing is lost there.
       this._invalidateGroupOptimization(group);
+    }
+
+    // Non-blocking settle. Composes the scene group that owns `layerId` in a Web Worker
+    // (Scene3D.ComposeClient) and installs the result exactly as a synchronous full compose would:
+    // the same prefix runs here, the generator runs there, so the ink is byte-identical.
+    // Resolves true when the group now holds the settled ink, false when the caller must fall back
+    // to the synchronous `generate` (no worker, not a scene, result stale or cancelled).
+    // Split in two so a caller that must hold document settings (the Start Page scene session) can
+    // do each half under them: beginSceneAsync posts the job, finishSceneAsync installs the result.
+    beginSceneAsync(layerId, opts) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      const group = layer && (layer.isGroup ? layer : this._sceneOwnerGroup(layer));
+      const Client = (opts && opts.client) || (window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeClient);
+      if (!group || group.type !== 'scene3d' || group.containerRole !== 'scene' || !Client || !Client.available()) return null;
+      const noiseImages = window.Vectura.NOISE_IMAGES;
+      if (noiseImages && Object.keys(noiseImages).length) return null;
+      group._sceneJob = null;
+      this._composeSceneGroup(group, { captureJob: true });
+      const job = group._sceneJob;
+      group._sceneJob = null;
+      if (!job) return { done: true, group };  // a memo hit: already composed
+      if (!job.memoKey || job.tier !== 'full') return null;
+      const V = window.Vectura || {};
+      const token = (group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1);
+      let handle;
+      try {
+        handle = Client.run({
+          assembled: job.assembled, bounds: job.bounds, seed: job.seed,
+          finish: {
+            objectParams: job.objects,
+            groupParams: group.params,
+          },
+          globals: { silProtoOff: window.__SIL_PROTO_OFF, silProtoTorusOn: window.__SIL_PROTO_TORUS_ON, strokeFillDefault: V.SCENE3D_STROKE_FILL_DEFAULT },
+        }, opts && opts.lazy ? { lazy: true } : undefined);
+      } catch (err) {
+        return null;
+      }
+      group._sceneAsyncHandle = handle;
+      group._sceneAsyncKey = job.memoKey;
+      return { group, job, token, promise: handle.promise };
+    }
+
+    finishSceneAsync(ctx, res) {
+      const { group, job, token } = ctx;
+      if (group._sceneAsyncToken !== token) return false;
+      group._sceneAsyncHandle = null;
+      // The scene must still be the one that was posted. The current state's key is derived WITHOUT consulting the compose memo:
+      // when the newer state is already memoized (an edit followed by a generate while this settle was in flight) a captured
+      // job comes back empty and cannot tell the two apart, so the old pose's ink was installed under the new key.
+      const now = this.sceneJobOnly(group);
+      if (!now || now.memoKey !== job.memoKey) return false;
+      this._composeSceneGroup(group, { precomputed: res, knownKey: job.memoKey });
+      return true;
+    }
+
+    // Drop the worker settle in flight for `group` (an edit made it stale). Its promise rejects; callers fall back to a generate.
+    _cancelStaleSettle(group) {
+      group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1;
+      const h = group._sceneAsyncHandle;
+      group._sceneAsyncHandle = null;
+      group._sceneAsyncKey = null;
+      if (h && typeof h.cancel === 'function') { try { h.cancel(); } catch (err) { /* already gone */ } }
+    }
+
+    // The worker's finished ink arrives packed (one Float64Array per path). Turning it into point objects is 50-110 ms for a dense Scene,
+    // so it is done a few milliseconds of paths at a time, one slice per task; a result that is not packed (a client without `lazy`)
+    // is used as it stands. Resolves the result `finishSceneAsync` takes.
+    _unpackFinishedSliced(res) {
+      const Job = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.ComposeJob;
+      if (!res || !res.finishedPacked || !Job) return Promise.resolve(res);
+      const entries = res.finishedPacked.paths || [];
+      const out = [];
+      let i = 0;
+      const now = () => (window.performance || Date).now();
+      return new Promise((resolve) => {
+        const step = () => {
+          const t0 = now();
+          while (i < entries.length && now() - t0 < 4) out.push(Job.unpackEntry(entries[i++]));
+          if (i < entries.length) setTimeout(step, 0);
+          else resolve({ paths: [], finished: out, packed: res.packed, ms: res.ms });
+        };
+        setTimeout(step, 0);
+      });
+    }
+
+    generateAsync(layerId) {
+      const ctx = this.beginSceneAsync(layerId, { lazy: true });
+      if (!ctx) return Promise.resolve(false);
+      if (ctx.done) return Promise.resolve(true);
+      return ctx.promise.then((res) => this._unpackFinishedSliced(res)).then((res) => this.finishSceneAsync(ctx, res), () => false);
+    }
+
+    // ── Spin ring support (Scene3D.SpinRing) ─────────────────────────────────────
+    // The compose input of the scene in its CURRENT state, touching nothing (null when memo is off).
+    sceneJobOnly(group) {
+      group._sceneJob = null;
+      this._composeSceneGroup(group, { jobOnly: true });
+      const job = group._sceneJob;
+      group._sceneJob = null;
+      return job;
+    }
+
+    // The ink a baked frame draws: its packed worker output through the same tail the settle runs
+    // (output finish, then per-object divisions), WITHOUT installing it. Null when the frame has no finished ink.
+    spinFramePaths(group, frame) {
+      const Job = window.Vectura.Scene3D.ComposeJob;
+      if (!frame || !frame.finishedPacked) return null;
+      const objectLayers = new Map();
+      this.getLayerDescendants(group.id).forEach((l) => { if (l && l.type === 'object3d' && l.visible !== false) objectLayers.set(l.id, l); });
+      return this._applyObjectDivisions(Job.unpack(frame.finishedPacked), objectLayers);
+    }
+
+    // True when some object of the scene has an enabled, non-degenerate stroke division (then a frame's ink must go through
+    // _applyObjectDivisions as a whole run; otherwise it passes through unchanged and may be materialized in slices).
+    spinHasDivisions(group) {
+      const StrokeDivide = window.Vectura?.StrokeDivide;
+      if (!StrokeDivide) return false;
+      let any = false;
+      this.getLayerDescendants(group.id).forEach((l) => {
+        if (!l || l.type !== 'object3d' || l.visible === false) return;
+        const d = this.ensureLayerDivisions(l);
+        if (!d || !d.enabled) return;
+        const len = typeof StrokeDivide.cycleLengthMm === 'function' ? StrokeDivide.cycleLengthMm(d) : 0;
+        if (len > 1e-6) any = true;
+      });
+      return any;
+    }
+
+    // Install a baked frame as the group's settled ink. The scene must be exactly the one the frame was
+    // composed for (same compose key, camera/object yaw already at the frame's); then the result is the
+    // ink a normal full compose would have produced, byte for byte. False = not installed, caller composes.
+    // `opts.trusted`: the caller has already proved the scene unchanged since the ring was baked (the renderer checks the settled key at
+    // gesture start and nothing edits during a drag), so the compose key is not re-derived: hashing a dense scene costs 50-130 ms.
+    installSpinFrame(group, frame, opts) {
+      if (!group || !frame || !frame.finishedPacked || !frame.key || frame.exact === false) return false; // a playback frame is not the exact ink
+      const trusted = !!(opts && opts.trusted);
+      if (!trusted) {
+        const job = this.sceneJobOnly(group);
+        if (!job || job.memoKey !== frame.key) return false;
+      }
+      const Job = window.Vectura.Scene3D.ComposeJob;
+      this._composeSceneGroup(group, { knownKey: trusted ? frame.key : undefined, precomputed: { paths: [], finished: Job.unpack(frame.finishedPacked), packed: frame.packed, ms: frame.ms, spin: true } });
+      return group._sceneSettledKey === frame.key;
+    }
+
+    cancelSceneAsync(layerId) {
+      const layer = this.layers.find((l) => l.id === layerId);
+      const group = layer && (layer.isGroup ? layer : this._sceneOwnerGroup(layer));
+      if (!group) return false;
+      group._sceneAsyncToken = (group._sceneAsyncToken || 0) + 1;
+      const h = group._sceneAsyncHandle;
+      group._sceneAsyncHandle = null;
+      if (h && typeof h.cancel === 'function') { h.cancel(); return true; }
+      return false;
     }
 
     // "Expand into group" fidelity for a scene-tree CHILD (object3d /

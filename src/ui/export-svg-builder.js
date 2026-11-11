@@ -42,7 +42,25 @@
   };
   const isMaskLayerGeometryHidden = (layer) => Boolean(layer?.mask?.enabled && layer?.mask?.hideLayer);
 
-  const buildExportSnapshot = (engine, opts = {}) => {
+  // Sliced building. The snapshot and the document are written as generators that yield when `opts.sliceMs` of work has
+  // elapsed (never when it is absent), so a caller can build a big scene's SVG in tasks of a few milliseconds and let the page
+  // paint, scroll and take input between them. The synchronous builders below run the very same generators to completion, so
+  // sliced and unsliced output are the same bytes by construction.
+  const perfNow = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  const makeSlicer = (opts) => {
+    const budget = opts && opts.sliceMs > 0 ? opts.sliceMs : 0;
+    let t = perfNow();
+    return { sliced: budget > 0, due: () => budget > 0 && perfNow() - t >= budget, reset: () => { t = perfNow(); } };
+  };
+  const runToEnd = (gen) => {
+    let r = gen.next();
+    while (!r.done) r = gen.next();
+    return r.value;
+  };
+  const SLICE_POINTS = 250; // vertices cloned / clipped per chunk of a sliced build
+
+  function* snapshotSteps(engine, opts = {}) {
+    const slice = makeSlicer(opts);
     const computeDisplay = typeof opts.computeDisplayGeometry === 'function'
       ? opts.computeDisplayGeometry
       : () => engine.computeAllDisplayGeometry();
@@ -84,6 +102,7 @@
     };
 
     computeDisplay();
+    if (slice.sliced) { yield 'setup'; slice.reset(); }
 
     const optimizationTargetIds = useOptimized
       ? (typeof optimizeTargets === 'function'
@@ -124,7 +143,7 @@
     // pen alone put per-path pen overrides in the wrong <g>, deduped
     // identical geometry across different pens, and let pen-grouped line
     // sort interleave pens. The canvas renderer is the reference behavior.
-    (engine.layers || []).forEach((layer, layerIndex) => {
+    for (const [layerIndex, layer] of (engine.layers || []).entries()) {
       // A GROUP exports when it owns its ink: a compound bakes a silhouette
       // into layer.paths, a morph group publishes morphedPaths, and a 3D
       // scene group publishes its one composed pass on scenePaths. Skipping
@@ -132,7 +151,7 @@
       // blank SVG — its children are all `_sceneConsumed`, so nothing was
       // left to emit.
       const ownsInk = layer && (layer.type === 'compound' || window.Vectura.LayerInk.layerOwnsInk(layer));
-      if (!layer?.visible || !ownsInk || isMaskLayerGeometryHidden(layer) || (engine.hasCompoundAncestor && engine.hasCompoundAncestor(layer))) return;
+      if (!layer?.visible || !ownsInk || isMaskLayerGeometryHidden(layer) || (engine.hasCompoundAncestor && engine.hasCompoundAncestor(layer))) continue;
       const layerPen = penMap.get(layer.penId) || fallbackPen;
       const ancestorMasks = engine.getAncestorMaskLayers ? engine.getAncestorMaskLayers(layer) : [];
       const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
@@ -152,46 +171,58 @@
       const layerGroupId = window.Vectura._UIExportUtil.escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
       const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
       const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
-      let paths = removeHiddenGeometry
-        ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
-        : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized });
-      if (destructiveMarginCrop) {
-        paths = window.Vectura._UIExportUtil.hardClipExportPaths(paths, marginRect, {
-          useCurves: useCurves && !removeHiddenGeometry,
-        });
-      }
-      (paths || []).forEach((path, pathIndex) => {
-        const pathPen = penMap.get(path?.meta?.penId) || layerPen;
-        // Group key comes from the shared effective-pen rule so the engine's
-        // per-pen grouping / dedup / stats bucket paths under the exact same
-        // pen this export plots them with (PenValidate.resolveEffectivePenId).
-        const key = window.Vectura.PenValidate.resolveEffectivePenId(path?.meta, layer.penId, penMap);
-        if (!groupMap.has(key)) {
-          groupMap.set(key, { key, pen: pathPen, items: [] });
-          seenGroupOrder.push(key);
+      // The source ink is read by reference and cloned / clipped chunk by chunk (both are pure per-path maps, so the chunks
+      // concatenate to exactly what one whole-list call returns); a sliced build yields between chunks.
+      const sourcePaths = (removeHiddenGeometry
+        ? window.Vectura._UIExportUtil.getVisibleExportPaths(layer, { useOptimized: useLayerOptimized, sourceOnly: true })
+        : window.Vectura._UIExportUtil.getRawExportPaths(layer, { useOptimized: useLayerOptimized, sourceOnly: true })) || [];
+      let pathIndex = 0;
+      for (let from = 0; from < sourcePaths.length;) {
+        let to = from; let pts = 0;
+        while (to < sourcePaths.length && (to === from || !slice.sliced || pts < SLICE_POINTS)) { const sp = sourcePaths[to++]; pts += Array.isArray(sp) ? sp.length : 8; }
+        const part = sourcePaths.slice(from, to);
+        from = to;
+        // the margin clip builds its own geometry from the source (it never writes to it), so only an unclipped chunk needs a clone
+        const paths = destructiveMarginCrop
+          ? window.Vectura._UIExportUtil.hardClipExportPaths(part, marginRect, { useCurves: useCurves && !removeHiddenGeometry })
+          : window.Vectura._UIExportUtil.cloneExportPaths(part);
+        for (let k = 0; k < paths.length; k++) {
+          const path = paths[k];
+          const pathPen = penMap.get(path?.meta?.penId) || layerPen;
+          // Group key comes from the shared effective-pen rule so the engine's
+          // per-pen grouping / dedup / stats bucket paths under the exact same
+          // pen this export plots them with (PenValidate.resolveEffectivePenId).
+          const key = window.Vectura.PenValidate.resolveEffectivePenId(path?.meta, layer.penId, penMap);
+          if (!groupMap.has(key)) {
+            groupMap.set(key, { key, pen: pathPen, items: [] });
+            seenGroupOrder.push(key);
+          }
+          groupMap.get(key).items.push({
+            layer,
+            layerIndex,
+            pathIndex,
+            path,
+            lineCap,
+            lineJoin,
+            miterLimit,
+            dashArray,
+            useCurves: forceLinear ? false : useCurves,
+            sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
+            layerGroupId,
+            ancestorClipLayerIds,
+            strokeWidth: (SETTINGS.strokeWidthOverride === true
+              ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
+              : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
+            strokeColor: pathPen.color || layerPen.color || '#000000',
+            groupPenId: key,
+            pathPenId: pathPen.id,
+          });
+          pathIndex += 1;
         }
-        groupMap.get(key).items.push({
-          layer,
-          layerIndex,
-          pathIndex,
-          path,
-          lineCap,
-          lineJoin,
-          miterLimit,
-          dashArray,
-          useCurves: forceLinear ? false : useCurves,
-          sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
-          layerGroupId,
-          ancestorClipLayerIds,
-          strokeWidth: (SETTINGS.strokeWidthOverride === true
-            ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
-            : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
-          strokeColor: pathPen.color || layerPen.color || '#000000',
-          groupPenId: key,
-          pathPenId: pathPen.id,
-        });
-      });
-    });
+        if (slice.due()) { yield 'chunk'; slice.reset(); }
+      }
+    }
+    if (slice.sliced) { yield 'layers'; slice.reset(); }
 
     seenGroupOrder.forEach((key) => {
       const group = groupMap.get(key);
@@ -239,12 +270,14 @@
       groups,
       clipPolygonsByLayerId,
     };
-  };
+  }
+  const buildExportSnapshot = (engine, opts = {}) => runToEnd(snapshotSteps(engine, Object.assign({}, opts, { sliceMs: 0 })));
 
   const countPaths = (snapshot) =>
     (snapshot.groups || []).reduce((n, group) => n + (group.items?.length || 0), 0);
 
-  const buildSvgDocument = (snapshot) => {
+  function* documentSteps(snapshot, opts = {}) {
+    const slice = makeSlicer(opts);
     const { prof, precision, groups, clipPolygonsByLayerId, useSvgMarginClip } = snapshot;
     const pageW = finite(prof.width, 0);
     const pageH = finite(prof.height, 0);
@@ -269,7 +302,7 @@
     if (defs.length) svg += `<defs>${defs.join('')}</defs>`;
     if (useSvgMarginClip) svg += `<g clip-path="url(#margin-clip)">`;
 
-    groups.forEach((group) => {
+    for (const group of groups) {
       const pen = group.pen || {};
       const penName = normalizeSvgId(pen.name || pen.id || 'Pen', 'pen');
       // Pen models: the laid width is already pen.width (stroke-width
@@ -286,7 +319,7 @@
         + (inkEffect !== 'plain'
           ? ` data-vectura-ink-effect="${window.Vectura._UIExportUtil.escapeXmlAttr(inkEffect)}"` : '');
       svg += `<g id="${window.Vectura._UIExportUtil.escapeXmlAttr(`pen_${penName}`)}" stroke="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.color || 'black')}" fill="none"${penModelAttrs}>`;
-      group.items.forEach((item, itemIndex) => {
+      for (const [itemIndex, item] of group.items.entries()) {
         item.ancestorClipLayerIds.forEach((layerId) => {
           const clipId = layerClipIds.get(layerId);
           if (clipId) svg += `<g clip-path="url(#${window.Vectura._UIExportUtil.escapeXmlAttr(clipId)})">`;
@@ -345,14 +378,16 @@
         item.ancestorClipLayerIds.forEach((layerId) => {
           if (layerClipIds.get(layerId)) svg += `</g>`;
         });
-      });
+        if (slice.due()) { yield 'item'; slice.reset(); }
+      }
       svg += `</g>`;
-    });
+    }
 
     if (useSvgMarginClip) svg += `</g>`;
     svg += `</svg>`;
     return svg;
-  };
+  }
+  const buildSvgDocument = (snapshot) => runToEnd(documentSteps(snapshot, { sliceMs: 0 }));
 
-  Vectura.ExportSvgBuilder = { buildExportSnapshot, buildSvgDocument, countPaths };
+  Vectura.ExportSvgBuilder = { buildExportSnapshot, buildSvgDocument, countPaths, snapshotSteps, documentSteps };
 })();

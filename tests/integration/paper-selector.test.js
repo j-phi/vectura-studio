@@ -3041,3 +3041,66 @@ describe('PaperTexture', () => {
 });
 }
 }
+
+// ---- swatch thumbnails never share a frame with a Scene spin ----
+{
+/*
+ * Paper panel thumbnails (CDP profile: one idle task built all 11 swatches, 0.6-0.8 s, while a Scene ring baked).
+ * They now fill one swatch per task and not at all while the renderer reports a spin busy (drag / bake / raster slice).
+ */
+const FULL = { includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true };
+describe('Paper swatch thumbnails stay off the spin budget', () => {
+  let runtime; let window; let app; let PT; let real;
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL);
+    ({ window } = runtime);
+    app = new window.Vectura.App();
+    PT = window.Vectura.PaperTexture;
+    real = PT.thumbDataURL;
+  });
+  afterAll(() => runtime?.cleanup?.());
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  test('a covered editor fills swatches one per task and only while no spin is busy', async () => {
+    window.Vectura.bootCover = true;
+    window.Vectura.UI.utils.editorCovered = () => true;
+    const calls = [];
+    let busy = true;
+    window.app = app;
+    app.renderer.spinBusy = () => busy;
+    const ticks = []; let tick = 0; let armed = false;           // the macrotask each call ran in
+    PT.thumbDataURL = (...a) => {
+      calls.push(a[0]); ticks.push(tick);
+      if (!armed) { armed = true; setTimeout(() => { armed = false; tick += 1; }, 0); }
+      return 'data:image/png;base64,AA';
+    };
+    try {
+      const body = window.document.getElementById('paper-section-body');
+      window.Vectura.UI.utils.afterEditorCover = (fn) => fn();   // the warm-up delay is not under test
+      window.Vectura.UI.PaperPanel.initPaperSection.call(app.ui);
+      await wait(700);
+      expect(calls.length).toBe(0);                                // busy: nothing is built
+      busy = false;
+      await wait(900);
+      expect(calls.length).toBe(0);                                // a quiet spell first, so a release stays clear
+      await wait(1500);
+      expect(calls.length).toBe(window.Vectura.PAPERS.ORDER.length - 1);     // every textured swatch, once
+      expect(new Set(ticks).size).toBe(ticks.length);                        // never two builds in one task
+      expect(body.querySelectorAll('[data-paper-thumb][style*="background-image"]').length).toBeGreaterThan(5);
+    } finally { PT.thumbDataURL = real; delete app.renderer.spinBusy; window.Vectura.bootCover = false; }
+  });
+
+  test('Renderer.spinBusy: true during a rotation drag and while the ring bakes, false when settled', () => {
+    const r = app.renderer;
+    expect(r.spinBusy()).toBe(false);
+    r.rotation3DDrag = { spin: {} };
+    expect(r.spinBusy()).toBe(true);
+    r.rotation3DDrag = null;
+    r._spin = { ring: { disposed: false, running: true, stats: { doneAt: 0 } } };
+    expect(r.spinBusy()).toBe(true);
+    r._spin.ring.stats.doneAt = 5;
+    expect(r.spinBusy()).toBe(false);
+    r._spin = null;
+  });
+});
+}

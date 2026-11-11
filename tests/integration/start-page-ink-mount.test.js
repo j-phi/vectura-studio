@@ -152,6 +152,32 @@ describe('StartPageInk.mount', () => {
     expect(el.querySelector('svg')).toBeNull();
   });
 
+  // RED (pre-change): an evicted alternate's bitmap was only dropped from the Map, never closed, so its pixels stayed allocated until a
+  // garbage collection that is not prompt about ImageBitmaps; destroy() left every cached bitmap open too.
+  test('evicted pose bitmaps are closed, and destroy closes the rest', async () => {
+    window.devicePixelRatio = 1;
+    window.Vectura.START_PAGE = { SCENE_ORBIT: { altBitmapMB: 0.0001, altBitmapMBMobile: 0.0001 } }; // capacity: the floor of 6 poses
+    const closed = [];
+    HTMLCanvasElement.prototype.close = function () { closed.push(this); };
+    const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 200, 100);
+    const h = await Ink.mount(el, { id: 'bigC', svg: bigSvg() }, { colorway, pad: 0 });
+    expect(h.mode).toBe('canvas');
+    expect(h.altCapacity()).toBe(6);
+    const small = (i) => ({ id: `bigC@${i}`, svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g stroke="#000" fill="none" stroke-width="0.3"><path d="M ${i} 1 L 50 ${50 + i}"/></g></svg>` });
+    for (let i = 0; i < 10; i++) expect(await h.prepareArt(small(i))).toBe(true);
+    expect(h._altBmps.size).toBeLessThanOrEqual(6);
+    expect(closed.length).toBeGreaterThanOrEqual(4);                       // every evicted bitmap was closed
+    const held = Array.from(h._altBmps.values());
+    held.forEach((b) => expect(closed).not.toContain(b));                  // ...and none that is still cached
+    const before = closed.length;
+    Ink.unmount(el);
+    expect(h._altBmps.size).toBe(0);
+    held.forEach((b) => expect(closed).toContain(b));                      // destroy closes the cache
+    expect(closed.length).toBeGreaterThan(before);
+    delete HTMLCanvasElement.prototype.close;
+    delete window.Vectura.START_PAGE;
+  });
+
   test('unmount removes everything it added', async () => {
     const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 100, 100);
     await Ink.mount(el, { id: 'tre', svg: fixture('lissajous-trefoil.svg') }, { colorway });
