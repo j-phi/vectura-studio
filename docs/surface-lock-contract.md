@@ -1,6 +1,6 @@
 # Surface-locked Scene3D fills: implementation contract
 
-Status: **authoritative** for the `feat/surface-lock` effort (owner decision: rollout option C).
+Status: **shipped** on `feat/surface-lock` (owner decision: rollout option C); authoritative for the implementation.
 Design background: the surface-lock design note (Scene3D fills inventory, tonal-art-map levels).
 Work plan and unit ownership: the surface-lock plan held by the orchestrator.
 
@@ -241,6 +241,8 @@ ctx = {
 }
 ```
 
+A fill run's depth (`sceneTarget` z) is the **maximum run z** (the nearest point of the run), as `emitFill` computes it (I7).
+
 It returns `undefined`; `generateScene` returns its `out` as usual. Paint order: shadow, then per object
 in `p.objects` order its fills then its edges (the order `generateScene` produces today).
 
@@ -465,6 +467,7 @@ Perf tests assert counters and generous clocks (no wall-clock ratios; see `tests
   **Partly frameable** scenes (some surface fill, but `levelS` false: a point light, a border, a second
   object that is pose, I2/I3 exclusions) keep the warp, the SpinRing and the draft tiers: under a warp the
   locked marks move with the surface, so the preview is near-exact and the settle is exact.
+- **The hold covers interactive commits (FX-J2).** `app.regen` and the other interactive commit paths hold the previous ink (`layer._sceneInkPrev`) while the worker bakes; every other caller composes exactly, and export and save never hold.
 - Level S and Level F fill paths carry `meta.surfaceLocked: true`; `Engine._applySceneCurveFinish` skips the
   Fill Curves fit for them (the marks are the surface's own; the fit cost 6-19 ms a frame). Border and edge
   curves are unchanged.
@@ -560,3 +563,5 @@ Shared rig: `tests/helpers/surface-lock-scene.js` (`buildSurfaceLockScene` throu
   `STEP_MM`, `EDGE_MM`, `MIN_RUN_MM`, `MAX_VERTS`, `CROSS_OBJ_DEG`, `PHASE_FAM1`, `GAIN_LIT`, `GAIN_SPAN`, `PLOT_FLOOR_SLACK`, `ZOOM_HEADROOM`
   (the last two are the module's own copies, no longer read from the top level). Output is byte-identical to the former module-local values
   (fingerprints `facetedBox`, `facetedCross` in `scene3d-surface-lock-config.test.js`).
+- **A14. The scale rule (W2-B3), deferred.** A Scale slider or gizmo scale on a locked object re-bakes, so the ink holds until each worker bake lands (ladder about 100-250 ms, Mezzotint about 0.5-0.8 s). A live scale preview is not built (PRH-131). Earlier notes (the W2-B2 commit, w2c-review) called this "A8"; A8 is `BAKE_VERSION`.
+- **A15. `explainMarkSpace` and `exclusionCtx`.** `SurfaceLock.explainMarkSpace(style, ctx)` returns `{ mode, reason }` with the same decision as `effectiveMarkSpace`: `reason` is `'markSpace'` (the style asks for pose), an `EXCLUSIONS` id, `'no baker'`, or `'surface'`. The panel maps the reason to plain words (`MARKSPACE_REASONS`). The exclusion context (`exclusionCtx`) (`SurfaceLock.exclusionCtx(p, obj)`) carries the scene-level flags the style alone cannot know: `visibility`, `emissiveCoreBlank`, `areaLight` and `receiveShadow` (the last two added by FX-J5 so the Lock row and the engine agree; `csgCarve` and `faceStyles` come from the caller).

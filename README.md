@@ -149,6 +149,18 @@ Select an object and a **Contextual Task Bar** floats just below it with the act
 - **3D Scene Studio:** a multi-object scene builder — assemble box · sphere · cylinder · cone · torus · torus-knot · capsule · superellipsoid · pyramid · plane · solids on a shared camera, select and move/rotate/scale objects (or push-pull box faces) with on-canvas gizmos, and light them with a **multi-light rig** (directional · ambient · point · spot, each draggable via a 3-axis gizmo). Surfaces render *light-made tone* through per-object/per-face **fill mappers** (hatch, crosshatch, contour, spiral, stipple, wireframe — each with its own control inventory), controllable **cast shadows** (angle / density / pen / line type / **Softness**, a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages, and an **inverse** mode that thins a patterned ground for dark-paper plots), selectable **highlight treatments**, **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, and a shared **stroke treatment** (line type, hand-drawn wobble, overstroke). Line output splits by role: the Object tab's **Border lines** (Curves / Smoothing / Simplify) govern the silhouette, creases and face outlines, while the Style tab's **Fill lines** (Curves / Smoothing / Simplify / Fidelity) govern the internal fill. Per-class **Edge Styles** give silhouette / crease / boundary / interior / hidden edges each their own pen, weight, and dash, with hidden edges drawn or dropped scene-wide. The Style tab's **Tone shaping** group (Gamma, Contrast, Depth fade) shapes the tone every Fill Style reads, and the Fill Style rows add law-specific dials (wave length and crest phase, nib angle and contrast, taper, Turing maturity and scale, light-relative hatch, tier pens, maze chaining). Slices gains **End overlap** — how far each depth-slice ring is carried past (or pulled back from) the silhouette, in pen widths; default 0 = unchanged. Per-object Style / Shadow / Highlight / X-ray flyouts live on the contextual task bar. The ground has **Width / Depth** size controls with a proportion lock and a one-click **Fill frame** that pushes its edges off the artboard. Each scene is a **layer tree** — one object per layer, with boolean (CSG) groups, lights, and the ground as their own rows — so you build it object-by-object, click the canvas or the tree to select and edit a single object, and older saved scenes upgrade to the tree automatically
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
+- **Surface-locked fills (3D Scene Studio):** a Scene3D fill can be locked to the object's surface, so its marks are baked once and only re-framed per angle. New objects start locked; saved scenes and presets open unlocked and unchanged. The **Lock marks to surface** row in the Style tab turns it off per object and explains when it is unavailable.
+
+<details>
+<summary>How fast drag works (Level S and Level F)</summary>
+
+- **Level S (whole scene):** when every fill in the scene is locked (and lights, shadow and edges fit), the whole drawing is re-framed from cached marks, so the drag frame is the final export and the app shows a "Fast drag" hint under the row. About 10-12 ms a drag frame on a Mezzotint or Hatch sphere.
+- **Level F (per fill):** if any fill stays unlocked, each locked fill is still framed from its cached marks, but the scene keeps the earlier preview (warp and pre-baked spin) and the hint reads "Full redraw while dragging".
+- **Look differences from unlocked fills:** Mezzotint wraps with the form (about 40% of the unlocked ink, strokes about 5 mm, up to 4 levels) and locked fills skip curve smoothing. The locked ground shadow uses world-fixed lines with a spacing floor.
+- **Supported:** sphere and other curved primitives with Hatch, Crosshatch, Contour, Spiral, Stipple, Mezzotint, constant dash and shortened ends; box, plane and polyhedron with Hatch and Crosshatch. Receive shadow, area lights, Wrap Flat and similar styles stay unlocked, with the reason shown. Contract: `docs/surface-lock-contract.md`.
+
+</details>
+
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation. On 3D Scene layers the seed (and RANDOMIZE) now drives every stipple, jitter, dither and wobble site; documents saved before this load as *legacy* and keep their exact look until you edit the seed or press RANDOMIZE. The Seed and RANDOMIZE grey out with a "No effect for this style" note when no fill in the scene draws random marks (a plain Hatch or Ladder sphere, for example)
 - Parameter randomization with algorithm-aware bias profiles for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers)
 - Live formula display and estimated pen distance/time
@@ -629,6 +641,20 @@ flowchart LR
 ```
 
 ```mermaid
+flowchart LR
+  Gen["scene3d generate"] --> Frm{"frameable?"}
+  Frm -- "yes (Level S)" --> SF["sceneFrame (cached MarkSets)"]
+  Frm -- "no" --> Pose["pose generate / warp preview"]
+  SF --> Asm["assembleScene"]
+  Asm --> LF["Level F frame per locked fill"]
+  LF --> Out["paths: drag frame = export"]
+  Pose --> LF
+  Job["ComposeJob (worker)"] --> Bakes["bakes (MarkSets)"]
+  Bakes --> Adopt["SurfaceLock.adopt"]
+  Adopt --> SF
+```
+
+```mermaid
 flowchart TD
   Package["package.json (Canonical Version)"] --> Sync["npm run version:sync"]
   Sync --> Version["src/config/version.js"]
@@ -729,11 +755,13 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### Unreleased - 3D Scenes turn at frame rate
-- **Dragging a sphere or box in a 3D Scene no longer lags.** The drag preview carries the last settled drawing through the new angle (about 5 ms a frame instead of 200-300 ms with Mezzotint); the drawing re-renders exactly on release.
-
-### Unreleased - Mezzotint 3D fills turn faster
-- **Faster rotation with mono fills.** The drag preview for Mezzotint Region and the other mono fill laws is lighter (flat-faced shapes about three times faster), and the settled drawing is unchanged.
+### Unreleased - 3D Scene marks lock to the surface
+- **Hatch, crosshatch, contour, spiral and stipple marks lock to the object.** New objects bake their marks once on the surface and re-frame them per angle, so a drag frame is the export and turns at frame rate (about 10-12 ms a drag frame on a Mezzotint or Hatch sphere; a whole-scene generate takes about 8-15 ms, against about 150-230 ms before).
+- **Saved files and presets look the same.** They open with **Lock marks to surface** off and render byte-identically; switch it on per object when you want it.
+- **Lock marks to surface** in the Style tab turns it off or on per object. When it cannot lock (receive shadow, an area light, Wrap set to Flat and a few others) the row is greyed with the reason.
+- **Mezzotint and the fixed-pitch fill styles lock too** (constant dash, shortened ends), and box, plane and polyhedron lock for Hatch and Crosshatch. Locked Mezzotint wraps with the form and draws about 40% of the ink of the unlocked fill, in strokes of about 5 mm; locked fills skip curve smoothing.
+- **Edits bake in the background.** The previous drawing stays until the new one is ready; export and save are always exact. Dragging a scale handle re-bakes on release instead of previewing live.
+- **Pose (unlocked) scenes** keep the earlier behavior: the drag preview carries the last settled drawing through the new angle, and the drawing re-renders exactly on release.
 
 ### Unreleased - Start Page stays responsive with heavy 3D Scenes
 - **No more Start Page freezes from heavy 3D Scenes.** Slow scenes rock less and render only where you let go, background renders wait for a quiet page, each scene reuses one renderer, and several live 3D pieces share a lighter sway.
