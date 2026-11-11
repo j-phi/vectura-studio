@@ -122,7 +122,7 @@ test.describe('TUX-042 text-entry font size', () => {
         const text = textW(cs, val);
         const box = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         // Native selects reserve the arrow inside the padding, so only compare against the box.
-        if (text > box + 1) out.push({ id: el.id, cls: el.className, text: Math.round(text), box: Math.round(box), val });
+        if (text > box + 1) out.push({ id: el.id, cls: el.className, text: Math.round(text), box: Math.round(box), val, diag: { w: cs.width, minW: cs.minWidth, fs: cs.fontSize, ff: cs.fontFamily, bs: cs.boxSizing, cw: el.clientWidth, rw: r.width } });
       });
       return out;
     });
