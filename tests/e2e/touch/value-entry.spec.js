@@ -141,8 +141,9 @@ test.describe('TUX-038 value entry', () => {
     await lbl.scrollIntoViewIfNeeded();
     const b = await lbl.boundingBox();
     const p = { x: b.x + Math.min(b.width / 2, 20), y: b.y + b.height / 2, id: 0 };
-    await touch.touchPhase(page, 'start', [p]);
-    await touch.touchPhase(page, 'move', [{ ...p, x: p.x + 14 }]);
+    // start and move go in one task: as two WebKit round trips a busy runner can put the move past the 500 ms hold, and the menu
+    // opens before the 10 px slop is seen (the nightly flake of issue #124). The hold under test is the 750 ms that follows.
+    await touch.touchSequence(page, [{ phase: 'start', points: [p] }, { phase: 'move', points: [{ ...p, x: p.x + 14 }] }]);
     await sleep(750);
     await touch.touchPhase(page, 'end', [{ ...p, x: p.x + 14 }]);
     await expect(holdMenu(page)).toBeHidden();
