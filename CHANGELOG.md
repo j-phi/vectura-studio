@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: 3D Scene Transform and Seed reach the drawing
+- **Transform was never applied to a Scene.** Pos X/Y, Scale X/Y and Rotation on a 3D Scene did nothing. They now act on the finished ink like every other layer, about the centre of the page (a bbox pivot would swim as the camera orbits), in both surface-locked and pose marks, during a Level S drag and after it. The compose memo, surface-lock caches and pose snapshot never see the Transform; pick faces and pick polygons move with it, and the pre-baked spin ring stands down while a Transform is set. At identity the ink is byte-identical to before.
+- **Seed was greyed out on the default scene.** The reach table was measured for pose marks; surface-locked plain ladder hatch (the default) and its ground shadow do draw from the Seed, so the field is live again. Seed-free scenes still grey with the reason. The salt comes from the Seed, never from the layer id (pinned by test); legacy files are untouched, so no `SCENE_VERSION` change.
+- **Scene children hide inert rows.** An object, light or the ground is placed by the Scene, so its Pos/Scale/Rotation rows are replaced by a one-line reason (a light and the ground also lose Seed).
+
 ### Added: surface-locked 3D Scene fills
 - **What it is.** A fill with `markSpace: 'surface'` is baked once in object space (`src/core/scene3d/surface-lock*.js`, constants in `src/config/scene3d-surface-lock.js`) and only framed per pose: one transform, cull, tone gate and projection per vertex. A drag frame equals the export by construction. Contract: `docs/surface-lock-contract.md`.
 - **Level S (whole-scene frame).** When every fill in the scene is locked and the lights, shadow and edges fit, the drag path skips the warp preview and the pre-baked spin ring and re-frames the cached MarkSets directly, with no Fill Curves fit. Measured in the app: a drag frame is about 10 ms (Mezzotint) and 12 ms (Hatch); a whole-scene generate is about 8-15 ms, against about 150-230 ms before. A scene with any pose fill keeps the earlier preview (Level F frames each locked fill).

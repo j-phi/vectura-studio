@@ -11952,6 +11952,11 @@
       } catch (_e) {
         faces = [];
       }
+      // The group's Transform moves the drawn ink, so the re-derived faces move with it.
+      const xf = faces.length && this.engine && typeof this.engine.sceneGroupPointMap === 'function' ? this.engine.sceneGroupPointMap(layer) : null;
+      if (xf) {
+        faces = faces.map((f) => ({ ...f, poly: f.poly.map((q) => { const t = xf.transform(q); return { ...q, x: t.x, y: t.y }; }) }));
+      }
       this._scenePickFaceCache = { layerId: layer.id, pathsRef, faces };
       return faces;
     }
@@ -17550,7 +17555,8 @@
       if (!group) { if (st) this._spinDrop(); return; }
       // Level S (surface-lock contract §13): a drag frame is the export and a cold compose is the bake, not a slow scene, so
       // no ring is ever started, whatever the last full compose cost.
-      if (group._sceneLevelS === true) {
+      if (group._sceneLevelS === true || group._sceneXfActive === true) {
+        // (A transformed scene's raster frames are untransformed ink: no ring until the Transform is back at identity.)
         if (st) this._spinDrop();
         if (this._spinPending) { if (this._spinPending.timer) clearTimeout(this._spinPending.timer); this._spinPending = null; }
         return;
@@ -17966,6 +17972,7 @@
       this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 };
       if (drag.type === 'pitch' || drag.type === 'roll') return;
       if (layer._sceneLevelS === true) return; // Level S: the frame is the export, no raster ring
+      if (layer._sceneXfActive === true) return; // a transformed scene's raster frames are untransformed ink
       const st = this._spin;
       if (!st || !st.ring || st.ring.disposed || st.groupId !== layer.id) return;
       const target = this._spinTarget(layer);

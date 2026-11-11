@@ -2232,6 +2232,10 @@
     const R = Vectura.SCENE3D_TONE_LAWS;
     const known = law === 'ladder' || !R || !Array.isArray(R.IDS) || R.IDS.indexOf(law) !== -1;
     if (!known) return true;
+    // SURFACE-LOCKED marks (markSpace 'surface', the default for a new layer) draw the plain ladder's lattice phase from the
+    // seed on every line Type (measured: sphere + box, seed 11 vs 7777), where the pose-space tables above call it dead. The
+    // other laws behave as they do in pose space. Without this the default scene greyed out its own Seed field.
+    if (sp.markSpace === 'surface' && law === 'ladder' && !(cls === 'faceted' && (mapper === 'contour' || mapper === 'spiral'))) return true;
     if (cls === 'curved') return SEED_CURVED_DEAD[mapper].indexOf(law) === -1;
     if (mapper === 'stipple') return true;
     return (SEED_FACETED_LIVE[mapper] || []).indexOf(law) !== -1;
@@ -2253,9 +2257,15 @@
     const Cascade = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
     if (!Cascade || typeof Cascade.resolve !== 'function') return true;
     const table = isObject(sc.styleTable) ? sc.styleTable : {};
+    // A surface-locked fill on an object that casts onto the ground: the baked ground shadow takes the seed's phase too
+    // (measured: the default scene's ground hatch changes with the seed).
+    const castsOnGround = casts && isObject(sc.ground) && sc.ground.enabled;
     for (let i = 0; i < objects.length; i++) {
       const o = objects[i];
-      if (styleUsesSeed(o.primitive, Cascade.resolve(table, { objectId: o.id }))) return true;
+      const resolved = Cascade.resolve(table, { objectId: o.id });
+      if (styleUsesSeed(o.primitive, resolved)) return true;
+      if (castsOnGround && isObject(resolved) && isObject(resolved.params) && resolved.params.markSpace === 'surface'
+        && resolved.mapper !== 'none' && resolved.mapper !== 'wireframe' && resolved.mapper !== 'contourSlice') return true;
       const byFace = isObject(table.byFace) ? table.byFace : {};
       const prefix = `${o.id}/`;
       const faceKeys = Object.keys(byFace).filter((k) => k.indexOf(prefix) === 0);
