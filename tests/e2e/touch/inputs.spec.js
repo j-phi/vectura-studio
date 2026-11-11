@@ -120,9 +120,11 @@ test.describe('TUX-042 text-entry font size', () => {
         let val = el.classList.contains('pen-name-input') ? 'Pen 12 Blue' : '0.125';
         if (el.tagName === 'SELECT') val = [...el.options].map((o) => o.text).sort((x, y) => y.length - x.length)[0] || '';
         const text = textW(cs, val);
-        const box = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        // Content box from the border box. Do NOT use el.clientWidth: on Chromium 1254 an <input>'s clientWidth
+        // already excludes its padding, so subtracting padding again under-reports the box by 2 x padding.
+        const box = r.width - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         // Native selects reserve the arrow inside the padding, so only compare against the box.
-        if (text > box + 1) out.push({ id: el.id, cls: el.className, text: Math.round(text), box: Math.round(box), val, diag: { w: cs.width, minW: cs.minWidth, fs: cs.fontSize, ff: cs.fontFamily, bs: cs.boxSizing, cw: el.clientWidth, rw: r.width } });
+        if (text > box + 1) out.push({ id: el.id, cls: el.className, text: Math.round(text), box: Math.round(box), val });
       });
       return out;
     });

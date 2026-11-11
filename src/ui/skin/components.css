@@ -14253,16 +14253,12 @@ html.kb-open .export-settings-scroll {
   .hg-preset-save-pip { width: var(--touch-target-min); height: var(--touch-target-min); }
   .hg-preset-save-pip svg { width: 18px; height: 18px; }
 
-  /* Value chips: self-contained boxes sized for 16px mono text ("0.125" fits). Width is derived from
-   * the --input-font-touch token (3.9 x 16px = 62.4px content, ~6 mono glyphs), NOT from ch/em of the
-   * element: on Chromium 1254 both ch and em resolved against a smaller font (~11-12px) than the
-   * 16px the !important TUX-042 rule renders, so the box was 42-44px for 50px of text. A token-based
-   * px width cannot disagree with the forced font-size. TUX-043 puts the
+  /* Value chips: self-contained boxes sized for 16px mono text ("0.125" fits). TUX-043 puts the
    * 44px slider band beside them. */
   [data-ui-skin] #left-pane :is(.slider-val, .slider-val-inp),
   [data-ui-skin] #left-pane .slider-row .value-chip {
-    width: calc(var(--input-font-touch, 16px) * 3.9 + 2 * var(--spacing-sm, 8px));
-    min-width: calc(var(--input-font-touch, 16px) * 3.9 + 2 * var(--spacing-sm, 8px));
+    width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
     max-width: none;
     flex: 0 0 auto;
     padding: 0 var(--spacing-sm, 8px);
@@ -14346,7 +14342,7 @@ html.kb-open .export-settings-scroll {
   /* 16px "Balanced" overflowed the 120px inline-width select wrap; min-width beats the inline width. */
   [data-ui-skin] .settings-panel .ctrl-sel-wrap { min-width: 160px; }
   [data-ui-skin] .settings-panel .slider-val-inp {
-    width: calc(var(--input-font-touch, 16px) * 3.9 + 2 * var(--spacing-sm, 8px)); min-width: calc(var(--input-font-touch, 16px) * 3.9 + 2 * var(--spacing-sm, 8px));
+    width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
   }
 
   /* Pens rows: two finger-tall lines. Line 1 = [grip][name][remove], line 2 = [swatch][weight]
@@ -14388,7 +14384,7 @@ html.kb-open .export-settings-scroll {
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-moz-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
   [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: var(--touch-target-min); width: auto; margin: 0 var(--spacing-sm, 8px); }
   [data-ui-skin] .pen-item .pen-width-value {
-    order: 6; flex: 0 0 auto; width: calc(var(--input-font-touch, 16px) * 3.9 + 2 * var(--spacing-sm, 8px)); min-width: 0;
+    order: 6; flex: 0 0 auto; width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: 0;
     min-height: var(--touch-target-min); padding: 0 var(--spacing-sm, 8px);
   }
   /* One shared row background: the name input and value chip drop their own fill (the skin gives
