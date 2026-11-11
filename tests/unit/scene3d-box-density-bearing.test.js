@@ -91,6 +91,7 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
     const gid = engine.addLayer('scene3d');
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     const prev = obj.params.primitive;
     const prim = primitive || 'box';
     if (prim !== prev) {

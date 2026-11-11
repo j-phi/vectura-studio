@@ -173,6 +173,7 @@ describe('Scene3D.SurfaceFill — a contour ruling never turns sharper than 8 de
     const eng = new V.VectorEngine();
     const gid = eng.addSceneTree();
     const obj = eng.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     if (primitive !== 'sphere') eng.setObjectPrimitive(obj.id, primitive);
     // Switch the mapper WITHOUT clobbering the fillCurves seed
     // (`seedLineFinishDefaults`, engine.js:517-533) that the real Style tab

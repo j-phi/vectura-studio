@@ -2229,7 +2229,11 @@
       // looked like an empty cube outline. Hatch puts real ink on the surface
       // the moment the object appears. Every mapper (wireframe included) is
       // still one pick away in the object Style flyout.
-      style: { penId: null, mapper: 'hatch', params: {} },
+      // W3-E creation default (docs/surface-lock-contract.md §12): a NEW object is born markSpace 'surface', so a fresh
+      // scene's fills lock to the surface and the scene drags Level S. This is a creation default only: every saved file,
+      // preset and Start Page plate is stamped / read as 'pose' (SCENE_MIGRATIONS[5]; absent key = pose), and ground /
+      // scene-level styles are left alone (they inherit the scene style).
+      style: { penId: null, mapper: 'hatch', params: { markSpace: 'surface' } },
       faceStyles: {}, // faceId -> Style (per-face overrides)
     },
     // Scene-tree Increment A — booleanGroup3d: a CONTAINER stub for the fused

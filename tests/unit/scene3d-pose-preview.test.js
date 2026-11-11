@@ -42,6 +42,7 @@ describe('Scene3D.PosePreview — pose-only drag frames are warped, not composed
     const gid = engine.addLayer('scene3d');
     const group = engine.layers.find((l) => l.id === gid);
     const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
+    child.params.style.params = { ...(child.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     child.params.primitive = prim;
     if (law) child.params.style = { penId: null, mapper: 'hatch', params: { fillCurves: true, toneLaw: law } };
     engine.computeAllDisplayGeometry();
@@ -87,6 +88,7 @@ describe('Scene3D.PosePreview — pose-only drag frames are warped, not composed
     const { engine, gid, group } = make('sphere', null);
     group.params.lights = [Object.assign({}, (group.params.lights || [])[0] || { type: 'directional', intensity: 1, elevation: 45 }, { azimuth: 200 })];
     const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
+    child.params.style.params = { ...(child.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     child.params.style = { penId: null, mapper: 'hatch', params: { fillCurves: true, toneLaw: 'mezzoRegion' } };
     engine.generate(gid, { preview: true });
     expect(engine.sceneComposeStats.lastTier).not.toBe('warp');
@@ -164,6 +166,7 @@ describe('Scene3D.ComposeJob — the worker compose is byte-identical to the mai
     const gid = engine.addLayer('scene3d');
     const group = engine.layers.find((l) => l.id === gid);
     const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
+    child.params.style.params = { ...(child.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     child.params.primitive = 'sphere';
     child.params.style = { penId: null, mapper: 'hatch', params: { fillCurves: true, toneLaw: 'mezzoRegion' } };
     group.params.seed = 4242;

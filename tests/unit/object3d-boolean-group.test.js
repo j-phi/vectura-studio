@@ -54,7 +54,8 @@ describe('Scene-tree Increment A — object3d + booleanGroup3d types', () => {
       expect(d.shadow).toEqual({ enabled: null });
       expect(d.border).toMatchObject({ enabled: false });
       expect(d.emissive).toMatchObject({ enabled: false });
-      expect(d.style).toEqual({ penId: null, mapper: 'hatch', params: {} });
+      // W3-E: a NEW object is born surface-locked (creation default, contract §12); saved files stay pose.
+      expect(d.style).toEqual({ penId: null, mapper: 'hatch', params: { markSpace: 'surface' } });
       expect(d.faceStyles).toEqual({});
     });
 

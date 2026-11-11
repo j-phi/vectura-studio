@@ -36,6 +36,7 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     engine.layers = [];
     const gid = engine.addSceneTree();
     const child = engine.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    child.params.style.params = { ...(child.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     child.params.primitive = 'sphere';
     engine.generate(gid);
     const group = engine.getLayerById(gid);

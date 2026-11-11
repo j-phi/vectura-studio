@@ -68,6 +68,7 @@ describe('Scene3D.SurfaceFill — a ruling ends on the boundary, not a sample sh
     eng.currentProfile = { width: 200, height: 200, name: 'boundary-ends' };
     const gid = eng.addSceneTree();
     const obj = eng.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
+    obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     if (primitive !== 'sphere') eng.setObjectPrimitive(obj.id, primitive);
     if (mapper !== 'hatch') obj.params.style = { penId: null, mapper, params: {} };
     const SF = V.Scene3D.SurfaceFill;

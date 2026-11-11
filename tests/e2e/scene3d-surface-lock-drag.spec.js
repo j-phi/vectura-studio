@@ -65,3 +65,49 @@ test('Level S free-orbit drag: full tier, no ring, release equals a fresh compos
   // the release was a memo hit: the settled compose did not add one beyond what the last drag frame had
   expect(result.composesAtSettle).toBe(before);
 });
+
+// W3-E — the creation default: a scene born through the Add-layer path (no markSpace write from the test) is Level S.
+test('a fresh scene from addLayer is Level S: full tier every move, no ring, settles to a fresh compose', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window.app && window.app.engine && window.app.renderer);
+  const centre = await page.evaluate(() => {
+    const app = window.app; const eng = app.engine; eng.layers = [];
+    const gid = eng.addLayer('scene3d');
+    app.regen();
+    const r = app.renderer; const g = eng.getLayerById(gid);
+    r.selectedLayerIds = new Set([gid]); r.selectedLayerId = gid; r.draw();
+    window.__gid = gid;
+    const leaf = eng.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    const ctl = r.get3DRotationControl(g, null);
+    const s = r.worldToScreen(ctl.center.x, ctl.center.y);
+    const rect = r.canvas.getBoundingClientRect();
+    return { x: rect.left + s.x, y: rect.top + s.y, levelS: g._sceneLevelS, markSpace: leaf.params.style.params.markSpace };
+  });
+  expect(centre.markSpace).toBe('surface');
+  expect(centre.levelS).toBe(true);
+
+  const raf2 = () => page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))));
+  const state = () => page.evaluate(() => {
+    const g = window.app.engine.getLayerById(window.__gid); const st = window.app.engine.sceneComposeStats;
+    return { tier: st.lastTier, blit: !!g._spinBlit, ring: !!window.app.renderer._spin };
+  });
+  await page.mouse.move(centre.x, centre.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(centre.x + i * 6, centre.y + i * 2);
+    await raf2();
+    const s = await state();
+    expect(s.tier, `move ${i}`).toBe('full');
+    expect(s.blit, `move ${i}`).toBe(false);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(1000);
+  expect((await state()).ring).toBe(false);
+  const same = await page.evaluate((fn) => {
+    const eng = window.app.engine; const g = eng.getLayerById(window.__gid);
+    const settled = (0, eval)(fn)(g.scenePaths);
+    eng.invalidateSceneCompose(g); eng.computeAllDisplayGeometry();
+    return settled === (0, eval)(fn)(g.scenePaths);
+  }, sig.toString());
+  expect(same).toBe(true);
+});
