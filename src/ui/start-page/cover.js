@@ -347,7 +347,9 @@
       const is3d = !!(Vectura.StartPageMotion && Vectura.StartPageMotion.modelFor(art));
       const own = override && override.art.id === art.id && override.frame && override.frame.fit !== 'contain' ? override.frame : null;
       if (is3d) band.dataset.art3d = '1';
-      const p = Ink().mount(band, { id: art.id, svg }, { colorway: cw, fit: is3d && !own ? 'focus' : 'cover', pad: is3d && !own ? band3dPad() : 0, label: false, frame: own || (is3d ? { z: 0.84 } : null), fill: (override && override.art.id === art.id && override.fill) || null });
+      const G3 = Vectura.StartPageArtGeometry;
+      const svg3 = is3d && !own && G3 && typeof G3.focusSvg === 'function' ? G3.focusSvg(svg) : svg; // drop strokes mostly outside the frame
+      const p = Ink().mount(band, { id: svg3 === svg ? art.id : `${art.id}#focus`, svg: svg3 }, { colorway: cw, fit: is3d && !own ? 'focus' : 'cover', pad: is3d && !own ? band3dPad() : 0, label: false, frame: own || (is3d ? { z: 0.84 } : null), fill: (override && override.art.id === art.id && override.fill) || null });
       setCwData(t);
       // Text rides above the art layer: mount() appended the art box last, so lift the overlay content. The fade
       // that lets the art dissolve under the text is a gradient overlay element (never a CSS mask on the art).

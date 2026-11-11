@@ -266,4 +266,15 @@ describe('artWindow: focus (a 3D piece framed on its dense body)', () => {
     expect(box[2]).toBeCloseTo(100, 0);
     expect(box[3]).toBeGreaterThan(90);
   });
+  test('focusSvg drops the long strokes that lie mostly outside the frame and keeps the body', () => {
+    let svg = '<svg viewBox="0 0 280 220"><g stroke-width="0.3"><path d="M 20 167 L 167 196"/><path d="M 112 20 L 259 49"/>';
+    for (let i = 0; i < 60; i++) svg += `<path d="M 110 ${60 + i * 0.7} L 150 ${64 + i * 0.7}"/>`;
+    svg += '</g></svg>';
+    const out = G.focusSvg(svg);
+    expect(out).not.toContain('M 20 167');
+    expect(out).not.toContain('M 112 20');
+    expect((out.match(/<path/g) || []).length).toBe(60);
+    const flat = '<svg viewBox="0 0 100 100"><g stroke-width="0.3"><path d="M 0 10 L 100 10"/><path d="M 0 50 L 100 50"/><path d="M 0 90 L 100 90"/></g></svg>';
+    expect(G.focusSvg(flat)).toBe(flat); // uniform ink: nothing dropped, same text back
+  });
 });

@@ -115,18 +115,6 @@
   // when the browser is idle (requestIdleCallback, at most idleTimeoutMs wait; setTimeout fallbackMs where it is missing).
   const PLATE_PREMOUNT = Object.freeze({ enabled: true, idleTimeoutMs: 2000, fallbackMs: 120 });
 
-  // The alternate-pose cache of a tile (ink.js showArt / prepareArt), built for the retired turning 3D Scene (no plate turns now). A scene whose pose render takes longer than `heavyMs`
-  // rocks through at most `heavyLevels` poses each side and draws nothing while it is dragged (it shows the nearest drawn pose and
-  // renders only the release pose); past `haltMs` it does not rock at all. Rock poses are never started within `yieldMs` of a scroll
-  // or a pointer / wheel event, so a render never lands in the middle of a gesture.
-  // `afterDragMs`: no pose render starts for this long after a drag is released (its 60-150 ms main-thread tail must not follow the gesture).
-  // `altBitmapMB` (`...Mobile` on a touch / low-memory device): memory a plate's rastered poses may take; baking stops at that many poses.
-  const SCENE_ORBIT = Object.freeze({ heavyMs: 1000, haltMs: 4000, heavyLevels: 1, yieldMs: 300, afterDragMs: 2500, altBitmapMB: 32, altBitmapMBMobile: 18 });
-
-  // The idle sway of the live 3D models (orbit3d.js) redraws at `fps`; with `crowdAt` or more models swaying on screen at once,
-  // or when a frame costs more than `overrunMs` to draw, each model drops to `crowdFps`.
-  const ORBIT_SWAY = Object.freeze({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 });
-
   // A 3D piece (Scene 3D / Object 3D / the 3D models) is a still drawing framed on its dense body ('focus' fit; see art-geometry.js).
   // `pad` is the air around it on a plate (a fraction of each side); `padDisc` is the larger air on a round plate, whose corners are cut.
   const PLATE_3D = Object.freeze({ pad: 0.1, padDisc: 0.2 });
@@ -247,5 +235,5 @@
     return Object.assign({}, COVER_FONTS.find((f) => f.id === id), { scale });
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, PLATE_3D, SCENE_ORBIT, ORBIT_SWAY, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, PLATE_3D, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
 })();

@@ -374,7 +374,13 @@
         const fit = user && user.fit === 'contain' ? 'contain' : (is3d && p.main ? 'focus' : 'cover');
         const pad = fit === 'focus' ? frame3d(p.disc) : 0;
         const frame = fit === 'focus' ? Object.assign(T.frameFor(p.shape, user), user && Number.isFinite(+user.z) ? {} : { z: 1 }) : T.frameFor(p.shape, user);
-        const job = Ink.mount(p.el, c.art, { label: false, pad, fit, frame, colorway: artColorway(c, p.disc) });
+        // 3D body framing also drops strokes that lie mostly outside the frame (a ground edge would poke in at the plate edge); cached per art.
+        let art = c.art;
+        if (fit === 'focus' && Geo && typeof Geo.focusSvg === 'function') {
+          if (c.art._svg3d == null) { try { c.art._svg3d = Geo.focusSvg(c.art.svg); } catch (_) { c.art._svg3d = c.art.svg; } }
+          if (c.art._svg3d !== c.art.svg) art = Object.assign({}, c.art, { id: `${c.art.id}#focus`, svg: c.art._svg3d });
+        }
+        const job = Ink.mount(p.el, art, { label: false, pad, fit, frame, colorway: artColorway(c, p.disc) });
         jobs.push(job);
       });
       c.crops.forEach((k) => {

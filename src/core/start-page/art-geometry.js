@@ -166,6 +166,29 @@
     a._focus = { cut: k, box };
     return box;
   };
+  /* A 3D piece framed on its body (fit 'focus') must not show strokes that are mostly outside that frame: a ground plane's edge
+     cut by the plate edge reads as a partial line poking in. focusSvg(text) returns the SVG text without every <path>, <polyline>,
+     <polygon> or <circle> whose ink lies mostly (> 60 % of its length) outside the focus box grown by 25 % of its size each side;
+     the text itself when nothing is dropped. */
+  const focusSvg = (text) => {
+    const src = String(text || '');
+    let a; try { a = parseArtSvg(src); } catch (_) { return src; }
+    if (!a || !a.polys.length) return src;
+    const [fx, fy, fw, fh] = focusInfo(a);
+    const gx = fw * 0.25, gy = fh * 0.25; const x0 = fx - gx, x1 = fx + fw + gx, y0 = fy - gy, y1 = fy + fh + gy;
+    const wrap = (tag) => `<svg viewBox="${a.vb.join(' ')}"><g stroke-width="0.3">${tag}</g></svg>`;
+    let dropped = 0;
+    const out = src.replace(/<(?:path|polyline|polygon|circle)\b[^>]*>/g, (tag) => {
+      const e = parseArtSvg(wrap(tag)); let L = 0; let outL = 0;
+      for (const P of e.polys) for (let i = 2; i < P.length; i += 2) {
+        const l = Math.hypot(P[i] - P[i - 2], P[i + 1] - P[i - 1]); const mx = (P[i] + P[i - 2]) / 2; const my = (P[i + 1] + P[i - 1]) / 2;
+        L += l; if (mx < x0 || mx > x1 || my < y0 || my > y1) outL += l;
+      }
+      if (L > 0 && outL / L > 0.6) { dropped += 1; return ''; }
+      return tag;
+    });
+    return dropped ? out : src;
+  };
   const inkArea = (a) => { const b = inkInfo(a).box; return Math.max(1e-6, b[2] * b[3]); };
 
   /* Densest window of size (ww, wh) art units inside the ink box, with a gentle pull to the
@@ -288,7 +311,7 @@
   const plotEase = (k) => k * 0.35 + inOut(k) * 0.65;
 
   const api = {
-    rasterLib, rasterLibSource: rasterLib.toString(), parseArtSvg, luminance, inkInfo, focusInfo, denseCenter, artWindow,
+    rasterLib, rasterLibSource: rasterLib.toString(), parseArtSvg, luminance, inkInfo, focusInfo, focusSvg, denseCenter, artWindow,
     rasterPolicy, lineLook, lengthInWindow, wordInkBox, plotEase, inOut,
   };
 
