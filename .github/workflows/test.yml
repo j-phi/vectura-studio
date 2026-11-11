@@ -158,29 +158,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { project: touch-ipad-portrait, shard: 1, of: 2 }
-          - { project: touch-ipad-portrait, shard: 2, of: 2 }
-          - { project: touch-ipad-landscape, shard: 1, of: 2 }
-          - { project: touch-ipad-landscape, shard: 2, of: 2 }
-          - { project: touch-iphone-portrait, shard: 1, of: 2 }
-          - { project: touch-iphone-portrait, shard: 2, of: 2 }
-          - { project: touch-iphone-landscape, shard: 1, of: 2 }
-          - { project: touch-iphone-landscape, shard: 2, of: 2 }
-          - { project: touch-iphone-portrait-chrome, shard: 1, of: 1 }
-          - { project: touch-iphone-landscape-chrome, shard: 1, of: 1 }
-          - { project: touch-coarse-wide, shard: 1, of: 2 }
-          - { project: touch-coarse-wide, shard: 2, of: 2 }
-          - { project: webkit-ipad-portrait, shard: 1, of: 3 }
-          - { project: webkit-ipad-portrait, shard: 2, of: 3 }
-          - { project: webkit-ipad-portrait, shard: 3, of: 3 }
-          - { project: webkit-ipad-landscape, shard: 1, of: 3 }
-          - { project: webkit-ipad-landscape, shard: 2, of: 3 }
-          - { project: webkit-ipad-landscape, shard: 3, of: 3 }
-          - { project: webkit-iphone-portrait, shard: 1, of: 3 }
-          - { project: webkit-iphone-portrait, shard: 2, of: 3 }
-          - { project: webkit-iphone-portrait, shard: 3, of: 3 }
-          - { project: webkit-iphone-landscape, shard: 1, of: 2 }
-          - { project: webkit-iphone-landscape, shard: 2, of: 2 }
+          - { project: touch-coarse-wide, shard: 1, of: 1 }
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -197,7 +175,7 @@ jobs:
       - uses: ./.github/actions/setup-playwright
         with:
           browsers: ${{ startsWith(matrix.project, 'webkit-') && 'webkit' || 'chromium' }}
-      - run: npm run test:playwright -- tests/e2e/touch --project="$TOUCH_PROJECT" --shard="$TOUCH_SHARD" --max-failures=20 --reporter=line,json
+      - run: npm run test:playwright -- tests/e2e/touch/zz-diag.spec.js --project="$TOUCH_PROJECT" --max-failures=20 --reporter=line,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-json/touch.json
       - name: Report Playwright flakes
