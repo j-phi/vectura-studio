@@ -2629,7 +2629,9 @@
         if (layer._morphConsumed) delete layer._morphConsumed;
         // Scene-tree Increment B: clear last pass's scene compose flags so the
         // consumed markers + composed paths are re-derived deterministically.
-        if (layer.scenePaths) delete layer.scenePaths;
+        // FX-J2: a held commit (app.regen) keeps this pass's ink so a bake the worker has not delivered yet shows the previous ink.
+        if (layer._sceneInkPrev) layer._sceneInkPrev = null;
+        if (layer.scenePaths) { if (this._holdBakesActive && layer.scenePaths.length) layer._sceneInkPrev = layer.scenePaths; delete layer.scenePaths; }
         if (layer._sceneConsumed) delete layer._sceneConsumed;
         if (layer._sceneAssembled) delete layer._sceneAssembled;
         // Morph groups borrow the first child's pen/style as a render/export
@@ -2822,7 +2824,8 @@
       this.layers.forEach((group) => {
         if (!group || !group.isGroup) return;
         if (group.type !== 'scene3d' || group.containerRole !== 'scene') return;
-        this._composeSceneGroup(group);
+        // FX-J2: an interactive commit (app.regen) holds the previous ink while the worker bakes; every other caller composes exactly.
+        this._composeSceneGroup(group, this._holdBakesActive ? { holdBakes: true } : {});
       });
     }
 
@@ -2895,6 +2898,8 @@
       // as weighted centrelines and mono laws at a coarser lattice (the Fill
       // Style stays visible), 'flat' = the legacy fastPreview silhouette hatch.
       const isPreview = options && options.preview === true;
+      // FX-J2: an interactive commit holds like a preview frame (never for a captured/precomputed/job compose: those are exact).
+      const holdCommit = !isPreview && options && options.holdBakes === true;
       const baseBounds = {
         width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
         truncate: SETTINGS.truncate, fastPreview: false, preview3dQuality: SETTINGS.preview3dQuality,
@@ -2964,8 +2969,10 @@
       // for a mezzo sphere): it composes nothing, keeps the previous ink on screen (owner Q4: no look flip) and has the worker
       // bake and compose this state; the bakes are adopted and the ink installed when it lands. A slider scrub therefore never
       // holds the main thread for a bake, and every tick after the first coalesces into one follow-up job.
-      if (isPreview && levelS && !memoHit && memoKey && !(options && (options.precomputed || options.captureJob || options.jobOnly))
-        && group.scenePaths && group.scenePaths.length && !group._sceneBakeOffFailed && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
+      const heldInk = group.scenePaths && group.scenePaths.length ? group.scenePaths : (holdCommit ? group._sceneInkPrev : null);
+      if ((isPreview || holdCommit) && levelS && !memoHit && memoKey && !(options && (options.precomputed || options.captureJob || options.jobOnly))
+        && heldInk && heldInk.length && !group._sceneBakeOffFailed && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
+        group.scenePaths = heldInk;
         this.sceneComposeStats.bakeHolds += 1;
         this.sceneComposeStats.lastTier = 'hold';
         return;
@@ -3042,6 +3049,7 @@
         ? options.precomputed.finished
         : this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
+      group._sceneInkPrev = null;
       if (tier === 'full') group._sceneSettledKey = memoKey;
       // Lift the settled ink for the drag preview (null when the scene is not
       // warpable; never throws into the compose).
@@ -3886,7 +3894,15 @@
       this.currentProfile = this.resolveProfile();
     }
 
+    // FX-J2: `holdBakes: true` (app.regen on every UI commit) keeps the previous Level S ink while a worker bakes the new one, so a
+    // commit never bakes on the main thread. Export, save and import never pass it and stay synchronous and exact.
     generate(layerId, options = {}) {
+      const prevHold = this._holdBakesActive;
+      this._holdBakesActive = !!(options && options.holdBakes === true && !isPreviewRequest(options));
+      try { return this._generateImpl(layerId, options); } finally { this._holdBakesActive = prevHold; }
+    }
+
+    _generateImpl(layerId, options = {}) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       if (layer.isGroup) {
@@ -3898,7 +3914,7 @@
         // orbits, touch drags and panel slider drags get a draft tier instead
         // of a full-quality compose per pointer move.
         if (layer.type === 'scene3d' && layer.containerRole === 'scene') {
-          this._composeSceneGroup(layer, { preview: isPreviewRequest(options) });
+          this._composeSceneGroup(layer, { preview: isPreviewRequest(options), holdBakes: options && options.holdBakes === true });
         }
         return;
       }

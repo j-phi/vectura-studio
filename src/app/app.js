@@ -1890,7 +1890,10 @@
     regen(options = {}) {
       const pushHistory = options && options.pushHistory === true;
       if (pushHistory) this.pushHistory();
-      this.engine.generate(this.engine.activeLayerId, options);
+      // FX-J2: every UI commit holds the previous scene ink while the worker bakes (never a main-thread bake); export/save/import
+      // do not go through regen and stay exact. Pass `holdBakes: false` to force a synchronous exact compose.
+      const genOptions = options && options.preview ? options : { ...options, holdBakes: options.holdBakes !== false };
+      this.engine.generate(this.engine.activeLayerId, genOptions);
       if (SETTINGS.autoColorization?.enabled && this.ui?.applyAutoColorization && !this.ui.isApplyingAutoColorization) {
         this.ui.applyAutoColorization({ commit: false, skipLayerRender: true, skipAppRender: true });
       }
