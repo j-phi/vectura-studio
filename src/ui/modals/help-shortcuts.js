@@ -121,6 +121,11 @@
         <p>A <strong>3D Scene</strong> layer holds objects (box, sphere, torus, solid, imported mesh), lights and
         a camera. Each object has its own <strong>Style</strong> tab. The scene Style editor sets the defaults for
         objects that have no style of their own.</p>
+        <p>The <strong>sun widget</strong> on the canvas aims the light: drag it to move the sun. A <strong>solid</strong>
+        sun with full rays is in front of the scene (on the viewer's side); a <strong>hollow, dashed</strong> sun
+        tagged <em>behind</em> is behind it. A sun at the centre points straight at the camera, and the further it
+        sits from the centre the more side-on the light is. A dragged sun stays on the side it started on; drag it out
+        past the rim and back to send it round to the other side.</p>
         <p><strong>Type</strong> sets what the fill is made of: Hatch, Crosshatch, Contour, Spiral, Stipple or
         Wireframe. <strong>Fill Style</strong> sets the law that spaces the marks by tone. The styles come in
         families, and each family keeps its variants as sub-controls:</p>

@@ -13023,7 +13023,9 @@
       const d = this._lightWorldDir(light);
       const cam = (layer && layer.params && layer.params.camera) || {};
       const rot = this._rotateCam({ x: -d.x, y: -d.y, z: -d.z }, cam); // toward-sun, camera space
-      return { dx: rot.x * baseR, dy: -rot.y * baseR };
+      // dz is the camera-space depth of the toward-sun vector: > 0 the sun is on
+      // the viewer's side of the scene (in front), < 0 it is behind it.
+      return { dx: rot.x * baseR, dy: -rot.y * baseR, dz: rot.z };
     }
 
     // Inverse of _lightHandleOffset: a screen handle offset → {azimuth,elevation}.
@@ -13033,7 +13035,10 @@
     // real is unrecoverable from 2D alone, so pick the branch nearest the current
     // elevation (hintEl) for smooth dragging — defaulting to the front hemisphere
     // (correct for the common mid/high-elevation sun). Un-rotate → az/el.
-    _lightFromHandleOffset(dx, dy, cam, baseR, hintEl) {
+    // `hintZ` (the camera-space depth sign of the current light) wins over the
+    // elevation hint: a light that is behind the scene stays behind while it is
+    // dragged, so the widget never flips between front and back mid-gesture.
+    _lightFromHandleOffset(dx, dy, cam, baseR, hintEl, hintZ) {
       const R = Math.max(baseR, 1e-6);
       let rx = clamp(dx / R, -1, 1);
       let ry = clamp(-dy / R, -1, 1);
@@ -13047,11 +13052,18 @@
         return {
           azimuth: (Math.atan2(w.x, w.z) * 180 / Math.PI + 360) % 360,
           elevation: Math.asin(ny) * 180 / Math.PI,
+          rawEl: Math.asin(ny) * 180 / Math.PI,
         };
       };
       const front = solve(rz); const back = solve(-rz);
       let best;
-      if (Number.isFinite(hintEl)) {
+      if (Number.isFinite(hintZ) && hintZ !== 0) {
+        const want = hintZ > 0 ? front : back;
+        const other = hintZ > 0 ? back : front;
+        // Elevation is clamped to [0, 90]: when the preferred hemisphere maps
+        // below the horizon but the other does not, the other is the real one.
+        best = (want.rawEl < 0 && other.rawEl >= 0) ? other : want;
+      } else if (Number.isFinite(hintEl)) {
         best = Math.abs(front.elevation - hintEl) <= Math.abs(back.elevation - hintEl) ? front : back;
       } else {
         best = front; // front hemisphere: correct for the common mid/high sun
@@ -13060,6 +13072,14 @@
         azimuth: Math.round(best.azimuth * 10) / 10,
         elevation: Math.round(clamp(best.elevation, 0, 90) * 10) / 10,
       };
+    }
+
+    // Camera-space depth sign of a light: > 0 in front of the scene (viewer's
+    // side), < 0 behind it. Drives the widget variant and the drag hemisphere.
+    _sceneLightDepth(layer, light) {
+      const cam = (layer && layer.params && layer.params.camera) || {};
+      const d = this._lightWorldDir(light);
+      return this._rotateCam({ x: -d.x, y: -d.y, z: -d.z }, cam).z;
     }
 
     // Handle geometry (world coords) for the current sun, or null when the
@@ -13100,6 +13120,8 @@
         baseR,
         unit,
         light,
+        z: off.dz,
+        behind: off.dz < -1e-4,
       };
     }
 
@@ -13528,40 +13550,92 @@
       if (this.getSceneLightGizmo(layer)) return;
       const control = this.getSceneLightControl(layer);
       if (!control) return;
-      const { center, pos, unit } = control;
+      const { center, pos, unit, behind } = control;
       const accent = getThemeToken('--render-gizmo-x', '#fbbf24'); // amber sun
       const line = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
-      this.ctx.save();
-      this.ctx.lineCap = 'round';
-      this.ctx.lineJoin = 'round';
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // Depth cue (front vs behind the subject). IN FRONT: a solid, bright sun
+      // with a continuous ray to it and full rays. BEHIND: a hollow dashed ring,
+      // dimmed, with a dotted ray, short ticks and a "behind" tag, so a light
+      // that sits just behind the subject can't be mistaken for one in front.
       // Ray from the anchor toward the sun.
-      this.ctx.globalAlpha = 0.55;
-      this.ctx.strokeStyle = line;
-      this.ctx.lineWidth = 1 * unit;
-      this.ctx.setLineDash([3 * unit, 3 * unit]);
-      this.ctx.beginPath();
-      this.ctx.moveTo(center.x, center.y);
-      this.ctx.lineTo(pos.x, pos.y);
-      this.ctx.stroke();
-      this.ctx.setLineDash([]);
-      // Sun disc.
-      this.ctx.globalAlpha = 0.95;
-      this.ctx.fillStyle = accent;
-      this.ctx.beginPath();
-      this.ctx.arc(pos.x, pos.y, 4.2 * unit, 0, TAU);
-      this.ctx.fill();
-      // Sun rays.
-      this.ctx.strokeStyle = accent;
-      this.ctx.lineWidth = 1.1 * unit;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * TAU;
-        const rx = Math.cos(a); const ry = Math.sin(a);
-        this.ctx.beginPath();
-        this.ctx.moveTo(pos.x + rx * 6 * unit, pos.y + ry * 6 * unit);
-        this.ctx.lineTo(pos.x + rx * 9 * unit, pos.y + ry * 9 * unit);
-        this.ctx.stroke();
+      ctx.globalAlpha = behind ? 0.4 : 0.7;
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 1 * unit;
+      ctx.setLineDash(behind ? [1 * unit, 4 * unit] : []);
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      this._drawLightDepthGlyph(pos, unit, behind, accent, line);
+      ctx.restore();
+    }
+
+    // The shared front/behind light glyph (sun widget + selected-light gizmo).
+    // IN FRONT: solid disc + halo + full rays. BEHIND: hollow dashed ring on a
+    // paper backing, short ticks and a "behind" tag. Caller owns save/restore.
+    _drawLightDepthGlyph(pos, unit, behind, accent, line) {
+      const ctx = this.ctx;
+      if (behind) {
+        // Hollow ring, dashed, dimmed, on a paper-coloured backing so it still
+        // reads where it sits over the subject's ink.
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = getThemeToken('--render-canvas', '#121214');
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 7 * unit, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 0.95;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.7 * unit;
+        ctx.setLineDash([2.6 * unit, 2.4 * unit]);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 5.4 * unit, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Short ticks only.
+        ctx.lineWidth = 1 * unit;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU;
+          const rx = Math.cos(a); const ry = Math.sin(a);
+          ctx.beginPath();
+          ctx.moveTo(pos.x + rx * 8.5 * unit, pos.y + ry * 8.5 * unit);
+          ctx.lineTo(pos.x + rx * 10.5 * unit, pos.y + ry * 10.5 * unit);
+          ctx.stroke();
+        }
+        // Tag.
+        if (typeof ctx.fillText === 'function') {
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = accent;
+          ctx.font = `${9 * unit}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText('behind', pos.x, pos.y + 13 * unit);
+        }
+      } else {
+        // Solid sun with a contrasting halo, full rays.
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = accent;
+        ctx.strokeStyle = line;
+        ctx.lineWidth = 1.4 * unit;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 4.6 * unit, 0, TAU);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.3 * unit;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU;
+          const rx = Math.cos(a); const ry = Math.sin(a);
+          ctx.beginPath();
+          ctx.moveTo(pos.x + rx * 7 * unit, pos.y + ry * 7 * unit);
+          ctx.lineTo(pos.x + rx * 11 * unit, pos.y + ry * 11 * unit);
+          ctx.stroke();
+        }
       }
-      this.ctx.restore();
     }
 
     hitSceneLight(sx, sy, layer = null) {
@@ -13596,6 +13670,7 @@
           roll: (layer.params && layer.params.camera && layer.params.camera.roll) || 0,
         },
         startLight: { azimuth: light.azimuth, elevation: light.elevation },
+        zSign: Number.isFinite(control.z) ? control.z : 0,
         historyPushed: false,
         moved: false,
       };
@@ -13722,8 +13797,14 @@
         const el = clamp(Math.atan2(ref, Math.max(len, 1e-3)) * 180 / Math.PI, 2, 88);
         next = { azimuth: Math.round(az * 10) / 10, elevation: Math.round(el * 10) / 10 };
       } else {
+        // The depth side is kept for the whole gesture (a back light stays behind).
+        // Dragging the handle out past the rim and back sends it round the limb
+        // to the other side, so front/back can still be chosen deliberately.
+        const outside = Math.hypot(dx, dy) > drag.baseR * 1.08;
+        if (outside && !drag.outside && drag.zSign) drag.zSign = -drag.zSign;
+        drag.outside = outside;
         next = this._lightFromHandleOffset(dx, dy, drag.cam, drag.baseR,
-          (this._sceneLight(layer) || drag.startLight || {}).elevation);
+          (this._sceneLight(layer) || drag.startLight || {}).elevation, drag.zSign);
       }
       this._writeSceneLight(layer, next);
       this._scheduleSceneDragRegen(layer.id);
@@ -13850,10 +13931,12 @@
       let coneTip = null;
       let baseR = null;
       let anchorCenter = null;
+      let depth = 0; // camera-space depth vs the scene centre: > 0 in front, < 0 behind
       if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         center = this._sceneProjectWorld(target, light.position || { x: 120, y: 200, z: 120 });
         if (!center) return null;
         if (light.type === 'spot') coneTip = this._sceneProjectWorld(target, light.target || { x: 0, y: 0, z: 0 });
+        depth = this._rotateCam(light.position || { x: 120, y: 200, z: 120 }, cam).z;
       } else if (light.type === 'directional') {
         const anchor = this._sceneLightAnchor(target);
         if (!anchor) return null;
@@ -13861,6 +13944,7 @@
         anchorCenter = { ...anchor.center };
         const off = this._lightHandleOffset(target, light, baseR);
         center = { x: anchor.center.x + off.dx, y: anchor.center.y + off.dy };
+        depth = off.dz;
       } else {
         return null; // ambient — nothing to translate
       }
@@ -13878,7 +13962,7 @@
       // Restore dot: a small handle offset up-right of the gizmo (checked after
       // the axes, so an overlapping axis still wins the drag).
       const restore = { x: center.x + R * 1.28, y: center.y - R * 1.28 };
-      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter };
+      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter, depth, behind: depth < -1e-4 };
     }
 
     hitSceneLightGizmo(sx, sy, layer) {
@@ -14107,12 +14191,21 @@
         ctx.closePath();
         ctx.fill();
       });
-      // Center pivot.
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = stroke;
-      ctx.beginPath();
-      ctx.arc(giz.center.x, giz.center.y, 2.6 * unit, 0, TAU);
-      ctx.fill();
+      // Depth cue: the light's glyph at the gizmo centre (solid in front, hollow
+      // dashed + "behind" when behind the scene), and for a sun a ray from the
+      // scene anchor (dotted when behind).
+      if (giz.anchorCenter) {
+        ctx.globalAlpha = giz.behind ? 0.4 : 0.7;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1 * unit;
+        ctx.setLineDash(giz.behind ? [1 * unit, 4 * unit] : []);
+        ctx.beginPath();
+        ctx.moveTo(giz.anchorCenter.x, giz.anchorCenter.y);
+        ctx.lineTo(giz.center.x, giz.center.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      this._drawLightDepthGlyph(giz.center, unit, giz.behind, colors.x, stroke);
       // Restore handle: a small ringed dot with a curved arrow feel (a plain
       // circle keeps it cheap; the tooltip/cursor explains it).
       ctx.globalAlpha = 0.95;
