@@ -58,7 +58,6 @@
     TUNE.MIN_ABS_DY = Math.sin(TUNE.MIN_ELEVATION_DEG * Math.PI / 180);
   };
   const LUT_SALT = 0x5a17;
-  const PERSP_NEAR = 0.05;
 
   // Chart primitives whose ground footprint is exactly the convex hull of their projected vertices
   // (torus / torusKnot have a hole and are excluded: a hull would fill it) plus box.

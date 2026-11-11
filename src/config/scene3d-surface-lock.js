@@ -41,6 +41,9 @@
     // Contract §5, §13 — memo sizes for tone LUTs and for the Level S mesh / ground-hatch bakes.
     TONE_LUT_MEMO_ENTRIES: 32,
     AUX_CACHE_ENTRIES: 16,
+    // surface-lock.js (core): FRESH_MAX caps the per-frame fresh-key list; FALLBACK_FLOOR_PEN is the plot floor (x pen) when Regions is absent.
+    FRESH_MAX: 256,
+    FALLBACK_FLOOR_PEN: 2.2,
     // ---- per-module tuning (behaviour-neutral: each value is the literal the module carried before). Each module keeps
     // the same numbers as a safe fallback for when this table is not loaded.
     // surface-lock-ladder.js (hatch, crosshatch, contour, spiral, stipple). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
@@ -64,6 +67,9 @@
       DOT_SEGS: 8,
       DOT_COL_FILL: 0.85,  // dots: finest column spacing is in [0.85, 1.7) x the finest pitch
       DOT_CLEAR: 2.4,  // dots: finest pitch >= 2.4 x the glyph radius (no overlap at the finest level)
+      MIN_SEP_FRAC: 0.84,  // measured worst local ruling pitch / nominal (hatch, default sphere); the law's separation bar reads it
+      RELABEL_MIN_MM: 4,  // a relabel piece shorter than this (object mm) takes its finer neighbour's label
+      RELABEL_STAGGER: 0.5,  // relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
     }),
     // surface-lock-mezzo.js (mezzotint). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
     MEZZO: Object.freeze({
@@ -98,6 +104,15 @@
       FALLBACK_MIN: 200,
       FALLBACK_MAX: 5000,
       RANK_FPO_MAX: 6000,  // farthest-point ranking above this many lines falls back to bit reversal
+      STEP_MULT: 1,  // object step = STEP_SCREEN x this / scaleRef (bake cost is about linear in 1 / step)
+      SEED_TIGHT: 0.86,  // the live seed radius is SEED_FACTOR x this x d_l
+      CELL_F: 2,  // occupancy cell edge, x the larger of the stop and seed radii
+      SEED_ARC_TIGHT: 0.5,  // the live seed spacing along a line is SEED_ARC_STEPS x this x STEP
+      MIN_LINE_D: 2,  // Jobard-Lefer minimum line length (x d_l)
+      MIN_LINE_MM: 0,  // absolute floor on the minimum line length (object mm / scaleRef)
+      PREV_SEED_D: 4,  // seeds beside lower-level lines every max(seedArc, this x d_l)
+      FALLBACK_SEEDED: 100,  // random fallback candidates for levels > 0
+      CONT_MIN_D: 1,  // a continuation run shorter than this (x d_l) is dropped
     }),
     // surface-lock-shadow.js (locked ground shadow).
     SHADOW: Object.freeze({
@@ -109,6 +124,28 @@
       MAX_LINES: 40000,  // hard cap on baked lines (a 256x ground at a fine pen would otherwise bake millions)
       MIN_PITCH_MM: 0.05,  // the ground hatch never bakes finer than this world pitch (mm)
       MEMO_MAX: 8,  // LRU size of the bake memo (entries are ~tens of kB)
+      SPACING_FLOOR: 0.8,  // closest drawn pair of shadow lines >= this x the pose spacing on screen (owner Q3)
+    }),
+    // surface-lock-laws.js (tone laws: dutyConst, endShorten, mergeLadder, phaseBlue).
+    LAWS: Object.freeze({
+      INK_SPREAD: 0.12,  // surface-fill INK_SPREAD (private there)
+      A_DARK: 0.90,  // makeCtx dark end of the tone map
+      PLOT_FLOOR_PEN: 2.2,  // Regions.PLOT_FLOOR_PEN fallback
+      LIT_MAX_PITCH_PEN: 12,  // Regions.LIT_MAX_PITCH_PEN fallback
+      MIN_MARK_MM: 0.6,  // pose MIN_RUN_MM
+      MIN_MARK_PEN: 2,  // pose: minMarkMM = max(MIN_RUN_MM, 2 pen)
+      DUTY_PERIOD_FLOOR: 2.0,  // dutyConst mark period, x plot floor
+      DUTY_PITCH_FLOOR: 1.05,  // dutyConst ruling pitch, x plot floor
+      END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+      END_RETRACT: 0.84,  // endShorten: fraction of a ruling spent at full light
+      MERGE_PERIOD_FLOOR: 1.8,  // mergeLadder mark period, x plot floor
+      MERGE_M_MIN: 0.03,
+      MERGE_TOUCH_INK: 0.98,
+      BANDS: 4,  // centre-out dash bands per cell
+      JIT_FRAC: 0.2,  // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch
+      MAX_VERTS: 200000,  // contract §2 budget
+      HATCH_D_MAX: 100,
+      GOLDEN: 0.6180339887498949,
     }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({
@@ -127,6 +164,8 @@
       TORUS_ANALYTIC: true,  // Torus self-occlusion through TorusOcclusion (contract §7); false = triangle buffer
       TORUS_GAP_MM: 8,  // algorithms/scene3d.js TORUS_SELF_OCCLUDE_GAP_MM
       TORUS_MARGIN_MM: 1,  // algorithms/scene3d.js TORUS_SELF_OCCLUDE_MARGIN_MM
+      CONVEXITY_BUDGET: 3000000,  // V x F above this: the convexity test is skipped (treated non-convex)
+      CONVEXITY_EPS: 1e-6,  // a vertex this far outside a face plane makes the mesh non-convex
     }),
   });
 })();
