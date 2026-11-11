@@ -221,10 +221,150 @@
     return false;
   };
 
+  // ── Light-space depth map (light realism U9) ───────────────────────────────
+  // A directional light's shadow map: every caster triangle is rasterised
+  // (conservatively, so a caster thinner than a texel still marks texels) into
+  // a grid orthogonal to the light, storing the depth NEAREST the light. A
+  // query projects a world point into the same grid and compares depths, so
+  // one map answers "is p in shadow?" for ANY receiver, including the
+  // caster's own surfaces (self cast shadow: the inside of a torus).
+  // The map depends only on light + caster geometry, never on the camera.
+  const MAP_EMPTY = -1e30;
+  const MAP_DEFAULTS = Object.freeze({
+    texelMm: 0.25,       // target texel size; resolution is derived from the scene extent
+    minRes: 128,
+    maxRes: 1024,
+    marginTexels: 2,
+    biasTexels: 1.5,     // constant depth bias, in texels
+    slopeTexels: 1.0,    // extra bias per unit tan(theta) between normal and light
+    maxTan: 6,
+    normalOffsetTexels: 1.0,
+  });
+
+  const lightBasis = (light) => {
+    const t = towardLight(light);
+    const helper = Math.abs(t.y) < 0.9 ? v(0, 1, 0) : v(1, 0, 0);
+    const u = normalize(cross(helper, t));
+    const w = cross(t, u);
+    return { t, u, w };
+  };
+
+  // triangles: [{a,b,c}] in world space. Returns null for an empty set.
+  const buildDepthMap = (triangles, light, options = {}) => {
+    const o = Object.assign({}, MAP_DEFAULTS, options);
+    const n = triangles ? triangles.length : 0;
+    if (!n) return null;
+    const { t, u, w } = lightBasis(light);
+    const px = new Float64Array(n * 3); const py = new Float64Array(n * 3); const pd = new Float64Array(n * 3);
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const tri = triangles[i];
+      const vs = [tri.a, tri.b, tri.c];
+      for (let k = 0; k < 3; k++) {
+        const P = vs[k];
+        const x = P.x * u.x + P.y * u.y + P.z * u.z;
+        const y = P.x * w.x + P.y * w.y + P.z * w.z;
+        const d = P.x * t.x + P.y * t.y + P.z * t.z;
+        px[i * 3 + k] = x; py[i * 3 + k] = y; pd[i * 3 + k] = d;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+    const extent = Math.max(maxX - minX, maxY - minY, 1e-6);
+    const res = Math.max(o.minRes, Math.min(o.maxRes, Math.ceil(extent / o.texelMm)));
+    const margin = o.marginTexels;
+    const texel = extent / (res - 2 * margin);
+    const ox = (minX + maxX) / 2 - (res * texel) / 2;
+    const oy = (minY + maxY) / 2 - (res * texel) / 2;
+    const depth = new Float32Array(res * res).fill(MAP_EMPTY);
+    const h = 0.7072 * texel; // conservative: any texel whose square touches the triangle
+    for (let i = 0; i < n; i++) {
+      const ax = px[i * 3]; const ay = py[i * 3]; const ad = pd[i * 3];
+      const bx = px[i * 3 + 1]; const by = py[i * 3 + 1]; const bd = pd[i * 3 + 1];
+      const cx = px[i * 3 + 2]; const cy = py[i * 3 + 2]; const cd = pd[i * 3 + 2];
+      let area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      const dMin = Math.min(ad, bd, cd); const dMax = Math.max(ad, bd, cd);
+      const sgn = area < 0 ? -1 : 1;
+      area = Math.abs(area);
+      if (area < 1e-12) {
+        // Edge-on to the light: mark the texels along its segments with the max depth.
+        const segs = [[ax, ay, bx, by], [bx, by, cx, cy], [cx, cy, ax, ay]];
+        for (let s = 0; s < 3; s++) {
+          const [x0, y0, x1, y1] = segs[s];
+          const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (texel * 0.5)));
+          for (let q = 0; q <= steps; q++) {
+            const f = q / steps;
+            const ix = Math.floor((x0 + (x1 - x0) * f - ox) / texel);
+            const iy = Math.floor((y0 + (y1 - y0) * f - oy) / texel);
+            if (ix < 0 || iy < 0 || ix >= res || iy >= res) continue;
+            if (dMax > depth[iy * res + ix]) depth[iy * res + ix] = dMax;
+          }
+        }
+        continue;
+      }
+      // Plane gradient of depth in (x, y).
+      const gx = ((bd - ad) * (cy - ay) - (cd - ad) * (by - ay)) / ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay));
+      const gy = ((cd - ad) * (bx - ax) - (bd - ad) * (cx - ax)) / ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay));
+      const lab = Math.hypot(bx - ax, by - ay) || 1; const lbc = Math.hypot(cx - bx, cy - by) || 1; const lca = Math.hypot(ax - cx, ay - cy) || 1;
+      const ix0 = Math.max(0, Math.floor((Math.min(ax, bx, cx) - h - ox) / texel));
+      const ix1 = Math.min(res - 1, Math.floor((Math.max(ax, bx, cx) + h - ox) / texel));
+      const iy0 = Math.max(0, Math.floor((Math.min(ay, by, cy) - h - oy) / texel));
+      const iy1 = Math.min(res - 1, Math.floor((Math.max(ay, by, cy) + h - oy) / texel));
+      for (let iy = iy0; iy <= iy1; iy++) {
+        const qy = oy + (iy + 0.5) * texel;
+        for (let ix = ix0; ix <= ix1; ix++) {
+          const qx = ox + (ix + 0.5) * texel;
+          const e0 = sgn * ((bx - ax) * (qy - ay) - (by - ay) * (qx - ax)) / lab;
+          if (e0 < -h) continue;
+          const e1 = sgn * ((cx - bx) * (qy - by) - (cy - by) * (qx - bx)) / lbc;
+          if (e1 < -h) continue;
+          const e2 = sgn * ((ax - cx) * (qy - cy) - (ay - cy) * (qx - cx)) / lca;
+          if (e2 < -h) continue;
+          let d = ad + gx * (qx - ax) + gy * (qy - ay);
+          if (d < dMin) d = dMin; else if (d > dMax) d = dMax;
+          const idx = iy * res + ix;
+          if (d > depth[idx]) depth[idx] = d;
+        }
+      }
+    }
+    return { depth, res, texel, ox, oy, t, u, w, options: o, triangles: n };
+  };
+
+  // Is world point P (optionally with world normal nw) behind the nearest caster surface?
+  // With a normal: slope-scaled bias + normal offset (kills acne on the caster's own lit faces).
+  // Without: a constant bias of a few texels (used by Regions.shade's shadowFn(P, light) hook).
+  const depthMapShadowed = (map, P, nw) => {
+    if (!map) return false;
+    const { t, u, w, texel, res } = map;
+    const o = map.options;
+    let X = P.x; let Y = P.y; let Z = P.z;
+    let bias = o.biasTexels * texel;
+    if (nw) {
+      const nl = nw.x * t.x + nw.y * t.y + nw.z * t.z;
+      const c = nl > 1e-3 ? nl : 1e-3;
+      const tan = Math.min(o.maxTan, Math.sqrt(Math.max(0, 1 - c * c)) / c);
+      bias += o.slopeTexels * texel * tan;
+      const off = o.normalOffsetTexels * texel * (1 - Math.min(1, Math.max(0, nl)));
+      X += nw.x * off; Y += nw.y * off; Z += nw.z * off;
+    } else {
+      bias += o.slopeTexels * texel * 2;
+    }
+    const x = X * u.x + Y * u.y + Z * u.z;
+    const y = X * w.x + Y * w.y + Z * w.z;
+    const d = X * t.x + Y * t.y + Z * t.z;
+    const ix = Math.floor((x - map.ox) / texel);
+    const iy = Math.floor((y - map.oy) / texel);
+    if (ix < 0 || iy < 0 || ix >= res || iy >= res) return false;
+    return map.depth[iy * res + ix] > d + bias;
+  };
+
   const ShadowReceive = {
     buildOccluderSet,
     pointInShadow,
     rayTriangleIntersect,
+    buildDepthMap,
+    depthMapShadowed,
+    MAP_DEFAULTS,
   };
 
   Vectura.Scene3D.ShadowReceive = ShadowReceive;

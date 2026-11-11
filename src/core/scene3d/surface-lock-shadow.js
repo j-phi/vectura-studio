@@ -4,7 +4,7 @@
  *   supports({ shadow, light, ground, casters }) -> boolean
  *   bakeGround(groundSpec, shadowCfg, penWidth, seed) -> GroundHatch   (pose-free, camera- and light-free)
  *   frameShadow(groundHatch, casters, lightDirWorld, pose) -> { world: Float64Array(x0, z0, x1, z1 ...), runs: [{ pts, visible: true }] }
- *   receiveMap(...)                                                  (stub: W3-C)
+ *   receiveMap({ lights, casters, resolution? }) -> ReceiveMap       (light-space depth map, cached; see below)
  *
  * The shadow hatch lives in WORLD ground coordinates (plane y = 0). `bakeGround` lays parallel lines over
  * the ground extent once, nested like a MarkSet (gain 2, van der Corput rank). `frameShadow` intersects
@@ -560,12 +560,147 @@
     return (fp.ring || []).map((q) => ({ x: q.x, z: q.z }));
   };
 
+
+  // ── receive shadows (light realism U9) ───────────────────────────────────────
+  // receiveMap({ lights, casters }) -> ReceiveMap with
+  //   visFn(nw, wp) -> vis in [0,1]   (1 lit, 0 in a cast shadow; several lights: n.L-weighted mean over shadow casters)
+  //   visForLight(i, nw, wp) -> 0|1   shadowFn(P, light) -> true when blocked (Regions.shade opts.shadowFn)
+  //   shadowFnFor(nw)                 shadowFn that also uses the receiver's normal (slope-scaled bias)
+  // casters: [{ id, key?, triangles: [{a,b,c}] | faces: [{ worldVerts }] }] in WORLD space. `key` is the caller's
+  // transform key (cheap); without it the vertices are hashed. The map is rebuilt only when the light set (type,
+  // direction, position) or a caster's geometry changes. The camera is not an input, so an orbit is a cache hit.
+  // Directional lights use the depth map; point/spot/area lights fall back to the exact ray test (slower, correct).
+  const rcache = [];
+  const RCACHE_MAX = 4;
+  const rstats = { builds: 0, hits: 0, queries: 0, lastBuildMs: 0, lastTriangles: 0, lastRes: 0 };
+
+  const hashTriangles = (tris) => {
+    let h = 2166136261 >>> 0;
+    const buf = new Float64Array(1); const u32 = new Uint32Array(buf.buffer);
+    const mix = (x) => { buf[0] = Math.round(x * 1e4) / 1e4; h = Math.imul(h ^ u32[0], 16777619) >>> 0; h = Math.imul(h ^ u32[1], 16777619) >>> 0; };
+    for (let i = 0; i < tris.length; i++) {
+      const t = tris[i];
+      mix(t.a.x); mix(t.a.y); mix(t.a.z); mix(t.b.x); mix(t.b.y); mix(t.b.z); mix(t.c.x); mix(t.c.y); mix(t.c.z);
+    }
+    return h.toString(36);
+  };
+
+  const casterTriangles = (c) => {
+    if (Array.isArray(c.triangles)) return c.triangles;
+    const out = [];
+    (Array.isArray(c.faces) ? c.faces : []).forEach((f) => {
+      const wv = f && f.worldVerts;
+      if (!Array.isArray(wv) || wv.length < 3) return;
+      for (let i = 1; i < wv.length - 1; i += 1) out.push({ a: wv[0], b: wv[i], c: wv[i + 1] });
+    });
+    return out;
+  };
+
+  const castingLights = (lights) => (Array.isArray(lights) ? lights : (lights ? [lights] : []))
+    .filter((l) => l && l.type !== 'ambient' && l.castShadows !== false && l.enabled !== false);
+
+  const lightSig = (l) => JSON.stringify([l.type || 'directional', l.azimuth, l.elevation, l.position ? [l.position.x, l.position.y, l.position.z] : null]);
+
+  const receiveMap = (spec = {}) => {
+    const SR = Scene3D.ShadowReceive;
+    if (!SR || typeof SR.buildDepthMap !== 'function') throw new Error('SurfaceLockShadow.receiveMap: Scene3D.ShadowReceive is not loaded');
+    const lights = castingLights(spec.lights);
+    const casters = (Array.isArray(spec.casters) ? spec.casters : []).filter(Boolean);
+    const res = spec.resolution ? JSON.stringify(spec.resolution) : '';
+    const tris = casters.map(casterTriangles);
+    const keys = casters.map((c, i) => `${c.id == null ? i : c.id}:${c.key != null ? c.key : hashTriangles(tris[i])}:${tris[i].length}`);
+    const key = `${lights.map(lightSig).join('|')}#${keys.join('|')}#${res}`;
+    for (let i = 0; i < rcache.length; i += 1) {
+      if (rcache[i].key === key) {
+        const hit = rcache.splice(i, 1)[0];
+        rcache.unshift(hit);
+        rstats.hits += 1;
+        hit.lights = lights; // intensities may change without a rebuild
+        return hit;
+      }
+    }
+    const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+    const all = [].concat(...tris);
+    const mapOpts = typeof spec.resolution === 'object' && spec.resolution ? spec.resolution : {};
+    const maps = lights.map((l) => ((l.type || 'directional') === 'directional' ? SR.buildDepthMap(all, l, mapOpts) : null));
+    let occ = null;
+    const occluders = () => {
+      if (!occ) {
+        const groups = new Map();
+        casters.forEach((c, i) => groups.set(c.id == null ? i : c.id, tris[i].map((t) => ({ a: t.a, b: t.b, c: t.c, objectId: c.id == null ? i : c.id }))));
+        occ = SR.buildOccluderSet(Array.from(groups, ([id, ts]) => ({ id, faces: ts.map((t) => ({ worldVerts: [t.a, t.b, t.c] })) })));
+      }
+      return occ;
+    };
+    const towardOf = (l, P) => {
+      if (l.type && l.type !== 'directional' && l.position) return normalize3({ x: l.position.x - P.x, y: l.position.y - P.y, z: l.position.z - P.z });
+      const d = lightDirOf(l);
+      return d ? normalize3({ x: -d.x, y: -d.y, z: -d.z }) : null;
+    };
+    const blockedBy = (i, P, nw) => {
+      const m = maps[i];
+      if (m) return SR.depthMapShadowed(m, P, nw);
+      return SR.pointInShadow(P, map.lights[i], occluders());
+    };
+    const indexOfLight = (light) => {
+      let k = map.lights.indexOf(light);
+      if (k >= 0) return k;
+      const sig = lightSig(light);
+      k = map.lights.findIndex((l) => lightSig(l) === sig);
+      return k;
+    };
+    const map = {
+      key, lights, maps, triangles: all.length, res: maps[0] ? maps[0].res : 0, texel: maps[0] ? maps[0].texel : 0,
+      visForLight: (i, nw, wp) => {
+        if (!map.lights[i] || !wp) return 1;
+        if (nw) {
+          const L = towardOf(map.lights[i], wp);
+          if (L && nw.x * L.x + nw.y * L.y + nw.z * L.z <= 0) return 1; // attached shadow: not a cast-shadow question
+        }
+        return blockedBy(i, wp, nw) ? 0 : 1;
+      },
+      visFn: (nw, wp) => {
+        rstats.queries += 1;
+        let num = 0; let den = 0;
+        for (let i = 0; i < map.lights.length; i += 1) {
+          const L = wp ? towardOf(map.lights[i], wp) : null;
+          const nl = nw && L ? nw.x * L.x + nw.y * L.y + nw.z * L.z : 1;
+          if (nl <= 0) continue;
+          const wgt = nl * clamp(finite(map.lights[i].intensity, 1), 0, 1);
+          if (wgt <= 0) continue;
+          den += wgt;
+          num += wgt * (blockedBy(i, wp, nw) ? 0 : 1);
+        }
+        return den > 0 ? num / den : 1;
+      },
+      shadowFn: (P, light) => {
+        rstats.queries += 1;
+        const i = indexOfLight(light);
+        return i >= 0 ? blockedBy(i, P, null) : false;
+      },
+      shadowFnFor: (nw) => (P, light) => {
+        rstats.queries += 1;
+        const i = indexOfLight(light);
+        return i >= 0 ? blockedBy(i, P, nw) : false;
+      },
+    };
+    rstats.builds += 1;
+    rstats.lastBuildMs = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
+    rstats.lastTriangles = all.length;
+    rstats.lastRes = map.res;
+    rcache.unshift(map);
+    if (rcache.length > RCACHE_MAX) rcache.pop();
+    return map;
+  };
+
   Scene3D.SurfaceLockShadow = {
     supports,
     bakeGround,
     frameShadow,
-    receiveMap: () => { throw new Error('SurfaceLockShadow.receiveMap: not implemented (surface-lock unit W3-C)'); },
-    clearCache: () => { memo.clear(); lutMemo.clear(); },
+    receiveMap,
+    receiveStats: () => Object.assign({}, rstats),
+    resetReceiveStats: () => { rstats.builds = 0; rstats.hits = 0; rstats.queries = 0; },
+    clearCache: () => { memo.clear(); lutMemo.clear(); rcache.length = 0; },
     get MIN_ABS_DY() { return TUNE.MIN_ABS_DY; },
     get MIN_RUN_MM() { return TUNE.MIN_RUN_MM; },
     CONVEX_PRIMITIVES,
