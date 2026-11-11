@@ -43,7 +43,7 @@
   // ~15.1% on open. SCENE_MIGRATIONS[3] multiplies a pre-v4 buckyball's stored
   // radius by that same measured factor, so it renders BYTE-IDENTICALLY; new
   // buckyballs get the true radius.
-  const SCENE_VERSION = 6;
+  const SCENE_VERSION = 7;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -533,7 +533,16 @@
     thresholds: [0.33, 0.66], // ascending intensity cut points (length bands-1)
     ladder: [0.2, 0.5, 0.85], // coverage (0..1) per band, dark→light (length bands)
     specular: { enabled: true, size: 1 },
+    // Light model (light-plan §2.1). 'legacy' = Lambert only (no ambient, no
+    // specular channel; byte-identical to every pre-v7 document). 'v2' = ambient
+    // + bounce + specular glint. A NEW scene is born 'v2' (ALGO_DEFAULTS); a
+    // payload with no model normalizes to 'legacy' so it can never silently
+    // change look. ambient / bounce are inert under 'legacy'.
+    model: 'legacy',
+    ambient: 0.08,
+    bounce: 0.12,
   };
+  const TONE_MODELS = ['legacy', 'v2'];
 
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -1693,6 +1702,9 @@
         enabled: spec.enabled !== false,
         size: Math.max(0, finite(spec.size, DEFAULT_TONE.specular.size)),
       },
+      model: TONE_MODELS.includes(src.model) ? src.model : DEFAULT_TONE.model,
+      ambient: clamp(finite(src.ambient, DEFAULT_TONE.ambient), 0, 1),
+      bounce: clamp(finite(src.bounce, DEFAULT_TONE.bounce), 0, 1),
     };
   };
 
@@ -2119,6 +2131,24 @@
     return out;
   };
   SCENE_MIGRATIONS[5] = migrateMarkSpacePose;
+
+  // ── SCENE_MIGRATIONS[6] — tone.model 'legacy' (v6 → v7). ───────────────────
+  // The realistic light model (tone.model 'v2': ambient + bounce + specular)
+  // is the default for NEW scenes only. Every document and preset saved before
+  // v7 is stamped 'legacy' so it renders byte-identically. Only a SCENE payload
+  // is stamped (it carries a tone block, or the scene envelope that normalizes
+  // to one); object3d / booleanGroup3d leaves have none and pass through. A tone
+  // that already names a model is respected. Version-gated, idempotent.
+  const migrateToneModelLegacy = (params) => {
+    const src = isObject(params) ? params : {};
+    const sceneLike = isObject(src.tone) || Array.isArray(src.objects)
+      || Array.isArray(src.lights) || isObject(src.camera);
+    if (!sceneLike) return src;
+    const tone = isObject(src.tone) ? src.tone : {};
+    if (TONE_MODELS.includes(tone.model)) return src;
+    return { ...src, tone: { ...tone, model: 'legacy' } };
+  };
+  SCENE_MIGRATIONS[6] = migrateToneModelLegacy;
 
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).

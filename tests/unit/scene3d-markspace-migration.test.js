@@ -35,10 +35,10 @@ describe('Scene3D markSpace param + SCENE_VERSION 6', () => {
   });
   const sane = (p) => Params.sanitizeSceneParams(p);
 
-  test('SCENE_VERSION is 6 and both defaults are born at 6', () => {
-    expect(Params.SCENE_VERSION).toBe(6);
-    expect(V.ALGO_DEFAULTS.scene3d.sceneVersion).toBe(6);
-    expect(V.ALGO_DEFAULTS.object3d.sceneVersion).toBe(6);
+  test('SCENE_VERSION is 7 (>= the markSpace step) and both defaults are born at it', () => {
+    expect(Params.SCENE_VERSION).toBe(7);
+    expect(V.ALGO_DEFAULTS.scene3d.sceneVersion).toBe(7);
+    expect(V.ALGO_DEFAULTS.object3d.sceneVersion).toBe(7);
   });
 
   test('clampStyleParam: only the literal surface survives', () => {
@@ -57,7 +57,7 @@ describe('Scene3D markSpace param + SCENE_VERSION 6', () => {
     const out = sane(monolith(5, {
       scene: style(), byObject: { a: style() }, byFace: { 'b/f1': style() },
     }));
-    expect(out.sceneVersion).toBe(6);
+    expect(out.sceneVersion).toBe(7);
     expect(out.styleTable.scene.params.markSpace).toBe('pose');
     expect(out.styleTable.byObject.a.params.markSpace).toBe('pose');
     expect(out.styleTable.byFace['b/f1'].params.markSpace).toBe('pose');
@@ -66,7 +66,7 @@ describe('Scene3D markSpace param + SCENE_VERSION 6', () => {
 
   test('sceneVersion-1 payload goes through the whole chain and is stamped', () => {
     const out = sane(monolith(1, { scene: style(), byObject: { a: style() } }));
-    expect(out.sceneVersion).toBe(6);
+    expect(out.sceneVersion).toBe(7);
     expect(out.styleTable.scene.params.markSpace).toBe('pose');
     expect(out.styleTable.byObject.a.params.markSpace).toBe('pose');
   });
@@ -75,7 +75,7 @@ describe('Scene3D markSpace param + SCENE_VERSION 6', () => {
     const out = sane({
       sceneVersion: 5, primitive: 'sphere', style: style(), faceStyles: { f1: style(), f2: style() },
     });
-    expect(out.sceneVersion).toBe(6);
+    expect(out.sceneVersion).toBe(7);
     expect(out.style.params.markSpace).toBe('pose');
     expect(out.faceStyles.f1.params.markSpace).toBe('pose');
     expect(out.faceStyles.f2.params.markSpace).toBe('pose');
@@ -91,7 +91,7 @@ describe('Scene3D markSpace param + SCENE_VERSION 6', () => {
   test('a v6 document with surface is untouched; a v6 doc without the key stays absent', () => {
     const doc = monolith(6, { scene: style({ markSpace: 'surface' }), byObject: { a: style() } });
     const out = sane(doc);
-    expect(out.sceneVersion).toBe(6);
+    expect(out.sceneVersion).toBe(7);
     expect(out.styleTable.scene.params.markSpace).toBe('surface');
     expect('markSpace' in out.styleTable.byObject.a.params).toBe(false);
   });
@@ -127,7 +127,7 @@ describe('Scene3D markSpace param + SCENE_VERSION 6', () => {
       doc.layers.filter((l) => l.type === 'scene3d').forEach((layer) => {
         const raw = clone(layer.params);
         const migrated = Params.migrateScene(clone(raw));
-        expect(migrated.sceneVersion).toBe(6);
+        expect(migrated.sceneVersion).toBe(7);
         // The stamp itself changes nothing: the same chain output with every
         // stamped 'pose' removed (= the v5 state) renders identically.
         expect(sig(migrated)).toBe(sig(stripPose(clone(migrated))));
