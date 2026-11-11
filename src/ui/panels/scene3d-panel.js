@@ -563,7 +563,7 @@
   // bare test process; an absent/empty STYLE_PARAMS ({} in U0) yields exactly
   // the static 3-key list this replaces — a provable no-op today.
   const persistentStyleKeys = () => {
-    const base = ['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings'];
+    const base = ['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings', 'markSpace'];
     const R = Vectura.SCENE3D_TONE_LAWS;
     const SP = R && R.STYLE_PARAMS;
     if (!SP) return base;
@@ -978,6 +978,20 @@
   const levelSOf = (group) => (group && typeof group._sceneLevelS === 'boolean' ? group._sceneLevelS : undefined);
 
   // Walk up to the owning scene GROUP (type 'scene3d' + isGroup) of a child.
+  // FX-J5: the scene/object flags that keep a fill in pose (the engine's exclusionCtx), read from the owning group
+  // and the leaf, so the Lock row never says On where the engine draws per camera angle.
+  const sceneExclusionsOf = (group, objParams) => {
+    const gp = (group && group.params) || {};
+    const op = objParams || {};
+    const byFace = gp.styleTable && gp.styleTable.byFace;
+    return {
+      receiveShadow: !!(gp.shadow && gp.shadow.shadowReceiveOnObjects),
+      areaLight: (gp.lights || []).some((l) => l && l.type === 'area'),
+      emissiveCoreBlank: !!(op.emissive && op.emissive.enabled && op.emissive.coreBlank),
+      csgCarve: false,
+      faceStyles: !!(byFace && Object.keys(byFace).length),
+    };
+  };
   const sceneGroupOf = (ui, layer) => {
     const engine = ui.app && ui.app.engine;
     if (!engine || !engine.getLayerById) return null;
@@ -1482,7 +1496,11 @@
     const style = { ...sp, markSpace: 'surface' };
     if (isFlatWrap(sp, c.mapper)) style.wrap = 'flat';
     const spec = { mapper: c.mapper, toneLaw: c.law, primitive: c.primitive, style };
-    const ex = SL.explainMarkSpace(style, { spec, mapper: c.mapper, visibility: c.visibility });
+    const ex = SL.explainMarkSpace(style, {
+      spec, mapper: c.mapper, visibility: c.visibility,
+      receiveShadow: c.receiveShadow === true, areaLight: c.areaLight === true,
+      emissiveCoreBlank: c.emissiveCoreBlank === true, csgCarve: c.csgCarve === true, faceStyles: c.faceStyles === true,
+    });
     if (ex.mode === 'surface') return true;
     if (ex.reason === 'no baker' && !c.primitive) return true;
     return markSpaceReasonText(ex.reason);
@@ -2514,7 +2532,7 @@
         comps,
         row: (lbl) => labeledRow(host, lbl),
         sp: style.params,
-        ctx: styleGateCtx(params.primitive, style.mapper, style.params, { visibility: params.visibility, levelS: levelSOf(sceneGroupOf(ui, layer)) }),
+        ctx: styleGateCtx(params.primitive, style.mapper, style.params, { visibility: params.visibility, levelS: levelSOf(sceneGroupOf(ui, layer)), ...sceneExclusionsOf(sceneGroupOf(ui, layer), params) }),
         pens,
         header: true,
         write: (key, value) => { commit(() => { style.params[key] = value; }); renderStyle(); },
