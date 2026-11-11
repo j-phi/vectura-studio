@@ -67,6 +67,7 @@
     PREV_SEED_D: 4,          // seeds beside lower-level lines every max(seedArc, this x d_l)
     FALLBACK_SEEDED: 100,    // random fallback candidates for levels > 0 (the lower-level seeds do the filling)
     CONT_MIN_D: 1,           // a continuation run shorter than this (x d_l) is dropped; the end stays open for the next level
+    V2_PAPER_BAND: 0.15,     // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor); same value as the laws baker
   };
   const K = Object.assign({}, K_DEFAULTS);
 
@@ -123,12 +124,63 @@
     const areaFor = (I) => clamp(1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, K.A_DARK);
     return (I) => clamp(T.INK / areaFor(I) / T.DS, T.INK / K.A_DARK, T.PMAX);
   };
+  // The same L*-linear area map pitchForFn closes over (v2 needs it directly).
+  pitchForFn.areaForOf = (T) => {
+    const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
+    const invL = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
+    const L_LIGHT = Lstar(1 - clamp(T.INK / T.PMAX0, 0.02, 0.5));
+    const L_DARK = Lstar(1 - K.A_DARK);
+    return (I) => clamp(1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, K.A_DARK);
+  };
 
-  const toneLUT = (spec) => {
+  // ---- tone model (light-realism U7) ---------------------------------------------------------------------------
+  // `spec.toneModel === 'v2'` (the hub copies p.tone.model there; same convention as surface-lock-laws.js) or, when the spec
+  // carries no model, `toneCtx.light.model` / `toneCtx.tone.model`. Absent everywhere = legacy, byte-identical. The bake is
+  // the same under both models: only the density LUT differs (v2 has no lit floor and reaches paper).
+  const lutIsV2 = (spec, toneCtx) => {
+    if (spec && spec.toneModel === 'v2') return true;
+    if (spec && typeof spec.toneModel === 'string') return false;
+    const c = toneCtx || {};
+    return ((c.light && c.light.model) || (c.tone && c.tone.model)) === 'v2';
+  };
+  const toneIsOff = (toneCtx) => !!toneCtx && ((toneCtx.tone && toneCtx.tone.enabled === false)
+    || (toneCtx.light && Array.isArray(toneCtx.light.lights) && toneCtx.light.lights.length === 0));
+  // v2 target (light-plan 2.2, same curve as the laws baker's targetOf): the L*-linear span of the pose map's own areaFor,
+  // normalised to [0, 1] (dark = 1), with a smoothstep roll-off over the last V2_PAPER_BAND so the lightest tones are paper.
+  // Coverage = D(I) x the legal dark coverage (A_DARK-ish), so the dark end is the legacy dark end exactly.
+  const v2Density = (T) => {
+    const areaFor = pitchForFn.areaForOf(T);
+    const aL = areaFor(1); const aD = areaFor(0);
+    const band = Math.max(1e-3, K.V2_PAPER_BAND);
+    return (I) => {
+      const x = clamp(finite(I, 0), 0, 1);
+      const d = clamp((areaFor(x) - aL) / Math.max(1e-6, aD - aL), 0, 1);
+      const u = clamp((1 - x) / band, 0, 1);
+      return d * u * u * (3 - 2 * u);
+    };
+  };
+
+  const toneLUT = (spec, toneCtx) => {
     sync();
     const size = cfg().TONE_LUT_SIZE || 256;
-    const pitchFor = pitchForFn(toneParams(spec));
+    const T = toneParams(spec);
+    const pitchFor = pitchForFn(T);
     const lut = new Float32Array(size + 1);
+    if (lutIsV2(spec, toneCtx)) {
+      if (toneIsOff(toneCtx)) { // contract 5: tone off = the uniform Density, the ladder's own tone-off ink (one ruling per lit pitch)
+        lut.fill(1 / T.PMAX);
+      } else {
+        // Dark end: the densest the bake can draw, every key of its L levels (< 2^(L-1) with gain 2) at the lit-end bake pitch p0. Asking for the
+        // legacy 1 / pitchFor(0) (0.37 mm) saturates the bake's finest level over the whole dark half (a plateau); asking for
+        // exactly the baked ceiling keeps the curve graded from the darkest tone up.
+        const D = v2Density(T);
+        const HEADROOM = Number.isFinite(cfg().ZOOM_HEADROOM) ? cfg().ZOOM_HEADROOM : 1.5;
+        const Lv = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * K.P0_SCALE * HEADROOM) / (T.INK / K.A_DARK))) + 1e-9), 1, Math.min(cfg().MAX_LEVELS || 6, K.MAX_LEVELS_LAW));
+        const dark = Math.min(1 / pitchFor(0), 0.9999 * 2 ** (Lv - 1) / (T.PMAX * K.P0_SCALE));
+        for (let k = 0; k <= size; k++) lut[k] = D(k / size) * dark;
+      }
+      return { lut, scaleFn: null };
+    }
     for (let k = 0; k <= size; k++) lut[k] = 1 / pitchFor(k / size);
     return { lut, scaleFn: null };
   };
