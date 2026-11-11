@@ -1661,6 +1661,49 @@
     }
     return path;
   };
+  // The seed and BakeSpec resolvers Level S bakes with. ONE definition: the compose (`composeSurfaceLockScene`) and the bake
+  // planner (`levelSBakeSpecs`) must build identical specs, or a planned bake would never be the one the frame looks up.
+  const levelSSpecHelpers = (p, sb, groupSeeds, groupSeeded, resolveStyle, objById) => {
+    const seedFor = (id) => {
+      const src = id === 'ground' ? null : objById.get(id);
+      G3.setSeedState(src && src.seedMode === 'seeded' ? [groupSeeded ? p.seed : -1, 7919, src.seed] : groupSeeds);
+      return G3.snapshotSeedState();
+    };
+    const specFor = (o, stub, mesh) => {
+      const st = resolveStyle(o.id, null);
+      const sp = (st && st.params) || {};
+      const spec = buildSurfaceLockSpec(p, sb, { id: o.id, convex: mesh ? mesh.convex : undefined }, o, { style: st }, sp);
+      if (!spec) return {};
+      spec.seed = seedFor(o.id);
+      spec.noHighlight = sp.highlightTreatment === 'none' || sp.highlightTreatment === 'keep';
+      return spec;
+    };
+    return { seedFor, specFor };
+  };
+  // The BakeSpecs a Level S compose of (params, bounds) would look up in the SurfaceLock cache, in object order. Pose-free (no
+  // camera yaw/pitch, no light), so a drag frame's answer is the same as the settled one. [] when the scene is not Level S.
+  const levelSBakeSpecs = (params, bounds) => {
+    const V3 = Vectura.Scene3D;
+    const SL = V3 && V3.SurfaceLock;
+    if (!SL || typeof SL.sceneBakeSpecs !== 'function') return [];
+    const snap = G3.snapshotSeedState();
+    try {
+      const p = V3.Params.normalizeParams(params);
+      if (typeof SL.frameable !== 'function' || SL.frameable(p, bounds) !== true) return [];
+      const groupSeeded = p.seedMode === 'seeded';
+      const groupSeeds = groupSeeded ? [p.seed] : null;
+      G3.setSeedState(groupSeeds);
+      const sb = Object.assign({}, bounds, { penWidth: finite(bounds && bounds.penWidth, 0.3) });
+      const resolveStyle = makeStyleResolver(p.styleTable);
+      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      const { seedFor, specFor } = levelSSpecHelpers(p, sb, groupSeeds, groupSeeded, resolveStyle, objById);
+      return SL.sceneBakeSpecs(p, sb, { seedFor, specFor });
+    } catch (err) {
+      return [];
+    } finally {
+      G3.restoreSeedState(snap);
+    }
+  };
   const composeSurfaceLockScene = (p, bounds, groupSeeds, groupSeeded) => {
     const V3 = Vectura.Scene3D;
     const SL = V3.SurfaceLock;
@@ -1699,20 +1742,7 @@
       const lt = (o && o.transform) || {};
       return JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, lights, shape ? [shape.gamma, shape.contrast] : null]);
     };
-    const seedFor = (id) => {
-      const src = id === 'ground' ? null : objById.get(id);
-      G3.setSeedState(src && src.seedMode === 'seeded' ? [groupSeeded ? p.seed : -1, 7919, src.seed] : groupSeeds);
-      return G3.snapshotSeedState();
-    };
-    const specFor = (o, stub, mesh) => {
-      const st = resolveStyle(o.id, null);
-      const sp = (st && st.params) || {};
-      const spec = buildSurfaceLockSpec(p, sb, { id: o.id, convex: mesh ? mesh.convex : undefined }, o, { style: st }, sp);
-      if (!spec) return {};
-      spec.seed = seedFor(o.id);
-      spec.noHighlight = sp.highlightTreatment === 'none' || sp.highlightTreatment === 'keep';
-      return spec;
-    };
+    const { seedFor, specFor } = levelSSpecHelpers(p, sb, groupSeeds, groupSeeded, resolveStyle, objById);
     const emitInto = (runs, baseMeta, treat, opts) => {
       const floor = !(opts && opts.noFloor);
       for (let ri = 0; ri < runs.length; ri++) {
@@ -1831,6 +1861,7 @@
     // Level S gate (contract §13) as a pose-invariant question: would `generate` compose this scene from cached surface-lock
     // data? Reads no camera and no transform, so one answer holds for a whole drag. The engine uses it to run a drag frame
     // through the full tier with no pose warp and no spin ring (the frame is the export).
+    levelSBakeSpecs: (params = {}, bounds = {}) => levelSBakeSpecs(params, bounds),
     levelS: (params = {}, bounds = {}) => {
       const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
       if (!SL || typeof SL.frameable !== 'function') return false;

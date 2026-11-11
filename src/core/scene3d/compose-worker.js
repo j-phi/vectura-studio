@@ -11,9 +11,11 @@ self.onmessage = (e) => {
       importScripts.apply(self, m.scripts);
       self.postMessage({ type: 'ready' });
     } else if (m.type === 'job') {
-      const out = self.Vectura.Scene3D.ComposeJob.run(m.job);
-      self.postMessage({ type: 'result', id: m.id, packed: out.packed, finished: out.finished, ms: out.ms },
-        out.packed.buffers.concat(out.finished ? out.finished.buffers : []));
+      const Job = self.Vectura.Scene3D.ComposeJob;
+      const out = Job.run(m.job, { release: true });
+      // The MarkSets this compose baked travel back too (transferred: no copy), so the main thread's cache is warm.
+      self.postMessage({ type: 'result', id: m.id, packed: out.packed, finished: out.finished, bakes: out.bakes, ms: out.ms },
+        out.packed.buffers.concat(out.finished ? out.finished.buffers : [], Job.bakeBuffers(out.bakes)));
     }
   } catch (err) {
     self.postMessage({ type: 'error', id: m.id, message: String(err && err.message || err) });
