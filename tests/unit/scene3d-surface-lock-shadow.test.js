@@ -199,15 +199,20 @@ describe('surface lock ground shadow', () => {
     expect(SH.supports({ ...ok, shadow: { ...SHADOW, shadowMode: 'inverse' } })).toBe(false);
   });
 
-  it('perf: frameShadow and bake stay inside the contract budgets', () => {
+  // Deterministic work bound (wall-clock budgets live in tests/perf/scene3d-surface-lock-shadow.test.js): the bake is
+  // one O(lines) pass, so a bounded line count is the budget, and frameShadow emits at most one segment per kept line.
+  it('bake and frameShadow do bounded work (line count and segments derived from the contract)', () => {
     SH.clearCache();
-    const t0 = performance.now(); const h = bake(SHADOW, 7); const bakeMs = performance.now() - t0;
-    const times = [];
-    for (let i = 0; i < 60; i += 1) { const s = performance.now(); SH.frameShadow(h, [SPHERE], dir, poseFor(-30)); times.push(performance.now() - s); }
-    times.sort((a, b) => a - b);
-    console.log('shadow perf: bake ms', bakeMs.toFixed(2), 'frame median ms', times[30].toFixed(3), 'lines', h.count);
-    expect(bakeMs).toBeLessThan(20);
-    expect(times[30]).toBeLessThan(1);
+    const h = bake(SHADOW, 7);
+    const pitchBound = 2 * (h.hx + h.hz) / h.pitch + 2;
+    expect(h.count).toBeGreaterThan(0);
+    expect(h.count).toBeLessThanOrEqual(pitchBound);
+    expect(h.count).toBeLessThanOrEqual(40000);
+    expect(h.pitch).toBeGreaterThanOrEqual(0.05 / h.subdiv);
+    const out = SH.frameShadow(h, [SPHERE], dir, poseFor(-30));
+    expect(out.runs.length).toBeGreaterThan(0);
+    expect(out.runs.length).toBeLessThanOrEqual(h.count); // one caster: at most one run per baked line
+    expect(out.world.length).toBe(out.runs.length * 4);
   });
 
   // FX-J4 (owner Q3 bar): at every pose the locked shadow's nearest-line gap is >= 0.8 x the pose gap and its ink is
