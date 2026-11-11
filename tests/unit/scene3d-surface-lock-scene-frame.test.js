@@ -180,14 +180,15 @@ describe('surface lock Level S (sceneFrame wired into generateScene)', () => {
         });
       });
 
-      it(`${name}: the cast shadow matches the pose-compositor shadow (ink within 15 %, same place) and stays pickable (§10)`, () => {
+      it(`${name}: the cast shadow matches the pose-compositor shadow (ink in [0.6, 1.15] x pose, same place) and stays pickable (§10)`, () => {
         const s = build(toneLaw);
         [{ camYaw: -30, camPitch: 20 }, { camYaw: 80, camPitch: 30 }, { camYaw: 0, camPitch: 45 }].forEach((pose) => {
           s.setPose(pose);
           const S = shadowsOf(s.composeFull());
           const F = shadowsOf(withoutLevelS(() => s.composeFull()));
           const ratio = totalLen(S) / totalLen(F);
-          expect(ratio, `ink ${JSON.stringify(pose)}`).toBeGreaterThan(0.85);
+          // Q3: world-fixed lines under a spacing floor may be lighter than pose; the spacing bar is the FX-S test below.
+          expect(ratio, `ink ${JSON.stringify(pose)}`).toBeGreaterThan(0.6);
           expect(ratio).toBeLessThan(1.15);
           // Every locked shadow mark lies inside the pose shadow's footprint (the union of its pickPolygons).
           const poly = tgt(F[0]).pickPolygon;
@@ -306,6 +307,112 @@ describe('surface lock Level S (sceneFrame wired into generateScene)', () => {
       expect(SL.frameable(gfill, bounds)).toBe(false);
       const wire = JSON.parse(JSON.stringify(p0)); wire.styleTable.byObject[wire.objects[0].id].mapper = 'wireframe';
       expect(SL.frameable(wire, bounds)).toBe(false);
+    });
+  });
+
+  // ── FX-S (W2-C review I1-I4, Q3, explainMarkSpace) ─────────────────────────────────────────────────────────────────
+  describe('FX-S: shadow spacing floor, multi-sun, ground ring, pose emit order', () => {
+    const POSES = [];
+    [-30, 40, 120].forEach((yaw) => [5, 8, 12, 15, 20, 30, 45].forEach((pitch) => POSES.push({ camYaw: yaw, camPitch: pitch })));
+    // Nearest distance from each sample to a DIFFERENT path (the line gap), 1st percentile.
+    const gapStats = (paths) => {
+      const pts = [];
+      paths.forEach((p, pi) => { for (let i = 1; i < p.length; i++) {
+        const a = p[i - 1]; const b = p[i]; const L = Math.hypot(b.x - a.x, b.y - a.y); const n = Math.max(1, Math.ceil(L / 0.25));
+        for (let k = 0; k < n; k++) { const t = k / n; pts.push([a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, pi]); }
+      } });
+      const grid = new Map();
+      pts.forEach((q, i) => { const k = `${Math.floor(q[0])},${Math.floor(q[1])}`; (grid.get(k) || grid.set(k, []).get(k)).push(i); });
+      const d = [];
+      pts.forEach((q) => {
+        let best = 1e9; const cx = Math.floor(q[0]); const cy = Math.floor(q[1]);
+        for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) (grid.get(`${cx + dx},${cy + dy}`) || []).forEach((j) => {
+          const r = pts[j]; if (r[2] === q[2]) return; best = Math.min(best, Math.hypot(r[0] - q[0], r[1] - q[1]));
+        });
+        if (best < 1e9) d.push(best);
+      });
+      d.sort((a, b) => a - b);
+      return d.length ? { p1: d[Math.floor(0.01 * (d.length - 1))], p50: d[Math.floor(0.5 * (d.length - 1))] } : null;
+    };
+    const FX = { measured: [] };
+    LAWS.forEach(({ name, toneLaw }) => {
+      it(`${name}: the locked shadow keeps its line gap >= 0.8 x pose and its ink in [0.6, 1.15] x pose (I1, Q3)`, () => {
+        const s = build(toneLaw);
+        const worstSpacing = []; const ink = [];
+        POSES.forEach((pose) => {
+          s.setPose(pose);
+          const S = shadowsOf(s.composeFull());
+          const F = withoutLevelS(() => shadowsOf(s.composeFull()));
+          const gs = gapStats(S); const gf = gapStats(F);
+          if (!gs || !gf) return;
+          const ratio = gs.p1 / gf.p1; worstSpacing.push({ pose, ratio });
+          // Pose may be lighter than the shadow only at low pitch; the ink bar applies at every pose.
+          ink.push({ pose, ratio: totalLen(S) / totalLen(F) });
+        });
+        expect(worstSpacing.length).toBeGreaterThan(15);
+        const minSp = Math.min(...worstSpacing.map((q) => q.ratio));
+        const inkMin = Math.min(...ink.map((q) => q.ratio)); const inkMax = Math.max(...ink.map((q) => q.ratio));
+        FX.measured.push({ name, minSp, inkMin, inkMax });
+        // eslint-disable-next-line no-console
+        console.log('FX-S shadow', name, 'min spacing ratio', minSp.toFixed(3), 'ink', inkMin.toFixed(3), inkMax.toFixed(3));
+        expect(minSp).toBeGreaterThanOrEqual(0.8);
+        expect(inkMin).toBeGreaterThanOrEqual(0.6);
+        expect(inkMax).toBeLessThanOrEqual(1.15);
+      });
+    });
+
+    it('two shadow-casting suns: every sun casts its footprint, length within 15 % of Level F (I2)', () => {
+      const s = build('ladder');
+      s.eng.addLightToScene(s.gid, 'directional');
+      const lights = s.eng.getLayerDescendants(s.gid).filter((l) => l && l.type === 'sceneLight3d');
+      expect(lights.length).toBeGreaterThan(1);
+      lights.forEach((l, i) => { l.params.castShadows = true; l.params.azimuth = i === 0 ? 135 : 300; l.params.elevation = 45; });
+      s.setPose({ camYaw: -30, camPitch: 20 });
+      const S = shadowsOf(s.composeFull());
+      const F = withoutLevelS(() => shadowsOf(s.composeFull()));
+      expect(F.length).toBeGreaterThan(0);
+      expect(Math.abs(totalLen(S) / totalLen(F) - 1)).toBeLessThan(0.15);
+    });
+
+    it('an enlarged ground x3: the ground outline equals Level F within 0.15 mm (I3)', () => {
+      const s = build('ladder');
+      const g = s.eng.getLayerDescendants(s.gid).find((l) => l && l.type === 'sceneGround3d');
+      g.params.scaleX = 3; g.params.scaleZ = 3;
+      s.setPose({ camYaw: -30, camPitch: 20 });
+      const S = edgesOf(s.composeFull(), 'ground');
+      const F = withoutLevelS(() => edgesOf(s.composeFull(), 'ground'));
+      expect(F.length).toBeGreaterThan(0);
+      expect(Math.abs(totalLen(S) - totalLen(F))).toBeLessThan(0.15);
+      const bbox = (paths) => { const b = [Infinity, Infinity, -Infinity, -Infinity]; paths.forEach((p) => p.forEach((q) => { b[0] = Math.min(b[0], q.x); b[1] = Math.min(b[1], q.y); b[2] = Math.max(b[2], q.x); b[3] = Math.max(b[3], q.y); })); return b; };
+      bbox(S).forEach((v, i) => expect(Math.abs(v - bbox(F)[i])).toBeLessThan(0.15));
+    });
+
+    it('paint and export order is the pose order: objects, then the ground outline, then the shadow last (I4)', () => {
+      const s = build('ladder');
+      s.setPose({ camYaw: -30, camPitch: 20 });
+      const paths = s.composeFull();
+      const lastObject = paths.map((p, i) => ((metaOf(p).kind === 'sceneFill' || metaOf(p).kind === 'sceneEdge') && tgt(p).objectId !== 'ground' && !isShadow(p) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+      const firstGround = paths.findIndex((p) => tgt(p).objectId === 'ground' && !isShadow(p));
+      const firstShadow = paths.findIndex(isShadow);
+      expect(firstShadow).toBeGreaterThan(-1);
+      expect(firstGround).toBeGreaterThan(lastObject);
+      expect(firstShadow).toBeGreaterThan(firstGround);
+    });
+
+    it('explainMarkSpace names the exclusion that forces pose, or no baker, or surface', () => {
+      expect(typeof SL.explainMarkSpace).toBe('function');
+      expect(SL.explainMarkSpace({ markSpace: 'pose' }, {})).toEqual({ mode: 'pose', reason: 'markSpace' });
+      expect(SL.explainMarkSpace({ markSpace: 'surface', toneBands: 3 }, {})).toEqual({ mode: 'pose', reason: 'toneBands' });
+      expect(SL.explainMarkSpace({ markSpace: 'surface' }, { receiveShadow: true })).toEqual({ mode: 'pose', reason: 'receiveShadow' });
+      expect(SL.explainMarkSpace({ markSpace: 'surface' }, { mapper: 'nonexistentMapper', spec: { mapper: 'nonexistentMapper', style: { markSpace: 'surface' } } })).toEqual({ mode: 'pose', reason: 'no baker' });
+      EXCL_AGREE();
+      function EXCL_AGREE() {
+        SL.EXCLUSIONS.forEach((e) => {
+          const r = SL.explainMarkSpace(Object.assign({ markSpace: 'surface' }, e.example.style || {}), e.example.ctx || {});
+          expect(r.mode).toBe('pose'); expect(r.reason).toBe(e.id);
+          expect(SL.effectiveMarkSpace(Object.assign({ markSpace: 'surface' }, e.example.style || {}), e.example.ctx || {})).toBe(r.mode);
+        });
+      }
     });
   });
 });

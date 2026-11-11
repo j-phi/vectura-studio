@@ -2,6 +2,7 @@
  * Scene3D.SurfaceLock — surface-locked fills: bake once, frame per pose (docs/surface-lock-contract.md).
  *
  *   effectiveMarkSpace(style, ctx) -> 'pose' | 'surface'     contract §12 (EXCLUSIONS is data)
+ *   explainMarkSpace(style, ctx) -> { mode, reason }          the same decision with the exclusion id / 'no baker'
  *   bakerFor(spec) -> baker | null                            contract §9 (BAKER_KEYS order)
  *   bakeKey(spec) -> string                                   contract §8
  *   bake(spec) -> MarkSet (cached, LRU by bytes)              contract §8, §9
@@ -108,6 +109,18 @@
     const mapper = spec.mapper || cx.mapper || st.mapper;
     for (let i = 0; i < EXCLUSIONS.length; i++) if (EXCLUSIONS[i].test(st, cx, mapper)) return 'pose';
     return bakerFor(spec) ? 'surface' : 'pose';
+  };
+
+  // Why a style is (not) surface-locked: effectiveMarkSpace plus the reason, so the panel can say why the control is
+  // disabled. reason: 'markSpace' (the style asks for pose), an EXCLUSIONS id, 'no baker', or 'surface' (locked).
+  const explainMarkSpace = (style, ctx) => {
+    const st = style && typeof style === 'object' ? style : {};
+    if (st.markSpace !== 'surface') return { mode: 'pose', reason: 'markSpace' };
+    const cx = ctx && typeof ctx === 'object' ? ctx : {};
+    const spec = cx.spec || Object.assign({}, cx, { style: st });
+    const mapper = spec.mapper || cx.mapper || st.mapper;
+    for (let i = 0; i < EXCLUSIONS.length; i++) if (EXCLUSIONS[i].test(st, cx, mapper)) return { mode: 'pose', reason: EXCLUSIONS[i].id };
+    return bakerFor(spec) ? { mode: 'surface', reason: 'surface' } : { mode: 'pose', reason: 'no baker' };
   };
 
   // ── bake key and cache (contract §8) ────────────────────────────────────────────────────────────────────────────
@@ -577,11 +590,12 @@
       id: 'shadow',
       test: (p) => {
         const lights = p.lights || [];
-        const casts = lights.some((l) => l && l.type === 'directional' && l.castShadows !== false) && p.ground && p.ground.enabled !== false;
+        const suns = lights.filter((l) => l && l.type === 'directional' && l.castShadows !== false);
+        const casts = suns.length > 0 && p.ground && p.ground.enabled !== false;
         if (!casts) return true;
         const S = Scene3D.SurfaceLockShadow;
-        const light = lights.find((l) => l && l.type === 'directional' && l.castShadows !== false);
-        return !!S && typeof S.supports === 'function' && !!S.supports({ shadow: p.shadow, light, lights, ground: p.ground, casters: p.objects });
+        // Every casting sun is framed (pose casts one footprint per sun), so every one must be supported.
+        return !!S && typeof S.supports === 'function' && suns.every((light) => S.supports({ shadow: p.shadow, light, lights, ground: p.ground, casters: p.objects }));
       },
     },
   ]);
@@ -624,6 +638,55 @@
     return { primitive: o.primitive, shape: 'hull', points };
   };
 
+  // The projected, closed ground outline, cut exactly as the pose ground record is (Scene.buildGroundRecord): the
+  // perspective near plane, and an enlarged plate (> 1x) to the artboard plus a 25 % pad. Null when nothing is visible.
+  // (buildGroundRecord is private to scene.js and a full assembleScene is what Level S exists to avoid; the cut is the
+  // same Sutherland-Hodgman against linear camera-space planes, and the ground-parity test pins it to the pose outline.)
+  const groundRing = (ground, camera, bounds) => {
+    const G3 = Vectura.Geometry3D;
+    const g = ground || {}; const cam = camera || {}; const b = bounds || {};
+    const width = num(b.width, 200); const height = num(b.height, 200);
+    const o = Scene3D.Scene.buildProjOpts(cam, { width, height });
+    const ang = { yaw: num(cam.yaw, 0), pitch: num(cam.pitch, 0), roll: num(cam.roll, 0) };
+    const persp = Number.isFinite(o.focal) && o.focal > 0;
+    const focal = persp ? o.focal : 0; const camDist = persp ? num(o.cameraDist, 0) : 0;
+    const span = Math.max(width, height) * 0.75;
+    const hx = span * Math.max(0, num(g.scaleX, 1)); const hz = span * Math.max(0, num(g.scaleZ, 1));
+    let verts = [{ x: -hx, y: 0, z: hz }, { x: hx, y: 0, z: hz }, { x: hx, y: 0, z: -hz }, { x: -hx, y: 0, z: -hz }];
+    const clip = (vs, keep) => {
+      const vals = vs.map((pt) => keep(G3.rotatePoint(pt, ang)));
+      if (vals.every((d) => d >= 0)) return vs;
+      const out = [];
+      vs.forEach((a, i) => {
+        const j = (i + 1) % vs.length; const da = vals[i]; const db = vals[j];
+        if (da >= 0) out.push(a);
+        if ((da >= 0) !== (db >= 0)) { const t = da / (da - db); out.push({ x: a.x + (vs[j].x - a.x) * t, y: a.y + (vs[j].y - a.y) * t, z: a.z + (vs[j].z - a.z) * t }); }
+      });
+      return out;
+    };
+    if (persp) {
+      const zMax = focal + camDist - focal * 0.1;
+      verts = clip(verts, (c) => zMax - c.z);
+      if (verts.length < 3) return null;
+    }
+    if (Math.max(num(g.scaleX, 1), num(g.scaleZ, 1)) > 1) {
+      const pad = Math.max(width, height) * 0.25;
+      const x0 = -pad; const x1 = width + pad; const y0 = -pad; const y1 = height + pad;
+      const cx = num(o.centerX, width / 2); const cy = num(o.centerY, height / 2);
+      const scale = num(o.scale, 1); const k = persp ? focal * scale : scale;
+      const den = persp ? (c) => focal + camDist - c.z : () => 1;
+      const planes = [
+        (c) => (cx - x0) * den(c) + k * c.x, (c) => (x1 - cx) * den(c) - k * c.x,
+        (c) => (cy - y0) * den(c) - k * c.y, (c) => (y1 - cy) * den(c) + k * c.y,
+      ];
+      for (let i = 0; i < planes.length && verts.length >= 3; i += 1) verts = clip(verts, planes[i]);
+      if (verts.length < 3) return null;
+    }
+    const pr = verts.map((v) => G3.projectPoint(G3.rotatePoint(v, ang), o));
+    if (!pr.every((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y))) return null;
+    return pr.concat([pr[0]]).map((q) => ({ x: q.x, y: q.y, z: q.z }));
+  };
+
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -636,8 +699,8 @@
     const camPose = poseOf({}, p.camera, bounds);
 
     const lights = p.lights || [];
-    const sun = lights.find((l) => l && l.type === 'directional' && l.castShadows !== false);
-    const shadowOn = !!(sun && p.ground && p.ground.enabled !== false && Sh && Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects }));
+    const suns = lights.filter((l) => l && l.type === 'directional' && l.castShadows !== false);
+    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
 
     // Occlusion buffer: several objects, a non-convex one, or a cast shadow to clip (contract §7).
     let occ = null;
@@ -656,9 +719,11 @@
     };
     const GROUND_SEG = { obj: -1, mode: 'fill' };
 
-    // 1. shadow, then the ground outline (world-fixed)
+    // 1. the ground outline and the cast shadow (world-fixed). They are computed here but emitted after the objects, in
+    // pose order (objects, ground edges, shadows last): `out` drives the export's first-seen pen-group order.
     const cam = p.camera || {};
     const groundOn = !!(p.ground && p.ground.enabled !== false);
+    const deferredGround = []; const deferredShadow = [];
     if (shadowOn) {
       const seed = seedOf('ground');
       const persp = camPose.cam.persp;
@@ -666,25 +731,25 @@
       const gspec = { width: num(bounds && bounds.width, 200), height: num(bounds && bounds.height, 200), scaleX: num(p.ground.scaleX, 1), scaleZ: num(p.ground.scaleZ, 1), scaleRef };
       const hatch = auxGet(1, JSON.stringify([gspec, p.shadow, penWidth, seed]), () => Sh.bakeGround(gspec, p.shadow, penWidth, seed));
       const L = Scene3D.Lighting;
-      const dir = ctx.lightDirWorld || (L && L.lightWorldDir ? L.lightWorldDir(sun) : { x: 0, y: -1, z: 0 });
       // A per-object cast toggle (obj.shadow.enabled === false) drops that object's shadow, as Shadows.build does.
       const casting = objects.map((o, i) => i).filter((i) => !(objects[i].shadow && objects[i].shadow.enabled === false));
       const casters = casting.map((i) => casterOf(objects[i], meshes[i], poses[i]));
-      const res = Sh.frameShadow(hatch, casters, dir, camPose);
-      if (res && res.runs && res.runs.length) {
-        const out = [];
-        res.runs.forEach((r) => clipLine(r.pts, GROUND_SEG, false).forEach((q) => out.push(q)));
-        if (out.length) ctx.emitShadow(out, { footprints: res.footprints || [], casterIds: casting.map((i) => objects[i].id), camPose });
-      }
+      // Pose casts one footprint per casting sun; the ground hatch bake is light-free and shared.
+      suns.forEach((sun, si) => {
+        const dir = (si === 0 && ctx.lightDirWorld) || (L && L.lightWorldDir ? L.lightWorldDir(sun) : { x: 0, y: -1, z: 0 });
+        const res = Sh.frameShadow(hatch, casters, dir, camPose);
+        if (res && res.runs && res.runs.length) {
+          const out = [];
+          res.runs.forEach((r) => clipLine(r.pts, GROUND_SEG, false).forEach((q) => out.push(q)));
+          if (out.length) deferredShadow.push(() => ctx.emitShadow(out, { footprints: res.footprints || [], casterIds: casting.map((i) => objects[i].id), camPose }));
+        }
+      });
     }
     if (groundOn && typeof ctx.emitGround === 'function') {
-      const gw = num(bounds && bounds.width, 200); const gh = num(bounds && bounds.height, 200);
-      const span = Math.max(gw, gh) * 0.75;
-      const hx = span * Math.max(0, num(p.ground.scaleX, 1)); const hz = span * Math.max(0, num(p.ground.scaleZ, 1));
-      const corners = [[-hx, hz], [hx, hz], [hx, -hz], [-hx, -hz], [-hx, hz]].map((c) => Scene3D.Scene.projectWorldPoint({ x: c[0], y: 0, z: c[1] }, cam, bounds));
-      if (corners.every((c) => c)) {
-        const out = clipLine(corners, GROUND_SEG, false);
-        if (out.length) ctx.emitGround(out);
+      const ring = groundRing(p.ground, cam, bounds);
+      if (ring) {
+        const out = clipLine(ring, GROUND_SEG, false);
+        if (out.length) deferredGround.push(() => ctx.emitGround(out));
       }
     }
 
@@ -725,6 +790,8 @@
         });
       }
     });
+    deferredGround.forEach((fn) => fn());
+    deferredShadow.forEach((fn) => fn());
     const dt = now() - t0;
     stats.msFrameLast = dt;
     return complete ? undefined : false;
@@ -738,6 +805,7 @@
     stats,
     resetStats,
     effectiveMarkSpace,
+    explainMarkSpace,
     bakerFor,
     frameable,
     bakeKey,

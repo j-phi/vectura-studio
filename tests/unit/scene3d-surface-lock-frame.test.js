@@ -327,7 +327,8 @@ describe('surface lock frame pipeline', () => {
           emitEdge: (id, cls, runs) => calls.push(`edge:${id}:${cls}:${runs.length}`),
         };
         expect(SL.sceneFrame(p, BOUNDS, ctx)).toBeUndefined();
-        expect(calls).toEqual(['shadow:1', 'fill:a:true', 'edge:a:silhouette:1', 'fill:b:true', 'edge:b:silhouette:1', 'edge:b:crease:1']);
+        // FX-S (I4): pose order, objects first, then the ground outline, the shadow last.
+        expect(calls).toEqual(['fill:a:true', 'edge:a:silhouette:1', 'fill:b:true', 'edge:b:silhouette:1', 'edge:b:crease:1', 'shadow:1']);
         expect(SL.stats.sceneFrames).toBe(1);
         expect(SL.stats.frames).toBe(2);
         expect(bakes).toBe(1); // one spec for both objects (objectId is not in the key)

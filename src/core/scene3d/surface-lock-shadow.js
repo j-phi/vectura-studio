@@ -48,6 +48,7 @@
     MAX_LINES: 40000,
     MIN_PITCH_MM: 0.05,
     MEMO_MAX: 8,
+    SPACING_FLOOR: 0.8,      // closest drawn pair of shadow lines >= this x the pose spacing on screen (owner Q3)
   };
   const TUNE = Object.assign({}, DEFAULTS);
   TUNE.MIN_ABS_DY = Math.sin(TUNE.MIN_ELEVATION_DEG * Math.PI / 180);
@@ -442,6 +443,10 @@
       const f = screenPitchFactor(project, hatch, fx / prepared.length, fz / prepared.length);
       thin = clamp(f / hatch.scaleRef, 0, 1);
       if (!(thin > 1e-6)) return EMPTY();
+      // Spacing floor: the drawn gap is a whole number of baked lines, so thinning to exactly f / scaleRef would leave
+      // gaps of floor(1 / thin) lines, denser than the pose pitch (foreshortened lines compress). Round the stride up
+      // so the closest pair of drawn lines stays at least SPACING_FLOOR x the pose spacing on screen.
+      if (thin < 1) thin = Math.min(thin, 1 / Math.max(1, Math.ceil(TUNE.SPACING_FLOOR / thin - 1e-9)));
     }
 
     const { dirX: ux, dirZ: uz, nX: nx, nZ: nz, pitch, phase, iMin, count } = hatch;
