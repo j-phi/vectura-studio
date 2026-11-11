@@ -448,10 +448,18 @@ Perf tests assert counters and generous clocks (no wall-clock ratios; see `tests
   `outline` (sphere and ellipsoid: analytic limb; others: silhouette and crease edges of the cached mesh,
   classified per frame), ground outline (world-fixed, projected), `frameShadow`. Mesh, edge adjacency,
   ground hatch and MarkSets are cached object-space data (`SurfaceLockVisibility.meshBake`).
-- Engine (W2-B): a group whose scene has any effective-surface fill composes preview frames at tier
-  `'full'` (no draft tier, no PosePreview warp or snapshot), so the drag frame is the export. SpinRing is
-  skipped for frameable scenes (renderer `_spinMaintain`/`_spinTarget`). Pose-only scenes keep every
-  existing path.
+- Engine (W2-B1): `AlgorithmRegistry.scene3d.levelS(params, bounds)` is `SurfaceLock.frameable` on the normalized
+  scene (pose-invariant). A **Level S** scene (the gate holds) composes preview frames at tier `'full'` with
+  no PosePreview warp or snapshot and at the settled quality (the renderer's draft drag quality is not
+  used), so the drag frame is the export and the release settle is a compose-memo hit (no worker post).
+  `group._sceneLevelS` carries the answer to the renderer, which starts no SpinRing for it. If a Level S
+  generate falls back (`sceneFallbacks` moves), the group is pose until its next settled compose.
+  **Partly frameable** scenes (some surface fill, but `levelS` false: a point light, a border, a second
+  object that is pose, I2/I3 exclusions) keep the warp, the SpinRing and the draft tiers: under a warp the
+  locked marks move with the surface, so the preview is near-exact and the settle is exact.
+- Level S and Level F fill paths carry `meta.surfaceLocked: true`; `Engine._applySceneCurveFinish` skips the
+  Fill Curves fit for them (the marks are the surface's own; the fit cost 6-19 ms a frame). Border and edge
+  curves are unchanged.
 
 ## 14. Required tests (RGR witnesses)
 
