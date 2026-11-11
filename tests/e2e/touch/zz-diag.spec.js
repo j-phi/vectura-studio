@@ -10,14 +10,17 @@ test('diag value chip', async ({ page }) => {
   });
   await page.waitForTimeout(500);
   const info = await page.evaluate(() => {
-    const el = document.getElementById('set-margin-line-weight');
-    const cs = getComputedStyle(el);
-    const pick = (c) => ({ w: c.width, pl: c.paddingLeft, pr: c.paddingRight, bl: c.borderLeftWidth, br: c.borderRightWidth, bs: c.boxSizing, ff: c.fontFamily, fs: c.fontSize, ap: c.appearance, ls: c.letterSpacing, ox: c.overflowX, sbw: c.scrollbarWidth });
-    const sp = getComputedStyle(el, '::-webkit-inner-spin-button');
-    const ctx = document.createElement('canvas').getContext('2d');
-    const m = {};
-    ['16px "JetBrains Mono", monospace', '16px monospace', '16px sans-serif'].forEach((f) => { ctx.font = f; m[f] = ctx.measureText('0.125').width; });
-    return { type: el.type, el: pick(cs), cw: el.clientWidth, ow: el.offsetWidth, rw: el.getBoundingClientRect().width, spin: { d: sp.display, w: sp.width, ap: sp.appearance }, m, fontsOK: document.fonts.check('16px "JetBrains Mono"'), fonts: [...document.fonts].map((f) => f.family + ':' + f.status), html: el.outerHTML.slice(0, 300), parent: el.parentElement.className, pw: el.parentElement.getBoundingClientRect().width };
+    const els = [...document.querySelectorAll('.settings-panel input.slider-val-inp')].slice(0, 6);
+    const css = [
+      '',
+      '.v1::-webkit-inner-spin-button{display:none !important;-webkit-appearance:none !important;width:0 !important;margin:0 !important}',
+      '.v2{-webkit-appearance:none !important;appearance:none !important}',
+      '.v3{-webkit-appearance:none !important;appearance:none !important} .v3::-webkit-inner-spin-button,.v3::-webkit-outer-spin-button{display:none !important;-webkit-appearance:none !important;margin:0}',
+      '.v4{field-sizing:content !important;width:auto !important}',
+      '.v5{padding-right:0 !important;padding-left:0 !important;text-indent:0}',
+    ];
+    const st = document.createElement('style'); st.textContent = css.join('\n'); document.head.appendChild(st);
+    return els.map((el, i) => { el.classList.add('v' + i); const cs = getComputedStyle(el); return { i, id: el.id, cw: el.clientWidth, ow: el.offsetWidth, sw: el.scrollWidth, w: cs.width, ap: cs.appearance }; });
   });
-  expect(JSON.stringify(info, null, 1)).toBe('DIAG');
+  expect(JSON.stringify(info)).toBe('DIAG');
 });
