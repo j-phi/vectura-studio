@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: touch value chips no longer clip their digits on Chromium 1254
+- **Chip width is em-based, not ch-based.** Under `(pointer: coarse)` the value chips (`.slider-val-inp`, `.slider-val`, `.value-chip`, the Document Setup chips) were `6ch` wide. Playwright 1.65 bundles Chromium 1254, where that resolved to a 42px content box while "0.125" rendered 50px wide, so about 30 chips clipped and `TUX-042 value chips do not clip` went red on every Chromium touch project. They are now `3.9em` plus padding, which tracks the forced 16px font directly. Fine pointers are unchanged.
+
 ### Improved: every angle of a heavy 3D Scene fits (72 of 72), and a Start Page plate no longer hitches while it bakes
 - **A usable 5 degree ring for any scene.** The 24 MB cap used to bake only 17-39 of the 72 angles of a mezzotint sphere or a two-object scene, so a drag stepped 10-20 degrees. The first few baked frames (about 4 MB) stay exact; every other angle is kept as **playback ink**: the finished drawing with 16-bit coordinates (within 0.0026 mm of the exact ink, a quarter of the bytes) and no second copy of the unfinished drawing. Measured, headless Chromium: sphere + Mezzotint 72 of 72 in 10.8 MB (was 37 in 23.5), box 72 in 14.2 MB (was 59 in 23.8), sphere + box 72 in 23.0 MB (was 17 in 23.6).
 - **Release is still exact.** Letting go on an exact frame installs it as before. Letting go on a playback frame installs nothing from the ring: the exact drawing is composed by the ordinary background settle (the same compose that runs after any drag) while that frame's picture stays on screen, then the scene is exactly what a normal render gives (the byte-identical test covers it; export, plot stats and saved files are unchanged). The unpacking of that settle's result now happens a few milliseconds at a time instead of in one 50-110 ms task.
