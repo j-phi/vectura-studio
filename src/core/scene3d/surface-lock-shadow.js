@@ -73,11 +73,16 @@
   // Van der Corput base 2 over the low 24 bits: ranks of consecutive indices are low-discrepancy, so
   // {rank < k} is a quasi-evenly spaced subset for any k (the gain-2 nested ladder, made continuous).
   const vdc2 = (n) => {
-    let x = n >>> 0; let r = 0; let f = 0.5;
-    for (let b = 0; b < 24; b += 1) { if (x & 1) r += f; x >>>= 1; f *= 0.5; }
-    return r;
+    let x = n >>> 0; // bit-reverse the 32-bit word, keep the (reversed) low 24 bits: exactly the 24-step radical inverse
+    x = ((x >>> 1) & 0x55555555) | ((x & 0x55555555) << 1);
+    x = ((x >>> 2) & 0x33333333) | ((x & 0x33333333) << 2);
+    x = ((x >>> 4) & 0x0f0f0f0f) | ((x & 0x0f0f0f0f) << 4);
+    x = ((x >>> 8) & 0x00ff00ff) | ((x & 0x00ff00ff) << 8);
+    x = ((x >>> 16) | (x << 16)) >>> 0;
+    return (x >>> 8) / 16777216;
   };
-  const ctz = (n) => { if (!n) return 31; let c = 0; let x = n >>> 0; while (!(x & 1)) { x >>>= 1; c += 1; } return c; };
+  const clz32 = Math.clz32;
+  const ctz = (n) => { const x = n >>> 0; return x ? 31 - clz32(x & -x) : 31; };
 
   const lightDirOf = (light) => {
     if (!light) return null;
@@ -140,8 +145,19 @@
 
   // keep(t): fraction of the finest lines kept at throw parameter t (0 at the contact, 1 at the far tip).
   // The pose-mode buildGradedSpacing law: duty = sMin / sTarget(ladder(1 - t)), keep = 1 - depth (1 - duty).
+  // The LUT depends only on (tone, depth, pen), not on angle / seed / density / ground, and costs 513 ladder lookups, so a
+  // re-bake with the same tone (a density or angle drag) reuses it. It is read-only after the bake; clearCache drops it.
+  const lutMemo = new Map();
   const buildKeepLUT = (tone, depth, penWidth) => {
     if (!(depth > 0) || !tone || tone.enabled === false) return null;
+    const lk = toneKey(tone) + '|' + depth.toFixed(6) + '|' + penWidth.toFixed(6);
+    if (lutMemo.has(lk)) return lutMemo.get(lk);
+    const lut = buildKeepLUTUncached(tone, depth, penWidth);
+    lutMemo.set(lk, lut);
+    while (lutMemo.size > 8) lutMemo.delete(lutMemo.keys().next().value);
+    return lut;
+  };
+  const buildKeepLUTUncached = (tone, depth, penWidth) => {
     const maxCov = ladderCoverageAt(1, tone);
     if (maxCov == null || !(maxCov > 0)) return null;
     const sMin = coverageToSpacing(maxCov, penWidth);
@@ -199,19 +215,28 @@
     const rank = new Float64Array(maxCount); const level = new Uint8Array(maxCount);
     const maxLevels = Math.max(1, finite((Vectura.SCENE3D_SURFACE_LOCK || {}).MAX_LEVELS, 6));
     // Index into the arrays is i - iMin for every i in [iMin, iMax]; a line the rectangle misses keeps t0 > t1.
+    // Math is read once: this loop runs once per baked line, and a global lookup per call is the dominant cost in a sandboxed realm.
+    const mAbs = Math.abs; const mMin = Math.min; const mMax = Math.max;
+    const uxFlat = mAbs(ux) < 1e-12; const uzFlat = mAbs(uz) < 1e-12;
+    const cap = maxLevels - 1;
     for (let k = 0; k < maxCount; k += 1) {
       const off = (iMin + k + phase) * pitch;
       // Clip  s*u + off*n  to |x| <= hx, |z| <= hz (slab test).
       let lo = -Infinity; let hi = Infinity;
-      const slab = (u, o, h) => {
-        if (Math.abs(u) < 1e-12) { if (Math.abs(o) > h) { lo = Infinity; hi = -Infinity; } return; }
-        const a = (-h - o) / u; const b = (h - o) / u;
-        lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
-      };
-      slab(ux, off * nx, hx); slab(uz, off * nz, hz);
+      let o = off * nx;
+      if (uxFlat) { if (mAbs(o) > hx) { lo = Infinity; hi = -Infinity; } } else {
+        const a = (-hx - o) / ux; const b = (hx - o) / ux;
+        lo = mMax(lo, mMin(a, b)); hi = mMin(hi, mMax(a, b));
+      }
+      o = off * nz;
+      if (uzFlat) { if (mAbs(o) > hz) { lo = Infinity; hi = -Infinity; } } else {
+        const a = (-hz - o) / uz; const b = (hz - o) / uz;
+        lo = mMax(lo, mMin(a, b)); hi = mMin(hi, mMax(a, b));
+      }
       d[k] = off; t0[k] = lo; t1[k] = hi;
       rank[k] = vdc2(k);
-      level[k] = Math.min(ctz(k), maxLevels - 1);
+      const c = ctz(k);
+      level[k] = c < cap ? c : cap;
     }
     const hatch = {
       key, subdiv, angleDeg, dirX: ux, dirZ: uz, nX: nx, nZ: nz, pitch, phase, iMin, count: maxCount, hx, hz, scaleRef, penWidth: pw,
@@ -540,7 +565,7 @@
     bakeGround,
     frameShadow,
     receiveMap: () => { throw new Error('SurfaceLockShadow.receiveMap: not implemented (surface-lock unit W3-C)'); },
-    clearCache: () => memo.clear(),
+    clearCache: () => { memo.clear(); lutMemo.clear(); },
     get MIN_ABS_DY() { return TUNE.MIN_ABS_DY; },
     get MIN_RUN_MM() { return TUNE.MIN_RUN_MM; },
     CONVEX_PRIMITIVES,
