@@ -2301,11 +2301,12 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
   // docked-panel tests below. `dutyConst` is U7-2's own probe case and a real
   // caveat-bearing law reachable here (Shadows.toneLawApplies('dutyConst')
   // === true).
-  test('U5b-4 — a caveat-bearing shadow law (dutyConst) renders a standalone .is-caveat paragraph in the Shadow flyout', () => {
+  test('U5b-4 — a caveat-bearing shadow law (dutyConst) renders a standalone .is-info paragraph in the Shadow flyout (U5: an explanation, not a warning)', () => {
     const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'dutyConst' } });
     expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('dutyConst');
-    const caveat = fly.querySelector('.ctxbar-fly-note.is-caveat');
+    const caveat = fly.querySelector('.ctxbar-fly-note.is-info');
     expect(caveat).toBeTruthy();
+    expect(fly.querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
     expect(caveat.textContent).toBe(F.note('dutyConst').caveat);
   });
 
@@ -2319,7 +2320,7 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
   // — the caveat must not seed or read any sub-control key onto `shadow`.
   test('U5b-4 — the caveat does not seed a sub-control onto the shadow bag', () => {
     const { scene, fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'dutyConst' } });
-    expect(fly.querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
+    expect(fly.querySelector('.ctxbar-fly-note.is-info')).toBeTruthy();
     const shadowKeys = Object.keys(scene.params.shadow || {});
     expect(shadowKeys).not.toContain('rungDetail');
     expect(shadowKeys).not.toContain('bundleMode');

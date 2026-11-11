@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: Fill Style caveats are informational unless they warn
+- Each tone-law caveat now carries a `caveatKind` (`info` or `warning`, set in `docs/tone-laws/laws.json`). Explanations of intended behaviour (for example Duty Cycle's "open paper in highlights is intentional") use a calm `.is-info` note in the context-bar flyouts; only genuine limitations (flood to solid black, moire, a dropped nib, little shading effect, a seam gap) keep the red `.is-caveat` warning. Caveat copy tightened. The docked panel twin follows separately.
+
 ### Added: surface-locked 3D Scene fills
 - **What it is.** A fill with `markSpace: 'surface'` is baked once in object space (`src/core/scene3d/surface-lock*.js`, constants in `src/config/scene3d-surface-lock.js`) and only framed per pose: one transform, cull, tone gate and projection per vertex. A drag frame equals the export by construction. Contract: `docs/surface-lock-contract.md`.
 - **Level S (whole-scene frame).** When every fill in the scene is locked and the lights, shadow and edges fit, the drag path skips the warp preview and the pre-baked spin ring and re-frames the cached MarkSets directly, with no Fill Curves fit. Measured in the app: a drag frame is about 10 ms (Mezzotint) and 12 ms (Hatch); a whole-scene generate is about 8-15 ms, against about 150-230 ms before. A scene with any pose fill keeps the earlier preview (Level F frames each locked fill).
