@@ -28,8 +28,9 @@
  * Entries from another RENDER_VERSION are pruned on first open. Without IndexedDB the cache lives in memory.
  * A 3D Scene work also turns on the Start Page: its stored document's scene is registered with StartPageOrbit3D
  * (registerScene / sceneFromDoc) under `work:<id>`, and the art carries that key as `sceneId`. A 3D Scene piece (a work
- * like that, or a scene3d preset) carries getScenePayload(): the .vectura document StartPageSceneOrbit re-renders with
- * the camera turned, so every pose is drawn by the app's own scene pipeline.
+ * like that, or a scene3d preset) carries getScenePayload(): the .vectura document the drawing came from
+ *
+ * (The plates draw such a piece as a still, framed on the dense body of its drawing; StartPageSceneOrbit is retired.)
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);

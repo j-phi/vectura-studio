@@ -394,8 +394,9 @@
   syncMotionAttrs();
 
   /* ------------------------------------------------------------------ tiles */
-  // 'cover' crops to the ink; 'object' shows the whole ink box scaled up to fill; anything else contains the paper
-  const fitOf = (f) => (f === 'cover' || f === 'object' ? f : 'contain');
+  // 'cover' crops to the ink; 'object' shows the whole ink box scaled up to fill; 'focus' is 'object' on the ink's dense body (long
+  // sparse strokes left to run off the edge); anything else contains the paper
+  const fitOf = (f) => (f === 'cover' || f === 'object' || f === 'focus' ? f : 'contain');
   const mount = (el, art, opts) => {
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return Promise.reject(new Error('StartPageInk.mount: no element'));
@@ -404,7 +405,7 @@
     if (el._spInk || el._spWord) unmount(el);
     const id = ++uid; const gid = `sp-g${id}`;
     const fit = fitOf(opts.fit);
-    const pad = opts.pad == null ? (fit === 'cover' ? 0 : fit === 'object' ? 0.04 : 0.08) : opts.pad;
+    const pad = opts.pad == null ? (fit === 'cover' ? 0 : fit === 'object' || fit === 'focus' ? 0.04 : 0.08) : opts.pad;
     const h = {
       kind: 'tile', id, el, art, parsed: null, mode: 'svg', fit, frame: opts.frame || null, pad, colorway: normColorway(opts.colorway),
       w: 0, h: 0, win: null, s: 1, look: { lw: 0.6, alpha: 1 }, svg: null, canvas: null, bmp: null, rasterScale: 1, run: null, _gen: 0, _t: 0,

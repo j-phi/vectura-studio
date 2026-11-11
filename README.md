@@ -772,7 +772,10 @@ CI lives in `.github/workflows/test.yml`:
 ### Unreleased - Plates keep their drawing on a fast scroll
 - **No more flicker on a fast scroll.** A plate you have already seen comes back drawn instead of fading in and re-plotting, and plates now load as they near the screen whether or not you have saved works.
 
-### Unreleased - 3D Scenes rotate on the Start Page
+### Unreleased - 3D pieces are still plates on the Start Page
+- **3D pieces no longer rotate.** A Scene 3D, Object 3D or other 3D piece on a plate, the Portfolio band or the cover is a still drawing framed on the object with some air, drawn in with the same animate-in as every other plate. There is no drag, no sway and no hint.
+
+### Superseded - 3D Scenes rotate on the Start Page
 - **Drag to rotate a 3D Scene.** 3D Scene pieces on the Start Page (your saved scenes and the Studio Shadows pick) turn: drag or use the arrow keys to rotate them, and they rock gently when idle, like the other 3D pieces.
 - **Drawn exactly as the app draws them.** Every angle is a real render of the scene, so fills, shadow shapes, ground and line weights match the app; a drag steps to the exact angle a few times a second.
 
@@ -804,7 +807,7 @@ CI lives in `.github/workflows/test.yml`:
 ### 1.5.0 - Start Page
 - **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup). The page opens without an editor flash or late layout.
 - **Plates.** Your work set as an editorial run: a plate editor with manual colors (now including Title and Band), Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown. Ten example plates fill the page on a first run; the **Show example plates** switch in Start Page settings hides them, and Developer Mode lets contributors edit them.
-- **Motion.** Seven animate-in styles, twelve hover effects, live drag-to-rotate 3D models, and a **Still** toggle that stops it all.
+- **Motion.** Seven animate-in styles, twelve hover effects, 3D pieces framed on the object, and a **Still** toggle that stops it all.
 - **File > Close** closes the current project (with a discard prompt when it has unsaved changes) and returns to the Start Page.
 - **Harmonograph curves stay on the figure** (no stray arc with Curves on), and a **Trinodal** preset joins Harmonograph (Geometric).
 - **Paper, pens and inks.** Eleven paper types with realistic scale and lighting, a Scale slider, My papers and photo papers; fifteen pen models with ink edge bleed; special inks (metallic, neon, glow-in-the-dark, glitter, opaque white), View ▸ Lights Off, pen files and My pens; a System theme.

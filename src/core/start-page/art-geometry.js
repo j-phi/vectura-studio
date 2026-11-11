@@ -127,6 +127,45 @@
     a._ink = { box: [x0, y0, bw, bh], G, grid };
     return a._ink;
   };
+  /* The ink box of the piece's BODY: the box of the grid cells that hold real ink, leaving out long sparse strokes (a ground
+     plane's edges, a light marker) that stretch the plain ink box until the object itself reads tiny. Ink is sampled along each
+     stroke (never by segment midpoint, so a long line cannot pile into one cell) on a 64x64 grid; a cell counts when it holds at
+     least `cut` x the cell mass below which 75 % of all the ink lies (a mass-weighted quartile: the busy cells set the bar). The result is dilated by one cell and
+     never smaller than 12 % of the ink box on a side. Falls back to the plain ink box (a piece with no dense body). */
+  const focusInfo = (a, cut) => {
+    const k = cut == null ? 0.5 : cut;
+    if (a._focus && a._focus.cut === k) return a._focus.box;
+    const [x0, y0, bw, bh] = inkInfo(a).box;
+    const G = 64; const cw = bw / G; const ch = bh / G; const grid = new Float32Array(G * G);
+    const cell = Math.max(1e-6, Math.min(cw, ch));
+    for (const P of a.polys) {
+      for (let i = 2; i < P.length; i += 2) {
+        const ax = P[i - 2], ay = P[i - 1], bx = P[i], by = P[i + 1]; const L = Math.hypot(bx - ax, by - ay);
+        if (!(L > 0)) continue;
+        const n = Math.max(1, Math.ceil(L / cell)); const w = L / n;
+        for (let j = 0; j < n; j++) {
+          const t = (j + 0.5) / n; const gx = Math.min(G - 1, Math.max(0, ((ax + (bx - ax) * t - x0) / bw * G) | 0)); const gy = Math.min(G - 1, Math.max(0, ((ay + (by - ay) * t - y0) / bh * G) | 0));
+          grid[gy * G + gx] += w;
+        }
+      }
+    }
+    const live = Array.from(grid).filter((v) => v > 0).sort((p, q) => p - q);
+    const total = live.reduce((t, v) => t + v, 0);
+    let acc = 0; let med = 0;
+    for (const v of live) { acc += v; if (acc >= total * 0.75) { med = v; break; } }
+    const thr = med * k; let gx0 = G, gy0 = G, gx1 = -1, gy1 = -1;
+    for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) if (grid[y * G + x] >= thr && grid[y * G + x] > 0) { if (x < gx0) gx0 = x; if (x > gx1) gx1 = x; if (y < gy0) gy0 = y; if (y > gy1) gy1 = y; }
+    let box = [x0, y0, bw, bh];
+    if (gx1 >= gx0 && gy1 >= gy0) {
+      gx0 = Math.max(0, gx0 - 1); gy0 = Math.max(0, gy0 - 1); gx1 = Math.min(G - 1, gx1 + 1); gy1 = Math.min(G - 1, gy1 + 1);
+      let fw = (gx1 - gx0 + 1) * cw; let fh = (gy1 - gy0 + 1) * ch; let fx = x0 + gx0 * cw; let fy = y0 + gy0 * ch;
+      if (fw < bw * 0.12) { fx -= (bw * 0.12 - fw) / 2; fw = bw * 0.12; }
+      if (fh < bh * 0.12) { fy -= (bh * 0.12 - fh) / 2; fh = bh * 0.12; }
+      box = [fx, fy, fw, fh];
+    }
+    a._focus = { cut: k, box };
+    return box;
+  };
   const inkArea = (a) => { const b = inkInfo(a).box; return Math.max(1e-6, b[2] * b[3]); };
 
   /* Densest window of size (ww, wh) art units inside the ink box, with a gentle pull to the
@@ -174,8 +213,8 @@
       if (wh <= ih) cy = Math.max(y0 + wh / 2, Math.min(y0 + ih - wh / 2, cy)); else if (!hasC) cy = y0 + ih / 2;
       return [cx - ww / 2, cy - wh / 2, ww, wh];
     }
-    if (fit === 'object') {
-      const [x0, y0, iw, ih] = inkInfo(a).box; let ww = iw, wh = ih;
+    if (fit === 'object' || fit === 'focus') {
+      const [x0, y0, iw, ih] = fit === 'focus' ? focusInfo(a, fr.cut) : inkInfo(a).box; let ww = iw, wh = ih;
       if (iw / ih > ar) wh = iw / ar; else ww = ih * ar;
       ww /= z; wh /= z;
       const cx = x0 + (hasC ? +fr.cx : 0.5) * iw; const cy = y0 + (hasC ? +fr.cy : 0.5) * ih;
@@ -249,7 +288,7 @@
   const plotEase = (k) => k * 0.35 + inOut(k) * 0.65;
 
   const api = {
-    rasterLib, rasterLibSource: rasterLib.toString(), parseArtSvg, luminance, inkInfo, denseCenter, artWindow,
+    rasterLib, rasterLibSource: rasterLib.toString(), parseArtSvg, luminance, inkInfo, focusInfo, denseCenter, artWindow,
     rasterPolicy, lineLook, lengthInWindow, wordInkBox, plotEase, inOut,
   };
 

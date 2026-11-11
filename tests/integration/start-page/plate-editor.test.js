@@ -536,8 +536,8 @@ describe('plate editor', () => {
       expect(last().frame.z).toBeGreaterThan(before);
     });
 
-    it('is disabled for live 3D pieces', () => {
-      open({ art: Object.assign({}, ART, { model: 'coiled-sphere' }) });
+    it('is disabled for 3D pieces (framed whole automatically)', () => {
+      open({ art: Object.assign({}, ART, { is3d: true }) });
       expect($('[data-spe-frame-toggle]').disabled).toBe(true);
     });
   });

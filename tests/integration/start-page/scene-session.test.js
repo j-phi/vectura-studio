@@ -28,7 +28,7 @@ describe('StartPageArtRenderer.sceneSession', () => {
   const posesFor = (doc, rock) => {
     const cam = camLayer(doc).params.camera;
     const home = { yaw: round1(cam.yaw), pitch: round1(cam.pitch) };
-    const SW = V.StartPageSceneOrbit.SWAY; const LV = V.StartPageSceneOrbit.LEVELS;
+    const SW = [5.7, 2.3]; const LV = 6; // a representative rock of camera poses (the retired scene orbit's own sway)
     const list = [];
     for (let i = 1; i <= rock; i++) for (const s of [1, -1]) list.push({ yaw: round1(home.yaw + SW[0] * s * i / LV), pitch: round1(home.pitch + SW[1] * s * i / LV) });
     list.push({ yaw: round1(home.yaw - 23), pitch: round1(home.pitch + 9) }); // a drag pose
