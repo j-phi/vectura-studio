@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: nightly touch roster (WebKit) goes green
+- **Parameter switches are a finger tall in the left pane.** A checkbox parameter (for example Wavetable **Flat Top/Bottom**) drew its switch on a line under its label row, so the label row above and the next control below each covered part of the switch's 44 px touch extension (measured 44 x 34 on iPhone landscape). The label and the switch now share one 44 px row.
+- **Touch test stability.** The pen double-tap specs send both taps in one batch (no round trip between them), and the Scene 3D pinch spec runs its eight pinches as four tests of two, so no test outruns its 60 s budget. No timeout, retry or threshold changed.
+
 ### Fixed: `value chips do not clip` measured the chip wrong on Chromium 1254
 - **Test-only.** Playwright 1.65 bundles Chromium 1254, where an `<input>`'s `clientWidth` already excludes its padding. The guard subtracted the padding a second time and reported a 42-44px box for 50px of text, although the chips are 73.6px wide (57.6px content). The guard now derives the content box from `getBoundingClientRect` minus border and padding. No CSS change; chip widths are unchanged.
 
