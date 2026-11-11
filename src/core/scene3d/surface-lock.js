@@ -316,12 +316,12 @@
   };
 
   // Per-vertex scratch, grown on demand and shared (a frame is synchronous; the worker has its own copy).
-  let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX;
+  let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX; let SCAP = SX;
   const ensureScratch = (n) => {
     if (SX.length >= n) return;
     const m = Math.max(n, 1024, SX.length * 2);
     SX = new Float64Array(m); SY = new Float64Array(m); SZ = new Float64Array(m);
-    SC = new Float64Array(m); STE = new Float64Array(m); SNR = new Float64Array(m);
+    SC = new Float64Array(m); STE = new Float64Array(m); SNR = new Float64Array(m); SCAP = new Float64Array(m);
   };
 
   const nW = { x: 0, y: 0, z: 0 }; const pW = { x: 0, y: 0, z: 0 }; const eW = { x: 0, y: 0, z: 0 };
@@ -341,6 +341,8 @@
     if (Number.isFinite(meta.floorPitchPen) && meta.floorPitchPen > 0) floorPitch = meta.floorPitchPen * num(view.penWidth, 0);
     const minSep = Number.isFinite(meta.minSepFrac) && meta.minSepFrac > 0 ? meta.minSepFrac : 1;
     const remap = meta.capToneRemap === true && !!lut;
+    // capKey 'ruling' (contract A13): the cap is compared against each run's own capRank, not folded into the tone demand.
+    const capSep = meta.capKey === 'ruling' && !!ms.runCapRank;
     // A fixed-pitch law (contract §16 A10) reads its tone at the bake scale, so a zoom inside one octave never moves it.
     const toneScaleFree = meta.toneScaleFree === true && Number.isFinite(meta.scaleRef) && meta.scaleRef > 0;
     const remapLuts = new Map();
@@ -368,7 +370,7 @@
         facing = a20 * nx + a21 * ny + a22 * nz;
       }
       SX[v] = cxs + cx * sv; SY[v] = cys - cy * sv; SZ[v] = cz; SC[v] = facing;
-      if (!valid || facing <= 0) { STE[v] = 0; continue; }
+      if (!valid || facing <= 0) { STE[v] = 0; SCAP[v] = 0; continue; }
       let capT = 0; const hasCap = floorPitch > 0;
       if (hasCap) {
         // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
@@ -383,6 +385,7 @@
         }
         capT = T;
       }
+      SCAP[v] = hasCap ? capT : Infinity;
       // tone
       let te = Infinity;
       if (lut) {
@@ -436,7 +439,7 @@
         }
         te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
       }
-      if (hasCap && capT < te) te = capT;
+      if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
     }
     return undefined;
@@ -453,11 +456,13 @@
     let tail = null; let tailRun = -2;
     const persp = F.persp;
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
+    const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
     const DOT = MS.FLAG.DOT; const CLOSED = MS.FLAG.CLOSED; const RS = MS.RANK_SCALE;
     for (let r = 0; r < nr; r++) {
       const v0 = rs[r]; const n = rs[r + 1] - v0; const flags = rf[r]; const L = rl[r];
       const rank = rr[r] / RS;
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
+      const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
       // vertex counters
       let anyOk = false;
@@ -465,7 +470,7 @@
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
-        else if (!(STE[i] > k)) acc.culledTone += 1;
+        else if (!(STE[i] > k) || (capSep && !(SCAP[i] > ck))) acc.culledTone += 1;
         else anyOk = true;
       }
       if (flags & DOT) {
@@ -499,6 +504,13 @@
         const t0ok = e0 > 0; const t1ok = e1 > 0;
         if (!t0ok && !t1ok) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (t0ok !== t1ok) { const u = e0 / (e0 - e1); if (t0ok) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+        // plot-floor cap on the ruling's rank (capKey 'ruling'): a second linear clip, intersected with the tone clip
+        if (capSep) {
+          const g0 = SCAP[i] - ck; const g1 = SCAP[j] - ck;
+          const q0 = g0 > 0; const q1 = g1 > 0;
+          if (!q0 && !q1) { if (cur) { subs.push(cur); cur = null; } continue; }
+          if (q0 !== q1) { const u = g0 / (g0 - g1); if (q0) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+        }
         // near plane (perspective)
         if (persp) {
           const n0 = SNR[i]; const n1 = SNR[j];

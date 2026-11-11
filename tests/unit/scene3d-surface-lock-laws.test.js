@@ -232,6 +232,95 @@ describe('SurfaceLockLaws (W3-B)', () => {
     });
   });
 
+  describe('dutyConst limb ring (FX-J1): the plot-floor cap acts on rulings, not duty bands (contract A13)', () => {
+    const len = (pts) => { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; };
+    const rig = (markSpace, yaw, mapper = 'hatch') => {
+      const sc = buildSurfaceLockScene(V, { kind: 'sphere', toneLaw: 'dutyConst', mapper, markSpace, ground: false, shadow: false });
+      sc.setPose({ camYaw: yaw, camPitch: 20 });
+      return sc;
+    };
+    const measure = (paths, cx, cy, R) => {
+      const fills = paths.filter((p) => p.meta && p.meta.kind === 'sceneFill');
+      let band = 0;
+      fills.forEach((p) => { const m = p[p.length >> 1]; if (Math.hypot(m.x - cx, m.y - cy) / R >= 0.9) band += len(p); });
+      return { fills, band, total: fills.reduce((s, p) => s + len(p), 0) };
+    };
+    const centre = (paths) => {
+      const all = [].concat(...paths.filter((p) => p.meta && p.meta.kind === 'sceneEdge'));
+      let cx = 0; let cy = 0; all.forEach((q) => { cx += q.x; cy += q.y; }); cx /= all.length; cy /= all.length;
+      let R = 0; all.forEach((q) => { R = Math.max(R, Math.hypot(q.x - cx, q.y - cy)); });
+      return { cx, cy, R };
+    };
+
+    it('the baked MarkSet declares capKey ruling and stamps every band of a ruling with that ruling\'s ladder rank', () => {
+      const ms = Z.bake(specOf({ toneLaw: 'dutyConst' }));
+      expect(ms.meta.capKey).toBe('ruling');
+      expect(ms.runCapRank.length).toBe(ms.runCount);
+      expect(MS.validate(ms)).toEqual([]);
+      const caps = new Set(Array.from(ms.runCapRank));
+      expect(caps.size).toBeGreaterThan(1);
+      Array.from(caps).forEach((c) => expect(c).toBeLessThan(MS.RANK_SCALE));
+      // endShorten (keys already are ruling ranks) and ladder-derived laws carry no capRank: output unchanged
+      expect(Z.bake(specOf({ toneLaw: 'endShorten' })).runCapRank).toBeUndefined();
+      expect(Z.bake(specOf({ toneLaw: 'endShorten' })).meta.capKey).toBeUndefined();
+    });
+
+    [-30, 40].forEach((yaw) => {
+      it(`yaw ${yaw}: limb band keeps >= 0.35 x pose ink, fill path count <= 1.1 x pose, no fill pair under 0.8 x floor (Level S == Level F)`, () => {
+        const pose = rig('pose', yaw); const surf = rig('surface', yaw);
+        const P = pose.composeFull(); const S = surf.composeFull();
+        const { cx, cy, R } = centre(P);
+        const mp = measure(P, cx, cy, R); const ms = measure(S, cx, cy, R);
+        expect(mp.band).toBeGreaterThan(20);
+        expect(ms.band / mp.band, 'limb band ink').toBeGreaterThanOrEqual(0.35);
+        expect(ms.fills.length / mp.fills.length, 'fill path count').toBeLessThanOrEqual(1.1);
+        // Level F: same scene composed through the frame path with Level S off must equal Level S
+        const realFrameable = SL.frameable; SL.frameable = () => false;
+        let F; try { F = surf.composeFull(); } finally { SL.frameable = realFrameable; }
+        const mf = measure(F, cx, cy, R);
+        expect(mf.fills.length).toBe(ms.fills.length);
+        expect(Math.abs(mf.total - ms.total)).toBeLessThan(0.1);
+        // §14.6 spacing: away from the limb, the perpendicular gap between side-by-side drawn fill runs (measured against the local
+        // tangent, so curved rulings are fair) stays at the plot floor (2.2 x pen 0.3). The pose reference measures 0.456 with the same
+        // probe (vertex-sampled, so it reads slightly under the true gap): require 0.65 x floor, and no worse than the pose ink - 0.03.
+        const floor = 2.2 * 0.3;
+        const gap = (paths) => {
+          let worst = Infinity;
+          const inner = paths.filter((p) => { const m = p[p.length >> 1]; return Math.hypot(m.x - cx, m.y - cy) < R - 0.5 && p.length >= 3; });
+          inner.forEach((p, i) => {
+            for (let k = 1; k < p.length - 1; k += 2) {
+              const m = p[k]; let tx = p[k + 1].x - p[k - 1].x; let ty = p[k + 1].y - p[k - 1].y; const tl = Math.hypot(tx, ty);
+              if (tl < 1e-6 || Math.hypot(m.x - cx, m.y - cy) > R - 0.5) continue;
+              tx /= tl; ty /= tl;
+              inner.forEach((q, j) => {
+                if (i === j) return;
+                q.forEach((w) => {
+                  const dx = w.x - m.x; const dy = w.y - m.y;
+                  if (Math.abs(dx * tx + dy * ty) < 0.25) { const pr = Math.abs(-dx * ty + dy * tx); if (pr > 0.02) worst = Math.min(worst, pr); }
+                });
+              });
+            }
+          });
+          return worst;
+        };
+        const worst = gap(ms.fills); const worstPose = gap(mp.fills);
+        expect(worst, 'min side-by-side spacing').toBeGreaterThanOrEqual(0.65 * floor);
+        expect(worst, 'no tighter than pose').toBeGreaterThanOrEqual(worstPose - 0.03);
+      });
+    });
+
+    it('crosshatch: Level S equals Level F', () => {
+      const surf = rig('surface', -30, 'crosshatch');
+      const S = surf.composeFull();
+      const realFrameable = SL.frameable; SL.frameable = () => false;
+      let F; try { F = surf.composeFull(); } finally { SL.frameable = realFrameable; }
+      const nS = S.filter((p) => p.meta.kind === 'sceneFill'); const nF = F.filter((p) => p.meta.kind === 'sceneFill');
+      expect(nF.length).toBe(nS.length);
+      expect(nS.length).toBeGreaterThan(50);
+      expect(Math.abs(nF.reduce((s, p) => s + len(p), 0) - nS.reduce((s, p) => s + len(p), 0))).toBeLessThan(0.1);
+    });
+  });
+
   it('does not touch pose rendering: absent markSpace and a pose style never reach the module', () => {
     expect(SL.effectiveMarkSpace({}, { spec: specOf({ toneLaw: 'dutyConst' }) })).toBe('pose');
   });

@@ -84,6 +84,7 @@ rotation and translation **not** applied. (Object scale is a bake input, §8.)
 | `runLevel` | `Uint8Array(nr)` | level 0 .. `MAX_LEVELS - 1` (6 levels max) |
 | `runRank` | `Uint16Array(nr)` | rank r in [0, 1) stored as `round(r * 65536)`, max 65535 (`rankOf`) |
 | `runFamily` | `Uint8Array(nr)` | 0 primary family, 1 crossing family, 2 third family |
+| `runCapRank` | `Uint16Array(nr)`, **optional** | cap key of run r in [0, 1), same quantisation as `runRank`. Present only when `meta.capKey === 'ruling'` (A13); then the plot-floor cap (§5) is compared against it instead of against the run's tone key. Absent = the cap folds into the tone key, as before. `validate` checks its length; `byteSize` and `transferList` include it when present |
 | `runFlags` | `Uint8Array(nr)` | bit 0 `CLOSED` (ring; frame closes it), bit 1 `DOT` (1-vertex anchor, drawn as a glyph), bit 2 `BACK` (reserved, x-ray; unused in v1) |
 | `meta` | plain object | below |
 
@@ -95,6 +96,7 @@ rotation and translation **not** applied. (Object scale is a bake input, §8.)
 | `gain` | density multiplier per level: 2 for line families (`toneModel 'pitch'`), 4 for 2D dot lattices (`'area'`) |
 | `toneModel` | `'pitch'` or `'area'` |
 | `scaleRef` | the bake-time projection scale the baker designed for (§8) |
+| `capKey` | `'ruling'` (optional, A13): the run's cap key is `runCapRank`, not its tone key. Set by `dutyConst` only |
 | `minMarkMM` | screen-mm floor for a drawn sub-run (`MIN_MARK_PEN * penWidth`); DOT runs exempt |
 | `glyph` | for DOT runs: `{ kind: 'circle', r: <screen mm>, segs: <int >= 4> }` |
 | `bounds` | `{ min: [x,y,z], max: [x,y,z], radius }` in scaled local mm |
@@ -187,6 +189,12 @@ PLOT_FLOOR_PEN * penWidth` (screen mm; `Regions.PLOT_FLOOR_PEN`, 2.2).
   so a continuous cap would admit up to 0.5 x floor; a whole level is admitted only when its pitch is >= 0.8 x floor.
   `T` therefore changes stepwise between vertices; the linear interpolation inside one <= 0.5 mm segment can draw a
   partial level over that segment only.
+- **Cap on the ruling rank (`meta.capKey === 'ruling'`, A13).** When a MarkSet carries `runCapRank`, the cap is not folded into the tone demand.
+  The pre-pass keeps tone (`t_v`) and cap (`T_v`) as two per-vertex values, and a point of run r is drawn iff it is visible, `k_r < t_v` **and**
+  `capRank_r < T_v`. Both are linear in u between vertices, so the segment is clipped at the first of the two crossings (two intersected
+  intervals). Reason: `dutyConst` keys a run by its duty band, so folding `T` into the tone key dropped the outer duty bands of every dash
+  (the limb ring went blank and the surviving centre bands fell under `MIN_RUN_MM`); the cap is meant to drop whole RULINGS, whose key space
+  is the ladder rank. Without `runCapRank` the rule above is unchanged.
 - Run key: `k(level 0, r) = r`; `k(L >= 1, r) = gain^(L-1) * (1 + (gain - 1) * r)`. Level 0 spans [0, 1),
   level L spans [gain^(L-1), gain^L), so a larger key is always a finer mark.
 - A point at parameter u of segment i -> i+1 is drawn iff it is visible (§6, §7) and `k < t_eff(u)`, with
@@ -527,7 +535,7 @@ Shared rig: `tests/helpers/surface-lock-scene.js` (`buildSurfaceLockScene` throu
   be covered by one MarkSet, and `depthFade` reads the projected record (view dependent), so neither can live in a world-keyed tone memo.
   Both fall back to pose mode.
 - **A8. `BAKE_VERSION`.** `SCENE3D_SURFACE_LOCK.BAKE_VERSION` is the first element of the bake key. Bump it whenever a baker's output
-  changes, so a cached MarkSet from an older baker is never reused. It is 3 since W3-B (laws MarkSets carry `toneScaleFree` / `joinTouching` and emit dash bands in ruling order); 2 since FX-P (mezzo p0 x 1.2,
+  changes, so a cached MarkSet from an older baker is never reused. It is 4 since FX-J1 (A13); 3 since W3-B (laws MarkSets carry `toneScaleFree` / `joinTouching` and emit dash bands in ruling order); 2 since FX-P (mezzo p0 x 1.2,
   active-floor level count, `MIN_MARK_PEN` 4).
 - **A9. W3-B routing (§9, §12).** `dutyConst` and `endShorten` on `hatch` and `crosshatch` reach `SurfaceLockLaws` through the ordinary
   path: `Scene3D.Params.resolveToneLaw` -> spec `toneLaw` -> `bakerFor` (so `frameable`, `effectiveMarkSpace`, `explainMarkSpace` and the
@@ -543,6 +551,11 @@ Shared rig: `tests/helpers/surface-lock-scene.js` (`buildSurfaceLockScene` throu
   points coincide (1e-4 mm). `dutyConst` cuts a dash into centre-out duty bands, each its own run (its own gate key); drawn together they
   are one dash, and without the join every band is shorter than the compositor's `MIN_RUN_MM` (0.6) and the object drew nothing. The laws
   baker emits the bands in order along the ruling (outer-left .. centre .. outer-right) so touching bands are consecutive runs.
+- **A13. `runCapRank` / `meta.capKey` (FX-J1).** Optional MarkSet field and meta key (§2, §5). `dutyConst` stamps every duty band of ruling r
+  with `runCapRank = keyOfRun(ladder, r) / gate` (the ruling's even-subset rank in [0, 1)) and sets `meta.capKey = 'ruling'`; the frame then
+  tests the plot-floor cap against that rank. `endShorten`, `ladder`, `mezzo` and the other bakers do not emit it (their keys already are ruling ranks)
+  and their output is byte-identical. `BAKE_VERSION` is 4 since this change (dutyConst MarkSets gain `runCapRank`). The scale-gesture hold (deferred) that
+  earlier notes called "A8" is not this amendment and will take A14 or later.
 - **A12. `SCENE3D_SURFACE_LOCK.FACETED` (W3-B).** The faceted baker's tunables live in the config table, read through `cfg().FACETED`:
   `STEP_MM`, `EDGE_MM`, `MIN_RUN_MM`, `MAX_VERTS`, `CROSS_OBJ_DEG`, `PHASE_FAM1`, `GAIN_LIT`, `GAIN_SPAN`, `PLOT_FLOOR_SLACK`, `ZOOM_HEADROOM`
   (the last two are the module's own copies, no longer read from the top level). Output is byte-identical to the former module-local values
