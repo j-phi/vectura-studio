@@ -1778,7 +1778,12 @@
       const dispParams = FS.displayParams ? FS.displayParams(params.toneLaw, params) : params;
       const effectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(law, dispParams) : law;
       const caveatNote = FS.note(effectiveLaw);
-      if (caveatNote.caveat) flyNote(fly, caveatNote.caveat).classList.add('is-caveat');
+      if (caveatNote.caveat) {
+        // U5 — an explanation of intended behaviour is `.is-info` (calm, muted);
+        // only a genuine limitation keeps the red `.is-caveat` warning.
+        const cEntry = FS.entry(effectiveLaw);
+        flyNote(fly, caveatNote.caveat).classList.add(cEntry && cEntry.caveatKind === 'warning' ? 'is-caveat' : 'is-info');
+      }
 
       // Fill-collapse U0 — one Select per collapse sub-control the CURRENT
       // (resolved) law declares (FS.styleParams(law), the SAME data the
@@ -2132,7 +2137,10 @@
         // written to `bag`/`shadow`.
         const shadowEffectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(shadowInfoLaw, {}) : shadowInfoLaw;
         const shadowCaveatNote = FS.note(shadowEffectiveLaw);
-        if (shadowCaveatNote.caveat) flyNote(fly, shadowCaveatNote.caveat).classList.add('is-caveat');
+        if (shadowCaveatNote.caveat) {
+          const sEntry = FS.entry(shadowEffectiveLaw);
+          flyNote(fly, shadowCaveatNote.caveat).classList.add(sEntry && sEntry.caveatKind === 'warning' ? 'is-caveat' : 'is-info');
+        }
         if (C.toneLawNote) flyNote(fly, C.toneLawNote);
       } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
         flyNote(fly, C.toneLawInertNote);

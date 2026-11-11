@@ -12518,6 +12518,17 @@ body.mobile-layout .hud-bar {
   border-left: 2px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
   padding-left: 6px;
 }
+/* U5 — an explanatory caveat ("this is intended, not a defect"): calm
+   informational style matching the panel's help text, with a neutral rule.
+   Shared with the docked panel's `.vs3-lawnote.is-info`. Only a genuine
+   limitation keeps the red `.is-caveat` warning above. */
+.ctxbar-fly-note.is-info,
+.vs3-lawnote.is-info {
+  color: var(--ui-text-2, var(--ui-muted, #8a8a8a));
+  font-style: normal;
+  border-left: 2px solid var(--ui-border, #363636);
+  padding-left: 6px;
+}
 /* U12 D1/D2 — the faceted-primitive orientation line: box/plane/solid have no
    chart, so most Fill Style options are no-ops there (greyed out above). A
    different colour from .is-caveat (which is a measured law caveat) so the two
