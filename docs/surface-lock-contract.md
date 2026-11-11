@@ -527,5 +527,23 @@ Shared rig: `tests/helpers/surface-lock-scene.js` (`buildSurfaceLockScene` throu
   be covered by one MarkSet, and `depthFade` reads the projected record (view dependent), so neither can live in a world-keyed tone memo.
   Both fall back to pose mode.
 - **A8. `BAKE_VERSION`.** `SCENE3D_SURFACE_LOCK.BAKE_VERSION` is the first element of the bake key. Bump it whenever a baker's output
-  changes, so a cached MarkSet from an older baker is never reused. It is 2 since FX-P (mezzo p0 x 1.2, active-floor level count,
-  `MIN_MARK_PEN` 4).
+  changes, so a cached MarkSet from an older baker is never reused. It is 3 since W3-B (laws MarkSets carry `toneScaleFree` / `joinTouching` and emit dash bands in ruling order); 2 since FX-P (mezzo p0 x 1.2,
+  active-floor level count, `MIN_MARK_PEN` 4).
+- **A9. W3-B routing (§9, §12).** `dutyConst` and `endShorten` on `hatch` and `crosshatch` reach `SurfaceLockLaws` through the ordinary
+  path: `Scene3D.Params.resolveToneLaw` -> spec `toneLaw` -> `bakerFor` (so `frameable`, `effectiveMarkSpace`, `explainMarkSpace` and the
+  panel gate all say 'surface'), in Level F (`buildSurfaceLockSpec`) and Level S (`specOfObject` + `levelSSpecHelpers`). The spec carries
+  `style.densityScale` (folded in by the caller, as for mezzo), `penWidth` and `scaleRef`; `toneLaw` is in the bake key (§8). Level S equals
+  Level F for both laws. `mergeLadder` and `phaseBlue` stay baked-but-dormant: they are not in `SCENE3D_TONE_LAWS`, so no style can select
+  them, and nothing routes to them.
+- **A10. `meta.toneScaleFree`.** A MarkSet may declare that its tone is a function of the light alone. The pre-pass then evaluates
+  `t = p0 * meta.scaleRef * LUT(I)` instead of `p0 * s * LUT(I)` (s = the vertex's screen scale), so a zoom inside one scale octave does not
+  move the tone (before: up to +-41 %). The plot-floor cap still uses the live `s`. Absent or false keeps today's behaviour for every other
+  law. The fixed-pitch laws (`dutyConst`, `endShorten`) declare it and carry `meta.scaleRef`.
+- **A11. `meta.joinTouching`.** When true, the frame joins the first emitted piece of run r to the last emitted piece of run r-1 if their end
+  points coincide (1e-4 mm). `dutyConst` cuts a dash into centre-out duty bands, each its own run (its own gate key); drawn together they
+  are one dash, and without the join every band is shorter than the compositor's `MIN_RUN_MM` (0.6) and the object drew nothing. The laws
+  baker emits the bands in order along the ruling (outer-left .. centre .. outer-right) so touching bands are consecutive runs.
+- **A12. `SCENE3D_SURFACE_LOCK.FACETED` (W3-B).** The faceted baker's tunables live in the config table, read through `cfg().FACETED`:
+  `STEP_MM`, `EDGE_MM`, `MIN_RUN_MM`, `MAX_VERTS`, `CROSS_OBJ_DEG`, `PHASE_FAM1`, `GAIN_LIT`, `GAIN_SPAN`, `PLOT_FLOOR_SLACK`, `ZOOM_HEADROOM`
+  (the last two are the module's own copies, no longer read from the top level). Output is byte-identical to the former module-local values
+  (fingerprints `facetedBox`, `facetedCross` in `scene3d-surface-lock-config.test.js`).

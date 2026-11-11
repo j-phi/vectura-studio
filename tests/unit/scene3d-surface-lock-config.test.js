@@ -20,8 +20,12 @@ const FINGERPRINTS = {
   shadow: '3081b0a9de7f76b704f45c53efca6260579a79aa',
   visibility: 'ef33ad42952a971e66bf301834cf228875c5bcd6',
   // Added by the config clean-up (cfg2): pinned against the pre-move modules (laws constants, shadow SPACING_FLOOR).
-  lawsDutyConst: '41d9a75043619f54f7ea76a9a401418077dffc8d',
+  // Re-pinned by W3-B: meta gains toneScaleFree and joinTouching, and the dash bands are emitted in order along the ruling.
+  lawsDutyConst: '2487ef42777fc62995331413c4a104308b9c1724',
   frameShadow: '0be72550cc4496e9fd15757e89a6ac61e8d58874',
+  // Added by W3-B: the faceted baker's constants moved into the FACETED namespace (output byte-identical to the module-local values).
+  facetedBox: '6f1ac4b47d5e2f6519d58ef4ff0baa70d0e26b5f',
+  facetedCross: 'eb49bcd4f2b45329cac6098fd7457f47c8b662a8',
 };
 
 const canon = (v) => {
@@ -61,6 +65,8 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
     ladderContour: () => V.Scene3D.SurfaceLockLadder.bake(specOf({ mapper: 'contour' })),
     mezzo: () => V.Scene3D.SurfaceLockMezzo.bake(specOf({ toneLaw: 'mezzoRegion' })),
     lawsDutyConst: () => V.Scene3D.SurfaceLockLaws.bake(specOf({ toneLaw: 'dutyConst' })),
+    facetedBox: () => V.Scene3D.SurfaceLockFaceted.bake(specOf({ primitive: FIX.CUBE.primitive, mode: 'faceted', sizes: { sx: 40, sy: 30, sz: 24 }, toneLaw: 'ladder' })),
+    facetedCross: () => V.Scene3D.SurfaceLockFaceted.bake(specOf({ primitive: FIX.CUBE.primitive, mode: 'faceted', sizes: { sx: 40, sy: 30, sz: 24 }, toneLaw: 'ladder', mapper: 'crosshatch', style: { fillAngle: 30, fillDensity: 50, densityScale: 1, crossAngleDelta: 80, crossDensityRatio: 1.3 } })),
     frameShadow: () => {
       V.Scene3D.SurfaceLockShadow.clearCache();
       const h = V.Scene3D.SurfaceLockShadow.bakeGround(GROUND, SHADOW, 0.3, 1);
@@ -101,6 +107,17 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
     ['lawsDutyConst', { LAWS: { DUTY_PERIOD_FLOOR: 3.5 } }],
     ['lawsDutyConst', { LAWS: { DUTY_PITCH_FLOOR: 1.6 } }],
     ['visibility', { VISIBILITY: { LIMB_MIN_POINTS: 20, LIMB_MAX_POINTS: 20 } }],
+    // W3-B: the FACETED namespace. Each key below is live: a module-local literal would ignore the change.
+    ['facetedBox', { FACETED: { STEP_MM: 2.5 } }],
+    ['facetedBox', { FACETED: { EDGE_MM: 3 } }],
+    ['facetedBox', { FACETED: { MIN_RUN_MM: 6 } }],
+    ['facetedBox', { FACETED: { MAX_VERTS: 3000 } }],
+    ['facetedCross', { FACETED: { CROSS_OBJ_DEG: 20 } }],
+    ['facetedCross', { FACETED: { PHASE_FAM1: 0.81 } }],
+    ['facetedBox', { FACETED: { GAIN_LIT: 0.9 } }],
+    ['facetedBox', { FACETED: { GAIN_SPAN: 3 } }],
+    ['facetedBox', { FACETED: { PLOT_FLOOR_SLACK: 30 } }],
+    ['facetedBox', { FACETED: { ZOOM_HEADROOM: 6 } }],
   ])('%s bake follows a changed config key %j', (name, patch) => {
     const before = fp(bakers[name]());
     override(patch);
@@ -114,6 +131,7 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
     ['SHADOW', ['SPACING_FLOOR']],
     ['VISIBILITY', ['CONVEXITY_BUDGET', 'CONVEXITY_EPS']],
     ['LADDER', ['MIN_SEP_FRAC', 'RELABEL_MIN_MM', 'RELABEL_STAGGER']],
+    ['FACETED', ['STEP_MM', 'EDGE_MM', 'MIN_RUN_MM', 'MAX_VERTS', 'CROSS_OBJ_DEG', 'PHASE_FAM1', 'GAIN_LIT', 'GAIN_SPAN', 'PLOT_FLOOR_SLACK', 'ZOOM_HEADROOM']],
     ['MEZZO', ['STEP_MULT', 'SEED_TIGHT', 'CELL_F', 'SEED_ARC_TIGHT', 'MIN_LINE_D', 'MIN_LINE_MM', 'PREV_SEED_D', 'FALLBACK_SEEDED', 'CONT_MIN_D']],
   ])('the %s namespace carries its tunables in config', (ns, keys) => {
     keys.forEach((k) => expect(Number.isFinite(base[ns][k]), `${ns}.${k}`).toBe(true));

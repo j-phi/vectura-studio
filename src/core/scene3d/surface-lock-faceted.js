@@ -29,8 +29,8 @@
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
 
-  // Tuning values. The safe fallback when Vectura.SCENE3D_SURFACE_LOCK (or its FACETED table) is not loaded; `sync()` refreshes
-  // `C` from the config on every bake. Listed in the W3-A report: they are new constants of this module.
+  // Tuning values. The live ones are Vectura.SCENE3D_SURFACE_LOCK.FACETED; these are only the safe fallback when that table is not
+  // loaded. `sync()` refreshes `C` from the config on every bake.
   const DEFAULTS = {
     STEP_MM: 1.0, // vertex spacing along a ruling (a face is flat, so tone and facing are constant along it; a point light varies slowly)
     EDGE_MM: 0.05, // a ruling closer than this to the face's extreme (a ruling ON an edge) is dropped: the outline owns that ink
@@ -63,11 +63,8 @@
   const frac = (v) => v - Math.floor(v);
   const cfg = () => Vectura.SCENE3D_SURFACE_LOCK || {};
   const sync = () => {
-    const t = cfg(); const own = t.FACETED || {};
-    Object.keys(DEFAULTS).forEach((k) => {
-      const v = Object.prototype.hasOwnProperty.call(own, k) ? own[k] : t[k];
-      C[k] = Number.isFinite(v) ? v : DEFAULTS[k];
-    });
+    const own = cfg().FACETED || {};
+    Object.keys(DEFAULTS).forEach((k) => { C[k] = Number.isFinite(own[k]) ? own[k] : DEFAULTS[k]; });
     return C;
   };
   const MS = () => Scene3D.SurfaceLockMarkSet;

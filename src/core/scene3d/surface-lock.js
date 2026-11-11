@@ -341,6 +341,8 @@
     if (Number.isFinite(meta.floorPitchPen) && meta.floorPitchPen > 0) floorPitch = meta.floorPitchPen * num(view.penWidth, 0);
     const minSep = Number.isFinite(meta.minSepFrac) && meta.minSepFrac > 0 ? meta.minSepFrac : 1;
     const remap = meta.capToneRemap === true && !!lut;
+    // A fixed-pitch law (contract §16 A10) reads its tone at the bake scale, so a zoom inside one octave never moves it.
+    const toneScaleFree = meta.toneScaleFree === true && Number.isFinite(meta.scaleRef) && meta.scaleRef > 0;
     const remapLuts = new Map();
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
@@ -404,7 +406,7 @@
         }
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
-        let dm = p0 * sv * l;
+        let dm = p0 * (toneScaleFree ? meta.scaleRef : sv) * l;
         if (remap && capT > 0) { // cap-aware tone remap (contract §5): squeeze [m, D] into [m, T] in log space so tone stays monotone inside a cap ring
           const mD = p0 * sv * lut[LUT_N]; const dD = p0 * sv * lut[0]; const tD = q === 1 ? capT : (q === 2 ? Math.sqrt(capT) : Math.pow(capT, 1 / q));
           if (mD > 0 && tD > mD && tD < dD) {
@@ -447,6 +449,8 @@
     const gain = meta.gain || 2;
     const minMark = num(meta.minMarkMM, 0);
     const glyph = meta.glyph || null;
+    const join = meta.joinTouching === true; // A11
+    let tail = null; let tailRun = -2;
     const persp = F.persp;
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const DOT = MS.FLAG.DOT; const CLOSED = MS.FLAG.CLOSED; const RS = MS.RANK_SCALE;
@@ -518,8 +522,16 @@
       for (let s = 0; s < subs.length; s++) {
         const line = subs[s];
         if (line.length < 2) continue;
+        if (join && s === 0 && tail && tailRun === r - 1 && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
+          && Math.abs(tail[tail.length - 1].y - line[0].y) < 1e-4 && Math.abs(tail[tail.length - 1].z - line[0].z) < 1e-4) {
+          for (let q = 1; q < line.length; q++) tail.push(line[q]);
+          acc.verticesOut += line.length - 1; tailRun = r;
+          if (subs.length > 1) tail = null;
+          continue;
+        }
         if (minMark > 0 && lineLength(line) < minMark) continue;
         line.back = false; out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
+        if (join) { tail = (s === subs.length - 1) ? line : null; tailRun = r; }
       }
     }
   };

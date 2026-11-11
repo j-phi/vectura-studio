@@ -240,15 +240,12 @@
     const budget = () => { if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded'); };
     for (let c0 = -phase01 * cellLen; c0 < R.total; c0 += cellLen) {
       const c = c0 + half;
-      for (let j = 0; j < edges.length - 1; j++) {
-        const key = keyOfBand(j);
-        const a = edges[j] * half; const b = edges[j + 1] * half;
-        if (j === 0) emitSub(B, R, clamp(c - b, 0, R.total), clamp(c + b, 0, R.total), key, fam, tmp);
-        else {
-          emitSub(B, R, clamp(c - b, 0, R.total), clamp(c - a, 0, R.total), key, fam, tmp);
-          emitSub(B, R, clamp(c + a, 0, R.total), clamp(c + b, 0, R.total), key, fam, tmp);
-        }
-      }
+      // Emitted in order ALONG the ruling (outermost left band ... centre ... outermost right band), so bands that touch are
+      // consecutive runs and the frame can join them back into one dash (meta.joinTouching).
+      const nb = edges.length - 1;
+      for (let j = nb - 1; j >= 1; j--) emitSub(B, R, clamp(c - edges[j + 1] * half, 0, R.total), clamp(c - edges[j] * half, 0, R.total), keyOfBand(j), fam, tmp);
+      emitSub(B, R, clamp(c - edges[1] * half, 0, R.total), clamp(c + edges[1] * half, 0, R.total), keyOfBand(0), fam, tmp);
+      for (let j = 1; j < nb; j++) emitSub(B, R, clamp(c + edges[j] * half, 0, R.total), clamp(c + edges[j + 1] * half, 0, R.total), keyOfBand(j), fam, tmp);
       budget();
     }
   };
@@ -282,6 +279,8 @@
       const pEff = lad.meta.p0 / gate;            // the single ruling pitch (object mm)
       const rho = (pEff * scaleRef) / model.pitch; // t = rho * theta at the bake scale
       meta.p0 = pEff; meta.rho = rho; meta.lstar = lstar;
+      // Fixed-pitch laws: tone is a function of the light alone, so the frame reads it at the bake scale (contract §16 A10).
+      meta.toneScaleFree = true;
       let idx = 0;
       if (law === 'endShorten') {
         for (let r = 0; r < nr; r++) {
@@ -301,6 +300,7 @@
         }
         meta.minMarkMM = 0;
         meta.minDuty = model.minDuty;
+        meta.joinTouching = true; // the duty bands of one dash are separate runs; the frame joins the ones that touch (A11)
       }
     } else if (law === 'mergeLadder') {
       const M = mergeModel(T);

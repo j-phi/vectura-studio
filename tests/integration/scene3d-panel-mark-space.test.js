@@ -40,6 +40,15 @@ describe('Scene3D panel: Lock marks to surface', () => {
     expect(row(mountLeaf('wireframe').container)).toBeFalsy();
   });
 
+  test('W3-B: the row is live for the routed laws (dutyConst, endShorten) and a surface style stays surface', () => {
+    ['dutyConst', 'endShorten'].forEach((law) => {
+      ['hatch', 'crosshatch'].forEach((m) => {
+        const r = row(mountLeaf(m, { toneLaw: law }).container);
+        expect(r.getAttribute('aria-disabled'), `${law} ${m}`).not.toBe('true');
+      });
+    });
+  });
+
   test('the toggle writes markSpace surface / pose and takes one history entry each', () => {
     const { layer, container, ui } = mountLeaf('hatch');
     expect(layer.params.style.params.markSpace).toBeUndefined();

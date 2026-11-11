@@ -14,7 +14,7 @@
 
   Vectura.SCENE3D_SURFACE_LOCK = Object.freeze({
     // Bumped whenever a baker's output for the same bake key changes. Part of every bake key.
-    BAKE_VERSION: 2,
+    BAKE_VERSION: 3,
     // Contract §6 — a vertex whose facing cosine c = n·view is below this is culled (crossing interpolated).
     NZ_CULL: 0.08,
     // Contract §5 — the tone look-up table has TONE_LUT_SIZE + 1 entries for I = k / TONE_LUT_SIZE.
@@ -146,6 +146,19 @@
       MAX_VERTS: 200000,  // contract §2 budget
       HATCH_D_MAX: 100,
       GOLDEN: 0.6180339887498949,
+    }),
+    // surface-lock-faceted.js (box, plane, polyhedron). The two keys it shares with the ladder / mezzo (PLOT_FLOOR_SLACK, ZOOM_HEADROOM) are its own copies here.
+    FACETED: Object.freeze({
+      STEP_MM: 1.0,  // vertex spacing along a ruling (a face is flat, so tone and facing are constant along it; a point light varies slowly)
+      EDGE_MM: 0.05,  // a ruling closer than this to the face's extreme (a ruling ON an edge) is dropped: the outline owns that ink
+      MIN_RUN_MM: 0.3,  // an interval shorter than this is not a mark
+      MAX_VERTS: 120000,  // vertex budget guard (contract §2: 200k per object per fill group)
+      CROSS_OBJ_DEG: 65,  // family 1 sits at fillAngle + CROSS_OBJ_DEG + (crossAngleDelta - 90), as the ladder's cross does
+      PHASE_FAM1: 0.37,  // family 1 lattice offset (fraction of the level-0 pitch), so the two families do not start together
+      GAIN_LIT: 0.5,  // the faceted pose law's spacing gain at coverage 0 (lit): pitch = hatchSpacing / (GAIN_LIT + GAIN_SPAN * coverage)
+      GAIN_SPAN: 1.1,  // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
+      PLOT_FLOOR_SLACK: 0.8,  // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
+      ZOOM_HEADROOM: 1.5,  // as the top-level key: finest baked level reaches the darkest pitch at this multiple of the bake scale
     }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({
