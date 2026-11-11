@@ -133,6 +133,13 @@
         </ul>
         <p>A control that does nothing for the current shape or Fill Style stays visible but greyed. Hover the
         <strong>(i)</strong> badge to see why.</p>
+        <p><strong>Lock marks to surface</strong> (Hatch, Crosshatch, Contour, Spiral and Stipple) draws the marks on the
+        object itself, so they stay put while you turn the camera. It is off for a saved scene until you switch it on,
+        and one undo step puts it back. The row is greyed, with the reason beside the <strong>(i)</strong> badge, when
+        the style cannot lock: Wrap set to Flat, Tone bands, an x-ray object, a per-face style, or a Fill Style that has
+        no locked version yet. Under the row, <em>Fast drag (Level S)</em> means every fill in the scene is locked and
+        turning the camera is a cheap re-frame; <em>Full redraw while dragging (Level F)</em> means at least one fill is
+        not locked, so the scene redraws in full.</p>
         <p><strong>Seed</strong> (Transform section) and <strong>RANDOMIZE</strong> change every random choice in the
         fill: jitter, dither, stripe phase. A fill with no random choice does not change. A document saved before
         the Seed was wired keeps its old look until you edit the Seed.</p>
