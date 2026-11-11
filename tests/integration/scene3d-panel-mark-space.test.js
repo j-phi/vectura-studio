@@ -73,13 +73,16 @@ describe('Scene3D panel: Lock marks to surface', () => {
     expect(mountLeaf('hatch', {}, 'sphere', true).container.querySelector('.vs3-markspace-hint').dataset.levelS).toBe('1');
     const f = mountLeaf('hatch', {}, 'sphere', false).container.querySelector('.vs3-markspace-hint');
     expect(f.dataset.levelS).toBe('0');
-    expect(f.textContent).toMatch(/Level F/);
+    expect(f.textContent).toMatch(/Full redraw while dragging/);
+    // Internal tier names (Level S / Level F) never reach the UI text.
+    expect(f.textContent).not.toMatch(/Level [SF]/);
     expect(mountLeaf('hatch').container.querySelector('.vs3-markspace-hint')).toBeFalsy();
   });
 
   test('the in-app help documents the control', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/ui/modals/help-shortcuts.js'), 'utf8');
     expect(src).toMatch(/Lock marks to surface/);
-    expect(src).toMatch(/Level S/);
+    expect(src).toMatch(/Fast drag/);
+    expect(src).not.toMatch(/Level [SF]\b/);
   });
 });

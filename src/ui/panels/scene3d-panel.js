@@ -1489,8 +1489,8 @@
   };
   // The Level S read-out under the row: whether the WHOLE scene takes the fast path (group._sceneLevelS).
   const levelSHint = (levelS) => (levelS === true
-    ? 'Fast drag: every fill in this scene is surface-locked, so turning the camera is a cheap re-frame (Level S).'
-    : 'Not fast drag: at least one fill in this scene is not surface-locked, so turning the camera redraws it in full (Level F).');
+    ? 'Fast drag: every fill in this scene is surface-locked, so turning the camera is a cheap re-frame.'
+    : 'Not fast drag: at least one fill in this scene is not surface-locked, so turning the camera redraws it in full.');
   const gateVerdict = (key, ctx) => {
     const g = CONTROL_GATES[key];
     if (!g || !ctx) return true;
@@ -1823,7 +1823,7 @@
       hint.className = 'vs3-markspace-hint';
       hint.dataset.levelS = o.ctx.levelS ? '1' : '0';
       hint.setAttribute('role', 'note');
-      hint.textContent = o.ctx.levelS ? 'Fast drag (Level S)' : 'Full redraw while dragging (Level F)';
+      hint.textContent = o.ctx.levelS ? 'Fast drag' : 'Full redraw while dragging';
       hint.title = levelSHint(o.ctx.levelS);
       o.host.appendChild(hint);
     }
