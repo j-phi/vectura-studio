@@ -96,3 +96,67 @@ describe('sun widget depth cue (M9)', () => {
     renderer.endSceneLightDrag();
   });
 });
+
+describe('selected-light gizmo depth cue in a real addLayer("scene3d") tree scene (M9)', () => {
+  let runtime;
+  afterEach(() => { runtime?.cleanup?.(); runtime = null; });
+
+  async function tree(lightPatch) {
+    runtime = await loadVecturaRuntime({ includeRenderer: true });
+    const { VectorEngine, Renderer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const gid = engine.addLayer('scene3d');
+    engine.generate(gid);
+    const group = engine.getLayerById(gid);
+    const kids = engine.getLayerDescendants(gid);
+    const lightChild = kids.find((l) => l.type === 'sceneLight3d');
+    Object.assign(lightChild.params, lightPatch);
+    group.params.camera = { ...group.params.camera, yaw: 0, pitch: -20, roll: 0 };
+    engine.generate(gid);
+    const renderer = new Renderer('main-canvas', engine);
+    renderer.setTool('select');
+    renderer.scale = 1; renderer.offsetX = 0; renderer.offsetY = 0;
+    renderer.setSelection([lightChild.id], lightChild.id);
+    return { renderer, group, lightChild };
+  }
+
+  function record(renderer) {
+    const ctx = renderer.ctx; const calls = { dashedArcs: 0, text: [] };
+    let dash = []; let arc = false;
+    const orig = { setLineDash: ctx.setLineDash, arc: ctx.arc, stroke: ctx.stroke, fillText: ctx.fillText };
+    ctx.setLineDash = (d) => { dash = d || []; };
+    ctx.arc = () => { arc = true; };
+    ctx.stroke = () => { if (arc && dash.length) calls.dashedArcs++; };
+    ctx.fillText = (t) => { calls.text.push(t); };
+    return { calls, restore: () => Object.assign(ctx, orig) };
+  }
+
+  test('the default tree-scene sun (behind) gets the hollow variant; a front sun gets the solid one', async () => {
+    const back = await tree({ azimuth: 135, elevation: 45 });
+    const g = back.renderer.getSceneLightGizmo();
+    expect(g).toBeTruthy();
+    expect(g.behind).toBe(true);
+    let rec = record(back.renderer);
+    back.renderer.drawSceneLightGizmo();
+    rec.restore();
+    expect(rec.calls.text).toEqual(['behind']);
+    expect(rec.calls.dashedArcs).toBeGreaterThan(0);
+    runtime.cleanup(); runtime = null;
+
+    const front = await tree({ azimuth: 0, elevation: 45 });
+    expect(front.renderer.getSceneLightGizmo().behind).toBe(false);
+    rec = record(front.renderer);
+    front.renderer.drawSceneLightGizmo();
+    rec.restore();
+    expect(rec.calls.text).toEqual([]);
+  });
+
+  test('a point light behind the scene centre is behind; in front is not', async () => {
+    const back = await tree({ type: 'point', position: { x: 0, y: 100, z: -150 } });
+    expect(back.renderer.getSceneLightGizmo().behind).toBe(true);
+    runtime.cleanup(); runtime = null;
+    const front = await tree({ type: 'point', position: { x: 0, y: 100, z: 150 } });
+    expect(front.renderer.getSceneLightGizmo().behind).toBe(false);
+  });
+});

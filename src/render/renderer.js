@@ -13571,6 +13571,15 @@
       ctx.lineTo(pos.x, pos.y);
       ctx.stroke();
       ctx.setLineDash([]);
+      this._drawLightDepthGlyph(pos, unit, behind, accent, line);
+      ctx.restore();
+    }
+
+    // The shared front/behind light glyph (sun widget + selected-light gizmo).
+    // IN FRONT: solid disc + halo + full rays. BEHIND: hollow dashed ring on a
+    // paper backing, short ticks and a "behind" tag. Caller owns save/restore.
+    _drawLightDepthGlyph(pos, unit, behind, accent, line) {
+      const ctx = this.ctx;
       if (behind) {
         // Hollow ring, dashed, dimmed, on a paper-coloured backing so it still
         // reads where it sits over the subject's ink.
@@ -13627,7 +13636,6 @@
           ctx.stroke();
         }
       }
-      ctx.restore();
     }
 
     hitSceneLight(sx, sy, layer = null) {
@@ -13923,10 +13931,12 @@
       let coneTip = null;
       let baseR = null;
       let anchorCenter = null;
+      let depth = 0; // camera-space depth vs the scene centre: > 0 in front, < 0 behind
       if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         center = this._sceneProjectWorld(target, light.position || { x: 120, y: 200, z: 120 });
         if (!center) return null;
         if (light.type === 'spot') coneTip = this._sceneProjectWorld(target, light.target || { x: 0, y: 0, z: 0 });
+        depth = this._rotateCam(light.position || { x: 120, y: 200, z: 120 }, cam).z;
       } else if (light.type === 'directional') {
         const anchor = this._sceneLightAnchor(target);
         if (!anchor) return null;
@@ -13934,6 +13944,7 @@
         anchorCenter = { ...anchor.center };
         const off = this._lightHandleOffset(target, light, baseR);
         center = { x: anchor.center.x + off.dx, y: anchor.center.y + off.dy };
+        depth = off.dz;
       } else {
         return null; // ambient — nothing to translate
       }
@@ -13951,7 +13962,7 @@
       // Restore dot: a small handle offset up-right of the gizmo (checked after
       // the axes, so an overlapping axis still wins the drag).
       const restore = { x: center.x + R * 1.28, y: center.y - R * 1.28 };
-      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter };
+      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter, depth, behind: depth < -1e-4 };
     }
 
     hitSceneLightGizmo(sx, sy, layer) {
@@ -14180,12 +14191,21 @@
         ctx.closePath();
         ctx.fill();
       });
-      // Center pivot.
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = stroke;
-      ctx.beginPath();
-      ctx.arc(giz.center.x, giz.center.y, 2.6 * unit, 0, TAU);
-      ctx.fill();
+      // Depth cue: the light's glyph at the gizmo centre (solid in front, hollow
+      // dashed + "behind" when behind the scene), and for a sun a ray from the
+      // scene anchor (dotted when behind).
+      if (giz.anchorCenter) {
+        ctx.globalAlpha = giz.behind ? 0.4 : 0.7;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1 * unit;
+        ctx.setLineDash(giz.behind ? [1 * unit, 4 * unit] : []);
+        ctx.beginPath();
+        ctx.moveTo(giz.anchorCenter.x, giz.anchorCenter.y);
+        ctx.lineTo(giz.center.x, giz.center.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      this._drawLightDepthGlyph(giz.center, unit, giz.behind, colors.x, stroke);
       // Restore handle: a small ringed dot with a curved arrow feel (a plain
       // circle keeps it cheap; the tooltip/cursor explains it).
       ctx.globalAlpha = 0.95;
