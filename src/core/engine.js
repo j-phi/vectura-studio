@@ -2892,11 +2892,28 @@
       // 'full' = the settled compose, 'law' = full compose with ribbons drawn
       // as weighted centrelines and mono laws at a coarser lattice (the Fill
       // Style stays visible), 'flat' = the legacy fastPreview silhouette hatch.
-      const tier = options && options.preview === true ? this._sceneDraftTier(group) : 'full';
-      const bounds = {
+      const isPreview = options && options.preview === true;
+      const baseBounds = {
         width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
-        truncate: SETTINGS.truncate, fastPreview: tier === 'flat', preview3dQuality: SETTINGS.preview3dQuality,
+        truncate: SETTINGS.truncate, fastPreview: false, preview3dQuality: SETTINGS.preview3dQuality,
       };
+      // LEVEL S (surface-lock contract §13): a scene whose every fill is a surface-locked MarkSet composes from cached data
+      // and ignores the draft tier, so a drag frame IS the export. Such a frame runs the full tier with no pose warp (it
+      // would only approximate ink that is already exact) and keeps no pose snapshot. The gate is pose-invariant. A scene
+      // whose Level S compose fell back (below) is not Level S until its next settled compose. Partly frameable scenes
+      // (levelS false) keep today's warp / draft tiers.
+      let levelS = false;
+      if (typeof algo.levelS === 'function') {
+        if (!isPreview) group._sceneLevelSFell = false;
+        try { levelS = !group._sceneLevelSFell && algo.levelS(assembled, baseBounds) === true; } catch (err) { levelS = false; }
+      }
+      group._sceneLevelS = levelS;
+      // A Level S drag frame composes at the SETTLED quality: the renderer's draft drag quality would change the ink and give
+      // the frame a different memo key than the release settle (which could then not be a memo hit).
+      if (!isPreview) group._sceneExportQuality = baseBounds.preview3dQuality;
+      else if (levelS && baseBounds.preview3dQuality === 'draft' && group._sceneExportQuality) baseBounds.preview3dQuality = group._sceneExportQuality;
+      const tier = isPreview && !levelS ? this._sceneDraftTier(group) : 'full';
+      const bounds = tier === 'full' ? baseBounds : Object.assign(baseBounds, { fastPreview: tier === 'flat' });
       if (tier === 'law') bounds.lawDraft = true;
 
       // POSE WARP — a preview frame whose scene differs from the last settled
@@ -2905,7 +2922,7 @@
       // O(vertices), no generator run. The settled compose is never touched, so
       // the release / idle render stays byte-identical.
       const PosePreview = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.PosePreview;
-      if (options && options.preview === true && PosePreview && group._scenePose && SETTINGS.scenePoseWarp !== false) {
+      if (isPreview && !levelS && PosePreview && group._scenePose && SETTINGS.scenePoseWarp !== false) {
         let warped = null;
         try {
           const now = PosePreview.compatible(group._scenePose, assembled, bounds);
@@ -2967,8 +2984,12 @@
         const t0 = nowMs();
         let failed = false;
         const pre = options && options.precomputed;
+        const SLStats = levelS && !pre ? (window.Vectura?.Scene3D?.SurfaceLock?.stats || null) : null;
+        const fallbacks0 = SLStats ? SLStats.sceneFallbacks : 0;
         try {
           paths = pre ? pre.paths : (algo.generate(assembled, rng, noise, bounds) || []);
+          // Level S generate fell back to the pose compose (a missing bake): the next frames use the pose machinery.
+          if (SLStats && SLStats.sceneFallbacks !== fallbacks0) { group._sceneLevelS = false; group._sceneLevelSFell = true; }
         } catch (err) {
           console.error('[Engine] Scene group compose failed:', err);
           paths = [];
@@ -3013,7 +3034,7 @@
       if (tier === 'full') {
         group._scenePose = null;
         if (group._scenePoseLift) { group._scenePoseLift.cancel(); group._scenePoseLift = null; }
-        if (PosePreview && SETTINGS.scenePoseWarp !== false) {
+        if (PosePreview && SETTINGS.scenePoseWarp !== false && !group._sceneLevelS) {
           try {
             if (options && options.precomputed) {
               // after a worker settle the lift is time-sliced so it never holds the main thread
@@ -3472,6 +3493,9 @@
         const oid = ownerOf(path);
         const s = oid ? active.get(oid) : null;
         if (!s) return path;
+        // Surface-locked marks (Level S / Level F) are the surface's own: a refit would move ink the lock already placed
+        // exactly, and costs 6-19 ms a frame on the default sphere. Border and edge curves are unchanged.
+        if (isFill(path) && path.meta.surfaceLocked === true) return path;
         const set = isFill(path) ? s.fill : s.border;
         if (!wants(set)) return path;
         return simplifyOne(fitOne(path, set), set);

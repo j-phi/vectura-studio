@@ -1742,6 +1742,8 @@
         algorithm: 'scene3d',
         kind: 'sceneFill',
         sceneTarget: sceneTargetMeta(id, null, null, nearZ, false),
+        // The marks are the surface's own: the Fill Curves fit leaves them alone (Engine._applySceneCurveFinish).
+        surfaceLocked: true,
         ...(st.penId ? { penId: st.penId } : {}),
       }, strokeTreatment(st.params));
     };
@@ -1826,6 +1828,14 @@
 
   window.Vectura.AlgorithmRegistry.scene3d = {
     generate: (params = {}, rng, noise, bounds = {}) => generateWithSeedScope(params, rng, noise, bounds),
+    // Level S gate (contract §13) as a pose-invariant question: would `generate` compose this scene from cached surface-lock
+    // data? Reads no camera and no transform, so one answer holds for a whole drag. The engine uses it to run a drag frame
+    // through the full tier with no pose warp and no spin ring (the frame is the export).
+    levelS: (params = {}, bounds = {}) => {
+      const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
+      if (!SL || typeof SL.frameable !== 'function') return false;
+      try { return SL.frameable(Vectura.Scene3D.Params.normalizeParams(params), bounds) === true; } catch (err) { return false; }
+    },
     generateScene: (params = {}, rng, noise, bounds = {}) => {
       const Params = Vectura.Scene3D.Params;
       const Scene = Vectura.Scene3D.Scene;
@@ -5165,6 +5175,7 @@
             // lines; the clip/emit loop below is unchanged. null (not eligible, no baker, a bake error) falls
             // through to today's path. Deliberately not gated on `draft`.
             const SurfaceLock = Vectura.Scene3D.SurfaceLock;
+            let lockedFill = false;
             const lockFaceStyles = sp.markSpace === 'surface' ? objectHasFaceStyles() : false;
             if (sp.markSpace === 'surface' && SurfaceLock && SurfaceFill && groups.size <= 1 && !lockFaceStyles
               && !spiralFlatClip && !contourRegion) {
@@ -5198,6 +5209,7 @@
                       penWidth,
                       objectId: record.id,
                     });
+                  lockedFill = Array.isArray(lines);
                 }
               }
             }
@@ -5448,6 +5460,11 @@
               sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), highlight: true },
               ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
             };
+            // Level F marks are the surface's own: the Fill Curves fit leaves them alone (Engine._applySceneCurveFinish).
+            if (lockedFill) {
+              fillMeta.surfaceLocked = true; hlMeta.surfaceLocked = true;
+              if (backMeta !== fillMeta) backMeta.surfaceLocked = true;
+            }
             // U7 `toneBands`: split plain front lines by the tone under them.
             const bandN = outBandCount(sp);
             const bandSampler = bandN ? makeToneBandSampler(record, g.faces, bandN) : null;

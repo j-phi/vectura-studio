@@ -12388,12 +12388,16 @@
         const id = this._sceneDragRegenLayerId;
         if (!id) return;
         const SETTINGS = window.Vectura && window.Vectura.SETTINGS;
+        // A Level S scene (surface-lock contract §13) composes at the settled quality: its frame is the export and its release a memo hit.
+        const dragLayer = this.engine.layers.find((l) => l.id === id);
+        const dragGroup = dragLayer && (dragLayer.isGroup ? dragLayer : this.engine._sceneOwnerGroup?.(dragLayer));
+        const levelS = !!(dragGroup && dragGroup._sceneLevelS === true);
         const savedQuality = SETTINGS ? SETTINGS.preview3dQuality : undefined;
-        if (SETTINGS) SETTINGS.preview3dQuality = 'draft';
+        if (SETTINGS && !levelS) SETTINGS.preview3dQuality = 'draft';
         try {
           this.engine.generate(id, { preview: true });
         } finally {
-          if (SETTINGS) SETTINGS.preview3dQuality = savedQuality;
+          if (SETTINGS && !levelS) SETTINGS.preview3dQuality = savedQuality;
         }
         this.draw();
       });
@@ -17543,6 +17547,13 @@
       const group = this._spinGroup();
       const st = this._spin;
       if (!group) { if (st) this._spinDrop(); return; }
+      // Level S (surface-lock contract §13): a drag frame is the export and a cold compose is the bake, not a slow scene, so
+      // no ring is ever started, whatever the last full compose cost.
+      if (group._sceneLevelS === true) {
+        if (st) this._spinDrop();
+        if (this._spinPending) { if (this._spinPending.timer) clearTimeout(this._spinPending.timer); this._spinPending = null; }
+        return;
+      }
       const key = group._sceneSettledKey;
       if (group._pathsFromDraft !== false || !key) return;
       const target = this._spinTarget(group);
@@ -17566,7 +17577,7 @@
     _spinStart(pending) {
       if (this.rotation3DDrag) return;
       const group = this._spinGroup();
-      if (!group || group.id !== pending.groupId || group._sceneSettledKey !== pending.key || group._pathsFromDraft !== false) return;
+      if (!group || group.id !== pending.groupId || group._sceneSettledKey !== pending.key || group._pathsFromDraft !== false || group._sceneLevelS === true) return;
       const target = this._spinTarget(group);
       if (!target || target.id !== pending.targetId) return;
       const Ring = window.Vectura.Scene3D.SpinRing;
@@ -17953,6 +17964,7 @@
     _spinBeginDrag(layer, drag) {
       this.spinStats = this.spinStats || { blits: 0, drags: 0, fallbacks: 0 };
       if (drag.type === 'pitch' || drag.type === 'roll') return;
+      if (layer._sceneLevelS === true) return; // Level S: the frame is the export, no raster ring
       const st = this._spin;
       if (!st || !st.ring || st.ring.disposed || st.groupId !== layer.id) return;
       const target = this._spinTarget(layer);
