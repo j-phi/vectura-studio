@@ -172,7 +172,10 @@ describe('surface lock ground shadow', () => {
       const o = P(fx, fz); const pu = P(fx + h.dirX, fz + h.dirZ); const pn = P(fx + h.nX, fz + h.nZ);
       const lu = Math.hypot(pu.x - o.x, pu.y - o.y);
       const fac = Math.abs((pu.x - o.x) * (pn.y - o.y) - (pu.y - o.y) * (pn.x - o.x)) / lu / h.scaleRef;
-      const want = 1 / Math.min(1, fac);
+      // FX-S spacing floor (owner Q3): the stride is rounded up so the closest drawn pair stays >= 0.8 x the pose spacing.
+      const thin0 = Math.min(1, fac);
+      const want = 1 / (thin0 < 1 ? Math.min(thin0, 1 / Math.max(1, Math.ceil(0.8 / thin0 - 1e-9))) : 1);
+      expect(want * thin0, `pose ${ci} spacing floor`).toBeGreaterThanOrEqual(0.8 - 1e-9);
       const gl = Array.from(gaps);
       expect(Math.max(...gl) - Math.min(...gl), `pose ${ci} gaps ${gl}`).toBeLessThanOrEqual(1);
       expect(Math.min(...gl)).toBeGreaterThanOrEqual(Math.floor(want - 1e-6));

@@ -218,7 +218,7 @@ describe('surface lock fix-ups F-A1..F-A5', () => {
       expect(calls.log.casters[0].shape).toBe('hull');
       expect(calls.some((c) => c[0] === 'ground')).toBe(true);
       const g = calls.find((c) => c[0] === 'ground')[1];
-      expect(g[0].pts.length).toBe(5);
+      expect(g[0].pts.length).toBeGreaterThanOrEqual(5); // FX-S I3: an enlarged plate is frame-clipped like pose, so the ring may have more than 4 corners
     });
   });
 });
