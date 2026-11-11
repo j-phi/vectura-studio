@@ -38,7 +38,10 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
     };
     return c;
   };
-  const flush = () => new Promise((r) => setTimeout(r, 20));
+  // Wait on the real condition, never a fixed delay: the settle unpacks the worker ink in 4 ms setTimeout slices and then composes
+  // on the main thread, so its wall time grows with machine load. (A fixed 20 ms flush raced it and flaked under parallel shards.)
+  const until = async (cond, what) => { while (!cond()) await new Promise((r) => setTimeout(r, 1)); return what; };
+  const settled = (group) => until(() => !(group._sceneBakeSettle && group._sceneBakeSettle.running), 'settle idle');
 
   it('the job returns its bakes; they equal the main-thread bake array for array; the adopted cache generates byte-identically', () => {
     const s = mezzo();
@@ -100,16 +103,16 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
     expect(s.eng.sceneComposeStats.bakeHolds).toBe(10);
     expect(client.runs).toBe(1); // ticks 2..10 coalesce behind the first job
     // land the first (stale: density of tick 1) job; the engine then posts ONE follow-up for the latest state
-    client.pending[0].land(); await flush();
+    client.pending[0].land(); await until(() => client.runs >= 2);
     expect(client.runs).toBe(2);
-    client.pending[1].land(); await flush();
+    client.pending[1].land(); await settled(s.group);
     expect(redraws.length).toBeGreaterThanOrEqual(1);
     expect(SL.stats.bakeMisses - client.jobBakeMisses).toBe(mainMisses0);
-    const settled = signature(s.group.scenePaths);
-    expect(settled).not.toBe(sigBefore);
+    const settledInk = signature(s.group.scenePaths);
+    expect(settledInk).not.toBe(sigBefore);
     // the settled ink is the fresh full generate (cold cache, no worker)
     s.eng.sceneBakeClient = null; SL.clearCache();
-    expect(signature(s.composeFull())).toBe(settled);
+    expect(signature(s.composeFull())).toBe(settledInk);
   }, 120000);
 
   it('an object-scale tick never bakes on the main thread, and the release bakes once (in the worker)', async () => {
@@ -125,9 +128,9 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
       expect(s.composePreview()).toBe(ink);
     }
     expect(SL.stats.bakeMisses - client.jobBakeMisses).toBe(0);
-    client.pending[0].land(); await flush(); // the follow-up for the latest scale
+    client.pending[0].land(); await until(() => client.runs >= 2); // the follow-up for the latest scale
     expect(client.runs).toBe(2);
-    client.pending[1].land(); await flush();
+    client.pending[1].land(); await settled(s.group);
     expect(client.jobBakeMisses).toBe(2); // one bake per job (two states), none on the main thread
     expect(SL.stats.bakeMisses - client.jobBakeMisses).toBe(0);
     // release: the state is already composed (installed from the worker's result): a memo hit, no new job
@@ -162,12 +165,12 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
     expect(s.group.scenePaths).toBe(inkBefore);
     expect(s.eng.sceneComposeStats.bakeHolds).toBeGreaterThanOrEqual(1);
     expect(client.runs).toBe(1);
-    client.pending[0].land(); await flush();
+    client.pending[0].land(); await settled(s.group);
     expect(SL.stats.bakeMisses - client.jobBakeMisses).toBe(0);
-    const settled = signature(s.group.scenePaths);
-    expect(settled).not.toBe(signature(inkBefore));
+    const settledInk = signature(s.group.scenePaths);
+    expect(settledInk).not.toBe(signature(inkBefore));
     s.eng.sceneBakeClient = null; SL.clearCache();
-    expect(signature(s.composeFull())).toBe(settled);
+    expect(signature(s.composeFull())).toBe(settledInk);
     // mutation proof: the same edit without the flag bakes on the main thread
     SL.clearCache(); // the settle above cached the density-77 bake by content; the mutation proof needs it cold
     const s2 = mezzo(); s2.composeFull();
@@ -198,7 +201,7 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
       expect(n).toBeGreaterThan(0);
     }
     // the in-flight worker settle (same state) lands afterwards: the ink is unchanged
-    client.pending[0].land(); await flush();
+    client.pending[0].land(); await settled(s.group);
     expect(signature(s.group.scenePaths)).toBe(exported);
     s.eng.sceneBakeClient = null; SL.clearCache();
     expect(signature(s.composeFull())).toBe(exported);
@@ -237,7 +240,7 @@ describe('surface lock Level S off-thread bake (W2-B2)', () => {
     s.objectsOf()[0].params.style.params.fillDensity = 70;
     const ink = s.group.scenePaths;
     expect(s.composePreview()).toBe(ink);
-    await flush();
+    await until(() => s.group._sceneBakeOffFailed);
     s.objectsOf()[0].params.style.params.fillDensity = 72;
     const paths = s.composePreview();
     expect(paths).not.toBe(ink);
