@@ -173,8 +173,9 @@ describe('surface lock ground shadow', () => {
       const lu = Math.hypot(pu.x - o.x, pu.y - o.y);
       const fac = Math.abs((pu.x - o.x) * (pn.y - o.y) - (pu.y - o.y) * (pn.x - o.x)) / lu / h.scaleRef;
       // FX-S spacing floor (owner Q3): the stride is rounded up so the closest drawn pair stays >= 0.8 x the pose spacing.
-      const thin0 = Math.min(1, fac);
-      const want = 1 / (thin0 < 1 ? Math.min(thin0, 1 / Math.max(1, Math.ceil(0.8 / thin0 - 1e-9))) : 1);
+      // FX-J4: the baked set is h.subdiv x finer than the pose pitch, so the thin factor is in fine-line units.
+      const thin0 = Math.min(1, fac) / h.subdiv;
+      const want = 1 / Math.min(thin0, 1 / Math.max(1, Math.ceil(0.8 / thin0 - 1e-9)));
       expect(want * thin0, `pose ${ci} spacing floor`).toBeGreaterThanOrEqual(0.8 - 1e-9);
       const gl = Array.from(gaps);
       expect(Math.max(...gl) - Math.min(...gl), `pose ${ci} gaps ${gl}`).toBeLessThanOrEqual(1);
@@ -207,5 +208,59 @@ describe('surface lock ground shadow', () => {
     console.log('shadow perf: bake ms', bakeMs.toFixed(2), 'frame median ms', times[30].toFixed(3), 'lines', h.count);
     expect(bakeMs).toBeLessThan(20);
     expect(times[30]).toBeLessThan(1);
+  });
+
+  // FX-J4 (owner Q3 bar): at every pose the locked shadow's nearest-line gap is >= 0.8 x the pose gap and its ink is
+  // within [0.6, 1.15] x the pose ink, in perspective as well as ortho. A whole-stride floor on the coarse bake left
+  // perspective and low-pitch views up to 2x too sparse.
+  describe('FX-J4 shadow stride quantisation', () => {
+    const len = (pts) => { let s = 0; for (let i = 1; i < pts.length; i += 1) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; };
+    const shadowOf = (ps) => ps.filter((p) => ((p.meta || {}).sceneTarget || {}).regionClass === 'castShadow');
+    const gapStats = (ps) => {
+      const segs = [];
+      ps.forEach((p, i) => { for (let k = 1; k < p.length; k += 1) segs.push([p[k - 1], p[k], i]); });
+      const d = [];
+      ps.forEach((p, i) => {
+        if (len(p) < 3) return;
+        const m = p[p.length >> 1]; let best = 1e9;
+        segs.forEach(([a, b, j]) => {
+          if (j === i) return;
+          const vx = b.x - a.x; const vy = b.y - a.y; const L = vx * vx + vy * vy || 1;
+          const t = Math.max(0, Math.min(1, ((m.x - a.x) * vx + (m.y - a.y) * vy) / L));
+          const dd = Math.hypot(a.x + t * vx - m.x, a.y + t * vy - m.y);
+          if (dd < best) best = dd;
+        });
+        d.push(best);
+      });
+      d.sort((a, b) => a - b);
+      return { min: d[0], q1: d[d.length >> 2], median: d[d.length >> 1], n: d.length };
+    };
+    const measure = (opts, pose) => {
+      const SL = V.Scene3D.SurfaceLock; const real = SL.frameable;
+      const s = buildSurfaceLockScene(V, { toneLaw: 'ladder', mapper: 'hatch', markSpace: 'surface', ...opts });
+      s.setPose(pose);
+      SL.resetStats();
+      const a = shadowOf(s.composeFull());
+      const levelS = SL.stats.sceneFrames > 0;
+      SL.frameable = () => false;
+      let b;
+      try { b = shadowOf(s.composeFull()); } finally { SL.frameable = real; }
+      const ink = (ps) => ps.reduce((t, p) => t + len(p), 0);
+      return { levelS, ink: ink(a) / ink(b), S: gapStats(a), F: gapStats(b) };
+    };
+    const CASES = [
+      ['perspective sphere', { kind: 'sphere', camera: { projection: 'perspective' } }, { camYaw: -30, camPitch: 20 }],
+      ['perspective box', { kind: 'box', camera: { projection: 'perspective' } }, { camYaw: -30, camPitch: 20 }],
+      ['ortho box pitch 10', { kind: 'box' }, { camYaw: -30, camPitch: 10 }],
+    ];
+    it.each(CASES)('%s: gap >= 0.8 x pose, median <= 1.2 x pose, ink in [0.6, 1.15] x pose', (label, opts, pose) => {
+      const m = measure(opts, pose);
+      console.log('FX-J4', label, JSON.stringify({ ink: +m.ink.toFixed(3), minGap: +(m.S.min / m.F.median).toFixed(3), medGap: +(m.S.median / m.F.median).toFixed(3) }));
+      expect(m.levelS, 'Level S path').toBe(true);
+      expect(m.S.min).toBeGreaterThanOrEqual(0.8 * m.F.median - 1e-6);
+      expect(m.S.median).toBeLessThanOrEqual(1.2 * m.F.median);
+      expect(m.ink).toBeGreaterThanOrEqual(0.6);
+      expect(m.ink).toBeLessThanOrEqual(1.15);
+    }, 120000);
   });
 });

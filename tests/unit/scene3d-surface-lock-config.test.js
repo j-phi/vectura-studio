@@ -17,13 +17,15 @@ const FINGERPRINTS = {
   // Mezzo print re-pinned after FX-M (the mezzo MarkSet changed on purpose), then after FX-P (p0 x 1.2, level cap 4,
   // MIN_MARK_PEN 4 moved into config; FX-P's own print 1d8c9527... was taken with the stale config MIN_MARK_PEN 2 override).
   mezzo: '20a79de04dd47c7238a047c60346c1908bfee1ea',
-  shadow: '3081b0a9de7f76b704f45c53efca6260579a79aa',
+  // FX-J4: re-pinned deliberately - the ground hatch now bakes BASE_SUBDIV x finer and frameShadow re-quantises the stride.
+  shadow: '6bbd150dd2a1197856a1749d02f73d46ec19e777',
   visibility: 'ef33ad42952a971e66bf301834cf228875c5bcd6',
   // Added by the config clean-up (cfg2): pinned against the pre-move modules (laws constants, shadow SPACING_FLOOR).
   // Re-pinned by W3-B: meta gains toneScaleFree and joinTouching, and the dash bands are emitted in order along the ruling.
   // Re-pinned by FX-J1: the dutyConst MarkSet gains runCapRank and meta.capKey 'ruling' (BAKE_VERSION 4); geometry unchanged.
   lawsDutyConst: '96ef981cef9c7eaf08ffe18897d6a47468013c16',
-  frameShadow: '0be72550cc4496e9fd15757e89a6ac61e8d58874',
+  // Re-pinned by FX-J4: the ground hatch bakes SHADOW.BASE_SUBDIV (3) x finer and frameShadow thins from it.
+  frameShadow: 'e59d97e8f01f245244fc649947565ba85d69b4ec',
   // Added by W3-B: the faceted baker's constants moved into the FACETED namespace (output byte-identical to the module-local values).
   facetedBox: '6f1ac4b47d5e2f6519d58ef4ff0baa70d0e26b5f',
   facetedCross: 'eb49bcd4f2b45329cac6098fd7457f47c8b662a8',
@@ -104,6 +106,7 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
     ['mezzo', { MEZZO: { P0_SCALE: 1.5 } }],
     ['shadow', { SHADOW: { MAX_LINES: 7 } }],
     ['frameShadow', { SHADOW: { SPACING_FLOOR: 3 } }],
+    ['shadow', { SHADOW: { BASE_SUBDIV: 2 } }],
     ['lawsDutyConst', { LAWS: { BANDS: 2 } }],
     ['lawsDutyConst', { LAWS: { DUTY_PERIOD_FLOOR: 3.5 } }],
     ['lawsDutyConst', { LAWS: { DUTY_PITCH_FLOOR: 1.6 } }],
@@ -129,7 +132,7 @@ describe('SCENE3D_SURFACE_LOCK consolidation', () => {
   it.each([
     ['LAWS', ['INK_SPREAD', 'A_DARK', 'MIN_MARK_MM', 'MIN_MARK_PEN', 'DUTY_PERIOD_FLOOR', 'DUTY_PITCH_FLOOR', 'END_PITCH_FLOOR', 'END_RETRACT',
       'MERGE_PERIOD_FLOOR', 'MERGE_M_MIN', 'MERGE_TOUCH_INK', 'BANDS', 'JIT_FRAC', 'MAX_VERTS', 'GOLDEN']],
-    ['SHADOW', ['SPACING_FLOOR']],
+    ['SHADOW', ['SPACING_FLOOR', 'BASE_SUBDIV']],
     ['VISIBILITY', ['CONVEXITY_BUDGET', 'CONVEXITY_EPS']],
     ['LADDER', ['MIN_SEP_FRAC', 'RELABEL_MIN_MM', 'RELABEL_STAGGER']],
     ['FACETED', ['STEP_MM', 'EDGE_MM', 'MIN_RUN_MM', 'MAX_VERTS', 'CROSS_OBJ_DEG', 'PHASE_FAM1', 'GAIN_LIT', 'GAIN_SPAN', 'PLOT_FLOOR_SLACK', 'ZOOM_HEADROOM']],
