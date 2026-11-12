@@ -13165,6 +13165,8 @@
           hash: sfHash,
           angleDeg: finite(opts.fillAngle, 0),
           densityScale: opts.densityScale,
+          // Light model v2 (H2): the mono laws shade each sample themselves (s.L / s.S) from this context.
+          ...(opts.toneModel === 'v2' ? { toneModel: 'v2', light: opts.lightCtx || null } : {}),
           crossDelta: crossDelta,
           stripeAlign: opts.stripeAlign,
           chainMarks: opts.chainMarks,

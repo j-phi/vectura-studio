@@ -1396,9 +1396,12 @@
   // ignored Density entirely before this (their `makeCtx` never read
   // `masterPitch`). Built from the same curve the curved ladder already uses, so
   // the slider means the same thing on every Fill Style.
-  const monoDensityScale = (density) => clamp(
-    curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4,
-  );
+  // Light model v2 (H2): the legacy curve reaches the laws' clamp (4x) by Density ~80, so 100 and 200 were identical. v2 spends the
+  // same 1..4 span over 50..200 (geometric, 1 at the shipped Density 50) so every Density step still changes the fill.
+  const V2_DENSITY_SPAN = 150;
+  const monoDensityScale = (density, v2) => (v2
+    ? clamp(Math.pow(4, (clamp(finite(density, 50), 0, 200) - 50) / V2_DENSITY_SPAN), 0.25, 4)
+    : clamp(curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4));
 
   // U5 (R3-1) — "Flat vs Surface" is ONE setting, `wrap`: 'surface' (default) wraps the
   // fill round the form, 'flat' draws it in screen space (a Contour's silhouette inset
@@ -1419,6 +1422,7 @@
   // `monoDensityLegacyAt` (see Params.pinLegacyMonoDensity): while Density still
   // equals it, the law reads 50 (what it effectively rendered when Density was
   // inert); an edit releases the pin.
+  const isToneV2 = (p) => Boolean(p && p.tone && p.tone.model === 'v2');
   const monoDensityOf = (sp) => {
     const d = finite(sp && sp.fillDensity, 50);
     const pin = sp && sp.monoDensityLegacyAt;
@@ -1593,7 +1597,7 @@
     if (!cp && !facetedSizes) return null;
     const t = (obj && obj.transform) || {};
     const s0 = finite(t.scale, 1);
-    const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp)) };
+    const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp), isToneV2(p)) };
     delete style.markSpace;
     // Same zoom reference the camera applies (Scene.buildProjOpts): snapped to a power of two so a wheel zoom
     // inside one octave keeps the bake.
@@ -2046,8 +2050,16 @@
         return sceneDepth;
       };
       const shapeIntensity = (I, wp) => (activeToneShape ? Regions.shapeTone(I, wp, activeToneShape) : I);
+      // Light model v2 (H2): the pose path's diffuse luminance is Regions.shade's L (ambient + bounce, no lit floor), the same
+      // function Level S / F lock fills use (SurfaceLock.toneFnV2). The specular channel S travels beside it (`v2Light`).
+      const poseV2 = Boolean(p.tone && p.tone.model === 'v2' && Regions && typeof Regions.shade === 'function');
+      const poseTone = p.tone || {};
       const intensityFn = toneOn
-        ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        ? (poseV2
+          ? (nw, wp) => shapeIntensity(Regions.shade(nw, wp, activeLights, {
+            model: 'v2', eye: null, ambient: poseTone.ambient, bounce: poseTone.bounce, shadowFn,
+          }).L, wp)
+          : (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp))
         : null;
       // Surface-locked fills read the tone but never the draft tier: the same formula as intensityFn without the
       // `!draft` gate, so a drag frame and the settled frame (and the export) compose the same fill.
@@ -2232,6 +2244,23 @@
       const specularFn = (toneOn && Regions && typeof Regions.specularTerm === 'function')
         ? (nw, wp) => Regions.specularTerm(nw, wp, activeLights, scene.camera, specShininess) : null;
       const penWidth = finite(bounds.penWidth, 0.3);
+      // The world-space eye vector (toward the camera): the camera rotation maps world to camera space, so camera +z is the
+      // third row of that matrix, i.e. the z of each rotated basis vector.
+      const worldEye = (() => {
+        if (!poseV2 || !G3 || typeof G3.rotatePoint !== 'function' || !scene || !scene.camera) return null;
+        const ex = G3.rotatePoint({ x: 1, y: 0, z: 0 }, scene.camera);
+        const ey = G3.rotatePoint({ x: 0, y: 1, z: 0 }, scene.camera);
+        const ez = G3.rotatePoint({ x: 0, y: 0, z: 1 }, scene.camera);
+        return { x: ex.z, y: ey.z, z: ez.z };
+      })();
+      // What a pose fill needs to shade a sample under v2 (samples carry s.L / s.S; the mono laws read them). `lights` is the
+      // live per-record binding, so an emissive object's co-located lights are picked up exactly like intensityFn.
+      const v2LightCtx = () => (poseV2 ? {
+        model: 'v2', lights: activeLights, eye: worldEye,
+        shininess: specShininess,
+        ks: poseTone.specular && poseTone.specular.enabled === false ? 0 : finite(Regions.SHADE_DEFAULTS && Regions.SHADE_DEFAULTS.ks, 1),
+        ambient: poseTone.ambient, bounce: poseTone.bounce, shadowFn,
+      } : null);
 
       // Mean world position of a face's verts (the point at which point/spot
       // lights are sampled for that face). null when the face has no world verts.
@@ -3794,7 +3823,8 @@
             minMarkMM: Math.max(MIN_RUN_MM, 2 * monoPen),
             hash: ldHash,
             angleDeg: screenAngleDeg,
-            densityScale: monoDensityScale(monoDensityOf(styleParams)),
+            densityScale: monoDensityScale(monoDensityOf(styleParams), isToneV2(p)),
+            ...(poseV2 ? { toneModel: 'v2', light: v2LightCtx() } : {}),
             crossDelta: finite(styleParams.crossAngleDelta, 90),
             stripeAlign: styleParams.stripeAlign,
             chainMarks: styleParams.chainMarks,
@@ -5371,7 +5401,7 @@
                 // U4b: mono-law Density / turingStripe alignment, and the
                 // legacy marker that keeps a migrated contField* document on
                 // its original L*-linear curve (see cfWantedPitch).
-                densityScale: monoDensityScale(monoDensityOf(sp)),
+                densityScale: monoDensityScale(monoDensityOf(sp), isToneV2(p)),
                 stripeAlign: sp.stripeAlign,
                 fieldCurve: sp.fieldCurve,
                 // U6: artistic controls. Absent keys keep every engine literal.
@@ -5480,6 +5510,8 @@
                 // and ignored `tone.specular` entirely (O4/O5/O24).
                 specularFn: grpHLOff ? null : specularFn,
                 specShininess,
+                toneModel: poseV2 ? 'v2' : undefined,
+                lightCtx: v2LightCtx(),
                 noHighlight: grpHLOff,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpCueDensity ? 1 : grpXray.backDensity } : null,
