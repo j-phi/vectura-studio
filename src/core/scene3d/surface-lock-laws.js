@@ -48,6 +48,14 @@
     V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
     V2_MAX_SEG_MM: 2.0,     // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
     V2_PAPER_BAND: 0.15,    // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+    TICK_LEN_PITCH: 0.9,    // D1 mkTick: tick length, x the row pitch (raised to 1.15 x the minimum mark)
+    DOT_KAPPA: 2.0,         // D1 mkDotScreen: dot lattice spacing, x the full-ink ruling pitch
+    DOT_SEGS: 8,            // D1 mkDotScreen: vertices of a dot ring
+    RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core is one third of it)
+    SCRIBBLE_K: 3.0,        // D1 mkScribble: zigzag period, x the full-ink ruling pitch
+    SCRIBBLE_AMP: 0.4,      // D1 mkScribble: peak amplitude, x the row pitch
+    BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
+    BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
     MAX_VERTS: 200000,      // contract §2 budget
     HATCH_D_MAX: 100,
     GOLDEN: 0.6180339887498949,
@@ -57,9 +65,18 @@
   const LAW_IDS = ['dutyConst', 'endShorten', 'mergeLadder', 'phaseBlue'];
   const FIT_MAPPERS = ['hatch', 'crosshatch'];
   const FIT_PRIMITIVES = ['sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'torus'];
+  // Wave D1 (light realism): mark laws baked as fractions of marks along the locked rulings. v2 scenes ONLY (`spec.toneModel === 'v2'`,
+  // contract A20): a legacy / saved scene keeps its exact pose output, so no SCENE_VERSION migration is needed.
+  const MARK_LAW_IDS = ['mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount'];
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(MARK_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   })]);
@@ -164,7 +181,12 @@
     const lut = new Float32Array(size + 1);
     const law = spec && spec.toneLaw;
     let fn;
-    if ((law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx)) {
+    if (MARK_LAW_IDS.indexOf(law) !== -1) {
+      const M = markModel(law, T, 1);
+      if (toneIsOff(toneCtx)) { const off = clamp(M.peff / T.PMAX, 0, 1) / M.rowPitch; fn = () => off; } // contract §5: uniform Density
+      else { const D = targetOf(T); fn = (I) => D(I) / M.rowPitch; }
+    }
+    else if ((law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx)) {
       const pitch = (law === 'dutyConst' ? dutyModel(T) : endModel(T)).pitch;
       if (toneIsOff(toneCtx)) { // contract §5: tone off draws the uniform Density = the ladder's own tone-off ink (one ruling per lit pitch)
         const off = clamp(pitch / T.PMAX, 0, 1) / pitch;
@@ -187,6 +209,7 @@
     const prim = primitiveOf(spec);
     const style = spec.style || {};
     return FIT.some((row) => row.laws.indexOf(spec.toneLaw) !== -1
+      && (!row.v2Only || bakeIsV2(spec))
       && row.mappers.indexOf(spec.mapper) !== -1
       && row.primitives.indexOf(prim) !== -1
       && !Object.keys(row.refuse).some((k) => row.refuse[k].indexOf(style[k]) !== -1));
@@ -340,11 +363,183 @@
     }
   };
 
+
+  // ---- Wave D1: mark laws (v2 scenes only) ---------------------------------------------------------------------------
+  // Every law is a LATTICE OF MARKS on the locked, evenly spaced rulings. The full-ink coverage is the shared v2 target's dark
+  // end (pen / peff, the dutyConst v2 ink); the marks are laid so that all of them together reach exactly that coverage, and a
+  // tone draws the FRACTION D(I) of them (a mark is on iff its low-discrepancy key is below D, so the marks drawn at a tone are a
+  // subset of those at every darker tone: monotone by construction, graded to paper, no lit floor, no cliff). The tone is a function
+  // of the light alone (meta.toneScaleFree), so orbiting the camera re-uses every evaluation.
+  // `lam` = the baked ruling pitch / the designed row pitch (the chart rounds the ruling count, so it is 0.7 .. 1.4): the marks are
+  // re-sized for the pitch the rulings actually have, so the full-ink coverage stays pen / peff. The tone LUT uses lam = 1 (it
+  // reads only peff and rowPitch, which do not depend on it).
+  const markModel = (law, T, lam) => {
+    const peff = dutyModel(T).pitch;            // full-ink ruling pitch (screen mm): coverage pen / peff
+    const m = { peff, rowPitch: peff, lam: lam || 1 };
+    const rowAct = (rp) => rp * m.lam;
+    if (law === 'mkTick') {
+      m.len = Math.max(K.TICK_LEN_PITCH * peff * m.lam, 1.15 * T.MARKMIN);
+      m.period = m.len * peff / rowAct(m.rowPitch);
+    } else if (law === 'mkDotScreen') {
+      m.rowPitch = 0.8660254 * K.DOT_KAPPA * peff;
+      m.period = K.DOT_KAPPA * peff * m.lam;
+      const circ = rowAct(m.rowPitch) * m.period / peff;
+      m.radius = circ / (2 * K.DOT_SEGS * Math.sin(Math.PI / K.DOT_SEGS));
+    } else if (law === 'mkDashRamp') {
+      m.period = Math.max(K.RAMP_PERIOD_MARKS * T.MARKMIN, 2 * T.FLOOR);
+      m.keyScale = 1 / Math.min(1, m.lam);      // denser rulings than designed: fewer cells drawn
+    } else if (law === 'mkScribble') {
+      m.period = K.SCRIBBLE_K * peff;
+      let row = peff;
+      for (let i = 0; i < 24; i++) { const a = K.SCRIBBLE_AMP * row; row = peff * 4 * Math.hypot(m.period / 4, a) / m.period; }
+      m.rowPitch = row;
+      const lz = rowAct(row) * m.period / peff;          // zigzag length per period that keeps the coverage
+      m.amp = Math.sqrt(Math.max(0, (lz / 4) * (lz / 4) - (m.period / 4) * (m.period / 4)));
+    } else { // bundleCount
+      m.rowPitch = Math.max(2, Math.round(K.BUNDLE_N)) * peff;
+      m.n = clamp(Math.round(K.BUNDLE_N * m.lam), 2, 5);
+      m.gap = K.BUNDLE_GAP_PEN * T.PEN;
+    }
+    return m;
+  };
+  // Point, outward normal and unit tangent of the ruling at arc length x.
+  const frameAt = (R, x) => {
+    let lo = 0; let hi = R.n - 2;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (R.s[mid] <= x) lo = mid; else hi = mid - 1; }
+    const i = lo; const d = R.s[i + 1] - R.s[i]; const u = d > 0 ? clamp((x - R.s[i]) / d, 0, 1) : 0;
+    const a = [R.px[i], R.py[i], R.pz[i], R.nx[i], R.ny[i], R.nz[i]];
+    const b = [R.px[i + 1], R.py[i + 1], R.pz[i + 1], R.nx[i + 1], R.ny[i + 1], R.nz[i + 1]];
+    const P = lerpPt(a, b, u);
+    let tx = b[0] - a[0]; let ty = b[1] - a[1]; let tz = b[2] - a[2];
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    // side = n x t (in the tangent plane, perpendicular to the ruling)
+    let sx = P[4] * tz - P[5] * ty; let sy = P[5] * tx - P[3] * tz; let sz = P[3] * ty - P[4] * tx;
+    const sl = Math.hypot(sx, sy, sz) || 1; sx /= sl; sy /= sl; sz /= sl;
+    return { P, t: [tx, ty, tz], s: [sx, sy, sz] };
+  };
+  const offsetPt = (P, dir, d) => [P[0] + dir[0] * d, P[1] + dir[1] * d, P[2] + dir[2] * d, P[3], P[4], P[5]];
+
+  const bakeMarks = (spec) => {
+    const law = spec.toneLaw;
+    const T = toneParams(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
+    const litCap = (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * T.PEN;
+    const M0 = markModel(law, T, 1);
+    const lstar = Math.max(0, Math.ceil(Math.log2(litCap / M0.rowPitch)));
+    const lad = bakeLadder(spec, M0.rowPitch * Math.pow(2, lstar));
+    const gate = Math.pow(2, lstar);
+    const pEff = lad.meta.p0 / gate;
+    const rho = (pEff * scaleRef) / M0.rowPitch;
+    const M = markModel(law, T, rho);
+    const SM = MS();
+    const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const tmp = { count: 0 };
+    const out = [0, 0, 0];
+    const meta = Object.assign({}, lad.meta, {
+      lawId: law, gain: 2, toneModel: 'pitch', scaleRef, p0: pEff, rho, lstar, toneScaleFree: true, toneModelV2: true,
+      capKey: 'ruling', minMarkMM: T.MARKMIN, joinTouching: law === 'mkDashRamp' || law === 'mkScribble',
+    });
+    const cell = M.period / scaleRef;
+    const emitP = (pts, key, fam, flags, capRank) => emitPoly(B, pts, key, fam, flags, capRank, tmp);
+    let idx = 0;
+    for (let r = 0; r < lad.runCount; r++) {
+      if (lad.runLevel[r] > lstar) continue;
+      if ((lad.runFlags[r] & SM.FLAG.CLOSED) !== 0) continue;
+      const R = readRun(lad, r, out);
+      if (!(R.total > 0)) continue;
+      const fam = lad.runFamily[r];
+      const capRank = keyOfRun(lad, r) / gate;
+      const ph = frac((idx + 1) * K.GOLDEN + phase);
+      const keyOf = (c) => rho * frac(vdc2(c) + ph);
+      const ks = M.keyScale || 1;
+      if (law === 'mkTick' || law === 'mkDotScreen') {
+        const stagger = law === 'mkDotScreen' ? 0.5 * (idx % 2) + 0.25 * ph : ph;
+        let c = 0;
+        for (let c0 = -stagger * cell; c0 < R.total + cell; c0 += cell, c++) {
+          const xc = c0 + 0.5 * cell;
+          if (xc < 0 || xc > R.total) continue;
+          const F = frameAt(R, xc);
+          if (law === 'mkTick') {
+            const h = 0.5 * M.len / scaleRef;
+            emitP([offsetPt(F.P, F.s, -h), offsetPt(F.P, F.s, h)], keyOf(c), fam, 0, capRank);
+          } else {
+            const rad = M.radius / scaleRef; const ring = [];
+            for (let q = 0; q < K.DOT_SEGS; q++) {
+              const a = 2 * Math.PI * q / K.DOT_SEGS; const ca = Math.cos(a) * rad; const sa = Math.sin(a) * rad;
+              ring.push([F.P[0] + F.t[0] * ca + F.s[0] * sa, F.P[1] + F.t[1] * ca + F.s[1] * sa, F.P[2] + F.t[2] * ca + F.s[2] * sa, F.P[3], F.P[4], F.P[5]]);
+            }
+            emitP(ring, keyOf(c), fam, SM.FLAG.CLOSED, capRank);
+          }
+        }
+      } else if (law === 'mkDashRamp') {
+        // Five runs per cell, ordered along the ruling: outer, flank, core, flank, outer (thirds of the cell: core 1/3, flanks 1/3,
+        // outers 1/3). The target D draws the core in every cell once D > 0 and extends a cell to flanks / outers as D passes 1/3, 2/3:
+        // dots -> dashes -> a continuous ruling. Touching bands are joined by the frame (A11).
+        const bandKey = (b, u) => ks * rho * (b === 0 ? u / 3 : (b === 1 ? (1 + u) / 3 : (2 + u) / 3)); // core, flank, outer
+        let c = 0;
+        const ph0 = frac((idx + 1) * K.GOLDEN + phase);
+        for (let c0 = -ph0 * cell; c0 < R.total; c0 += cell, c++) {
+          const u = frac(vdc2(c) + ph);
+          // piece order along the cell: outerL(0..1/6), flankL(1/6..1/3), coreL... (core is 1/3..2/3 = two edges), flankR, outerR
+          const seq = [[0, 1 / 6, 2], [1 / 6, 1 / 3, 1], [1 / 3, 2 / 3, 0], [2 / 3, 5 / 6, 1], [5 / 6, 1, 2]];
+          for (let q = 0; q < seq.length; q++) {
+            const sa = clamp(c0 + seq[q][0] * cell, 0, R.total); const sb = clamp(c0 + seq[q][1] * cell, 0, R.total);
+            if (!(sb - sa > 1e-6)) continue;
+            emitP(decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), bandKey(seq[q][2], u), fam, 0, capRank);
+          }
+        }
+      } else if (law === 'mkScribble') {
+        const amp = M.amp / scaleRef;
+        let c = 0;
+        const ph0 = frac((idx + 1) * K.GOLDEN + phase);
+        for (let c0 = -ph0 * cell; c0 < R.total; c0 += cell, c++) {
+          const sa = c0; const sb = c0 + cell;
+          if (sb <= 0 || sa >= R.total) continue;
+          const pts = [];
+          const legs = [[0, 0], [0.25, 1], [0.75, -1], [1, 0]];
+          let ok = true;
+          for (let q = 0; q < legs.length; q++) {
+            const x = sa + legs[q][0] * cell;
+            if (x < 0 || x > R.total) { ok = false; break; }
+            const F = frameAt(R, x);
+            pts.push(offsetPt(F.P, F.s, legs[q][1] * amp));
+          }
+          if (ok) emitP(pts, keyOf(c), fam, 0, capRank);
+        }
+      } else { // bundleCount
+        const gap = M.gap / scaleRef;
+        const base = decimate(rawPoints(R), K.V2_TOL_MM, K.V2_MAX_SEG_MM);
+        const rr = frac(vdc2(idx) + phase);
+        const sides = [0, 1, -1, 2, -2];
+        const nPass = M.n;
+        const dirs = base.map((P, i) => {
+          const a = base[Math.max(0, i - 1)]; const b = base[Math.min(base.length - 1, i + 1)];
+          const tx = b[0] - a[0]; const ty = b[1] - a[1]; const tz = b[2] - a[2];
+          let sx = P[4] * tz - P[5] * ty; let sy = P[5] * tx - P[3] * tz; let sz = P[3] * ty - P[4] * tx;
+          const sl = Math.hypot(sx, sy, sz) || 1; return [sx / sl, sy / sl, sz / sl];
+        });
+        for (let j = 0; j < nPass; j++) {
+          const off = sides[j] * gap;
+          const pts = base.map((P, i) => offsetPt(P, dirs[i], off));
+          emitP(pts, rho * (j + rr) / nPass, fam, 0, capRank);
+        }
+      }
+      if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+      idx += 1;
+    }
+    const ms = B.finish();
+    ms.bakerId = 'laws';
+    ms.meta = meta;
+    return ms;
+  };
+
   // ---- the bake ----------------------------------------------------------------------------------------------
   const bake = (spec) => {
     sync();
     const law = spec && spec.toneLaw;
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
+    if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
     const T = toneParams(spec);
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
     const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
