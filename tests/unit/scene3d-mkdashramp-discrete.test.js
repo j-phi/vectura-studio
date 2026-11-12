@@ -159,7 +159,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };
     p.camera = clone(Params.DEFAULT_CAMERA);
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...{ ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } }, enabled: true };
     p.lights = [SUN];
     p.styleTable = {
       scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity, toneLaw } }, byObject: {},
@@ -320,6 +320,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     test('T4b\'s own fixture (engine.addLayer insert pipeline, d=220) is unaffected', () => {
       const engine = new V.VectorEngine();
       const groupId = engine.addLayer('scene3d');
+      engine.getLayerById(groupId).params.tone = { ...engine.getLayerById(groupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
       pinLegacySun(engine, groupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
       const group = engine.getLayerById(groupId);
       engine.getLayerDescendants(groupId)
@@ -354,6 +355,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
 
       const neutralEngine = new neutralRuntime.window.Vectura.VectorEngine();
       const neutralGroupId = neutralEngine.addLayer('scene3d');
+      neutralEngine.getLayerById(neutralGroupId).params.tone = { ...neutralEngine.getLayerById(neutralGroupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
       pinLegacySun(neutralEngine, neutralGroupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
       const neutralGroup = neutralEngine.getLayerById(neutralGroupId);
       neutralEngine.getLayerDescendants(neutralGroupId)

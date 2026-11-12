@@ -55,7 +55,7 @@ describe('self-crossing ribbon laws keep their mid-band tone', () => {
     };
     const base = { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60, toneLaw: law } };
     p.styleTable = { scene: clone(base), byObject: { ball: clone(base) }, byFace: {} };
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...clone(defaults).tone, enabled: true, model: 'legacy', specular: { enabled: true, size: 1 } };
     p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 30, intensity: 1, castShadows: false }];
     return p;
   };

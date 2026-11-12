@@ -100,6 +100,7 @@ describe('W-31 — crosshatch CELL SHAPE, Rank-3 non-regression ceiling (no sour
   // plus a camera-b toggle and a flat-tone (`lights: []`) toggle. ──────────
   const sceneFor = (primitive, density, camB, flat, extraStyle = {}) => {
     const p = clone(defaults);
+    p.tone = { ...p.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): legacy-look pin
     p.camera = camB ? { ...P.DEFAULT_CAMERA, yaw: 40, pitch: -15 } : { ...P.DEFAULT_CAMERA };
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };
