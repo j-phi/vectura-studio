@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { legacyLights } = require('../helpers/legacy-sun');
 
 /*
  * fs-v2-facetedangle — owner-reported live defect: "changing the fill
@@ -124,6 +125,7 @@ describe('Scene3D — faceted (solid/buckyball) fill bearing is Density-invarian
 
   const sceneParams = (fillAngle, density) => {
     const p = clone(defaults);
+    p.lights = legacyLights(p.lights); // the T-zone yaw/pitch below was swept under the pre-v7 sun
     // bands=4 is required to ever reach the T zone at all (§5.3) — see file
     // header. Ladder/thresholds otherwise mirror the shipped default shape.
     p.tone = {

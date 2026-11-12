@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 /*
  * THE FIXTURE IS THE APP DEFAULT — NOT A HAND-PARAMETERISED ONE.
@@ -68,6 +69,7 @@ describe('Scene3D — the APP DEFAULT scene keeps ink on the lit side', () => {
   const appDefault = (mapper) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');      // === addSceneTree()
+    pinLegacySun(engine, gid); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
     obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface

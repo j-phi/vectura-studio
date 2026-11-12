@@ -737,7 +737,8 @@
   // freshly added light child is valid before the next compose. The `id` is set
   // to the child LAYER id at compose time (identity contract) — omitted here.
   const SCENE_LIGHT_SEED = {
-    directional: { type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true },
+    // v7: the front illustration key (lockstep with ALGO_DEFAULTS.sceneLight3d).
+    directional: { type: 'directional', azimuth: 330, elevation: 40, intensity: 1, castShadows: true },
     point: { type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, intensity: 1, castShadows: true },
     spot: {
       type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },

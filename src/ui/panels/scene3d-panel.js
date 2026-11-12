@@ -2952,9 +2952,9 @@
     host.appendChild(note);
 
     if (isDir) {
-      slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 135, min: 0, max: 360, step: 1, defaultValue: 135,
+      slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 330, min: 0, max: 360, step: 1, defaultValue: 330,
         ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); }) });
-      slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 45, min: 0, max: 90, step: 1, defaultValue: 45,
+      slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 40, min: 0, max: 90, step: 1, defaultValue: 40,
         ariaLabel: 'Light elevation (degrees)', ...liveSlider((v) => { p.elevation = Math.round(v); }) });
     }
     if (isPoint || isSpot || isArea) vec3('position', 'Position', { x: 120, y: 200, z: 120 });
@@ -3082,12 +3082,17 @@
     // 2A's normalizeParams also guarantees lights[0], so this is a no-op once
     // the engine has run.
     const ensureLight = () => {
+      // Legacy-tone documents keep the pre-v7 sun (az 135, behind the subject);
+      // a new/v2 scene gets the front key (az 330 / el 40).
+      const legacyTone = params.tone && params.tone.model === 'legacy';
+      const sunAz = legacyTone ? 135 : 330;
+      const sunEl = legacyTone ? 45 : 40;
       if (!Array.isArray(params.lights) || !params.lights.length) {
-        params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }];
+        params.lights = [{ id: 'sun', type: 'directional', azimuth: sunAz, elevation: sunEl, castShadows: true }];
       }
       const l = params.lights[0];
-      if (!Number.isFinite(l.azimuth)) l.azimuth = 135;
-      if (!Number.isFinite(l.elevation)) l.elevation = 45;
+      if (!Number.isFinite(l.azimuth)) l.azimuth = sunAz;
+      if (!Number.isFinite(l.elevation)) l.elevation = sunEl;
       if (typeof l.castShadows !== 'boolean') l.castShadows = true;
       return l;
     };
@@ -3129,7 +3134,7 @@
       if (type === 'area') {
         return { id, type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, intensity: 1, castShadows: true };
       }
-      return { id, type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true };
+      return { id, type: 'directional', azimuth: 330, elevation: 40, intensity: 1, castShadows: true };
     };
     const addLight = (type) => {
       let newId = null;
@@ -4292,7 +4297,7 @@
       commit(() => {
         const lt = lightById(lid);
         if (!lt) return;
-        if (lt.type === 'directional') { lt.azimuth = 135; lt.elevation = 45; }
+        if (lt.type === 'directional') { lt.azimuth = 330; lt.elevation = 40; }
         else if (lt.type === 'area') {
           lt.position = { x: 120, y: 200, z: 120 };
           lt.size = 120;
@@ -4694,14 +4699,14 @@
       inspectorHost.appendChild(note);
       if (isDir) {
         sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
-          value: Number.isFinite(light.azimuth) ? light.azimuth : 135,
-          min: 0, max: 360, step: 1, defaultValue: 135,
+          value: Number.isFinite(light.azimuth) ? light.azimuth : 330,
+          min: 0, max: 360, step: 1, defaultValue: 330,
           ariaLabel: 'Light azimuth (degrees)',
           ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.azimuth = Math.round(v); }),
         });
         sliderRow(inspectorHost, inspectorComps, 'Elevation', {
-          value: Number.isFinite(light.elevation) ? light.elevation : 45,
-          min: 0, max: 90, step: 1, defaultValue: 45,
+          value: Number.isFinite(light.elevation) ? light.elevation : 40,
+          min: 0, max: 90, step: 1, defaultValue: 40,
           ariaLabel: 'Light elevation (degrees)',
           ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); }),
         });
@@ -4788,7 +4793,7 @@
         resetBtn.type = 'button';
         resetBtn.className = 'vs3-light-reset';
         resetBtn.textContent = 'Reset light';
-        resetBtn.title = isDir ? 'Restore azimuth 135° / elevation 45°' : 'Restore default position';
+        resetBtn.title = isDir ? 'Restore azimuth 330° / elevation 40°' : 'Restore default position';
         resetBtn.addEventListener('click', () => resetLight(lid));
         resetRow.appendChild(resetBtn);
         inspectorHost.appendChild(resetRow);
