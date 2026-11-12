@@ -161,7 +161,7 @@ const evalLight = (V, nw, wp, ctx) => {
   const R = V.Scene3D.Regions;
   if (ctx.shade) return ctx.shade(nw, wp, ctx);
   if (ctx.model === 'v2' && typeof R.shade === 'function') {
-    const r = R.shade(nw, wp, ctx.lights, { model: 'v2', eye: ctx.eyeWorld, ambient: ctx.ambient, bounce: ctx.bounce, shininess: ctx.shininess, ks: ctx.ks, shadowFn: ctx.visFn ? (() => ctx.visFn(nw, wp)) : null });
+    const r = R.shade(nw, wp, ctx.lights, { model: 'v2', eye: ctx.eyeWorld, ambient: ctx.ambient, bounce: ctx.bounce, shininess: ctx.shininess, ks: ctx.ks, shadowFn: ctx.visFn ? (() => !(ctx.visFn(nw, wp) > 0.5)) : null });
     return { L: r.L, S: r.S || 0 };
   }
   const nl = nw.x * ctx.lightWorld.x + nw.y * ctx.lightWorld.y + nw.z * ctx.lightWorld.z;

@@ -6,9 +6,9 @@ describe('light-realism harness (legacy reference numbers)', () => {
   let rt; let V; let surf; let pose; let front;
   beforeAll(async () => {
     rt = await LR.loadRuntime(); V = rt.V;
-    surf = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'surface' }));
-    pose = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'pose' }));
-    const f = LR.buildCase(V, { markSpace: 'surface' }); LR.setLightCam(f, LR.LIGHTS.front);
+    surf = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'surface', tone: { model: 'legacy' } }));
+    pose = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'pose', tone: { model: 'legacy' } }));
+    const f = LR.buildCase(V, { markSpace: 'surface', tone: { model: 'legacy' } }); LR.setLightCam(f, LR.LIGHTS.front);
     front = LR.measure(f);
   }, 120000);
   afterAll(() => rt && rt.cleanup());

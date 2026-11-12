@@ -44,6 +44,13 @@
     // surface-lock.js (core): FRESH_MAX caps the per-frame fresh-key list; FALLBACK_FLOOR_PEN is the plot floor (x pen) when Regions is absent.
     FRESH_MAX: 256,
     FALLBACK_FLOOR_PEN: 2.2,
+    // Tone model v2 (light realism; docs/surface-lock-contract.md A16-A18). Read by surface-lock.js (the frame). The per-baker v2
+    // constants (V2_*) sit in the baker's own table below, with the numbers each baker carried before they moved here.
+    V2: Object.freeze({
+      // A17: strength of the facing compensation in the frame's tone demand. g(c) = 1 + strength * (2c / (1 + c) - 1) scales the
+      // demand so equal tone reads equal ink per SCREEN area at the limb (c small) and the centre (c = 1). 0 = off.
+      FACING_COMP: 1,
+    }),
     // ---- per-module tuning (behaviour-neutral: each value is the literal the module carried before). Each module keeps
     // the same numbers as a safe fallback for when this table is not loaded.
     // surface-lock-ladder.js (hatch, crosshatch, contour, spiral, stipple). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
@@ -70,6 +77,9 @@
       MIN_SEP_FRAC: 0.84,  // measured worst local ruling pitch / nominal (hatch, default sphere); the law's separation bar reads it
       RELABEL_MIN_MM: 4,  // a relabel piece shorter than this (object mm) takes its finer neighbour's label
       RELABEL_STAGGER: 0.5,  // relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
+      V2_P0_PEN: 4,  // tone model v2: the darkest pitch at Density 0, in pens (it falls to the plot floor at Density 200)
+      V2_DENSITY_EXP: 3,  // tone model v2: Density -> darkest pitch curve (1 - d/200)^exp, so 100 and 200 stay distinct
+      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
     }),
     // surface-lock-mezzo.js (mezzotint). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
     MEZZO: Object.freeze({
@@ -113,6 +123,7 @@
       PREV_SEED_D: 4,  // seeds beside lower-level lines every max(seedArc, this x d_l)
       FALLBACK_SEEDED: 100,  // random fallback candidates for levels > 0
       CONT_MIN_D: 1,  // a continuation run shorter than this (x d_l) is dropped
+      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper; same value as the laws baker
     }),
     // surface-lock-shadow.js (locked ground shadow).
     SHADOW: Object.freeze({
@@ -147,6 +158,9 @@
       MAX_VERTS: 200000,  // contract §2 budget
       HATCH_D_MAX: 100,
       GOLDEN: 0.6180339887498949,
+      V2_TOL_MM: 0.02,  // tone model v2: chord tolerance of the decimated polylines (object mm)
+      V2_MAX_SEG_MM: 2.0,  // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
+      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
     }),
     // surface-lock-faceted.js (box, plane, polyhedron). The two keys it shares with the ladder / mezzo (PLOT_FLOOR_SLACK, ZOOM_HEADROOM) are its own copies here.
     FACETED: Object.freeze({
@@ -160,6 +174,8 @@
       GAIN_SPAN: 1.1,  // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
       PLOT_FLOOR_SLACK: 0.8,  // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
       ZOOM_HEADROOM: 1.5,  // as the top-level key: finest baked level reaches the darkest pitch at this multiple of the bake scale
+      DOT_SEGS: 8,  // tone model v2 stipple: dot polygon segments
+      SPIRAL_MIN_S: 0.03,  // tone model v2 spiral: stop when the scale toward the face centre drops under this
     }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({

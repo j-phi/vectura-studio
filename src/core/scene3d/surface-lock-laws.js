@@ -293,23 +293,11 @@
     out.push(pt(sb));
     return out;
   };
-  const segDist = (p, a, b) => {
-    const abx = b[0] - a[0]; const aby = b[1] - a[1]; const abz = b[2] - a[2];
-    const l2 = abx * abx + aby * aby + abz * abz;
-    const u = l2 > 0 ? clamp(((p[0] - a[0]) * abx + (p[1] - a[1]) * aby + (p[2] - a[2]) * abz) / l2, 0, 1) : 0;
-    return Math.hypot(p[0] - a[0] - u * abx, p[1] - a[1] - u * aby, p[2] - a[2] - u * abz);
-  };
-  // Douglas-Peucker to `tol`, then no segment longer than `maxSeg` (the tone is sampled at vertices, so long straight runs
-  // would be gated by their two ends only).
+  // Douglas-Peucker to `tol` (GeometryUtils.simplifyKeep3, the shared simplifier), then no segment longer than `maxSeg` (the tone
+  // is sampled at vertices, so long straight runs would be gated by their two ends only).
   const decimate = (P, tol, maxSeg) => {
-    const n = P.length; const keep = new Uint8Array(n); keep[0] = 1; keep[n - 1] = 1;
-    const stack = [[0, n - 1]];
-    while (stack.length) {
-      const [a, b] = stack.pop();
-      let worst = -1; let wi = -1;
-      for (let i = a + 1; i < b; i++) { const d = segDist(P[i], P[a], P[b]); if (d > worst) { worst = d; wi = i; } }
-      if (wi >= 0 && worst > tol) { keep[wi] = 1; stack.push([a, wi], [wi, b]); }
-    }
+    const keep = Vectura.GeometryUtils.simplifyKeep3(P, tol);
+    const n = P.length;
     const out = [];
     for (let i = 0; i < n; i++) {
       if (!keep[i]) continue;

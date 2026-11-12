@@ -89,6 +89,30 @@
     return simplified.length >= 2 ? simplified : path;
   };
 
+  // Ramer-Douglas-Peucker over 3D points stored as arrays ([x, y, z, ...extra]); returns a Uint8Array of keep flags (1 = keep). The
+  // perpendicular distance is to the SEGMENT (clamped), in 3D. Used by Scene3D's surface-lock laws baker, whose polylines live in
+  // object space and carry a normal after the position. Same tie-handling as simplifyPath: strictly greater than the tolerance splits.
+  const simplifyKeep3 = (pts, tolerance) => {
+    const n = pts.length; const keep = new Uint8Array(n);
+    if (!n) return keep;
+    keep[0] = 1; keep[n - 1] = 1;
+    const dist = (p, a, b) => {
+      const abx = b[0] - a[0]; const aby = b[1] - a[1]; const abz = b[2] - a[2];
+      const l2 = abx * abx + aby * aby + abz * abz;
+      let u = l2 > 0 ? ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby + (p[2] - a[2]) * abz) / l2 : 0;
+      u = u < 0 ? 0 : (u > 1 ? 1 : u);
+      return Math.hypot(p[0] - a[0] - u * abx, p[1] - a[1] - u * aby, p[2] - a[2] - u * abz);
+    };
+    const stack = [[0, n - 1]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      let worst = -1; let wi = -1;
+      for (let i = a + 1; i < b; i++) { const d = dist(pts[i], pts[a], pts[b]); if (d > worst) { worst = d; wi = i; } }
+      if (wi >= 0 && worst > tolerance) { keep[wi] = 1; stack.push([a, wi], [wi, b]); }
+    }
+    return keep;
+  };
+
   // Min-heap of [area, index] entries, ordered by area then index (both
   // ascending) — the index tiebreak matches the linear-scan reference's
   // leftmost-wins behavior on equal areas.
@@ -2567,6 +2591,7 @@
     smoothPath,
     simplifyPath,
     simplifyPathVisvalingam,
+    simplifyKeep3,
     fitBezierAnchors,
     reduceAnchors,
     roundCornerAnchors,

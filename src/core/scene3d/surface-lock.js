@@ -47,6 +47,7 @@
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
+  const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
   // Each is its own Scene3D namespace so Engine's sceneModuleFingerprint sees its functions.
@@ -153,8 +154,12 @@
   };
   const bakeKey = (spec) => {
     const baker = bakerFor(spec);
-    return JSON.stringify([BAKE_VERSION, baker ? baker.id : null, spec.primitive, spec.mode, stable(spec.sizes),
-      stable(spec.scale), spec.mapper, spec.toneLaw, bakeStyle(spec.style), spec.penWidth, spec.scaleRef, stable(spec.seed)]);
+    const parts = [BAKE_VERSION, baker ? baker.id : null, spec.primitive, spec.mode, stable(spec.sizes),
+      stable(spec.scale), spec.mapper, spec.toneLaw, bakeStyle(spec.style), spec.penWidth, spec.scaleRef, stable(spec.seed)];
+    // A16: the tone model is part of the bake (the v2 bakers draw different marks), so a legacy and a v2 spec never share an
+    // entry. Appended only for v2, so every legacy key is byte-identical to the one an older build produced.
+    if (spec.toneModel === 'v2') parts.push('v2');
+    return JSON.stringify(parts);
   };
 
   const cache = new Map(); // key -> { ms, bytes } ; Map order = LRU order (oldest first)
@@ -178,7 +183,7 @@
     stats.cacheBytes = cacheBytes; stats.cacheEntries = cache.size;
   }
   const clearCache = () => {
-    cache.clear(); cacheBytes = 0; freshKeys.length = 0; toneMemo.clear(); auxCaches.forEach((m) => m.clear());
+    cache.clear(); cacheBytes = 0; freshKeys.length = 0; toneMemo.clear(); scaleMemo.clear(); auxCaches.forEach((m) => m.clear());
     stats.cacheBytes = 0; stats.cacheEntries = 0;
   };
 
@@ -245,17 +250,85 @@
   // The specs among `specs` that would bake (a baker exists) but are not cached. Read-only: no LRU touch, no stat.
   const missingBakes = (specs) => (specs || []).filter((spec) => spec && bakerFor(spec) && !cache.has(bakeKey(spec)));
 
+  // ── tone table (contract §5, A16) ──────────────────────────────────────────────────────────────────────────────────────
+  // The LUT is memoized per baker + tone shape and never depends on the light's position: the v2 model only changes it through
+  // `light.model` and "no lights" (tone off), so those two are the light's whole share of the LUT key. The specular scaleFn is a
+  // second, cheap memo keyed by the light itself, so a light move rebuilds a closure and never a LUT.
   const toneMemo = new Map();
+  const scaleMemo = new Map();
+  const lightsEmpty = (light) => !!light && Array.isArray(light.lights) && light.lights.length === 0;
+  const lightScaleKey = (light) => JSON.stringify([light.model, stable(light.lights), light.shininess, light.ks, light.s0, light.s1, light.shadowKey === undefined ? null : light.shadowKey]);
+
+  // The view-dependent glint multiplier (A16): scaleFn(n_w, p_w, e_w) = Regions.specularKeep(S, s0, s1), where S is the Blinn-Phong
+  // term Regions.shade computes (the unit test pins the two equal). Directional lights are inlined (one dot product and a pow per
+  // visible vertex per frame); any other type goes through Regions.shade. `light.shadowFnFor(n_w)` (optional) blocks the glint
+  // inside a cast shadow, exactly as shade does; it is asked only where the glint is not already negligible.
+  const buildScaleFn = (light) => {
+    const R = Scene3D.Regions;
+    if (!light || light.model !== 'v2' || !R || typeof R.specularKeep !== 'function' || typeof R.shade !== 'function') return null;
+    const D = R.SHADE_DEFAULTS || {};
+    const ks = num(light.ks, num(D.ks, 1));
+    if (!(ks > 0)) return null;
+    const s0 = num(light.s0, num(D.s0, 0.55)); const s1 = num(light.s1, num(D.s1, 0.9));
+    const sh = Math.max(1, num(light.shininess, typeof R.shininessForSize === 'function' ? R.shininessForSize(num(D.size, 1)) : 5));
+    const direct = (Array.isArray(light.lights) ? light.lights : []).filter((l) => l && l.type !== 'ambient');
+    if (!direct.length) return null;
+    const dirs = []; const others = [];
+    direct.forEach((l) => {
+      if (!l.type || l.type === 'directional') {
+        const t = R.towardLight(l);
+        dirs.push({ l, x: t.x, y: t.y, z: t.z, w: Math.min(1, Math.max(0, num(l.intensity, 1))) * ks });
+      } else others.push(l);
+    });
+    const shadowFnFor = typeof light.shadowFnFor === 'function' ? light.shadowFnFor : null;
+    return (n, p, e) => {
+      let nx = n.x; let ny = n.y; let nz = n.z;
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      let ex = e.x; let ey = e.y; let ez = e.z;
+      const el = Math.sqrt(ex * ex + ey * ey + ez * ez) || 1; ex /= el; ey /= el; ez /= el;
+      let S = 0; let blocked;
+      for (let i = 0; i < dirs.length; i++) {
+        const d = dirs[i];
+        if (nx * d.x + ny * d.y + nz * d.z <= 0) continue;
+        const hx = d.x + ex; const hy = d.y + ey; const hz = d.z + ez;
+        const hl = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1;
+        const nh = (nx * hx + ny * hy + nz * hz) / hl;
+        if (nh <= 0) continue;
+        const s = d.w * Math.pow(nh, sh);
+        if (s <= S || s <= s0) continue; // below s0 the keep is 1 whatever the shadow says
+        if (shadowFnFor) { if (blocked === undefined) blocked = shadowFnFor(n); if (blocked(p, d.l)) continue; }
+        S = s;
+      }
+      if (others.length) {
+        const r = R.shade(n, p, others, { model: 'v2', eye: e, shininess: sh, ks, shadowFn: shadowFnFor ? shadowFnFor(n) : null });
+        if (r.S > S) S = r.S;
+      }
+      return S <= s0 ? 1 : R.specularKeep(Math.min(1, S), s0, s1);
+    };
+  };
+
   const toneTable = (spec, toneCtx) => {
     const baker = bakerFor(spec);
     if (!baker) return null;
-    const key = JSON.stringify([baker.id, stable(toneCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper]);
+    const light = toneCtx && toneCtx.light ? toneCtx.light : null;
+    const keyCtx = light ? Object.assign({}, toneCtx, { light: { model: light.model, empty: lightsEmpty(light) } }) : toneCtx;
+    const key = JSON.stringify([baker.id, stable(keyCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper]);
     let t = toneMemo.get(key);
-    if (t) return t;
-    t = baker.toneLUT(spec, toneCtx);
-    if (toneMemo.size >= TONE_MEMO_MAX) toneMemo.delete(toneMemo.keys().next().value);
-    toneMemo.set(key, t);
-    return t;
+    if (!t) {
+      t = baker.toneLUT(spec, toneCtx);
+      if (toneMemo.size >= TONE_MEMO_MAX) toneMemo.delete(toneMemo.keys().next().value);
+      toneMemo.set(key, t);
+    }
+    // A16: v2 only, and only when the baker did not bring its own scaleFn; `noHighlight` (highlight treatment 'none') keeps the ink.
+    if (!t || !light || light.model !== 'v2' || t.scaleFn || (toneCtx && toneCtx.noHighlight)) return t;
+    const skey = key + '|' + lightScaleKey(light);
+    let t2 = scaleMemo.get(skey);
+    if (!t2) {
+      t2 = Object.assign({}, t, { scaleFn: buildScaleFn(light) });
+      if (scaleMemo.size >= TONE_MEMO_MAX * 2) scaleMemo.delete(scaleMemo.keys().next().value);
+      scaleMemo.set(skey, t2);
+    }
+    return t2;
   };
 
   // ── pose (contract §4) ──────────────────────────────────────────────────────────────────────────────────────────
@@ -345,6 +418,10 @@
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank;
     // A fixed-pitch law (contract §16 A10) reads its tone at the bake scale, so a zoom inside one octave never moves it.
     const toneScaleFree = meta.toneScaleFree === true && Number.isFinite(meta.scaleRef) && meta.scaleRef > 0;
+    // A17: tone model v2 equalises the ink per SCREEN area: a surface-pitch mark set puts 1/facing more ink into a foreshortened
+    // patch, so the tone demand is scaled by g(c) = 1 + strength * (2c / (1 + c) - 1) (the mean foreshortening of a mark of any
+    // direction in the tangent plane is (1 + c) / 2). Off (strength 0) unless the caller says view.toneModel === 'v2'.
+    const facingComp = view.toneModel === 'v2' ? FACING_COMP : 0;
     const remapLuts = new Map();
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
@@ -412,7 +489,11 @@
         let dm = p0 * (toneScaleFree ? meta.scaleRef : sv) * l;
         if (remap && capT > 0) { // cap-aware tone remap (contract §5): squeeze [m, D] into [m, T] in log space so tone stays monotone inside a cap ring
           const mD = p0 * sv * lut[LUT_N]; const dD = p0 * sv * lut[0]; const tD = q === 1 ? capT : (q === 2 ? Math.sqrt(capT) : Math.pow(capT, 1 / q));
-          if (mD > 0 && tD > mD && tD < dD) {
+          if (!(mD > 0) && dD > 0 && tD > 0 && tD < dD) {
+            // A18: a paper-ended v2 LUT (lut[LUT_N] == 0) has no log-space floor to squeeze toward, so the whole range is scaled by
+            // tD / dD instead: the darkest tone lands on the cap, lighter tones keep their order, and paper stays paper.
+            dm *= tD / dD;
+          } else if (mD > 0 && tD > mD && tD < dD) {
             if (!persp) {
               let rl = remapLuts.get(capT);
               if (!rl) {
@@ -438,6 +519,7 @@
           if (sc !== null && sc !== undefined) dm *= (sc > 0 ? (sc < 1 ? sc : 1) : 0);
         }
         te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
+        if (facingComp > 0) te *= 1 + facingComp * (2 * facing / (1 + facing) - 1);
       }
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
@@ -595,6 +677,11 @@
     const t = p.styleTable || {};
     return (t.byObject && t.byObject[id]) || t.scene || { mapper: 'none', params: {} };
   };
+  // A16: the scene's tone model. Only a scene saying 'v2' is v2; a spec of a legacy scene carries no toneModel at all (so its bake
+  // key, its tone-table key and every baker path are those of an older build).
+  const toneModelOf = (p) => (p && p.tone && p.tone.model === 'v2' ? 'v2' : 'legacy');
+  // `ctx.specFor` may return a whole spec of its own (the compositor's); the model is the scene's whatever it says.
+  const withToneModel = (p, spec) => { if (toneModelOf(p) === 'v2') spec.toneModel = 'v2'; return spec; };
   const specOfObject = (p, obj, bounds, seed) => {
     const st = objectStyleOf(p, obj.id);
     const sp = st.params || {};
@@ -606,14 +693,20 @@
       scale: { sx: num(tr.sx, s), sy: num(tr.sy, s), sz: num(tr.sz, s) },
       mapper: st.mapper, toneLaw: P && P.resolveToneLaw ? P.resolveToneLaw(sp) : sp.toneLaw,
       style: sp, penWidth: num(bounds && bounds.penWidth, 0), scaleRef: 1, seed: seed || null,
+      ...(toneModelOf(p) === 'v2' ? { toneModel: 'v2' } : {}),
     };
+  };
+  const receiveMapAvailable = () => {
+    const Sh = Scene3D.SurfaceLockShadow; const SR = Scene3D.ShadowReceive;
+    return !!Sh && typeof Sh.receiveMap === 'function' && !!SR && typeof SR.buildDepthMap === 'function';
   };
   const exclusionCtx = (p, obj) => ({
     visibility: obj.visibility,
     emissiveCoreBlank: !!(obj.emissive && obj.emissive.enabled && obj.emissive.coreBlank),
     areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
-    // Conservative: the pose path builds its shadow-receive occluder from this flag, so any scene asking for it is pose until W3-C.
-    receiveShadow: !!(p.shadow && p.shadow.shadowReceiveOnObjects),
+    // The pose path builds its shadow-receive occluder from this flag. A16: lifted for a v2 scene when the light-space receive map
+    // exists (the tone memo then takes the shadow from it); a legacy scene keeps the exclusion, so its look is the pose look.
+    receiveShadow: !!(p.shadow && p.shadow.shadowReceiveOnObjects) && !(toneModelOf(p) === 'v2' && receiveMapAvailable()),
   });
   const FRAMEABLE = Object.freeze([
     { id: 'hasObjects', test: (p) => Array.isArray(p.objects) && p.objects.length > 0 },
@@ -674,7 +767,7 @@
   };
 
   // ── sceneFrame (contract §6.2, §13) ─────────────────────────────────────────────────────────────────────────────
-  const auxCaches = [new Map(), new Map()]; // 0: mesh bakes, 1: ground hatch bakes
+  const auxCaches = [new Map(), new Map(), new Map()]; // 0: mesh bakes, 1: ground hatch bakes, 2: receive-caster world triangles
   const auxGet = (which, key, make) => {
     const m = auxCaches[which];
     if (m.has(key)) { const v = m.get(key); m.delete(key); m.set(key, v); return v; }
@@ -767,10 +860,77 @@
       const mesh = auxGet(0, JSON.stringify([o.id, o.primitive, o.params, o.transform && [o.transform.scale, o.transform.sx, o.transform.sy, o.transform.sz]]), () => Vis.meshBake(o));
       const spec = specOfObject(p, o, Object.assign({}, bounds, { penWidth }), seedOf(o.id));
       if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, mesh));
-      specs.push(spec);
+      specs.push(withToneModel(p, spec));
     });
     return specs;
   };
+  // ── light model v2 wiring (A16) ─────────────────────────────────────────────────────────────────────────────────────────
+  // What a v2 scene adds around one object's frame: the light context for toneTable (so the glint is paper), a diffuse-only tone
+  // function built on Regions.shade (ambient + bounce, no eye, so it stays view independent and memoizable), and, when the scene
+  // asks for shadows on objects, a per-receiver light-space receive map over the OTHER objects (pose excludes the receiver's own
+  // geometry too). The map is fetched lazily on the first tone miss, so a pure camera orbit never touches it, and it is rebuilt
+  // only when the light or a caster's transform changes (casters[].key is the caster's transform key).
+  const hashStr = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); };
+  const worldTriangles = (o, mesh, pose) => {
+    const R = rotMatrix({ yaw: pose.obj.yaw, pitch: pose.obj.pitch, roll: pose.obj.roll });
+    const V = mesh.vertices; const T = mesh.triVerts; const tr = pose.obj;
+    const pt = (i) => ({
+      x: R[0] * V[3 * i] + R[1] * V[3 * i + 1] + R[2] * V[3 * i + 2] + tr.x,
+      y: R[3] * V[3 * i] + R[4] * V[3 * i + 1] + R[5] * V[3 * i + 2] + tr.y,
+      z: R[6] * V[3 * i] + R[7] * V[3 * i + 1] + R[8] * V[3 * i + 2] + tr.z,
+    });
+    const verts = new Map(); const at = (i) => { let q = verts.get(i); if (!q) { q = pt(i); verts.set(i, q); } return q; };
+    const out = [];
+    for (let k = 0; k + 2 < T.length; k += 3) out.push({ a: at(T[k]), b: at(T[k + 1]), c: at(T[k + 2]) });
+    return out;
+  };
+  // { key, get() } for the receiver `idx`, or null when the scene does not ask for shadows on objects (or nothing else can cast).
+  const receiveCtxFor = (p, objects, meshes, poses, idx) => {
+    if (!(p.shadow && p.shadow.shadowReceiveOnObjects) || !receiveMapAvailable()) return null;
+    const casters = [];
+    objects.forEach((o, j) => {
+      if (j === idx || !meshes[j]) return;
+      casters.push({ j, id: o.id, key: JSON.stringify([o.id, o.primitive, o.params, o.transform || null]) });
+    });
+    if (!casters.length) return null;
+    const key = hashStr(casters.map((c) => c.key).join('|'));
+    let map = null;
+    return {
+      key,
+      get: () => {
+        if (!map) {
+          map = Scene3D.SurfaceLockShadow.receiveMap({
+            lights: p.lights,
+            casters: casters.map((c) => ({ id: c.id, key: c.key, triangles: auxGet(2, c.key, () => worldTriangles(objects[c.j], meshes[c.j], poses[c.j])) })),
+          });
+        }
+        return map;
+      },
+    };
+  };
+  // toneCtx.light for a v2 scene (null for a legacy one): the model, the lights and the specular tunables (Regions.SHADE_DEFAULTS).
+  const lightCtxOf = (p, recv) => {
+    if (toneModelOf(p) !== 'v2') return null;
+    const R = Scene3D.Regions || {}; const D = R.SHADE_DEFAULTS || {};
+    const t = p.tone || {}; const spc = t.specular || {};
+    return {
+      model: 'v2', lights: p.lights || [],
+      shininess: typeof R.shininessForSize === 'function' ? R.shininessForSize(num(spc.size, num(D.size, 1))) : undefined,
+      ks: spc.enabled === false ? 0 : num(D.ks, 1), s0: D.s0, s1: D.s1,
+      shadowKey: recv ? recv.key : null,
+      shadowFnFor: recv ? (nw) => recv.get().shadowFnFor(nw) : undefined,
+    };
+  };
+  // The v2 diffuse tone function: Regions.shade's L (ambient + bounce + shadowed direct), then the style's tone shape.
+  const toneFnV2 = (p, spec, recv) => {
+    const R = Scene3D.Regions; const lights = p.lights || []; const t = p.tone || {};
+    const shape = typeof R.toneShapeOf === 'function' ? R.toneShapeOf(spec.style, null) : null;
+    return (nw, wp) => {
+      const L = R.shade(nw, wp, lights, { model: 'v2', eye: null, ambient: t.ambient, bounce: t.bounce, shadowFn: recv ? recv.get().shadowFnFor(nw) : null }).L;
+      return shape ? R.shapeTone(L, wp, shape) : L;
+    };
+  };
+
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -844,12 +1004,22 @@
       if (!isMapperNoFill(st.mapper)) {
         const spec = specOfObject(p, o, bounds, seedOf(o.id));
         if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, meshes[i]));
+        withToneModel(p, spec);
         const ms = bake(spec);
         if (ms) {
+          const v2 = spec.toneModel === 'v2';
+          const recv = v2 ? receiveCtxFor(p, objects, meshes, poses, i) : null;
           const toneCtx = { tone: p.tone, penWidth, noHighlight: !!(spec.noHighlight) };
+          if (v2) toneCtx.light = lightCtxOf(p, recv);
           const tone = toneTable(spec, toneCtx);
-          const toneKey = typeof ctx.toneKeyFor === 'function' ? ctx.toneKeyFor(o.id, o) : null;
-          const lines = frame([ms], poses[i], { toneFn: ctx.toneFnFor(o.id), toneKey, tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off });
+          let toneFn = ctx.toneFnFor(o.id);
+          let toneKey = typeof ctx.toneKeyFor === 'function' ? ctx.toneKeyFor(o.id, o) : null;
+          if (v2 && toneFn) {
+            toneFn = toneFnV2(p, spec, recv);
+            // everything toneFnV2 reads beyond the hub's key: the model parameters and the casters that can shadow this receiver
+            if (toneKey !== null) toneKey += '|v2|' + num(p.tone && p.tone.ambient, '') + '|' + num(p.tone && p.tone.bounce, '') + '|' + (recv ? recv.key : '');
+          }
+          const lines = frame([ms], poses[i], { toneFn, toneKey, tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off, toneModel: v2 ? 'v2' : undefined });
           // A lone convex object never occludes its own marks (contract §7): the buffer exists for the shadow, so
           // its fills skip the per-vertex test.
           const clipFills = !!occ && (objects.length > 1 || !meshes[i].convex);
@@ -899,6 +1069,11 @@
     missingBakes,
     sceneBakeSpecs,
     toneTable,
+    exclusionCtx,
+    toneModelOf,
+    lightCtxOf,
+    toneFnV2,
+    receiveCtxFor,
     poseOf,
     frame,
     sceneFrame,
