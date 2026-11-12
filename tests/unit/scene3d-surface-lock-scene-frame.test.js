@@ -302,6 +302,7 @@ describe('surface lock Level S (sceneFrame wired into generateScene)', () => {
       const bounds = { width: 320, height: 220, penWidth: 0.3 };
       expect(SL.frameable(p0, bounds)).toBe(true);
       const recv = JSON.parse(JSON.stringify(p0)); recv.shadow = { ...(recv.shadow || {}), shadowReceiveOnObjects: true };
+      recv.tone = { ...recv.tone, model: 'v2' }; // the fixture pins the legacy sun (pinLegacySun), so opt in explicitly
       expect(SL.frameable(recv, bounds), 'v2: the receive map lifts the exclusion (H1, contract A16)').toBe(true);
       recv.tone = { ...recv.tone, model: 'legacy' };
       expect(SL.frameable(recv, bounds)).toBe(false); // a legacy scene keeps the pose look
