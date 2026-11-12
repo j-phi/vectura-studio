@@ -45,6 +45,11 @@
   const AUX_CACHE_MAX = CFG.AUX_CACHE_ENTRIES || 16;
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
+  const CAP_RHO_STEPS = 8; // mirror of the laws baker's cap-word resolution (A21)
+  const RIM_FACING = CFG.CAP_RIM_FACING || 0.3; // A21: below this facing the stride demand is damped (rulings crowd at the rim)
+  const GUARD_FACING = CFG.CAP_GUARD_FACING || 0.5; // A21: the crowd guard acts below this facing
+  const GUARD_FRAC = CFG.CAP_GUARD_FRAC || 0.72; // A21: crowd guard distance, x the plot floor (the spacing bar is 0.65)
+  const STRIDE_SLACK = CFG.CAP_STRIDE_SLACK || 0.3; // A21: the stride cap's own floor slack; the crowd guard is the exact spacing bar
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
   const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
@@ -416,6 +421,7 @@
     const remap = meta.capToneRemap === true && !!lut;
     // capKey 'ruling' (contract A13): the cap is compared against each run's own capRank, not folded into the tone demand.
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank;
+    const capCont = capSep && meta.capContinuous === true;
     // A fixed-pitch law (contract §16 A10) reads its tone at the bake scale, so a zoom inside one octave never moves it.
     const toneScaleFree = meta.toneScaleFree === true && Number.isFinite(meta.scaleRef) && meta.scaleRef > 0;
     // A17: tone model v2 equalises the ink per SCREEN area: a surface-pitch mark set puts 1/facing more ink into a foreshortened
@@ -453,14 +459,33 @@
         // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
         // one level-pitch apart, below the floor, so the cap only ever admits complete levels, each once its pitch is >= FLOOR_SLACK x floor (or a regular 1/gain^m
         // thinning of level 0 below the base pitch). The drawn subset then never falls under the floor.
-        const cr = p0 * sv * facing * minSep / (floorPitch * FLOOR_SLACK);
+        let fac = facing;
+        if (capCont) {
+          // A21: the true screen perpendicular gap between neighbouring rulings. The ruling's tangent t spans a parallelogram of area
+          // pitch x |t| x facing on the screen, so the perpendicular gap is pitch x facing / |P t|, with |P t| = sqrt(1 - (t . view)^2)
+          // (between facing, a ruling along the foreshortening, and 1, one across it).
+          const vn = v + 1 < nv ? v + 1 : v - 1;
+          const tx = pos[3 * vn] - px; const ty = pos[3 * vn + 1] - py; const tz = pos[3 * vn + 2] - pz;
+          const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+          if (tl > 1e-12) {
+            const ex = a00 * tx + a01 * ty + a02 * tz; const ey = a10 * tx + a11 * ty + a12 * tz; const ez = a20 * tx + a21 * ty + a22 * tz;
+            let dv;
+            if (persp) { const wl2 = Math.sqrt(cx * cx + cy * cy + (eyeZ - cz) * (eyeZ - cz)) || 1; dv = (-ex * cx - ey * cy + ez * (eyeZ - cz)) / (wl2 * tl); } else dv = ez / tl;
+            const pl = Math.sqrt(Math.max(1e-6, 1 - dv * dv));
+            fac = Math.min(1, facing / pl) * Math.min(1, facing / RIM_FACING);
+          }
+        }
+        const cr = p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : FLOOR_SLACK));
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
           T = 1;
           if (T0 >= 1) { while (T * gain <= T0) T *= gain; } else { while (T > T0) T /= gain; }
         }
-        capT = T;
+        // A21 (capContinuous): the cap is a STRIDE over the baked ruling order, not a key threshold. g = ceil(floor pitch / local pitch);
+        // a ruling i is drawn where i % g === 0, so neighbours at one place share g and the drawn set is exactly regular (min gap
+        // g x pitch >= FLOOR_SLACK x floor) whatever g is, with only the rounding up of g lost (the octave quantisation lost ~30 %).
+        capT = capCont ? cr : T;
       }
       SCAP[v] = hasCap ? capT : Infinity;
       // tone
@@ -527,6 +552,69 @@
     return undefined;
   };
 
+  // A21: screen-space crowd guard of a capContinuous MarkSet. The stride cap trusts a LOCAL pitch estimate; where the surface turns
+  // away fast, rulings g apart land closer than the floor anyway. The guard is exact: a piece of a ruling is kept only where it
+  // stays >= guardD from every already-kept piece of a DIFFERENT ruling of the same family (runs are visited in bake order, so the
+  // result is deterministic and Level S == Level F). Grid of segments, cell = 2 x guardD.
+  const makeCrowd = (guardD) => {
+    const cell = Math.max(1e-6, 2 * guardD); const grid = new Map();
+    const keyOf = (ix, iy) => ix * 73856093 ^ iy * 19349663;
+    const segDist = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax; const dy = by - ay; const l2 = dx * dx + dy * dy;
+      const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+      return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+    };
+    const near = (x, y, fam, ord) => {
+      const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const list = grid.get(keyOf(ix + a, iy + b)); if (!list) continue;
+        for (let k = 0; k < list.length; k++) {
+          const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
+          if (segDist(x, y, e.ax, e.ay, e.bx, e.by) < guardD) return true;
+        }
+      }
+      return false;
+    };
+    const add = (ax, ay, bx, by, fam, ord) => {
+      const e = { ax, ay, bx, by, fam, ord };
+      const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
+      const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
+      for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = keyOf(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
+    };
+    // Splits `subs` into the stretches that clear the guard (checked at the vertices and segment midpoints), registers what is kept.
+    const filter = (subs, fam, ord) => {
+      const kept = [];
+      subs.forEach((line0) => {
+        const line = line0;
+        let cur = null;
+        const fs = line.f;
+        for (let i = 0; i < line.length; i++) {
+          // the guard only acts where the surface is turned away (the stride cap alone keeps the interior at its own pitch)
+          const rim = !fs || fs[i] < GUARD_FACING || (i > 0 && fs[i - 1] < GUARD_FACING);
+          let ok = !rim || !near(line[i].x, line[i].y, fam, ord);
+          if (false && ok && rim && i > 0) ok = !near(0.5 * (line[i].x + line[i - 1].x), 0.5 * (line[i].y + line[i - 1].y), fam, ord);
+          if (ok) { if (!cur) cur = []; cur.push(line[i]); } else if (cur) { kept.push(cur); cur = null; }
+        }
+        if (cur) kept.push(cur);
+      });
+      const out2 = kept.filter((l) => l.length >= 2);
+      out2.forEach((l) => { for (let i = 1; i < l.length; i++) add(l[i - 1].x, l[i - 1].y, l[i].x, l[i].y, fam, ord); });
+      return out2;
+    };
+    return { filter };
+  };
+
+  // A21: visiting order of a capContinuous MarkSet: by (family, ruling ordinal, run), so the crowd guard packs the rulings side by side
+  // (the optimal greedy of a 1-D packing) and a ruling's cells stay consecutive. Cached per MarkSet.
+  const capOrders = new WeakMap();
+  const capOrderOf = (ms) => {
+    let o = capOrders.get(ms); if (o) return o;
+    const nr = ms.runCount; const cap = ms.runCapRank; const fam = ms.runFamily;
+    o = Int32Array.from({ length: nr }, (_, i) => i);
+    o.sort((a, b) => (fam[a] - fam[b]) || ((cap[a] & 4095) - (cap[b] & 4095)) || (a - b));
+    capOrders.set(ms, o); return o;
+  };
+
   const frameSet = (ms, F, view, out, acc) => {
     const MS = Scene3D.SurfaceLockMarkSet;
     prepass(ms, F, view);
@@ -545,8 +633,18 @@
     const persp = F.persp;
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
+    const capCont = capSep && meta.capContinuous === true;
+    const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(view.floorPitch * GUARD_FRAC) : null;
+    const capOk = capCont ? (vi, rr) => {
+      const c0 = SCAP[vi]; if (c0 === Infinity) return true;
+      const w = rcap[rr]; const c = c0 * ((w >> 12) / CAP_RHO_STEPS);
+      if (!(c > 1e-6)) return false;
+      return c >= 1 || (w & 4095) % Math.ceil(1 / c - 1e-9) === 0;
+    } : (vi, rr, ckv) => SCAP[vi] > ckv;
     const DOT = MS.FLAG.DOT; const CLOSED = MS.FLAG.CLOSED; const RS = MS.RANK_SCALE;
-    for (let r = 0; r < nr; r++) {
+    const order = crowd ? capOrderOf(ms) : null;
+    for (let ri = 0; ri < nr; ri++) {
+      const r = order ? order[ri] : ri;
       const v0 = rs[r]; const n = rs[r + 1] - v0; const flags = rf[r]; const L = rl[r];
       const rank = rr[r] / RS;
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
@@ -558,7 +656,7 @@
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
-        else if (!(STE[i] > k) || (capSep && !(SCAP[i] > ck))) acc.culledTone += 1;
+        else if (!(STE[i] > k) || (capSep && !capOk(i, r, ck))) acc.culledTone += 1;
         else anyOk = true;
       }
       if (flags & DOT) {
@@ -593,7 +691,9 @@
         if (!t0ok && !t1ok) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (t0ok !== t1ok) { const u = e0 / (e0 - e1); if (t0ok) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
         // plot-floor cap on the ruling's rank (capKey 'ruling'): a second linear clip, intersected with the tone clip
-        if (capSep) {
+        if (capCont) {
+          if (!capOk(i, r, ck) || !capOk(j, r, ck)) { if (cur) { subs.push(cur); cur = null; } continue; }
+        } else if (capSep) {
           const g0 = SCAP[i] - ck; const g1 = SCAP[j] - ck;
           const q0 = g0 > 0; const q1 = g1 > 0;
           if (!q0 && !q1) { if (cur) { subs.push(cur); cur = null; } continue; }
@@ -609,16 +709,20 @@
         if (lo > hi) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (!cur) {
           cur = [];
+          if (crowd) cur.f = [];
           if (s === 0 && lo === 0) firstFromV0 = true;
           cur.push(lo === 0 ? mkPt(SX[i], SY[i], SZ[i]) : mkPt(SX[i] + lo * (SX[j] - SX[i]), SY[i] + lo * (SY[j] - SY[i]), SZ[i] + lo * (SZ[j] - SZ[i])));
+          if (crowd) cur.f.push(SC[i] + lo * (SC[j] - SC[i]));
         }
         cur.push(hi === 1 ? mkPt(SX[j], SY[j], SZ[j]) : mkPt(SX[i] + hi * (SX[j] - SX[i]), SY[i] + hi * (SY[j] - SY[i]), SZ[i] + hi * (SZ[j] - SZ[i])));
+        if (crowd) cur.f.push(SC[i] + hi * (SC[j] - SC[i]));
         if (hi < 1) { subs.push(cur); cur = null; }
       }
       if (cur) {
         if (closed && subs.length && firstFromV0) subs[0] = cur.concat(subs[0].slice(1)); // the loop's seam was inside a drawn stretch
         else subs.push(cur);
       }
+      if (crowd) { const kept = crowd.filter(subs, ms.runFamily[r], rcap[r] & 4095); subs.length = 0; kept.forEach((l) => subs.push(l)); }
       for (let s = 0; s < subs.length; s++) {
         const line = subs[s];
         if (line.length < 2) continue;

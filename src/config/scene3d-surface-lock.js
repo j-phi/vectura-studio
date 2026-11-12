@@ -29,6 +29,10 @@
     // Contract §5 (A1) — the plot-floor cap admits a whole density level once its screen pitch is at least this
     // fraction of the floor pitch (the §14.6 bar: no two drawn runs closer than 0.8 x floor).
     PLOT_FLOOR_SLACK: 0.8,
+    CAP_STRIDE_SLACK: 0.1,  // A21: floor slack of the stride cap (capContinuous): the cap thins rulings by a local-pitch estimate
+    CAP_GUARD_FRAC: 0.96,  // A21: crowd guard, x the plot floor: below CAP_GUARD_FACING a kept ruling piece stays this far from every other kept ruling
+    CAP_GUARD_FACING: 1.1,  // A21: the crowd guard acts where the surface faces the camera less than this
+    CAP_RIM_FACING: 0.05,  // A21: below this facing the stride demand is damped
     // Contract §8 — module-level bake cache, least-recently-used by bytes.
     CACHE_MB: 64,
     CACHE_MB_MOBILE: 24,
@@ -158,6 +162,8 @@
       MAX_VERTS: 200000,  // contract §2 budget
       HATCH_D_MAX: 100,
       GOLDEN: 0.6180339887498949,
+      V2_DASH_GROUP_MM: 12,  // tone model v2 dutyConst: cells are keyed in groups this long (screen mm), so a tone draws one dash per group
+      V2_DASH_MIN_CELLS: 5,  // ... and never fewer cells than this per group
       V2_TOL_MM: 0.02,  // tone model v2: chord tolerance of the decimated polylines (object mm)
       V2_MAX_SEG_MM: 2.0,  // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
       V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)

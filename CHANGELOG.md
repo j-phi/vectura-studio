@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: 3D Scene Duty Cycle (Constant) draws long dashes, not specks, and Tick / Dash Ramp reach the limb
+- **Duty Cycle - Constant (v2)** now keys its cells in groups, so a tone draws one long dash per group (long in the dark, gaps opening toward the light) instead of scattered single cells; the glint stays paper.
+- **Plot-floor cap at the limb (v2, locked)** thins the rulings by an exactly regular stride from the true screen gap between rulings (it used to keep every 2nd, 4th, 8th ruling by a coarse local-pitch estimate), and a crowd guard keeps Duty Cycle's drawn lines a plot-floor apart. The limb ring keeps about 35 % of the pose ink (it kept 13-17 %), and Mark - Tick / Dash Ramp / Scribble / Dot Screen / Bundle use the same stride so their limb no longer thins out. Legacy scenes are unchanged.
+
 ### Changed: 3D Scene realistic light (tone model v2) now drives every fill
 - **Surface-locked fills (Level S and the per-object Level F path) and pose fills share one light model.** New scenes get ambient + bounce light, no lit floor and a compact specular glint that is bare paper. Level F now uses the same diffuse tone function and light context as Level S, so a drag, the export and the settled frame agree (the Level S == Level F parity tests are green again).
 - **Pose marks follow the model too.** Pose samples carry the diffuse luminance and the glint; the pose ladder follows the surface ladder's L*-linear curve with paper at the light end and a broken ruling where the glint is; Duty Cycle, End Shorten, Mezzotint and the other mono laws read the same light context. Mark - Dash Ramp, Pen Interleave / Reserve / Cross and Weight Modulated now run out to paper instead of staying flat.

@@ -45,6 +45,10 @@
     MERGE_TOUCH_INK: 0.98,
     BANDS: 4,               // centre-out dash bands per cell (duty resolution; more = more, shorter runs)
     JIT_FRAC: 0.2,          // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch (keeps the 0.8 bar)
+    CAP_ORD_MAX: 4095,      // A21: ruling ordinal range of the cap word (low 12 bits)
+    CAP_RHO_STEPS: 8,       // A21: local pitch ratio resolution of the cap word (high 4 bits, 1/8 steps, 15/8 max)
+    V2_DASH_GROUP_MM: 12,    // tone model v2 dutyConst: cells keyed in groups this long (screen mm)
+    V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
     V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
     V2_MAX_SEG_MM: 2.0,     // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
     V2_PAPER_BAND: 0.15,    // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
@@ -227,6 +231,50 @@
 
   // key <-> (level, rank), gain 2 (contract §5)
   const keyOfRun = (ms, r) => { const l = ms.runLevel[r]; const rk = MS().rankOf(ms, r); return l === 0 ? rk : Math.pow(2, l - 1) * (1 + rk); };
+  // A21: the spatial ORDER of the kept rulings. The ladder stores a ruling as (level, bit-reversed rank); inverting that recovers its
+  // position along the family (m / N), so sorting by it numbers the kept rulings 0, 1, 2 ... side by side. The frame's stride cap
+  // (capContinuous) draws every g-th ruling, which is exactly regular only on this numbering.
+  const rulingOrdinals = (lad, lstar) => {
+    const nr = lad.runCount; const SM = MS();
+    const groups = new Map();
+    for (let r = 0; r < nr; r++) {
+      if (lad.runLevel[r] > lstar) continue;
+      const key = lad.runFamily[r] * 64 + lad.runLevel[r];
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    const pos = new Float64Array(nr).fill(-1);
+    groups.forEach((rs) => {
+      let B = 0;
+      while (B < 16 && !rs.every((r) => { const x = SM.rankOf(lad, r) * (1 << B); return Math.abs(x - Math.round(x)) < 1e-6; })) B += 1;
+      const count = 1 << B; const level = lad.runLevel[rs[0]];
+      rs.forEach((r) => {
+        let q = 0; const x = Math.round(SM.rankOf(lad, r) * count);
+        for (let b = 0; b < B; b++) if (x & (1 << b)) q |= 1 << (B - 1 - b);
+        pos[r] = level === 0 ? q / count : (2 * q + 1) / (2 * count);
+      });
+    });
+    const byFam = new Map();
+    for (let r = 0; r < nr; r++) if (pos[r] >= 0) { const f = lad.runFamily[r]; if (!byFam.has(f)) byFam.set(f, []); byFam.get(f).push(r); }
+    const ord = new Int32Array(nr).fill(-1);
+    byFam.forEach((rs) => { rs.sort((a, b) => pos[a] - pos[b]); rs.forEach((r, i) => { ord[r] = i; }); });
+    const nbrs = new Map(); // run -> [previous, next] kept ruling in the family (-1 at the ends)
+    byFam.forEach((rs) => { rs.forEach((r, i) => nbrs.set(r, [i > 0 ? rs[i - 1] : -1, i + 1 < rs.length ? rs[i + 1] : -1])); });
+    return { ord, nbrs };
+  };
+  // Object-space distance from a point to a ruling's polyline (point-segment), for the local pitch ratio.
+  const distToRun = (lad, r, x, y, z) => {
+    const P = lad.positions; let best = Infinity;
+    for (let v = lad.runStart[r]; v < lad.runStart[r + 1] - 1; v++) {
+      const ax = P[3 * v]; const ay = P[3 * v + 1]; const az = P[3 * v + 2];
+      const bx = P[3 * v + 3] - ax; const by = P[3 * v + 4] - ay; const bz = P[3 * v + 5] - az;
+      const l2 = bx * bx + by * by + bz * bz;
+      const t = l2 > 0 ? clamp(((x - ax) * bx + (y - ay) * by + (z - az) * bz) / l2, 0, 1) : 0;
+      const dx = x - ax - t * bx; const dy = y - ay - t * by; const dz = z - az - t * bz;
+      const d = dx * dx + dy * dy + dz * dz; if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  };
   const encodeKey = (k) => {
     const key = Math.max(0, k);
     if (key < 1) return { level: 0, rank: key };
@@ -441,18 +489,23 @@
     const out = [0, 0, 0];
     const meta = Object.assign({}, lad.meta, {
       lawId: law, gain: 2, toneModel: 'pitch', scaleRef, p0: pEff, rho, lstar, toneScaleFree: true, toneModelV2: true,
-      capKey: 'ruling', minMarkMM: T.MARKMIN, joinTouching: law === 'mkDashRamp' || law === 'mkTick',
+      capKey: 'ruling', capContinuous: true, minMarkMM: T.MARKMIN, joinTouching: law === 'mkDashRamp' || law === 'mkTick',
     });
     const cell = M.period / scaleRef;
     const emitP = (pts, key, fam, flags, capRank) => emitPoly(B, pts, key, fam, flags, capRank, tmp);
     let idx = 0;
+    const RO = rulingOrdinals(lad, lstar);
     for (let r = 0; r < lad.runCount; r++) {
       if (lad.runLevel[r] > lstar) continue;
       if ((lad.runFlags[r] & SM.FLAG.CLOSED) !== 0) continue;
       const R = readRun(lad, r, out);
       if (!(R.total > 0)) continue;
       const fam = lad.runFamily[r];
-      const capRank = keyOfRun(lad, r) / gate;
+      // A21: cap word = (local pitch ratio, min over three samples of the ruling) << 12 | ruling ordinal (see the dutyConst branch)
+      let dn = Infinity;
+      (RO.nbrs.get(r) || [-1, -1]).forEach((n) => { if (n >= 0) [0.25, 0.5, 0.75].forEach((u) => { const m = frameAt(R, u * R.total).P; dn = Math.min(dn, distToRun(lad, n, m[0], m[1], m[2])); }); });
+      const rq = Number.isFinite(dn) ? clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15) : 15;
+      const capRank = ((rq << 12) | Math.min(K.CAP_ORD_MAX, RO.ord[r])) / SM.RANK_SCALE;
       const ph = frac((idx + 1) * K.GOLDEN + phase);
       const keyOf = (c) => rho * frac(vdc2(c) + ph);
       const ks = M.keyScale || 1;
@@ -606,23 +659,44 @@
         // on-cells of every darker tone (monotone by construction). Touching cells are joined by the frame (A11).
         const cellLen = model.period / scaleRef;
         const minCell = T.MARKMIN / scaleRef;
+        const groupN = Math.max(K.V2_DASH_MIN_CELLS, Math.round(K.V2_DASH_GROUP_MM / Math.max(1e-6, model.period)));
         let idx = 0;
+        const RO = rulingOrdinals(lad, lstar); const ordOf = RO.ord;
         for (let r = 0; r < nr; r++) {
           if (lad.runLevel[r] > lstar) continue;
           const R = readRun(lad, r, out);
-          const capRank = keyOfRun(lad, r) / gate;
+          const nb = RO.nbrs.get(r) || [-1, -1];
+          const ordPart = Math.min(K.CAP_ORD_MAX, ordOf[r]);
           const ph = frac((idx + 1) * K.GOLDEN + phase);
           let c = 0;
+          // Cell keys ramp 0..1 across a GROUP of cells (a sawtooth, shifted per ruling), so the cells drawn at a tone form ONE
+          // dash per group (long in shadow, gaps opening toward the light) instead of scattered specks. Still a subset of every
+          // darker tone's cells (monotone); the per-ruling shift keeps the gaps from lining up across rulings.
+          const sh = Math.floor(ph * groupN);
           for (let c0 = -ph * cellLen; c0 < R.total; c0 += cellLen, c++) {
             const sa = clamp(c0, 0, R.total); const sb = clamp(c0 + cellLen, 0, R.total);
             if (!(sb - sa >= minCell)) continue;
-            emitPoly(B, decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * frac(vdc2(c) + ph), lad.runFamily[r], 0, capRank, tmp);
+            // u (per ruling and group, low discrepancy) jitters where inside a cell the dash ends, so the coverage is D on average
+            // instead of D rounded to whole cells.
+            const gi = Math.floor((c + sh) / groupN);
+            const key = (((c + sh) % groupN) + frac(gi * 0.7548776662466927 + ph)) / groupN;
+            // A21: cap word = (local pitch ratio, 4 bits) << 12 | ruling ordinal. The ratio is this cell's distance to the nearest
+            // neighbouring ruling over the nominal pitch p0 (object space), rounded DOWN in 1/8 steps: where rulings crowd
+            // (a chart pole, a seam) the frame thins harder, instead of trusting one nominal pitch.
+            const mid = frameAt(R, 0.5 * (sa + sb)).P;
+            let dn = Infinity;
+            nb.forEach((n) => { if (n >= 0) dn = Math.min(dn, distToRun(lad, n, mid[0], mid[1], mid[2])); });
+            const rq = Number.isFinite(dn) ? clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15) : 15;
+            const capRank = ((rq << 12) | ordPart) / MS().RANK_SCALE;
+            emitPoly(B, decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * key, lad.runFamily[r], 0, capRank, tmp);
           }
           if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
           idx += 1;
         }
         meta.minMarkMM = T.MARKMIN;
         meta.capKey = 'ruling';
+        meta.capContinuous = true;
+        meta.capGuard = true;   // rulings are the marks: no piece of one may sit closer than the floor to another (frame crowd guard)
         meta.joinTouching = true;
       } else {
         const edges = bandEdges(model.minDuty);
