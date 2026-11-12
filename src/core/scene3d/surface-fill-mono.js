@@ -52,6 +52,23 @@
   // Scene Seed (geometry3d.js): phase is 0 for a legacy layer ⇒ `x + 0` is exact.
   const SEED = (Vectura.Geometry3D && Vectura.Geometry3D.SEED) || { salt: 0, phase: 0, off: 0 };
 
+  /* LIGHT MODEL v2 (light-realism U8). The laws read the DIFFUSE luminance `s.L`
+   * (alias of `s.I` under the legacy model, where `s.L` is simply absent) and the
+   * view-dependent specular `s.S`, which REMOVES ink (the glint is paper). The model
+   * is selected per call by `o.toneModel === 'v2'` (or `o.light.model` / `o.tone.model`,
+   * the hub's toneCtx shape); absent everywhere = legacy, byte-identical. */
+  const lum = (s) => finite(s && s.L !== undefined ? s.L : (s && s.I), 0);
+  const isV2 = (o) => Boolean(o && (o.toneModel === 'v2' || (o.light && o.light.model === 'v2') || (o.tone && o.tone.model === 'v2')));
+  // v2 tone budget: the lightest PAPER_BAND of the tone range rolls off to paper (no lit floor),
+  // and a sample whose relative density falls under PAPER_DENS is bare paper (the gate in emit*).
+  const V2_PAPER_BAND = 0.15;
+  const V2_PAPER_DENS = 0.03;
+  const V2_PITCH_X = 2;          // the sparse end may run to 2x the legacy lit pitch before the paper gate takes over
+  // v2 streamline calibration: Jobard-Lefer places lines a little denser (etf, defectSplit: x0.93 clearance
+  // keeps the ink on target) or sparser (mezzoRegion's six-angle regions: x1.12) than the clearance asked
+  // for; measured against the L*-linear target on the synthetic sphere (tests/unit/scene3d-mono-laws-v2).
+  const smooth01 = (u) => { const t = clamp(u, 0, 1); return t * t * (3 - 2 * t); };
+
   /* THE WRAP TERM. `sampleAt` already publishes `nz` — the CAMERA-SPACE
    * normal's z component, 1 dead-on to the camera and exactly 0 ON the
    * silhouette — and `surface-fill.js` already reads it for the identical
@@ -132,10 +149,28 @@
     const wrapB = (b) => ((b % 1) + 1) % 1;
 
     const onS = (s) => Boolean(s && s.front === WF);
+    // The substrate sampler. Under v2 every sample carries L (diffuse luminance) and S (specular):
+    // the hub's sample objects bring them (`s.L` / `s.S`); a substrate that does not (the standalone
+    // callers) gets them computed here from Regions.shade when the call carries its light context.
+    // `s.I` is then L, so a law that still reads `I` follows the v2 luminance.
+    const V2 = isV2(o);
+    const sampleAt = !V2 ? (a, b) => o.sampleAt(a, b) : (a, b) => {
+      const s = o.sampleAt(a, b);
+      if (!s) return s;
+      if (!(Number.isFinite(s.L) && s.L >= 0)) {
+        const Rg = Scene3D.Regions; const lc = o.light;
+        if (Rg && Rg.shade && lc && Array.isArray(lc.lights) && s.wN) {
+          const r = Rg.shade(s.wN, s.world, lc.lights, { model: 'v2', eye: lc.eye || null, shininess: lc.shininess, ks: lc.ks, ambient: lc.ambient, bounce: lc.bounce, shadowFn: lc.shadowFn });
+          s.L = r.L; s.S = r.S;
+        } else { s.L = lum(s); s.S = finite(s.S, 0); }
+      }
+      s.I = s.L;
+      return s;
+    };
     // Chart sample, with `a` treated as a hard domain edge and `b` as the wind.
     const at = (a, b) => {
       if (!(a >= 0 && a <= 1)) return null;
-      const s = o.sampleAt(a, wrapB(b));
+      const s = sampleAt(a, wrapB(b));
       if (!onS(s)) return null;
       // Every sample carries the parameters it came from, so a law that walks in
       // screen space can hand the point straight back to the chart substrate.
@@ -148,8 +183,8 @@
     // laws never depend on a flag they do not own.
     const frame = (s, a, b) => {
       if (s.dA && s.dB) return { ax: s.dA.x, ay: s.dA.y, bx: s.dB.x, by: s.dB.y };
-      const sa = o.sampleAt(clamp(a + EPS, 0, 1), wrapB(b));
-      const sb = o.sampleAt(clamp(a, 0, 1), wrapB(b + EPS));
+      const sa = sampleAt(clamp(a + EPS, 0, 1), wrapB(b));
+      const sb = sampleAt(clamp(a, 0, 1), wrapB(b + EPS));
       if (!sa || !sb) return null;
       return {
         ax: (sa.x - s.x) / EPS, ay: (sa.y - s.y) / EPS,
@@ -203,11 +238,13 @@
     };
 
     // The crossing of the visible surface's edge, to seven bisections.
+    // v2: the paper gate (see `gateKeep`) also ends a mark, so the ink stops where the paper starts.
+    const atG = !V2 ? at : (a, b) => { const s = at(a, b); return s && gateKeep(s, s.x, s.y) ? s : null; };
     const edgeBetween = (p0, p1) => {
       let lo = p0; let hi = p1; let best = null;
       for (let i = 0; i < 7; i++) {
         const m = { a: (lo.a + hi.a) / 2, b: (lo.b + hi.b) / 2 };
-        const s = at(m.a, m.b);
+        const s = atG(m.a, m.b);
         if (s) { lo = m; best = s; } else hi = m;
       }
       return best ? { x: best.x, y: best.y, z: best.z } : null;
@@ -250,7 +287,7 @@
         run = []; len = 0;
       };
       for (let i = 0; i < pts.length; i++) {
-        const s = at(pts[i].a, pts[i].b);
+        const s = atG(pts[i].a, pts[i].b);
         if (!s) {
           if (prev) { const e = edgeBetween(prev, pts[i]); if (e) push(e); }
           flush(); prev = null; continue;
@@ -348,7 +385,7 @@
       lat.push({ a, b, x: s.x, y: s.y });
       if (s.x < minX) minX = s.x; if (s.x > maxX) maxX = s.x;
       if (s.y < minY) minY = s.y; if (s.y > maxY) maxY = s.y;
-      const ii = finite(s.I, 0);
+      const ii = lum(s);
       if (ii > hiI) { hiI = ii; hiA = a; hiB = b; hiX = s.x; hiY = s.y; }
       const nz = Math.abs(finite(s.nz, 0));
       if (nz > faceNz) { faceNz = nz; faceA = a; faceB = b; faceX = s.x; faceY = s.y; }
@@ -480,6 +517,7 @@
       return bestD < 0.30 ? bestS : null;
     };
 
+    const invG = !V2 ? inv : (x, y) => { const s = inv(x, y); return s && gateKeep(s, s.x, s.y) ? s : null; };
     const emitScr = (pts) => {
       if (!pts || pts.length < 2) return;
       let run = [];
@@ -497,13 +535,13 @@
         let lo = good; let hi = bad; let best = null;
         for (let i = 0; i < 6; i++) {
           const m = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
-          const s = inv(m.x, m.y);
+          const s = invG(m.x, m.y);
           if (s) { lo = m; best = s; } else hi = m;
         }
         return best;
       };
       for (let i = 0; i < pts.length; i++) {
-        const s = inv(pts[i].x, pts[i].y);
+        const s = invG(pts[i].x, pts[i].y);
         if (!s) {
           if (prev) { const e = bis(prev, pts[i]); if (e) push({ x: e.x, y: e.y, z: e.z }); }
           flush(); prev = null; continue;
@@ -559,12 +597,52 @@
     // that they never crowd past legibility.
     const pitchLegible = (I) => Math.max(FLOOR, pitchFor(I));
     // Shade in 0..1, 1 = darkest.
-    const shadeAt = (x, y) => { const s = inv(x, y); return s ? clamp(1 - finite(s.I, 0), 0, 1) : null; };
+    const shadeAt = (x, y) => { const s = inv(x, y); return s ? clamp(1 - lum(s), 0, 1) : null; };
+
+    /* THE v2 TONE MAP (light-realism U8). ONE target for every law: the RELATIVE DENSITY
+     *   dens(s) = d(L*) . keep(S),   d(x) = (areaFor(x) - aL) / (aD - aL) . rolloff(x)
+     * is 1 at the darkest tone and 0 at paper. d is this file's own L*-linear span with the lit
+     * floor taken out (the lightest PAPER_BAND rolls off to paper), the same normalisation the
+     * locked dutyConst baker uses, so pose and surface agree. keep(S) = 1 - smoothstep(s0, s1, S)
+     * (Regions.specularKeep) turns the glint into paper. A law turns dens into ink its own way:
+     * area-driven laws via `areaOf` (the ink area fraction), spacing laws via `pitchOf`, duty laws
+     * via `dens` directly. The DARK END is the law-independent plot-floor legible area
+     * (`areaMax` = INK / (1.05 FLOOR), what the ruling laws have always topped out at), scaled by
+     * Density, so a mezzotint no longer runs at twice the ink of a dash law for the same tone. */
+    const SD2 = Scene3D.Regions || {};
+    const spKeep = (S) => (SD2.specularKeep ? SD2.specularKeep(finite(S, 0)) : 1);
+    const dOf = (x) => {
+      const xx = clamp(finite(x, 0), 0, 1);
+      const aL = areaFor(1); const aD = areaFor(0);
+      const rel = clamp((areaFor(xx) - aL) / Math.max(1e-6, aD - aL), 0, 1);
+      return rel * smooth01((1 - xx) / V2_PAPER_BAND);
+    };
+    const dens = (s) => (V2 ? dOf(lum(s)) * spKeep(s && s.S) : clamp(1 - lum(s), 0, 1));
+    const areaMax = clamp((INK / (FLOOR * 1.05)) * DS, 0.02, A_DARK);
+    const areaOf = V2 ? (s) => clamp(areaMax * dens(s), 0, A_DARK) : (s) => areaFor(clamp(lum(s), 0, 1));
+    const PMAX_V = PMAX * V2_PITCH_X;
+    const pitchOf = V2
+      ? (s) => clamp(INK / Math.max(1e-6, areaOf(s)), INK / A_DARK, PMAX_V)
+      : (s) => pitchFor(lum(s));
+    const pitchOfDens = (d) => clamp(INK / Math.max(1e-6, clamp(areaMax * d, 0, A_DARK)), INK / A_DARK, PMAX_V);
+    const pitchLegOf = V2 ? (s) => Math.max(FLOOR, pitchOf(s)) : (s) => pitchLegible(lum(s));
+    // The paper gate. `sparse` is the lowest relative density the CALLING law can draw on its own
+    // (a stripe field cannot space wider than its wavelength clamp): below it a mark survives with
+    // probability dens/sparse, in 1.2 mm screen cells, so the ramp stays graded instead of cliffing.
+    let sparse = 0;
+    const gateKeep = (s, x, y) => {
+      const d = dens(s);
+      if (d <= V2_PAPER_DENS) return false;
+      if (sparse > 0 && d < sparse) return hash(Math.floor(x / 1.2) + 4001, Math.floor(y / 1.2) + 9007) < d / sparse;
+      return true;
+    };
 
     return {
       WF, PEN, INK, FLOOR, PMAX, DS, SPARSE, MINMARK, hash, wrapB, at, solve, stepTo, frame,
       edgeBetween, emitPts, trace, gradOf, inv, emitScr, pitchFor, pitchLegible,
-      areaFor, shadeAt,
+      areaFor, shadeAt, V2, dens, areaOf, pitchOf, pitchLegOf, pitchOfDens, areaMax, PMAX_V,
+      paper: (s) => V2 && dens(s) <= V2_PAPER_DENS,
+      setSparse: (v) => { sparse = v; },
       emittedCount: () => famIdx,
       cutCount: () => cutSegs,
       lat, ok, minX, minY, maxX, maxY, W, H: Hh, R, SEED_STRIDE,
@@ -660,6 +738,7 @@
         // 0.9. 0.80 is the value that makes the placed spacing the requested
         // one; the free ends it costs are reported, split out, in the table.
         if (i > 14 && tooClose(nx.x, nx.y, clearAt(nx) * 0.80)) break;
+        if (C.paper(nx)) break;   // v2: a streamline ends where the paper begins
         cur = nx;
       }
       return pts;
@@ -677,7 +756,7 @@
       if (s) fallback.push(s);
     }
     if (!fallback.length) return;
-    fallback.sort((p, q) => finite(p.I, 0) - finite(q.I, 0));
+    fallback.sort((p, q) => lum(p) - lum(q));
     const grown = [];
     let fi = 0;
     let lines = 0;
@@ -687,6 +766,7 @@
       else if (fi < fallback.length) { s = fallback[fi]; fi += 1; }
       else break;
       if (!s) continue;
+      if (C.paper(s)) continue;
       const sep = clearAt(s);
       if (tooClose(s.x, s.y, sep * 0.95)) continue;
       const fwd = walk(s, 1);
@@ -744,7 +824,7 @@
           const s = C.inv(C.minX + i * dx, C.minY + j * dy);
           const k = j * (N + 1) + i;
           if (!s) continue;
-          M[k] = 1; Z[k] = finite(s.z, 0); Ii[k] = finite(s.I, 0);
+          M[k] = 1; Z[k] = finite(s.z, 0); Ii[k] = lum(s);
         }
       }
     };
@@ -923,7 +1003,7 @@
     // `__MONO_CTX` behind): publish the field itself so a harness can measure
     // its winding number directly rather than reconstructing this grid.
     if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
-    streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
+    streamFamily(C, dirAt, (s) => C.pitchOf(s));
   };
 
   /* ── 02 · defectSplit ───────────────────────────────────────────────────────
@@ -947,7 +1027,7 @@
     C.lat.forEach((p) => {
       const s = C.at(p.a, p.b);
       if (!s) return;
-      if (finite(s.I, 0) < worst) { worst = finite(s.I, 0); dk = s; }
+      if (lum(s) < worst) { worst = lum(s); dk = s; }
     });
     if (!dk) return;
     const ux = dk.x - cx; const uy = dk.y - cy;
@@ -1027,7 +1107,7 @@
       C.__defects = defects;
       C.__defectCentre = { x: cx, y: cy };
     }
-    streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
+    streamFamily(C, dirAt, C.V2 ? (s) => C.pitchOf(s) * 0.93 : (s) => C.pitchOf(s));
   };
 
   /* ── 03 · mezzoRegion ───────────────────────────────────────────────────────
@@ -1071,7 +1151,7 @@
       }
       return { x: Math.cos(best.th), y: Math.sin(best.th) };
     };
-    streamFamily(C, dirAt, (s) => C.pitchFor(finite(s.I, 0)));
+    streamFamily(C, dirAt, C.V2 ? ((k) => (s) => C.pitchOf(s) * k)(1.12 + 0.23 * clamp((25 - C.R) / 11, 0, 1)) : (s) => C.pitchOf(s));
   };
 
   /* ── 04 · creviceAO ─────────────────────────────────────────────────────────
@@ -1105,7 +1185,7 @@
     const clearAt = (s) => {
       const raw = C.aoAt(s.x, s.y);
       const ao = raw == null ? 0 : clamp((raw - aoLo) / span, 0, 1);
-      const lam = clamp(finite(s.I, 0), 0, 1);
+      const lam = clamp(lum(s), 0, 1);
       // Two-thirds occlusion, one-third Lambert.
       const t = clamp(1 - (0.70 * ao + 0.30 * (1 - lam)), 0, 1);
       return C.pitchFor(t);
@@ -1151,7 +1231,7 @@
     const clearAt = (s) => {
       const raw = C.horizonAt(s.x, s.y);
       const hh = raw == null ? 0 : clamp((raw - hLo) / hSpan, 0, 1);
-      const lam = clamp(finite(s.I, 0), 0, 1);
+      const lam = clamp(lum(s), 0, 1);
       const t = clamp(lam * (1 - hh * 0.92), 0, 1);
       const p = C.pitchFor(t);
       // THE UMBRA'S OWN FLOOR, entered CONTINUOUSLY. A hard threshold here was
@@ -1207,7 +1287,7 @@
           continue;
         }
         // The white fraction the tone wants, cut as ONE bar per period.
-        const want = C.areaFor(clamp(finite(s.I, 0), 0, 1));
+        const want = C.areaOf(s);
         const white = clamp(1 - want, 0, 0.94);
         const BAR = barFor(want);
         // Phase-aligned across the family (the bar is a straight cross-grain),
@@ -1261,7 +1341,7 @@
       for (let k = 0; k <= NS; k += 3) {
         const t = -half + (2 * half) * (k / NS);
         const s = C.inv(cx + vx * off + ux * t, cy + vy * off + uy * t);
-        if (s) { sumP += C.pitchLegible(finite(s.I, 0)); cnt += 1; }
+        if (s) { sumP += C.pitchLegOf(s); cnt += 1; }
       }
       const pitch = cnt ? sumP / cnt : C.PMAX;
       for (let p = 0; p < PASSES; p++) {
@@ -1277,7 +1357,7 @@
           // THE CHANNEL. Zero while a single family can still deliver the tone
           // by clearance alone; opening to half the floor once it cannot, which
           // is the only place the extra darkness can come from at one width.
-          const want = C.pitchFor(finite(s.I, 0));
+          const want = C.pitchOf(s);
           const over = clamp((C.FLOOR - want) / Math.max(1e-6, C.FLOOR - C.INK), 0, 1);
           const amp = (C.FLOOR / 2) * over * over * (3 - 2 * over);
           if (p > 0 && amp < C.INK * 0.42) {
@@ -1332,7 +1412,7 @@
     // ramp (rulings closing) is continuous too.
     const mOf = (s) => {
       // targetArea over the area a full continuous family at the floor lays.
-      const want = C.areaFor(clamp(finite(s.I, 0), 0, 1));
+      const want = C.areaOf(s);
       const full = C.INK / C.FLOOR;                  // 0.509
       return clamp(want / full, 0.03, 1) + clamp((want - full) / Math.max(1e-6, 1 - full), 0, 1);
     };
@@ -1398,7 +1478,7 @@
     // the nominal ruling, carry it onto the chart, carry it back, and keep only
     // the part perpendicular to the ruling AS DRAWN.
     const clearAt = (s, a, b) => {
-      const want = C.pitchFor(finite(s.I, 0));
+      const want = C.pitchOf(s);
       const q = C.solve(s, a, b, vx * want, vy * want);
       if (!q) return want;
       const s2 = C.at(a + q.da, b + q.db);
@@ -1483,7 +1563,7 @@
       probe.forEach((p, k) => {
         if (k % 3) return;
         const s = C.inv(p.x, p.y);
-        if (s) { sum += C.pitchFor(finite(s.I, 0)); cnt += 1; }
+        if (s) { sum += C.pitchOf(s); cnt += 1; }
       });
       const clear = cnt ? sum / cnt : C.PMAX;
       // THE PHASE DITHER. Amplitude is a fifth of the local clearance, so the
@@ -1494,6 +1574,60 @@
       C.emitScr(pts);
       off += clear;
       li += 1;
+    }
+  };
+
+  /* v2 DASHED RULINGS (dutyConst, endShorten). One parallel family at pitch P; each ruling is cut into
+   * fixed cells of length PERIOD and a cell carries `dens` of its length as ink, centred, so the tone
+   * is the ink FRACTION and the lightest tones are paper (dens 0 = no mark, no `DUTY_MIN` floor). A mark
+   * shorter than the plot's minimum is not drawn short (that was the legacy cliff, where `emitScr`
+   * dropped every sub-MINMARK dash): it is drawn at the minimum length in a hashed fraction of the
+   * cells, which keeps the expected ink equal to the requested duty and the ramp graded. Marks that
+   * touch merge into one pen-down, so the shadow side is still a continuous ruling. */
+  const dashedRulings = (C, P, PERIOD) => {
+    const ang = (C.rot + 90) * Math.PI / 180;
+    const ux = Math.cos(ang); const uy = Math.sin(ang);
+    const vx = -uy; const vy = ux;
+    const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
+    const half = Math.hypot(C.W, C.H) / 2;
+    const nLines = Math.ceil((2 * half) / P);
+    const MINLEN = Math.min(PERIOD, C.MINMARK * 1.5);
+    const STEP = 0.25;
+    for (let li = 0; li <= nLines; li++) {
+      const off = -half + li * P;
+      const ph0 = ((li * GOLDEN + SEED.phase) % 1);
+      const nCells = Math.ceil((2 * half) / PERIOD) + 1;
+      const t0 = -half - ph0 * PERIOD;
+      const at = (t) => C.inv(cx + vx * off + ux * t, cy + vy * off + uy * t);
+      let cur = null;                       // the merged interval being built [a, b]
+      const emitIv = (iv) => {
+        const n = Math.max(2, Math.ceil((iv[1] - iv[0]) / STEP));
+        const pts = [];
+        for (let k = 0; k <= n; k++) {
+          const t = iv[0] + (iv[1] - iv[0]) * (k / n);
+          pts.push({ x: cx + vx * off + ux * t, y: cy + vy * off + uy * t });
+        }
+        C.emitScr(pts);
+      };
+      for (let c = 0; c < nCells; c++) {
+        const tc = t0 + (c + 0.5) * PERIOD;
+        // The tone of the cell is read at its centre, or just beside it where the centre is off the form.
+        const s = at(tc) || at(tc - PERIOD * 0.3) || at(tc + PERIOD * 0.3);
+        let iv = null;
+        if (s) {
+          const duty = clamp(C.dens(s), 0, 1);
+          let len = duty * PERIOD;
+          if (duty >= 0.97) len = PERIOD + STEP * 0.1;
+          else if (len < MINLEN) len = C.hash(li * 131 + 7, c + 100003) < len / MINLEN ? MINLEN : 0;
+          if (len > 0) iv = [tc - len / 2, tc + len / 2];
+        }
+        if (iv && cur && iv[0] <= cur[1] + 1e-6) cur[1] = iv[1];
+        else {
+          if (cur) emitIv(cur);
+          cur = iv;
+        }
+      }
+      if (cur) emitIv(cur);
     }
   };
 
@@ -1513,6 +1647,14 @@
    * surface texture would — a foreshortening cue delivered by a constant.
    */
   const lawDuty = (C) => {
+    if (C.V2) {
+      // v2: the same ruling pitch as below; the duty is the relative density (paper at the glint).
+      const P0 = C.FLOOR * 1.05 * C.SPARSE;
+      const tDense = clamp((1 - 1 / C.DS) / (1 - 1 / 4), 0, 1);
+      const cov0 = C.PEN / P0;
+      dashedRulings(C, tDense > 0 ? C.PEN / (cov0 + (1 - cov0) * tDense) : P0, C.FLOOR * 2.0);
+      return;
+    }
     const ang = (C.rot + 90) * Math.PI / 180;
     const ux = Math.cos(ang); const uy = Math.sin(ang);
     const vx = -uy; const vy = ux;
@@ -1557,7 +1699,7 @@
         const y = cy + vy * off + uy * t;
         const s = C.inv(x, y);
         if (!s) { if (pts.length) { C.emitScr(pts); pts = []; } continue; }
-        const want = C.areaFor(clamp(finite(s.I, 0), 0, 1));
+        const want = C.areaOf(s);
         const span = (want - aLight) / Math.max(1e-6, aDark - aLight);
         const duty = clamp(DUTY_MIN + (1 - DUTY_MIN) * span, DUTY_MIN, 1);
         const ph = (((t + half) / PERIOD) + ph0) % 1;
@@ -1588,6 +1730,13 @@
    * reserved highlight gives, but delivered by the ends of the ink.
    */
   const lawEndShorten = (C) => {
+    if (C.V2) {
+      // v2: the ends retract where the LOCAL tone is light (the legacy law read the tone at the ruling's
+      // ends, on the limb, so a front light left the lit centre solid: inverted). Long cells, so the
+      // result still reads as a ruling whose ends are pulled back; the lightest tones are paper.
+      dashedRulings(C, C.FLOOR * 1.15 * C.SPARSE, C.FLOOR * 6);
+      return;
+    }
     const ang = (C.rot + 90) * Math.PI / 180;
     const ux = Math.cos(ang); const uy = Math.sin(ang);
     const vx = -uy; const vy = ux;
@@ -1616,7 +1765,7 @@
       const retract = (t) => {
         const s = sAt(t);
         if (!s) return 0;
-        const lit = clamp(finite(s.I, 0), 0, 1);
+        const lit = clamp(lum(s), 0, 1);
         const e = lit * lit * (3 - 2 * lit);
         // Stagger the ends by a low-discrepancy offset per ruling.
         const st = (((li * GOLDEN + SEED.phase) % 1) - 0.5) * P * 2.2;
@@ -1707,9 +1856,13 @@
      * they are the owner's two legibility limits, not a taste setting.
      */
     const WEB_K = 2.31 * (C.PEN / C.INK);
-    const cellFor = (I) => clamp(
-      WEB_K * C.pitchFor(clamp(finite(I, 0), 0, 1)), CELL_MIN, CELL_MAX,
-    );
+    // v2: the cell may grow to twice the legibility cap (the sparse end of the tone map); past that the
+    // paper gate thins the web, so the lightest tones reach paper instead of a fixed airy lattice.
+    const CELL_TOP = C.V2 ? CELL_MAX * 2 : CELL_MAX;
+    if (C.V2) C.setSparse(clamp((2.31 * C.PEN / CELL_TOP) / (C.areaMax / 1.12), 0.05, 0.6));
+    // The relaxed seed set packs ~0.76 of the hexagonal-identity ink (measured), so v2 shrinks the cell by that.
+    const WEB_K2 = C.V2 ? WEB_K * 0.76 : WEB_K;
+    const cellFor = (s) => clamp(WEB_K2 * C.pitchOf(s), CELL_MIN, CELL_TOP);
 
     /* ── THE SEED SET ────────────────────────────────────────────────────────
      * A density-warped low-discrepancy sequence, rejected against a
@@ -1773,7 +1926,7 @@
       // the chart sample, not the dart that found it.
       const s = C.inv(x, y);
       if (!s) continue;
-      const r = cellFor(finite(s.I, 0));
+      const r = cellFor(s);
       let clash = false;
       for (let k = 0; k < nb.length; k++) {
         const q = nb[k];
@@ -1900,7 +2053,7 @@
         const s = C.inv(p.x + (c.x - p.x) * 0.45, p.y + (c.y - p.y) * 0.45);
         if (!s) { moved[i] = p; continue; }
         moved[i] = {
-          x: s.x, y: s.y, r: cellFor(finite(s.I, 0)), i,
+          x: s.x, y: s.y, r: cellFor(s), i,
         };
       }
       seeds = moved;
@@ -2100,7 +2253,7 @@
     }
     const sep = (x, y) => {
       const s = C.inv(x, y);
-      return C.pitchLegible(s ? finite(s.I, 0) : 0.9);
+      return C.pitchLegible(s ? lum(s) : 0.9);
     };
     const GRIDS = C.PMAX * 1.2;
     for (let it = 0; it < 340; it++) {
@@ -2136,7 +2289,7 @@
         fx[i] += ((pv.x + nx.x) / 2 - n.x) * 0.45;
         fy[i] += ((pv.y + nx.y) / 2 - n.y) * 0.45;
         const s = C.inv(n.x, n.y);
-        const grow = s ? clamp(1 - finite(s.I, 0), 0, 1) : 0;
+        const grow = s ? clamp(1 - lum(s), 0, 1) : 0;
         const rr = Math.max(1e-3, Math.hypot(n.x - C.faceX, n.y - C.faceY));
         fx[i] += ((n.x - C.faceX) / rr) * (0.25 + grow) * 0.55;
         fy[i] += ((n.y - C.faceY) / rr) * (0.25 + grow) * 0.55;
@@ -2161,7 +2314,7 @@
         // curve to make room for what has been inserted. That buckling is the
         // drawing.
         const sm0 = C.inv(mx0, my0);
-        const shade0 = sm0 ? clamp(1 - finite(sm0.I, 0), 0, 1) : 0;
+        const shade0 = sm0 ? clamp(1 - lum(sm0), 0, 1) : 0;
         const bud = C.hash(it * 7919 + i, 11) < (0.012 + shade0 * 0.075);
         if ((L > d || bud) && next.length < 12200) {
           const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -2194,7 +2347,7 @@
       const y = C.minY + C.hash(t * 5 + 92, 17) * C.H;
       const s = C.inv(x, y);
       if (!s) continue;
-      const shade = clamp(1 - finite(s.I, 0), 0, 1);
+      const shade = clamp(1 - lum(s), 0, 1);
       if (C.hash(t * 5 + 93, 19) > 0.12 + shade * 0.95) continue;
       attr.push({ x, y, dead: false });
     }
@@ -2362,7 +2515,7 @@
         const s = alongX
           ? C.inv(cx0, cy0 - LOCAL + (k / 10) * (2 * LOCAL))
           : C.inv(cx0 - LOCAL + (k / 10) * (2 * LOCAL), cy0);
-        if (s) { sum += finite(s.I, 0); n += 1; }
+        if (s) { sum += C.V2 ? C.dens(s) : lum(s); n += 1; }
       }
       return n ? sum / n : null;
     };
@@ -2427,10 +2580,10 @@
       xs.push(x);
       const t = xConst != null ? xConst : (() => {
         const avg = bandAvg(x, C.faceY, true);
-        return avg == null ? 0.5 : rankOf(xSamples, avg);
+        return avg == null ? 0.5 : (C.V2 ? avg : rankOf(xSamples, avg));
       })();
       const here = C.inv(x, C.faceY);
-      x += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
+      x += Math.max(C.FLOOR, wrapPitch(C.V2 ? C.pitchOfDens(t) * 0.6 : C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
     const ys = [];
     let y = C.minY;
@@ -2438,10 +2591,10 @@
       ys.push(y);
       const t = yConst != null ? yConst : (() => {
         const avg = bandAvg(C.faceX, y, false);
-        return avg == null ? 0.5 : rankOf(ySamples, avg);
+        return avg == null ? 0.5 : (C.V2 ? avg : rankOf(ySamples, avg));
       })();
       const here = C.inv(C.faceX, y);
-      y += Math.max(C.FLOOR, wrapPitch(C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
+      y += Math.max(C.FLOOR, wrapPitch(C.V2 ? C.pitchOfDens(t) * 0.6 : C.pitchLegible(t), here ? here.nz : 1)) * 1.05;
     }
     const NX = xs.length - 1; const NY = ys.length - 1;
     if (NX < 3 || NY < 3) return;
@@ -2520,7 +2673,15 @@
    * and beyond it in the deepest zone, where the wavelength is halved and
    * alternate stripes merge.
    */
+  // v2: the settled RD pattern is denser than the wavelength asked for (TURING_V2_CAL, measured), and it
+  // bifurcates into a fixed sparse pattern when asked for a long one (the 26-cell wavelength clamp), so
+  // the wavelength follows the tone only down to TURING_V2_DMIN of the dark end; lighter tones keep that
+  // pattern and the paper gate thins it (dens / DMIN of the stripe cells survive), which is what makes the
+  // ramp graded. Calibrated against the constant-tone sweep in tests/unit/scene3d-mono-laws-v2.test.js.
+  const TURING_V2_CAL = 1.45;
+  const TURING_V2_DMIN = 0.9;
   const lawTuring = (C) => {
+    if (C.V2) C.setSparse(TURING_V2_DMIN);
     const CELL = Math.max(0.16, C.FLOOR / 3.2);
     const NX = Math.min(360, Math.max(24, Math.round(C.W / CELL) + 4));
     const NY = Math.min(360, Math.max(24, Math.round(C.H / CELL) + 4));
@@ -2550,7 +2711,9 @@
       const k = j * NX + i;
       if (!s) { rawI[k] = -1; continue; }
       mask[k] = 1;
-      const val = clamp(finite(s.I, 0), 0, 1);
+      // v2: the requested clearance comes straight from the cell's tone and specular (no rank
+      // normalisation, which equalised the histogram and made the tone a staircase of cliffs).
+      const val = C.V2 ? Math.max(C.FLOOR, C.pitchOfDens(Math.max(C.dens(s), TURING_V2_DMIN))) : clamp(lum(s), 0, 1);
       rawI[k] = val;
       sample.push(val);
     }
@@ -2566,7 +2729,9 @@
     };
     for (let k = 0; k < mask.length; k++) {
       if (!mask[k]) { lam[k] = C.PMAX * 2 * C.stripeScale; continue; }
-      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2 * C.stripeScale;   // full wavelength = 2 x clearance (U6 scale)
+      lam[k] = C.V2
+        ? rawI[k] * 2 * C.stripeScale * TURING_V2_CAL
+        : C.pitchLegible(rankOf(rawI[k])) * 2 * C.stripeScale;   // full wavelength = 2 x clearance (U6 scale)
     }
     // The direction the stripes should run: perpendicular to the tone gradient.
     for (let j = 1; j < NY - 1; j++) for (let i = 1; i < NX - 1; i++) {
@@ -2825,7 +2990,7 @@
         const th = (i / NANG) * Math.PI * 2;
         const x = ox + r0 * Math.cos(th); const y = oy + r0 * Math.sin(th);
         const s = C.inv(x, y);
-        const p0 = C.pitchFor(s ? finite(s.I, 0) : 0.85);
+        const p0 = C.pitchFor(s ? lum(s) : 0.85);
         // WRAP: fold the turn tighter as it rides the limb (nz -> 0), so the
         // rings read as following the body's curvature and not as a flat
         // disc of concentric circles laid on top of it. `wrapPitch` is a
@@ -2932,7 +3097,7 @@
         const x = cx + vx * off + ux * t;
         const y = cy + vy * off + uy * t;
         pts.push({ x, y });
-        if (k % 4 === 0) { const s = C.inv(x, y); if (s) { sum += finite(s.I, 0); cnt += 1; } }
+        if (k % 4 === 0) { const s = C.inv(x, y); if (s) { sum += lum(s); cnt += 1; } }
       }
       C.emitScr(pts);
       const I = cnt ? sum / cnt : 0.6;
@@ -3008,7 +3173,7 @@
         // depth field, and the light thins it further where the form is bright.
         const g = C.gradOf(ring[k].a, ring[k].b, zOf);
         const slope = g ? clamp(Math.hypot(g.x, g.y) * C.R * 0.9, 0, 1) : 0.3;
-        const lit = clamp(finite(s.I, 0), 0, 1);
+        const lit = clamp(lum(s), 0, 1);
         const eff = clamp(0.18 + slope * 0.55 + (1 - lit) * 0.5, 0.04, 0.98);
         const pitch = clamp(C.INK / eff, C.FLOOR, C.PMAX);
         if (acc < pitch) continue;
