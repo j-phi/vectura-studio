@@ -9,7 +9,7 @@ describe('light-realism harness (legacy reference numbers)', () => {
     // The strategist's reference numbers are for the PRE-v7 default sun (az 135 / el 45): pin it explicitly.
     surf = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'surface', azimuth: 135, elevation: 45, tone: { model: 'legacy' } }));
     pose = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'pose', azimuth: 135, elevation: 45, tone: { model: 'legacy' } }));
-    const f = LR.buildCase(V, { markSpace: 'surface' }); LR.setLightCam(f, LR.LIGHTS.front);
+    const f = LR.buildCase(V, { markSpace: 'surface', tone: { model: 'legacy' } }); LR.setLightCam(f, LR.LIGHTS.front);
     front = LR.measure(f);
   }, 120000);
   afterAll(() => rt && rt.cleanup());
