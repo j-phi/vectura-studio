@@ -115,6 +115,7 @@ describe('Scene-tree Increment A — object3d + booleanGroup3d types', () => {
 
     test('a custom primitive matches the hand-built equivalent scene3d scene', () => {
       const objParams = {
+        sceneVersion: 7, // a NEW leaf is born at the current version (resolves the factory tone model + front key, like ALGO_DEFAULTS.object3d)
         primitive: 'sphere',
         params: { radius: 22, detail: 16 },
         transform: { x: 4, y: 24, z: -3, yaw: 12, pitch: 0, roll: 0, scale: 1 },

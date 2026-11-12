@@ -18,7 +18,7 @@
  *   StartPageFan.open(anchorEl, { art, index, alternates, onPick(colorway) }) -> { close() }
  *   cover.useAsCover(art, { colorway, frame, fill }) -> Promise     (setCoverApi)
  *   StartPagePlateFills.apply(article, { art, text, background })    painting for special fills (optional)
- *   StartPageMotion.modelFor(art) -> model id | null                a live 3D model (StartPageOrbit3D); the SVG is used otherwise
+ *   StartPageMotion.modelFor(art) -> model id | null                marks a 3D piece (Scene 3D / Object 3D / a 3D model): it is still drawn from its SVG
  * A manual color value is '#rrggbb' or { fill: 'iridescent' | ... }.
  *
  * Developer Mode (SETTINGS.devMode, the Document Setup switch): the section shows an editable DRAFT of the shipped example
@@ -99,7 +99,7 @@
     const premountCfg = () => Object.assign({ enabled: true, idleTimeoutMs: 2000, fallbackMs: 120 }, (Vectura.START_PAGE && Vectura.START_PAGE.PLATE_PREMOUNT) || {});
     // A short list never drops, so every plate ends up mounted after one scroll anyway: mount the rest ahead of time, one at a
     // time in idle, nearest first (below the viewport before above), so a first fast fling finds drawn plates, not unmounted ones.
-    // Long lists keep pure lazy mounting. A pre-mounted plate is off screen, so a live 3D model mounts finished (offscreen()).
+    // Long lists keep pure lazy mounting. A pre-mounted plate is off screen, so it mounts finished (offscreen()).
     const pre = { timer: 0, idle: false, running: false, tried: new WeakSet() };
     const visiblePlates = () => plateEls().filter((x) => !x.hasAttribute('data-off'));
     const stopPremount = () => {
@@ -388,12 +388,10 @@
     /* ------------------------------------------------------------------ plates */
     const Motion = () => Vectura.StartPageMotion;
     const art3d = (e) => { try { const M = Motion(); return M ? M.modelFor(e.art) : null; } catch (_) { return null; } };
-    // A 3D Scene ('scene:' id) is NOT a live model here: the plate draws the scene's own drawing (fills and shadow shapes as
-    // the app draws them, the drawing's own layout) and StartPageSceneOrbit turns it with real renders. Other 3D pieces are
-    // live StartPageOrbit3D models.
-    const isSceneId = (m) => /^scene:/.test(String(m || ''));
-    const liveModel = (e) => { const m = art3d(e); return m && !isSceneId(m) ? m : null; };
-    const sceneFor = (e) => (isSceneId(art3d(e)) && e.art && typeof e.art.getScenePayload === 'function' ? { payload: e.art.getScenePayload } : null);
+    // A 3D piece (Scene 3D / Object 3D / one of the 3D models) is a plain still drawing here, like every other plate: no live
+    // model, no drag-to-rotate, no sway. It only differs in its framing (the dense body of the drawing, with air; see layouts.js) and in the
+    // square '3d' plate aspect. It plots in with the same animate-in as the rest.
+    const is3dPiece = (e) => !!art3d(e);
     // The plate's own motion (set in its editor) wins over the page defaults in Settings.
     const entryNow = (id) => entries.find((x) => x.id === id) || null;
     const plateAnimateIn = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.animateIn || ctx.prefs().animateIn || 'plot'; };
@@ -522,18 +520,17 @@
       e = entries.find((x) => x.id === w.dataset.plateId) || null;
       const i = e ? entries.indexOf(e) : -1;
       if (i < 0) return;
-      const model0 = svg ? liveModel(e) : null;
-      const cw = setData(w, e, i, svg ? layoutFor(e, i, model0 ? '3d' : orientationOf(svg)) : undefined);
+      const cw = setData(w, e, i, svg ? layoutFor(e, i, is3dPiece(e) ? '3d' : orientationOf(svg)) : undefined);
       if (!cw || !svg) { w.dataset.state = 'error'; return; }
-      const model = liveModel(e);
-      const orientation = model ? '3d' : orientationOf(svg);
+      const is3d = is3dPiece(e);
+      const orientation = is3d ? '3d' : orientationOf(svg);
       const eff = effective(e);
       const layout = layoutFor(e, i, orientation);
       const frame = frameFor(e);
       let article;
       try {
         article = Layouts().render(layout, {
-          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, model, scene: sceneFor(e), name: e.art.name, seen: st.seenArtId === e.art.id, plotted: offscreen(w) }, colorway: cw, index: i, total: entries.length,
+          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, is3d, name: e.art.name, seen: st.seenArtId === e.art.id, plotted: offscreen(w) }, colorway: cw, index: i, total: entries.length,
           texts: textsFor(e, cw, svg, i), frame, autoMount: false,
         });
       } catch (err) {
@@ -567,15 +564,12 @@
       if (main) { main.classList.add('sp-pl-art'); onOpenClick(main, () => { if (!w.dataset.editing) open(entries.findIndex((x) => x.id === w.dataset.plateId), false); }); } // opens by plate id: a re-sync rebuilds the entry objects
       // Fresh plates draw themselves in (the plate's own style, else the page default). Still / reduced motion: shown finished.
       const M = Motion();
-      const plays = !!(M && main && !model && !reduced() && !M.isStill() && M.styleId(plateAnimateIn(e.id)) !== 'none');
+      const plays = !!(M && main && !reduced() && !M.isStill() && M.styleId(plateAnimateIn(e.id)) !== 'none');
       if (plays && fresh) main.classList.add('sp-pre');
       const mounted = Layouts().mount(article);
       if (M && main) {
         if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } }
-        // A turning 3D Scene takes no hover effect (like the other live 3D pieces): a hover replay would redraw the home pose
-        // over the turned one. It still draws itself in once when the plate is fresh.
-        const turns = !!sceneFor(e);
-        st.bind = M.bindArt(main, { handle: () => (turns ? null : main._spInk || null), animateIn: () => plateAnimateIn(e.id), hover: () => plateHover(e.id), kind: 'plate' });
+        st.bind = M.bindArt(main, { handle: () => main._spInk || null, animateIn: () => plateAnimateIn(e.id), hover: () => plateHover(e.id), kind: 'plate' });
         Promise.resolve(mounted).then(() => {
           if (st.bind) st.bind.sync();
           if (plays && fresh && main.isConnected && main._spInk) {
@@ -925,13 +919,12 @@
       try { ed.handle && ed.handle.close && ed.handle.close(); } catch (_) { /* noop */ }
       if (refocus && ed.btn && ed.btn.isConnected) { try { ed.btn.focus({ preventScroll: true }); } catch (_) { /* noop */ } }
     };
-    // Replay: draw the plate's art in again with its own style (else the page default); a live 3D model re-plots; Still shows it finished.
+    // Replay: draw the plate's art in again with its own style (else the page default); Still shows it finished.
     const replayPlate = (id) => {
       const w = wrappers.get(id);
       const M = Motion();
       const main = w && w._sp.article && w._sp.article.querySelector('.spl-print.sp-pl-art');
       if (!M || !main) return Promise.resolve(null);
-      if (main._vorbit) { if (!M.isStill()) main._vorbit.setModel(main._vorbit.model, { replot: true }); return Promise.resolve(main._vorbit); }
       return main._spInk ? M.replay(main._spInk, plateAnimateIn(id)) : Promise.resolve(null);
     };
     const openEditor = (info, btn) => {
@@ -944,7 +937,7 @@
       const svg = svgCache.get(e.art.id) || '';
       const handle = Ed.open(art, {
         record: Object.assign(e.rec ? JSON.parse(JSON.stringify(e.rec)) : { id: e.id, artId: e.artId }, shippedColors(e) ? { colors: fullColors(shippedColors(e)) } : {}),
-        art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, model: liveModel(e), ownColors: e.art.ownColors },
+        art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, is3d: is3dPiece(e), ownColors: e.art.ownColors },
         devExample: devActive, mode: mode(), index: i, colorway: placed[i] && placed[i].colorway, placed: placed.map((p, k) => { // neighbors count with the background they really show (a manual Curated background changes its class)
           const cwk = k === i ? null : resolveCw(entries[k], k);
           return cwk && p.colorway ? { id: p.id, colorway: Object.assign({}, p.colorway, { class: cwk.class || p.colorway.class, ground: cwk.ground || p.colorway.ground }) } : p;

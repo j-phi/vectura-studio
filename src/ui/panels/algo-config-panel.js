@@ -1410,6 +1410,7 @@
       applyShared(scaleXEl, sharedValue((l) => l.params?.scaleX ?? null));
       applyShared(scaleYEl, sharedValue((l) => l.params?.scaleY ?? null));
       applyShared(rotEl, sharedValue((l) => l.params?.rotation ?? null));
+      applySceneChildTransformReach(null, null, false); // a scene child's hidden rows come back for a multi-selection
 
       renderExportOptimizationIfOpen();
       restoreLeftPanelScroll();
@@ -5057,6 +5058,37 @@
     if (label) label.textContent = show ? 'Transform & Seed' : 'Transform';
     if (show && SEED_MODE_TYPES.has(type)) applySeedReach(layer);
     else if (show) applySeedReach(null);
+    applySceneChildTransformReach(type, layer, show);
+  }
+  // A scene-tree child (object, boolean group, light, ground) is composed by its Scene: its own Pos / Scale / Rotation
+  // never reach the ink (an object is placed by its Move/Scale in the Scene panel or the canvas gizmo; the SCENE's
+  // Transform moves the whole picture), and a light or the ground draws nothing random of its own. Those rows are hidden,
+  // with the reason, rather than left taking input that does nothing.
+  const SCENE_CHILD_XFORM_NOTE = 'This item is placed by the 3D Scene. Move, size and rotate it with the Scene panel or the canvas handles. Select the Scene itself to move, scale or rotate the whole picture.';
+  function applySceneChildTransformReach(type, layer, seedShown) {
+    const getEl = (DEPS && DEPS.getEl)
+      || ((id) => (typeof document !== 'undefined' ? document.getElementById(id) : null));
+    const body = getEl('algorithm-transform-body', { silent: true });
+    const posX = getEl('inp-pos-x', { silent: true });
+    const scaleX = getEl('inp-scale-x', { silent: true });
+    const rot = getEl('inp-rotation', { silent: true });
+    if (!body || !posX || !scaleX || !rot) return;
+    const child = !!layer && layer._sceneConsumed === true && !layer.isGroup
+      && (type === 'object3d' || type === 'sceneLight3d' || type === 'sceneGround3d');
+    const rows = [posX.closest('.grid'), scaleX.closest('.grid'), rot.parentElement];
+    rows.forEach((row) => { if (row) row.style.display = child ? 'none' : ''; });
+    const seedControls = getEl('seed-controls', { silent: true });
+    if (seedControls && seedShown) seedControls.style.display = (child && type !== 'object3d') ? 'none' : '';
+    const label = getEl('transform-label', { silent: true });
+    if (label && child) label.textContent = type === 'object3d' ? 'Seed' : 'Placement';
+    let note = body.querySelector('.scene-child-xform-note');
+    if (!child) { if (note) note.remove(); return; }
+    if (note) return;
+    note = document.createElement('div');
+    note.className = 'scene-child-xform-note text-vectura-muted';
+    note.style.cssText = 'font-size:11px;line-height:1.4;';
+    note.textContent = SCENE_CHILD_XFORM_NOTE;
+    body.appendChild(note);
   }
 
   UI.AlgoConfigPanel = {

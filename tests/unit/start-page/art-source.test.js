@@ -201,19 +201,11 @@ describe('StartPageArtSource', () => {
     expect(cube.sceneId).toMatch(/^work:/);
     expect(seen).toEqual([[cube.sceneId, 'cube']]);
     // the scene turns by re-rendering the work's own stored document
-    expect((await cube.getScenePayload()).scene).toBe(true);
+    expect(cube.getScenePayload).toBeUndefined(); // nothing turns the scene any more
     expect(flat.getScenePayload).toBeUndefined();
     expect(flat.sceneId).toBeUndefined(); // not a 3D work: its document is never read for a scene
     const recent = await mkSource().listRecentFirst();
     expect(recent.find((a) => a.name === 'cube').sceneId).toBe(cube.sceneId);
-  });
-
-  it('a scene3d pick carries its own document to turn: the same one its drawing is rendered from', async () => {
-    renderer.presetPayload = (p) => ({ type: 'vectura', of: p.id });
-    const arts = await mkSource().list();
-    const scene = arts.find((a) => a.presetId === 'scene3d-cc');
-    expect(scene.getScenePayload()).toEqual({ type: 'vectura', of: 'scene3d-cc' });
-    expect(arts.find((a) => a.presetId === 'rings-bb').getScenePayload).toBeUndefined();
   });
 });
 

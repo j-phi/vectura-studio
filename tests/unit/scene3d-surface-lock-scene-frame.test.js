@@ -17,7 +17,9 @@ describe('surface lock Level S (sceneFrame wired into generateScene)', () => {
   afterAll(() => rt && rt.cleanup());
 
   const build = (law, extra = {}) => buildSurfaceLockScene(V, {
-    kind: 'sphere', toneLaw: law, mapper: 'hatch', markSpace: 'surface', ...extra,
+    kind: 'sphere', toneLaw: law, mapper: 'hatch', markSpace: 'surface',
+    legacySun: true, // tuned to the pre-v7 sun (az 135 / el 45); this suite is not about the default light
+    ...extra,
   });
   // Two overlapping spheres, both surface-locked (the second is added through the engine like the panel does).
   const buildTwo = (law) => {

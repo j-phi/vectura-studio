@@ -91,21 +91,16 @@ describe('Start Page example plates', () => {
     ws.forEach((w) => { expect(w.querySelector('.spl'), w.dataset.plateId).toBeTruthy(); expect(w.dataset.state, w.dataset.plateId).toBe('ready'); });
   });
 
-  test('"drag it to turn it" copy appears only on plates with a live 3D model', async () => {
+  test('3D example plates are still drawings: no drag-to-rotate copy, hint or live model anywhere; they are framed whole', async () => {
     await boot();
     const ws = live();
     ws.forEach((w) => {
-      const live3d = !!w.querySelector('.spl-print[data-model]');
-      expect(/drag it to turn it/i.test(w.textContent), w.dataset.plateId).toBe(live3d);
+      expect(/drag it to turn it|drag to rotate/i.test(w.textContent), w.dataset.plateId).toBe(false);
+      expect(w.querySelector('.vorbit, .sp-scene-orbit, .spl-3dhint, [data-hint], .spl-print[data-model]'), w.dataset.plateId).toBeNull();
     });
-    expect(ws.filter((w) => w.querySelector('.spl-print[data-model]')).map((w) => w.dataset.plateId))
-      .toEqual(['example:user-spiralizer-1781359333969', 'example:user-terrain-1781475148727', 'example:topoform-torus-contours']);
-    // a 3D-oriented plate with no live model must not claim to be live
-    const art = V.StartPagePlateLayouts.render('text-wrap', {
-      plate: { id: 'x', orientation: '3d' }, art: { id: 'x', svg: SVG(10), model: null }, colorway: live()[0] && V.StartPagePlateRhythm.place([{ id: 'x' }], { mode: 'curated', seed: 'a', theme: 'dark' })[0].colorway,
-      index: 0, total: 1, texts: { word: 'W', title: 'T', description: 'Desc.', algorithm: 'A', summary: 'A', specs: [], actions: [] }, autoMount: false,
-    });
-    expect(art.textContent).not.toMatch(/drag it/i);
+    // the three 3D examples are marked 3D (square plate aspect) and framed whole through the ordinary ink path
+    const threeD = ws.filter((w) => w.querySelector('.spl-print[data-3d]')).map((w) => w.dataset.plateId);
+    expect(threeD).toEqual(['example:user-spiralizer-1781359333969', 'example:user-terrain-1781475148727', 'example:topoform-torus-contours']);
   });
 
   test('examples are edited and removed like works (Edit, Add plate, Arrange) but are not a cover piece; Show counts only own works', async () => {

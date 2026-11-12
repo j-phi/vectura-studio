@@ -1,5 +1,6 @@
 const { loadVecturaRuntime } = require('./load-vectura-runtime');
 const { SCENE3D_FILES } = require('./runtime-profiles');
+const { pinLegacySun } = require('./legacy-sun');
 
 /*
  * Shared rig for the surface-locked fill suites (docs/surface-lock-contract.md §14).
@@ -14,6 +15,7 @@ const { SCENE3D_FILES } = require('./runtime-profiles');
  *     markSpace: 'surface' | 'pose' | undefined,         // undefined = whatever the creation seed wrote
  *     mapper, toneLaw, style: { ...extra style params },
  *     camera: { yaw, pitch, ... }, ground: true, shadow: true, profile: { width, height },
+ *     legacySun: true,                                   // pin the pre-v7 sun (az 135 / el 45); default = the v7 front key
  *   });
  *   s.setPose({ camYaw, camPitch, objYaw })               // camera and/or first-object yaw
  *   s.composeFull() -> paths                              // fresh full compose (what export reads)
@@ -49,6 +51,8 @@ const buildSurfaceLockScene = (V, opts = {}) => {
   const group = eng.getLayerById(gid);
   const kids = () => eng.getLayerDescendants(gid);
   const objectsOf = () => kids().filter((l) => l && l.type === 'object3d');
+  // legacySun: pin the pre-v7 sun (az 135 / el 45) for suites that are not about the default light.
+  if (o.legacySun) pinLegacySun(eng, gid);
   if (o.camera) group.params.camera = { ...group.params.camera, ...o.camera };
   const ground = kids().find((l) => l && l.type === 'sceneGround3d');
   if (ground && o.ground === false) ground.visible = false;

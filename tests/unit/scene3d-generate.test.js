@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { legacyLights } = require('../helpers/legacy-sun');
 
 /*
  * scene3d.generate() contract coverage (Phase 1 stream 1A).
@@ -424,6 +425,7 @@ describe('scene3d generate — CSG subtract (Increment 1)', () => {
 
   const csgScene = (objects, groups, cam) => ({
     ...clone2(defaults),
+    lights: legacyLights(defaults.lights), // tuned to the pre-v7 sun (az 135 / el 45)
     seed: 1,
     objects,
     groups: groups || [],

@@ -61,7 +61,7 @@ describe('StartPagePlateLayouts', () => {
   for (const orient of ['landscape', 'portrait', 'square', '3d']) {
     it(`renders every layout for ${orient} art`, () => {
       for (const id of L.LAYOUTS) {
-        const el = render(id, { plate: { id: 'p', orientation: orient }, art: { id: 'a', svg, model: orient === '3d' ? 'torus' : undefined } });
+        const el = render(id, { plate: { id: 'p', orientation: orient }, art: { id: 'a', svg, is3d: orient === '3d' } });
         expect(el.nodeType).toBe(1);
         expect(el.classList.contains('spl')).toBe(true);
         expect(el.classList.contains(`spl-lay-${id}`)).toBe(true);
@@ -168,47 +168,37 @@ describe('StartPagePlateLayouts', () => {
     expect(el.querySelector('.spl-print').style.getPropertyValue('--sp-ink')).toBe('#f8f8f4');
   });
 
-  it('a 3D Scene keeps its own drawing (the app\'s fills and shadow shapes) and turns it with real renders', async () => {
-    const rectOf = Element.prototype.getBoundingClientRect;
-    Element.prototype.getBoundingClientRect = function () { return { width: 300, height: 200, left: 0, top: 0, right: 300, bottom: 200, x: 0, y: 0 }; };
-    try {
-    window.eval(SRC('src/ui/start-page/scene-orbit.js'));
-    const o3 = []; V.StartPageOrbit3D = { mount: (...a) => { o3.push(a); return null; } };
-    const rendered = [];
-    V.StartPageArtRenderer = { renderDocument: (pl) => { rendered.push(pl.state.engine.layers[0].params.camera); return Promise.resolve({ svg }); } };
+  it('a 3D piece is a still plate: no orbit or drag surface, no hint, framed whole through the normal ink path', async () => {
+    const o3 = []; const orbit = []; const rendered = [];
+    V.StartPageOrbit3D = { mount: (...a) => { o3.push(a); return null; } };
+    V.StartPageSceneOrbit = { attach: (...a) => { orbit.push(a); return null; } }; // a stale module would be a regression
+    V.StartPageArtRenderer = { renderDocument: (pl) => { rendered.push(pl); return Promise.resolve({ svg }); } };
     const doc = { state: { engine: { layers: [{ id: 'g', type: 'scene3d', params: { camera: { yaw: -32, pitch: 22 } } }] }, settings: {} } };
-    const el = render('diptych', { art: { id: 'a', svg, scene: { payload: () => doc } } });
+    // a model id and a scene payload are exactly what used to arm the orbit: they are now ignored
+    const el = render('diptych', { plate: { id: 'p', orientation: '3d' }, art: { id: 'a', svg, is3d: true, model: 'torus', scene: { payload: () => doc } } });
     document.body.appendChild(el);
     await L.mount(el);
     await new Promise((r) => setTimeout(r, 20));
     const main = el.querySelector('.spl-print');
-    expect(o3).toHaveLength(0); // never the stand-in model
-    expect(main.classList.contains('sp-ink')).toBe(true);
-    expect(main._spInk.art.svg).toBe(svg); // exactly the drawing a flat plate shows
-    const flat = render('diptych'); document.body.appendChild(flat); await L.mount(flat);
-    const body = (n) => n.innerHTML.replace(/sp-g\d+/g, 'sp-g'); // each tile numbers its own gradient
-    // A Scene plate draws its poses as cached bitmaps (ink.useRaster), so its surface is the tile's canvas where a flat plate holds the
-    // inline SVG. The comparison that matters is therefore on what both are DRAWN FROM and how they are framed: the same art, in the
-    // same window (the flat plate's viewBox is that window), with the same line look.
-    const flatInk = flat.querySelector('.spl-print')._spInk;
-    await Promise.all([main._spInk.ready, flatInk.ready]);
-    expect(main._spInk.art.svg).toBe(flatInk.art.svg);
-    expect(main._spInk.win).toBeTruthy();
-    expect(main.querySelector('canvas.sp-ink-canvas')).toBeTruthy(); // the Scene plate's surface
-    expect(main._spInk.win).toEqual(flatInk.win);
-    expect(flat.querySelector('.spl-print .sp-ink-svg').getAttribute('viewBox')).toBe(flatInk.win.map((v) => +v.toFixed(3)).join(' '));
-    expect(main._spInk.look).toEqual(flatInk.look);
-    expect(main._spInk.fit).toEqual(flatInk.fit);
-    expect(body(flat.querySelector('.spl-print .sp-ink-svg'))).toContain('<path');   // (the flat plate's own svg is the reference surface)
-    expect(main._spScene).toBeTruthy();
-    expect(main.querySelector('.sp-scene-orbit')).toBeTruthy();
-    expect(main.dataset.hint).toBe('Drag to rotate');
-    await main._spScene.loaded;
-    expect(main._spScene.home).toEqual({ yaw: -32, pitch: 22 });
-    L.destroy(el);
+    expect(o3).toHaveLength(0);          // never a live model
+    expect(orbit).toHaveLength(0);       // never a scene orbit
+    expect(rendered).toHaveLength(0);    // no per-pose re-render
+    expect(main.classList.contains('vorbit')).toBe(false);
+    expect(main._vorbit).toBeUndefined();
     expect(main._spScene).toBeUndefined();
-    expect(main.querySelector('.sp-scene-orbit')).toBeNull();
-    } finally { Element.prototype.getBoundingClientRect = rectOf; }
+    expect(el.querySelector('.sp-scene-orbit, .sp-scene-hint, .spl-3dhint')).toBeNull();
+    expect(main.dataset.hint).toBeUndefined();
+    expect(el.textContent).not.toMatch(/drag it to turn it|drag to rotate/i);
+    // the normal plate path: a StartPageInk tile of the plate's own drawing, framed whole with air (not cropped)
+    expect(main.classList.contains('sp-ink')).toBe(true);
+    expect(main._spInk.art.svg).toBe(svg);
+    expect(main._spInk.fit).toBe('focus');
+    expect(main._spInk.pad).toBeGreaterThan(0.05);
+    expect(main.dataset['3d']).toBe('1');
+    // a flat plate of the same art is cropped to cover (pad 0): only 3D pieces get the whole-object frame
+    const flat = render('diptych'); document.body.appendChild(flat); await L.mount(flat);
+    expect(flat.querySelector('.spl-print')._spInk.fit).toBe('cover');
+    L.destroy(el);
   });
 
   it('knockout fills the word with the art through fillWord', async () => {

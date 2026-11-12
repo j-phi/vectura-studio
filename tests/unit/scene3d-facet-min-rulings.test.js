@@ -69,6 +69,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 const { pathSignature } = require('../helpers/path-signature');
 const { goldenValues } = require('../helpers/golden-values');
 
@@ -115,6 +116,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
     } = opts || {};
     const engine = new Vec.VectorEngine();
     const gid = engine.addLayer('scene3d');
+    pinLegacySun(engine, gid); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
     obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
@@ -331,6 +333,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
       const engineFor = (facetMinRulings) => {
         const eng = new V.VectorEngine();
         const gid = eng.addLayer('scene3d');
+        pinLegacySun(eng, gid); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
         const grp = eng.getLayerById(gid);
         const obj = eng.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
         obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface

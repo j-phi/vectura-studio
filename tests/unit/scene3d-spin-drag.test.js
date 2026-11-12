@@ -413,4 +413,101 @@ describe('Renderer spin mode (pre-baked turntable drag)', () => {
     a.forEach((p, i) => { expect(p.length).toBe(b[i].length); p.forEach((q, j) => { if (q.x !== b[i][j].x || q.y !== b[i][j].y) throw new Error(`path ${i} point ${j} differs`); }); });
     o.renderer._spinDrop(); ref.renderer._spinDrop();
   }, 180000);
+
+  // The Scene's own Transform (Pos / Rotation) moves the finished ink. A ring frame is untransformed ink, so the ring keeps
+  // working under a RIGID Transform by drawing its raster through the same map; a Scale (which would change the stroke
+  // weight of a raster) still stands the ring down.
+  test('a rigid scene Transform keeps the ring: frames blit through the Transform and release installs it applied once', async () => {
+    const o = build();
+    Object.assign(o.group.params, { posX: 30, posY: -12, rotation: 20 });
+    o.engine.generate(o.gid);
+    expect(o.group._sceneXfActive).toBe(true);
+    const ring = await startRing(o);
+    const start = grab(o);
+    expect(o.renderer.rotation3DDrag.spin).toBeTruthy();                   // RED (pre-change): no ring under any Transform
+    for (let i = 1; i <= 6; i++) o.renderer.apply3DRotationDrag({ clientX: start.x + i * 40, clientY: start.y });
+    expect(o.group._spinBlit && o.group._spinBlit.frame).toBeTruthy();
+    const yaw = o.group.params.camera.yaw;
+    expect(yaw).not.toBe(ring.base);
+    // the blit draws the raster through backing(transform(backing^-1(px)))
+    const calls = [];
+    const ctx = { save() {}, restore() {}, setTransform(...m) { calls.push(m); }, drawImage() {} };
+    const realCtx = o.renderer.ctx; o.renderer.ctx = ctx;
+    o.renderer.scale = 2; o.renderer.offsetX = 7; o.renderer.offsetY = -3;
+    const view = { scale: 2, dpr: o.renderer.getBackingDpr(), offsetX: 7, offsetY: -3 };
+    o.group._spinBlit = { frame: { raster: { canvas: {}, x0: 0, y0: 0, w: 10, h: 10, view } } };
+    expect(o.renderer._spinBlit(o.group)).toBe(true);
+    o.renderer.ctx = realCtx; o.renderer.scale = 1; o.renderer.offsetX = 0; o.renderer.offsetY = 0;
+    const [a, b, c, d, e, f] = calls[0];
+    const map = o.engine.sceneGroupPointMap(o.group).transform;
+    const dpr = view.dpr;
+    const B = (q) => ({ x: (q.x * 2 + 7) * dpr, y: (q.y * 2 - 3) * dpr });
+    [{ x: 0, y: 0 }, { x: 100, y: 40 }, { x: -20, y: 75 }].forEach((q) => {
+      const px = B(q); const want = B(map(q));
+      expect(a * px.x + c * px.y + e).toBeCloseTo(want.x, 6);
+      expect(b * px.x + d * px.y + f).toBeCloseTo(want.y, 6);
+    });
+    o.group._spinBlit = null;
+    o.renderer.apply3DRotationDrag({ clientX: start.x + 6 * 40, clientY: start.y });
+    o.renderer.end3DRotationDrag();
+    expect(o.engine.sceneComposeStats.spinInstalls).toBeGreaterThan(0);
+    const ref = build();
+    Object.assign(ref.group.params, { posX: 30, posY: -12, rotation: 20 });
+    ref.group.params.camera.yaw = o.group.params.camera.yaw; ref.engine.computeAllDisplayGeometry();
+    const pa = o.group.scenePaths; const pb = ref.group.scenePaths;
+    expect(pa.length).toBe(pb.length);
+    pa.forEach((p, i) => p.forEach((q, j) => { if (Math.abs(q.x - pb[i][j].x) > 1e-9 || Math.abs(q.y - pb[i][j].y) > 1e-9) throw new Error(`path ${i} point ${j} differs`); }));
+    o.renderer._spinDrop(); ref.renderer._spinDrop();
+  }, 180000);
+
+  // The object / light gizmos sit on the drawn ink, so under the Scene's Transform their arrows turn with the picture and a
+  // drag along a drawn arrow moves the object exactly as the same drag did before the Transform.
+  test('under a scene Transform the object gizmo turns with the ink and a drag along its arrow moves the object the same', () => {
+    const run = (xf) => {
+      const o = build();
+      Object.assign(o.group.params, xf);
+      o.engine.generate(o.gid);
+      o.renderer.sceneSelection = { layerId: o.gid, mode: 'object', objectIds: [o.child.id] };
+      const giz = o.renderer.getSceneObjectGizmo(o.group);
+      const ax = giz.axes.find((a) => a.key === 'x');
+      const from = { x: giz.center.x + ax.dir.x * giz.R * 0.5, y: giz.center.y + ax.dir.y * giz.R * 0.5 };
+      const s0 = o.renderer.worldToScreen(from.x, from.y);
+      expect(o.renderer.beginSceneObjectGizmoDrag({ type: 'move', axis: 'x' }, { clientX: s0.x, clientY: s0.y })).toBe(true);
+      const to = { x: from.x + ax.dir.x * 25, y: from.y + ax.dir.y * 25 };
+      const s1 = o.renderer.worldToScreen(to.x, to.y);
+      o.renderer._scheduleSceneDragRegen = () => {};
+      const st = { ...o.renderer._sceneObjectGizmoDrag.start };
+      o.renderer._applySceneObjectGizmoDrag({ clientX: s1.x, clientY: s1.y });
+      const t = o.renderer._sceneObjectById(o.group, o.child.id).transform;
+      const out = { dir: ax.dir, x: t.x - st.x, z: t.z - st.z };
+      o.renderer._sceneObjectGizmoDrag = null;
+      return { out, o };
+    };
+    const plain = run({}).out;
+    const { out: turned, o } = run({ rotation: 90, posX: 20, scaleX: 1.5, scaleY: 1.5 });
+    // +90 deg (y down): (x, y) -> (-y, x)
+    expect(turned.dir.x).toBeCloseTo(-plain.dir.y, 6);                    // RED (pre-change): the arrow ignored the Transform
+    expect(turned.dir.y).toBeCloseTo(plain.dir.x, 6);
+    expect(Math.hypot(plain.x, plain.z)).toBeGreaterThan(5);
+    // the drawn ink is 1.5x, so the same on-screen arrow length is 1/1.5 of the world move
+    expect(turned.x).toBeCloseTo(plain.x / 1.5, 1);
+    expect(turned.z).toBeCloseTo(plain.z / 1.5, 1);
+    // a positioned light's gizmo sits where the Transform puts the scene point
+    const Scene = V.Scene3D.Scene;
+    const w = { x: 120, y: 200, z: 120 };
+    const raw = Scene.projectWorldPoint(w, o.group.params.camera || {}, o.engine.getBounds());
+    const want = o.engine.sceneGroupPointMap(o.group).transform(raw);
+    const got = o.renderer._sceneProjectWorld(o.group, w);
+    expect(got.x).toBeCloseTo(want.x, 9);
+    expect(got.y).toBeCloseTo(want.y, 9);
+  });
+
+  test('a scaled scene Transform stands the ring down (a raster would change the stroke weight)', () => {
+    const o = build();
+    Object.assign(o.group.params, { scaleX: 1.5, scaleY: 1.5 });
+    o.engine.generate(o.gid);
+    o.renderer._spin = { groupId: o.gid, ring: { disposed: false, dispose() { this.disposed = true; } } };
+    o.renderer._spinMaintain();
+    expect(o.renderer._spin).toBeNull();
+  });
 });

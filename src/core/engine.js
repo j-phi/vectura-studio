@@ -737,7 +737,8 @@
   // freshly added light child is valid before the next compose. The `id` is set
   // to the child LAYER id at compose time (identity contract) — omitted here.
   const SCENE_LIGHT_SEED = {
-    directional: { type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true },
+    // v7: the front illustration key (lockstep with ALGO_DEFAULTS.sceneLight3d).
+    directional: { type: 'directional', azimuth: 330, elevation: 40, intensity: 1, castShadows: true },
     point: { type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, intensity: 1, castShadows: true },
     spot: {
       type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },
@@ -2837,6 +2838,58 @@
     // getRenderablePaths serves for the group (mirrors group.morphedPaths). The
     // compositor math is untouched — collection only reconstructs its input.
     _composeSceneGroup(group, options = {}) {
+      this._composeSceneGroupInk(group, options);
+      this._applySceneGroupTransform(group);
+    }
+
+    // The scene group's own Transform (Pos X/Y, Scale X/Y, Rotation) as a point mapper, or null when it is the identity.
+    // Like every other layer it acts on the FINISHED ink (scale, rotate, then translate), but it pivots on the centre of
+    // the document, not the ink's bbox: a scene's bbox moves as the camera orbits, which would make a rotated or scaled
+    // scene swim under a drag. The compose, its memo, the surface-lock caches and the pose snapshot never see it.
+    sceneGroupPointMap(group) {
+      const p = group && group.params;
+      if (!p) return null;
+      const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+      const posX = num(p.posX, 0); const posY = num(p.posY, 0);
+      const sx = num(p.scaleX, 1); const sy = num(p.scaleY, 1); const rot = num(p.rotation, 0);
+      if (posX === 0 && posY === 0 && sx === 1 && sy === 1 && rot === 0) return null;
+      const { width, height } = this.currentProfile;
+      const origin = { x: width / 2, y: height / 2 };
+      return buildParamPostTransform({ posX, posY, scaleX: sx, scaleY: sy, rotation: rot }, origin);
+    }
+
+    // Publishes the transformed ink on `group.scenePaths` and keeps the untransformed compose on `_sceneInkRaw` (the source
+    // of truth every compose path hands back). When the compose left our own transformed array in place (a job-only or
+    // captured compose, or a held ink), the raw ink is re-read, so a changed transform is never applied twice or skipped.
+    _applySceneGroupTransform(group) {
+      if (!group || !Array.isArray(group.scenePaths)) return;
+      const cur = group.scenePaths;
+      const raw = (cur === group._sceneXfOut && Array.isArray(group._sceneInkRaw)) ? group._sceneInkRaw : cur;
+      const map = this.sceneGroupPointMap(group);
+      group._sceneXfActive = !!map;
+      group._sceneInkRaw = raw;
+      if (!map) { group._sceneXfOut = null; group.scenePaths = raw; return; }
+      const { transform, transformMeta } = map;
+      const tpt = (pt) => { const t = transform(pt); return Object.assign({}, pt, { x: t.x, y: t.y }); };
+      const out = raw.map((path) => {
+        if (!Array.isArray(path)) return path;
+        const next = path.map(tpt);
+        const meta = path.meta;
+        if (meta) {
+          const deep = meta.kind === 'circle' || meta.anchors || meta.shape;
+          const m = deep ? transformMeta(meta) : Object.assign({}, meta);
+          const tgt = meta.sceneTarget;
+          if (tgt && Array.isArray(tgt.pickPolygon)) m.sceneTarget = Object.assign({}, m.sceneTarget || tgt, { pickPolygon: tgt.pickPolygon.map(tpt) });
+          next.meta = m;
+        }
+        return next;
+      });
+      group._sceneXfOut = out;
+      group.scenePaths = out;
+      this._invalidateGroupOptimization(group);
+    }
+
+    _composeSceneGroupInk(group, options = {}) {
       const Params = window.Vectura?.Scene3D?.Params;
       const algo = Algorithms && Algorithms.scene3d;
       if (!group || !Params || typeof Params.collectSceneParams !== 'function'

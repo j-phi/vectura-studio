@@ -6,19 +6,20 @@ describe('light-realism harness (legacy reference numbers)', () => {
   let rt; let V; let surf; let pose; let front;
   beforeAll(async () => {
     rt = await LR.loadRuntime(); V = rt.V;
-    surf = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'surface', tone: { model: 'legacy' } }));
-    pose = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'pose', tone: { model: 'legacy' } }));
-    const f = LR.buildCase(V, { markSpace: 'surface', tone: { model: 'legacy' } }); LR.setLightCam(f, LR.LIGHTS.front);
+    // The strategist's reference numbers are for the PRE-v7 default sun (az 135 / el 45): pin it explicitly.
+    surf = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'surface', azimuth: 135, elevation: 45, tone: { model: 'legacy' } }));
+    pose = LR.measure(LR.buildCase(V, { law: 'dutyConst', markSpace: 'pose', azimuth: 135, elevation: 45, tone: { model: 'legacy' } }));
+    const f = LR.buildCase(V, { markSpace: 'surface' }); LR.setLightCam(f, LR.LIGHTS.front);
     front = LR.measure(f);
   }, 120000);
   afterAll(() => rt && rt.cleanup());
 
-  it('default light is side lighting, 86 degrees off the view axis (camera-space 0.68, 0.73, 0.07)', () => {
+  it('the pre-v7 default light (az 135 / el 45) is side lighting, 86 degrees off the view axis (camera-space 0.68, 0.73, 0.07)', () => {
     const c = surf.lightCam;
     expect(c.x).toBeCloseTo(0.68, 2); expect(c.y).toBeCloseTo(0.73, 2); expect(c.z).toBeCloseTo(0.07, 2);
   });
 
-  it('most of the visible disc is unlit at the default light (I = 0 area >> half)', () => {
+  it('most of the visible disc is unlit at the pre-v7 default light (I = 0 area >> half)', () => {
     const b = LR.bins(surf, 'L', { minArea: 0 });
     const dark = b[0].area; const total = b.reduce((a, x) => a + x.area, 0);
     expect(dark / total).toBeGreaterThan(0.5);
