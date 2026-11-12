@@ -79,7 +79,7 @@
       RELABEL_STAGGER: 0.5,  // relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
       V2_P0_PEN: 4,  // tone model v2: the darkest pitch at Density 0, in pens (it falls to the plot floor at Density 200)
       V2_DENSITY_EXP: 3,  // tone model v2: Density -> darkest pitch curve (1 - d/200)^exp, so 100 and 200 stay distinct
-      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+      V2_PAPER_BAND: 0.06,  // tone model v2: the lightest 6 % of the tone range rolls off to paper (no lit floor; wider made a large blank lit area)
     }),
     // surface-lock-mezzo.js (mezzotint). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
     MEZZO: Object.freeze({
@@ -123,7 +123,7 @@
       PREV_SEED_D: 4,  // seeds beside lower-level lines every max(seedArc, this x d_l)
       FALLBACK_SEEDED: 100,  // random fallback candidates for levels > 0
       CONT_MIN_D: 1,  // a continuation run shorter than this (x d_l) is dropped
-      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper; same value as the laws baker
+      V2_PAPER_BAND: 0.06,  // tone model v2: the lightest 6 % of the tone range rolls off to paper; same value as the laws baker
     }),
     // surface-lock-shadow.js (locked ground shadow).
     SHADOW: Object.freeze({
@@ -160,7 +160,7 @@
       GOLDEN: 0.6180339887498949,
       V2_TOL_MM: 0.02,  // tone model v2: chord tolerance of the decimated polylines (object mm)
       V2_MAX_SEG_MM: 2.0,  // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
-      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+      V2_PAPER_BAND: 0.06,  // tone model v2: the lightest 6 % of the tone range rolls off to paper (no lit floor; wider made a large blank lit area)
     }),
     // surface-lock-faceted.js (box, plane, polyhedron). The two keys it shares with the ladder / mezzo (PLOT_FLOOR_SLACK, ZOOM_HEADROOM) are its own copies here.
     FACETED: Object.freeze({
