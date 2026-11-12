@@ -14,6 +14,9 @@ const LEGACY_SUN = Object.freeze({ azimuth: 135, elevation: 45 });
 // child (the tree sun) and any inline lights[] entry. Returns the group layer.
 const pinLegacySun = (engine, gid) => {
   const group = engine.getLayerById(gid);
+  // Light model v2 (H2) also reaches the pose fills now; these fixtures were tuned against the legacy model (no ambient, no
+  // glint paper, specular size 1), so they pin it along with the sun.
+  if (group && group.params) group.params.tone = Object.assign({}, group.params.tone, { model: 'legacy', specular: Object.assign({}, group.params.tone && group.params.tone.specular, { size: 1 }) });
   const apply = (l) => { if (l && (l.type === undefined || l.type === 'directional')) { l.azimuth = LEGACY_SUN.azimuth; l.elevation = LEGACY_SUN.elevation; } };
   engine.getLayerDescendants(gid).filter((l) => l && l.type === 'sceneLight3d').forEach((l) => apply(l.params));
   if (group && group.params && Array.isArray(group.params.lights)) group.params.lights.forEach(apply);
