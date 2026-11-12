@@ -87,6 +87,7 @@ describe('W-31b — crosshatch CELL SHAPE, Rank 3 (no source fix; M1 discarded �
   // plus an explicit light-azimuth parameter for C7. ──────────────────────
   const sceneFor = (primitive, density, camB, flat, extraStyle = {}, azimuth = 135) => {
     const p = clone(defaults);
+    p.tone = { ...p.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): legacy-look pin
     p.camera = camB ? { ...P.DEFAULT_CAMERA, yaw: 40, pitch: -15 } : { ...P.DEFAULT_CAMERA };
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };

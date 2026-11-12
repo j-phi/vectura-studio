@@ -2122,7 +2122,7 @@
         bands: 3,
         thresholds: [0.33, 0.66],
         ladder: [0.2, 0.5, 0.85],
-        specular: { enabled: true, size: 1 },
+        specular: { enabled: true, size: 0.4 }, // v2: a compact glint (shininess ~12); legacy scenes keep their stored size 1
         model: 'v2',      // 'legacy' | 'v2' (see Scene3D.Params SCENE_MIGRATIONS[6])
         ambient: 0.08,    // v2 only: constant fill light, never shadowed
         bounce: 0.12,     // v2 only: reflected light lifting the attached-shadow side

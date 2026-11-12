@@ -48,7 +48,7 @@ describe('Scene3D — toneLaw plumbed from style to SurfaceFill.buildObject', ()
       scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60, ...(styleParams || {}) } },
       byObject: {}, byFace: {},
     };
-    p.tone = { ...clone(defaults).tone, enabled: Boolean(opts && opts.toneOn) };
+    p.tone = { ...{ ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } }, enabled: Boolean(opts && opts.toneOn) };
     if (opts && opts.toneOn) {
       p.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: false }];
     }

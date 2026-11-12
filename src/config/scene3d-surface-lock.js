@@ -79,7 +79,7 @@
       RELABEL_STAGGER: 0.5,  // relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
       V2_P0_PEN: 4,  // tone model v2: the darkest pitch at Density 0, in pens (it falls to the plot floor at Density 200)
       V2_DENSITY_EXP: 3,  // tone model v2: Density -> darkest pitch curve (1 - d/200)^exp, so 100 and 200 stay distinct
-      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 12 % of the tone range rolls off to paper (no lit floor; 15 % made a large blank lit area, 9 % left ink at I 0.95)
     }),
     // surface-lock-mezzo.js (mezzotint). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
     MEZZO: Object.freeze({

@@ -93,7 +93,7 @@ describe('Scene3D voronoiWeb web integrity + tone-by-cell-size', () => {
       byObject: {},
       byFace: {},
     };
-    p.tone = clone(defaults).tone;
+    p.tone = { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } };
     p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 45, castShadows: false }];
 
     paths = algo.generate(p, null, null, BOUNDS) || [];

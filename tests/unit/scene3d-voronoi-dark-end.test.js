@@ -80,7 +80,7 @@ describe('Scene3D voronoiWeb dark-end cell size', () => {
       byObject: {},
       byFace: {},
     };
-    p.tone = clone(defaults).tone;
+    p.tone = { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } };
     p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 45, castShadows: false }];
     return p;
   };
