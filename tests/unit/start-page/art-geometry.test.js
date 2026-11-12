@@ -238,3 +238,43 @@ describe('lineLook with a crop window', () => {
     expect(withWin.lw).toBeGreaterThanOrEqual(whole.lw);
   });
 });
+
+describe('artWindow: focus (a 3D piece framed on its dense body)', () => {
+  // A hatched ball + shadow (dense, ~60 x 40) in the middle of a 280 x 220 sheet, with two long, sparse "ground edge" strokes
+  // that stretch the plain ink box across the whole sheet and make the ball read tiny under fit 'object'.
+  const scene = () => {
+    const polys = [new Float32Array([20, 167, 167, 196]), new Float32Array([112, 20, 259, 49])];
+    for (let i = 0; i < 60; i++) polys.push(new Float32Array([110, 60 + i * 0.7, 150, 60 + i * 0.7 + 4]));
+    return { vb: [0, 0, 280, 220], polys, widths: new Float32Array(polys.length).fill(0.3), total: 1 };
+  };
+  test('leaves the long sparse strokes out of the frame: the ball fills the window where fit object shrinks it', () => {
+    const a = scene();
+    const ink = G.inkInfo(a).box;
+    expect(ink[2]).toBeGreaterThan(230); // the plain ink box spans the sheet
+    const box = G.focusInfo(a);
+    expect(box[2]).toBeLessThan(ink[2] * 0.4);
+    expect(box[0]).toBeLessThanOrEqual(110);
+    expect(box[0] + box[2]).toBeGreaterThanOrEqual(150); // the whole ball is inside
+    const obj = G.artWindow(a, 400, 400, 'object');
+    const foc = G.artWindow(a, 400, 400, 'focus');
+    expect(foc[2]).toBeLessThan(obj[2] * 0.5); // a much tighter window: the object is far larger on the plate
+  });
+  test('a piece with uniform ink is framed on all of it (nothing is trimmed away)', () => {
+    const polys = []; for (let i = 0; i < 20; i++) polys.push(new Float32Array([0, i * 5, 100, i * 5]));
+    const a = { vb: [0, 0, 100, 100], polys, widths: new Float32Array(20).fill(0.3), total: 1 };
+    const box = G.focusInfo(a);
+    expect(box[2]).toBeCloseTo(100, 0);
+    expect(box[3]).toBeGreaterThan(90);
+  });
+  test('focusSvg drops the long strokes that lie mostly outside the frame and keeps the body', () => {
+    let svg = '<svg viewBox="0 0 280 220"><g stroke-width="0.3"><path d="M 20 167 L 167 196"/><path d="M 112 20 L 259 49"/>';
+    for (let i = 0; i < 60; i++) svg += `<path d="M 110 ${60 + i * 0.7} L 150 ${64 + i * 0.7}"/>`;
+    svg += '</g></svg>';
+    const out = G.focusSvg(svg);
+    expect(out).not.toContain('M 20 167');
+    expect(out).not.toContain('M 112 20');
+    expect((out.match(/<path/g) || []).length).toBe(60);
+    const flat = '<svg viewBox="0 0 100 100"><g stroke-width="0.3"><path d="M 0 10 L 100 10"/><path d="M 0 50 L 100 50"/><path d="M 0 90 L 100 90"/></g></svg>';
+    expect(G.focusSvg(flat)).toBe(flat); // uniform ink: nothing dropped, same text back
+  });
+});

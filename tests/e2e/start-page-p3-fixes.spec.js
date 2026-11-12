@@ -122,26 +122,19 @@ test.describe('Start Page P3 fixes', () => {
     expect(r.calls).toBe(1);
   });
 
-  test('a 3D plate sways while in view and its canvas is a labelled, keyboard-operable application', async ({ page }) => {
+  test('a 3D plate is a still drawing: no live model, no drag surface, no hint, drawn through the normal ink path', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await fresh(page);
     await seed(page, [{ name: 'torus', paper: '#f4efe4', ink: '#222222', kind: 'svg' }]);
     await page.evaluate(() => { window.app.engine.layers.length = 0; window.app.engine.addLayer('topoform'); return window.app.recents.record({ name: 'topo.vectura', source: 'save', forceNew: true }); });
     await page.evaluate(() => { window.app.engine.layers.length = 0; window.app.startPage.show(); });
-    const m = page.locator('.sp-pl .vorbit').first();
+    const m = page.locator('.sp-pl .spl-print[data-3d]').first();
     await expect(m).toBeAttached({ timeout: 15000 });
     await m.scrollIntoViewIfNeeded();
-    await expect.poll(() => m.evaluate((e) => e._vorbit.plotted), { timeout: 15000 }).toBe(1);
-    const cv = m.locator('canvas');
-    expect(await cv.getAttribute('role')).toBe('application');
-    expect(await cv.getAttribute('aria-label')).toMatch(/arrow keys/i);
-    // the idle sway runs while the model is in view (parking after ~20 s and resuming are proven on a fake clock in
-    // tests/unit/start-page/orbit3d-idle.test.js); pointer enter always wakes it
-    const swaying = () => m.evaluate((e) => e._vorbit.stats.swaying);
-    await expect.poll(swaying, { timeout: 15000 }).toBe(true);
-    const box = await cv.boundingBox();
-    await page.mouse.move(box.x + 5, box.y + 5);
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await expect.poll(swaying, { timeout: 8000 }).toBe(true);
+    await expect.poll(() => m.evaluate((e) => !!(e._spInk && e._spInk.parsed && e.classList.contains('sp-ink-ready'))), { timeout: 15000 }).toBe(true);
+    expect(await m.evaluate((e) => e._spInk.fit)).toBe('focus');
+    await expect(page.locator('.sp-pl .vorbit, .sp-pl .sp-scene-orbit, .sp-pl .spl-3dhint')).toHaveCount(0);
+    expect(await m.evaluate((e) => ({ vorbit: !!e._vorbit, scene: !!e._spScene, app: !!e.querySelector('canvas[role="application"]'), hint: e.dataset.hint || null }))).toEqual({ vorbit: false, scene: false, app: false, hint: null });
+    await expect(page.locator('.sp-pl').filter({ hasText: /drag it to turn it|drag to rotate/i })).toHaveCount(0);
   });
 });

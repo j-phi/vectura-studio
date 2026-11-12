@@ -394,8 +394,9 @@
   syncMotionAttrs();
 
   /* ------------------------------------------------------------------ tiles */
-  // 'cover' crops to the ink; 'object' shows the whole ink box scaled up to fill; anything else contains the paper
-  const fitOf = (f) => (f === 'cover' || f === 'object' ? f : 'contain');
+  // 'cover' crops to the ink; 'object' shows the whole ink box scaled up to fill; 'focus' is 'object' on the ink's dense body (long
+  // sparse strokes left to run off the edge); anything else contains the paper
+  const fitOf = (f) => (f === 'cover' || f === 'object' || f === 'focus' ? f : 'contain');
   const mount = (el, art, opts) => {
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return Promise.reject(new Error('StartPageInk.mount: no element'));
@@ -404,7 +405,7 @@
     if (el._spInk || el._spWord) unmount(el);
     const id = ++uid; const gid = `sp-g${id}`;
     const fit = fitOf(opts.fit);
-    const pad = opts.pad == null ? (fit === 'cover' ? 0 : fit === 'object' ? 0.04 : 0.08) : opts.pad;
+    const pad = opts.pad == null ? (fit === 'cover' ? 0 : fit === 'object' || fit === 'focus' ? 0.04 : 0.08) : opts.pad;
     const h = {
       kind: 'tile', id, el, art, parsed: null, mode: 'svg', fit, frame: opts.frame || null, pad, colorway: normColorway(opts.colorway),
       w: 0, h: 0, win: null, s: 1, look: { lw: 0.6, alpha: 1 }, svg: null, canvas: null, bmp: null, rasterScale: 1, run: null, _gen: 0, _t: 0,
@@ -438,28 +439,16 @@
       if (h.mode !== 'canvas' || !h.canvas || !h.bmp) return;
       tintInto(h.canvas, h.bmp, h.colorway, h.phase || 0);
     };
-    /* Rastered alternates (canvas mode): a baked pose is rastered once when it is prepared, so showing it is a repaint of
-     * a cached bitmap rather than a fresh raster of its whole drawing. Keyed by the raster size; a resize drops them. */
-    const altBmps = new Map(); let ownBmp = null; let altKey = '';
-    const rasterKey = () => { const pol = policyFor(h.w, h.h); return `${pol.width}x${pol.height}@${pol.scale}`; };
-    /* An evicted ImageBitmap holds its pixels until closed (garbage collection is not prompt about them), so every drop closes it, unless it is
-     * the one on screen (h.bmp) or the tile's own (ownBmp), which stay live until replaced. */
-    const closeBmp = (b) => { if (b && b !== h.bmp && b !== ownBmp && typeof b.close === 'function') { try { b.close(); } catch (e) { /* already closed */ } } };
-    const dropAlt = (k) => { const b = altBmps.get(k); altBmps.delete(k); closeBmp(b); };
-    const clearAlts = () => { Array.from(altBmps.keys()).forEach(dropAlt); };
-    h._altBmps = altBmps;
     h.raster = () => {
       if (!h.parsed || !h.w || !h.h) return Promise.resolve();
       const gen = ++h._gen; const pol = policyFor(h.w, h.h); const w0 = h.w; const h0 = h.h; const win = h.win;
-      // A shown alternate (showArt) rasters in the HOME window and line look, so swapping never reframes the tile.
-      const shown = h.shown; const src = shown ? shown.art : art;
-      const parsedP = shown ? parseArt(shown.art) : Promise.resolve(h.parsed);
-      return parsedP.then((parsed) => rasterArt(src, parsed, { w: w0, h: h0, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win })).then((b) => {
+      return rasterArt(art, h.parsed, { w: w0, h: h0, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win }).then((b) => {
         if (!h.alive() || gen !== h._gen) return;
         if (!h.canvas) { h.canvas = D.createElement('canvas'); h.canvas.className = 'sp-ink-canvas'; h.canvas.setAttribute('aria-hidden', 'true'); box.appendChild(h.canvas); }
-        h.canvas.width = pol.width; h.canvas.height = pol.height; h.rasterScale = pol.scale; h.bmp = b; h.paint();
-        const key = rasterKey(); if (altKey !== key) { clearAlts(); altKey = key; } /* every cached pose was drawn at another size */
-        if (!shown) { const old = ownBmp; ownBmp = b; if (old && old !== b) { ownBmp = b; closeBmp(old); } } else { if (altBmps.has(shown.art.id)) dropAlt(shown.art.id); altBmps.set(shown.art.id, b); }
+        h.canvas.width = pol.width; h.canvas.height = pol.height; h.rasterScale = pol.scale;
+        const old = h.bmp; h.bmp = b; h.paint();
+        // a replaced ImageBitmap holds its pixels until closed (garbage collection is not prompt about them)
+        if (old && old !== b && typeof old.close === 'function') { try { old.close(); } catch (e) { /* already closed */ } }
         if (h.colorway.fill && h.colorway.fill.anim && !fillRaf) startFill();
       });
     };
@@ -492,7 +481,7 @@
       fillRaf = W.requestAnimationFrame(tick);
     };
     const prevDestroy = h.destroy;
-    h.destroy = () => { stopFill(); prevDestroy(); };
+    h.destroy = () => { stopFill(); prevDestroy(); const cur = h.bmp; h.bmp = null; if (cur && typeof cur.close === 'function') { try { cur.close(); } catch (e) { /* already closed */ } } };
     h.setColorway = (c) => {
       h.colorway = normColorway(c); setVars(el, h.colorway); h.applyLook();
       if (h.colorway.fill && h.mode === 'svg' && h.parsed) {
@@ -507,83 +496,6 @@
       h.measure(); h.applyLook(); h.setViewBox();
       if (h.mode === 'canvas') { clearTimeout(rT); rT = setTimeout(h.raster, 60); }
     };
-    /* Alternate drawings of the SAME piece (a live 3D Scene's other camera poses: StartPageSceneOrbit). They are drawn
-     * exactly like the tile's own art (same sanitizer, colorway, line look, fit and frame), in the tile's HOME window:
-     * the window and look stay those of the art the tile was mounted with, so a swap never reframes or re-weights it.
-     * prepareArt(alt) warms one (an off-DOM inline SVG, or a parsed raster source) and resolves when it can be shown;
-     * showArt(alt) shows it, showArt(null) shows the tile's own art again. `alt` is { id, svg } with an id of its own. */
-    const alts = new Map(); // alt id -> detached sanitized <svg> (svg mode)
-    const MAX_ALTS = 48;
-    const altNode = (a) => {
-      let n = alts.get(a.id);
-      if (!n) {
-        n = safeSvg(a.svg, gid);
-        if (!n) return null;
-        alts.set(a.id, n);
-        if (alts.size > MAX_ALTS) { const k = alts.keys().next().value; if (!h.shown || h.shown.art.id !== k) alts.delete(k); }
-      }
-      return n;
-    };
-    /* How many rastered poses this tile may hold: START_PAGE.SCENE_ORBIT.altBitmapMB (altBitmapMBMobile on a touch / low-memory device) over
-     * the bytes of one bitmap, never fewer than 6 nor more than MAX_ALTS. The scene orbit stops baking poses past it. */
-    h.altCapacity = () => {
-      const C = (Vectura.START_PAGE && Vectura.START_PAGE.SCENE_ORBIT) || {};
-      let mob = false;
-      try { mob = (Number.isFinite(W.navigator && W.navigator.deviceMemory) && W.navigator.deviceMemory <= 4) || !!(W.matchMedia && W.matchMedia('(pointer: coarse)').matches); } catch (e) { mob = false; }
-      const mb = mob ? (C.altBitmapMBMobile || 18) : (C.altBitmapMB || 32);
-      const pol = policyFor(h.w || 1, h.h || 1);
-      return Math.max(6, Math.min(MAX_ALTS, Math.floor(mb * 1048576 / Math.max(1, pol.width * pol.height * 4))));
-    };
-    h.prepareArt = (a) => h.ready.then(() => {
-      if (!h.alive() || !a || typeof a.svg !== 'string') return false;
-      if (h.mode === 'svg') return !!altNode(a);
-      return parseArt(a).then((parsed) => {
-        if (!h.canvas || !h.w || !h.h) return true;
-        const key = rasterKey(); if (altKey !== key) { clearAlts(); altKey = key; ownBmp = null; }
-        if (altBmps.has(a.id)) return true;
-        const pol = policyFor(h.w, h.h);
-        return rasterArt(a, parsed, { w: h.w, h: h.h, dpr: pol.scale, lw: h.look.lw, alpha: h.look.alpha, color: '#ffffff', win: h.win }).then((b) => {
-          if (!h.alive() || altKey !== key) return true;
-          altBmps.set(a.id, b);
-          const cap = h.altCapacity();
-          for (const k of Array.from(altBmps.keys())) { if (altBmps.size <= cap) break; if (!h.shown || h.shown.art.id !== k) dropAlt(k); }
-          return true;
-        }, () => true);
-      }, () => false);
-    });
-    h.showArt = (a) => h.ready.then(() => {
-      if (!h.alive() || !h.parsed) return false;
-      if (a && (typeof a.svg !== 'string' || a.id === art.id)) a = null;
-      if ((h.shown ? h.shown.art.id : null) === (a ? a.id : null)) return true;
-      if (h.mode === 'svg') {
-        const n = a ? altNode(a) : (h.ownSvg || h.svg);
-        if (!n || !h.svg) return false;
-        if (!h.ownSvg) h.ownSvg = h.svg;
-        if (n !== h.svg) { h.svg.replaceWith(n); h.svg = n; }
-        h.shown = a ? { art: a } : null;
-        h.setViewBox();
-        return true;
-      }
-      // a cached bitmap at the current raster size: repaint it (no re-raster, no async gap)
-      const cached = h.canvas && altKey === rasterKey() ? (a ? altBmps.get(a.id) : ownBmp) : null;
-      h.shown = a ? { art: a } : null;
-      if (cached) { h._gen += 1; h.bmp = cached; h.paint(); return true; }
-      return h.raster().then(() => true);
-    });
-    /* Continue as the crisp raster (what a large piece or a colorway fill already does). A turning 3D Scene asks for it: every baked
-     * pose is rastered once when it is prepared, so turning is a repaint of a cached bitmap instead of swapping a dense inline SVG. */
-    h.useRaster = () => h.ready.then(() => {
-      if (!h.alive() || !h.parsed) return false;
-      if (h.mode === 'canvas') return true;
-      if (h.svg) { h.svg.remove(); h.svg = null; }
-      h.ownSvg = null; alts.clear(); h.shown = null;
-      h.mode = 'canvas'; el.classList.add('sp-ink-raster');
-      return h.raster().then(() => true);
-    });
-    h.shownArt = () => (h.shown ? h.shown.art : art);
-    const destroyAlts = h.destroy;
-    h.destroy = () => { alts.clear(); h.shown = null; destroyAlts(); const own = ownBmp; const cur = h.bmp; h.bmp = null; ownBmp = null; clearAlts(); [own, cur].forEach((b) => { if (b && typeof b.close === 'function') { try { b.close(); } catch (e) { /* already closed */ } } }); };
-
     if (ro) { resizeTargets.set(box, h); ro.observe(box); }
     h.ready = parseArt(art).then((parsed) => {
       if (!h.alive()) return h;

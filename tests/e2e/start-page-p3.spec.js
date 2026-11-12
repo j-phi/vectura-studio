@@ -118,13 +118,6 @@ test.describe('Start Page P3', () => {
       return { resolved: !!handle, frames, sawDrawing, drawing: el.classList.contains('sp-ink-drawing') };
     });
     expect(instant).toEqual({ resolved: true, frames: 0, sawDrawing: false, drawing: false });
-    // 3D: no sway frames
-    const m = page.locator('.sp-pl .vorbit').first();
-    await m.scrollIntoViewIfNeeded();
-    const before = await page.evaluate(() => document.querySelector('.sp-pl .vorbit')._vorbit.matrix.join(','));
-    await page.waitForTimeout(2600);
-    const after = await page.evaluate(() => document.querySelector('.sp-pl .vorbit')._vorbit.matrix.join(','));
-    expect(after).toBe(before);
   });
 
   test('no idle rAF: with the pointer idle and nothing animating, the page schedules no frames (Still off or on)', async ({ page }) => {
@@ -157,12 +150,6 @@ test.describe('Start Page P3', () => {
     await art.hover();
     expect(await attached(page)).toBe(0);
     expect(await hfxScripts(page)).toEqual(['index.js']);
-    const m = page.locator('.sp-pl .vorbit').first();
-    await m.scrollIntoViewIfNeeded();
-    await expect.poll(() => m.evaluate((e) => e._vorbit.plotted)).toBe(1);
-    const before = await page.evaluate(() => document.querySelector('.sp-pl .vorbit')._vorbit.matrix.join(','));
-    await page.waitForTimeout(2600);
-    expect(await page.evaluate(() => document.querySelector('.sp-pl .vorbit')._vorbit.matrix.join(','))).toBe(before);
   });
 
   test('plate motion override: a plate with hover None ignores the page effect; Replay in the editor redraws it', async ({ page }) => {
@@ -194,28 +181,17 @@ test.describe('Start Page P3', () => {
     expect(await hfxScripts(page)).toEqual(['index.js']);
   });
 
-  test('a 3D work: the Portfolio band and Plate 4 show a live model that drags', async ({ page }) => {
+  test('a 3D work: the Portfolio band and Plate 4 show the still drawing, framed whole (no live model, no drag, no hint)', async ({ page }) => {
     await bootWithWorks(page);
     // Plate 4 (text-wrap) disc for the Topoform work, no ring
     const id = await page.evaluate(() => [...document.querySelectorAll('.sp-pl')].map((e) => e.dataset.plateId)[1]);
     await page.evaluate((pid) => window.app.startPage.plates.store.upsert(pid, { layout: 'text-wrap' }), id);
-    const disc = page.locator('.sp-pl').nth(1).locator('.spl-disc .vorbit');
+    const disc = page.locator('.sp-pl').nth(1).locator('.spl-disc .spl-print');
     await expect(disc).toHaveCount(1, { timeout: 10000 });
     await disc.scrollIntoViewIfNeeded();
-    const cs = await disc.evaluate((e) => { const c = getComputedStyle(e); return { r: c.borderRadius, b: c.borderTopWidth, o: c.outlineStyle, s: c.boxShadow }; });
-    expect(cs.b).toBe('0px');
-    expect(cs.o).toBe('none');
-    expect(cs.s).toBe('none');
-    await expect(page.locator('.sp-pl').nth(1).locator('.spl-3dhint')).toHaveText('Drag to rotate');
-    const cv = disc.locator('canvas');
-    await expect.poll(() => disc.evaluate((e) => e._vorbit.plotted)).toBe(1);
-    const m0 = await disc.evaluate((e) => e._vorbit.matrix.join(','));
-    const box = await cv.boundingBox();
-    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.55, { steps: 6 });
-    await page.mouse.up();
-    expect(await disc.evaluate((e) => e._vorbit.matrix.join(','))).not.toBe(m0);
+    await expect.poll(() => disc.evaluate((e) => !!(e._spInk && e._spInk.parsed)), { timeout: 15000 }).toBe(true);
+    expect(await disc.evaluate((e) => ({ fit: e._spInk.fit, vorbit: !!e._vorbit }))).toEqual({ fit: 'focus', vorbit: false });
+    await expect(page.locator('.sp-pl').nth(1).locator('.vorbit, .spl-3dhint')).toHaveCount(0);
 
     // the band, with the 3D piece as the cover
     await page.locator('#sp-settings-btn').click();
@@ -227,31 +203,11 @@ test.describe('Start Page P3', () => {
     await expect(page.locator('#sp-settings')).toBeHidden();
     await expect(page.locator('#start-page')).toBeVisible();
     await page.locator('.sp-pl').nth(1).locator('[data-act="cover"]').click();
-    const band = page.locator('.sp-pf:not(.sp-pf-old) .vorbit, .sp-pf.vorbit');
+    const band = page.locator('.sp-pf:not(.sp-pf-old)[data-art3d]');
     await expect(band.first()).toBeAttached({ timeout: 10000 });
-    // Wait for the cover crossfade to finish first: until then the band node can still be
-    // swapped out, and scrolling it fails with "Element is not attached to the DOM".
     await expect(page.locator('.sp-pf-old')).toHaveCount(0, { timeout: 15000 });
-    // The cover may render once more after "Use as cover" settles (PRH-128); retry the scroll
-    // against whichever band node is current.
-    await expect(async () => {
-      await band.first().scrollIntoViewIfNeeded({ timeout: 2000 });
-      expect(await band.first().evaluate((e) => (e._vorbit ? e._vorbit.plotted : 0))).toBe(1);
-    }).toPass({ timeout: 15000 });
-    // Under load "Use as cover" can settle with one more cover render; wait until the same
-    // model node has been in place for two consecutive polls before dragging it.
-    let seen = null;
-    await expect.poll(async () => {
-      const tag = await band.first().evaluate((e) => { if (!e._vorbit) return null; e.dataset.t = e.dataset.t || String(Math.random()); return e.dataset.t; });
-      const same = tag && tag === seen; seen = tag; return same;
-    }, { timeout: 15000, intervals: [250] }).toBe(true);
-    const bm0 = await band.first().evaluate((e) => e._vorbit.matrix.join(','));
-    const bb = await band.first().locator('canvas').boundingBox();
-    await page.mouse.move(bb.x + bb.width * 0.7, bb.y + bb.height * 0.5);
-    await page.mouse.down();
-    await page.mouse.move(bb.x + bb.width * 0.9, bb.y + bb.height * 0.6, { steps: 6 });
-    await page.mouse.up();
-    expect(await band.first().evaluate((e) => e._vorbit.matrix.join(','))).not.toBe(bm0);
+    await expect.poll(() => band.first().evaluate((e) => !!(e._spInk && e._spInk.parsed)), { timeout: 15000 }).toBe(true);
+    expect(await band.first().evaluate((e) => ({ fit: e._spInk.fit, vorbit: !!e._vorbit, orbit: !!e.querySelector('.vorbit, .sp-scene-orbit') }))).toEqual({ fit: 'focus', vorbit: false, orbit: false });
   });
 
   test('studio picks: Open and Open as template land in the colors the card shows; community has no fake content', async ({ page }) => {

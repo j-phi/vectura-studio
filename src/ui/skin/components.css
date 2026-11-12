@@ -18038,7 +18038,6 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
 .spl-print,.spl-crop{display:block;position:relative;overflow:hidden;min-width:0}
 .spl-print{aspect-ratio:var(--ar,4/3)}
 .spl-print.framed{box-shadow:0 0 0 1px var(--spl-line)}
-.spl-print[data-3d]::after{content:attr(data-hint);position:absolute;left:50%;bottom:8px;transform:translateX(-50%);font:400 10px/1 var(--font-mono,monospace);letter-spacing:.06em;color:var(--spl-mute);pointer-events:none;opacity:.8}
 .spl-crop{box-shadow:0 0 0 1px var(--spl-line)}
 .spl-title{margin:0;font:300 28px/1.12 var(--font-ui,'Space Grotesk',system-ui,sans-serif);letter-spacing:-.02em;color:var(--spl-text)}
 .spl-note{margin:10px 0 0;font-size:12.5px;line-height:1.6;max-width:52ch;color:var(--spl-text);overflow-wrap:anywhere}
@@ -18078,8 +18077,6 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
 .spl-lay-text-wrap .spl-b{display:flow-root}
 .spl-disc{float:left;position:relative;width:min(400px,42%);aspect-ratio:1;margin:0 34px 14px 0;border-radius:50%;shape-outside:circle(50%);shape-margin:14px;background:var(--spl-disc);transition:background-color 460ms var(--ease,ease)}
 .spl-disc .spl-print{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;border-radius:50%;overflow:hidden;box-shadow:none}
-.spl-disc .spl-print[data-3d]::after{display:none}
-.spl-3dhint{position:absolute;left:50%;bottom:7%;z-index:2;transform:translateX(-50%);font-size:10px;letter-spacing:.06em;color:color-mix(in srgb,var(--spl-mute) 55%,var(--spl-text));white-space:nowrap}
 .spl-wrap-txt{margin:6px 0 0;font:400 25px/1.42 var(--font-ui,'Space Grotesk',system-ui,sans-serif);letter-spacing:-.01em;color:var(--spl-text);overflow-wrap:anywhere}
 .spl-wrap-txt b{font-weight:600}
 .spl-wrap-txt .al{margin:0 10px 0 8px;font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--spl-acc);vertical-align:4px}
@@ -18621,25 +18618,6 @@ button.sp-cm-card { cursor: pointer; }
   .sp-cvart-sw i { width: 12px; height: 12px; margin: -6px 0 0 -6px; }
 }
 
-/* live 3D models (StartPageOrbit3D) on the Portfolio band and on plates */
-.sp-pf .sp-pf-3d { position: absolute; inset: 0 0 0 24%; z-index: 0; }
-/* ===== Start Page — a turning 3D Scene (src/ui/start-page/scene-orbit.js) =====
-   The drawing under it is the tile's own (StartPageInk); this is only the surface you drag. */
-.sp-scene-orbit { position: absolute; inset: 0; z-index: 0; cursor: grab; touch-action: none; border-radius: inherit; -webkit-tap-highlight-color: transparent; }
-.sp-scene-orbit.is-drag { cursor: grabbing; }
-.sp-scene-orbit:focus-visible { outline: 2px solid var(--sp-ink, currentColor); outline-offset: -3px; }
-.sp-scene-orbit.is-drag:focus-visible,
-.sp-scene-orbit[data-pointer]:focus-visible { outline: none; }
-.sp-pf > .sp-scene-orbit { inset: 0 0 0 24%; }
-.sp-scene-hint { position: absolute; right: 10px; bottom: 8px; font: 400 10px/1 var(--font-mono, "JetBrains Mono", ui-monospace, monospace); letter-spacing: .04em; color: var(--sp-ink, currentColor); opacity: .5; pointer-events: none; user-select: none; }
-@media (hover: hover) { .sp-scene-orbit:hover .sp-scene-hint { opacity: .72; } }
-/* the cover band's caption owns the bottom-right corner */
-.sp-pf > .sp-scene-orbit .sp-scene-hint { top: 10px; bottom: auto; }
-.sp-pf[data-live="3d"] .sp-pf-in { pointer-events: none; }
-.sp-pf[data-live="3d"] .sp-pf-in :is(button, input, a) { pointer-events: auto; }
-.spl-print[data-3d].vorbit { box-shadow: none; outline: none; border: 0; }
-.spl-print[data-3d].vorbit::after { display: none; }
-.spl-disc .vorbit, .spl-disc .vorbit > canvas { border: 0; outline: 0; box-shadow: none; }
 .spl-edit-replay { margin-top: 8px; }
 /* ===== END Start Page - P3 ===== */
 /* ===== END Start Page — plate editor, arrange, fan ===== */

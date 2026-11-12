@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "source": {
-    "description": "Hosted V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare): mean of runs 41352473755, 41351025293 (the 28 files new since then: one local agent-container coverage run on Node 24,  2 workers,  2026-11-07)",
-    "fileCount": 924,
-    "fileDurationSumSeconds": 9653,
+    "description": "Hosted V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare): mean of runs 41352473755, 41351025293 (the 28 files new since then: one local agent-container coverage run on Node 24,  2 workers,  2026-11-07); 26 files added from local blob durations x calibration k=1.212 vs 14 reference files, ratio range 0.77-2.44 (artifacts unreachable)",
+    "fileCount": 950,
+    "fileDurationSumSeconds": 10368,
     "unweightedFilePolicy": "median of measured files in the same tests/<dir>/, else the global median"
   },
   "weightsSeconds": {
@@ -930,6 +930,32 @@
     "tests/visual/scene3d-tone-baseline.test.js": 2.842,
     "tests/visual/stroke-style-baseline.test.js": 0.744,
     "tests/visual/svg-baseline.test.js": 2.244,
-    "tests/visual/text-outline-parity.test.js": 0.812
+    "tests/visual/text-outline-parity.test.js": 0.812,
+    "tests/integration/scene-light-drag-readonly.test.js": 1.422,
+    "tests/integration/scene3d-markspace-creation-default.test.js": 9.789,
+    "tests/integration/scene3d-panel-mark-space.test.js": 3.523,
+    "tests/integration/scene3d-surface-lock-drag-export.test.js": 10.234,
+    "tests/integration/scene3d-surface-lock-offthread-bake.test.js": 60.117,
+    "tests/integration/scene3d-transform-seed-panel.test.js": 3.079,
+    "tests/unit/scene3d-group-transform-seed.test.js": 30.022,
+    "tests/unit/scene3d-markspace-migration.test.js": 11.775,
+    "tests/unit/scene3d-mono-draft-substrate.test.js": 77.237,
+    "tests/unit/scene3d-pose-preview.test.js": 53.826,
+    "tests/unit/scene3d-settle-race.test.js": 9.59,
+    "tests/unit/scene3d-spin-drag.test.js": 48.657,
+    "tests/unit/scene3d-spin-ring.test.js": 39.697,
+    "tests/unit/scene3d-surface-lock-config.test.js": 10.952,
+    "tests/unit/scene3d-surface-lock-dispatch.test.js": 93.026,
+    "tests/unit/scene3d-surface-lock-faceted.test.js": 40.169,
+    "tests/unit/scene3d-surface-lock-fixups-a.test.js": 1.651,
+    "tests/unit/scene3d-surface-lock-frame.test.js": 4.404,
+    "tests/unit/scene3d-surface-lock-ladder.test.js": 11.854,
+    "tests/unit/scene3d-surface-lock-laws.test.js": 48.508,
+    "tests/unit/scene3d-surface-lock-mezzo.test.js": 28.682,
+    "tests/unit/scene3d-surface-lock-routing.test.js": 28.211,
+    "tests/unit/scene3d-surface-lock-scaffold.test.js": 11.923,
+    "tests/unit/scene3d-surface-lock-scene-frame.test.js": 67.942,
+    "tests/unit/scene3d-surface-lock-shadow.test.js": 6.033,
+    "tests/unit/scene3d-surface-lock-visibility.test.js": 2.569
   }
 }
