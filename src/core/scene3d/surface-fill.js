@@ -5297,8 +5297,43 @@
     // gates its zone assertions on) — `zone` is always null today, so
     // `coverageForSample` is the only reachable branch and this is byte-for-
     // byte what literal 'ladder' already computed.
+    // ── LIGHT MODEL v2: the pose ladder follows the SAME L*-linear target as the surface-locked ladder ─────────────────
+    // (surface-lock-ladder.js `darkPitchV2` / `relDarkV2`, H2.) No lit floor: the lightest tones run out to paper. The pitch
+    // asked for at tone x is pd / rel(x), pd = the Density-set darkest pitch; `ladderCov` returns that as a coverage of the
+    // master grid so `ladderWantedPitch` (= masterPitch / coverage) lands on it.
+    const v2On = Boolean(opts.toneModel === 'v2' && toneOn && Regions && typeof Regions.shade === 'function');
+    const v2Cfg = () => ((Vectura.SCENE3D_SURFACE_LOCK || {}).LADDER) || {};
+    let v2Memo = null;
+    const v2Curve = () => {
+      if (v2Memo) return v2Memo;
+      const C = v2Cfg();
+      const dens = finite(opts.fillDensity, 50);
+      const floor = PLOT_FLOOR_PEN * penWidth;
+      const p0 = Math.max(floor * 2.2, finite(C.V2_P0_PEN, 4) * penWidth);
+      const pd = floor + (p0 - floor) * Math.pow(clamp(1 - dens / 200, 0, 1), Math.max(0.2, finite(C.V2_DENSITY_EXP, 3)));
+      const covDark = clamp(penWidth / pd, 0.02, 0.95);
+      const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
+      const band = Math.max(1e-3, finite(C.V2_PAPER_BAND, 0.15));
+      v2Memo = {
+        pd,
+        rel: (xx) => {
+          const q = clamp(finite(xx, 0), 0, 1);
+          const cv = 1 - invLstar(lDark + (lLight - lDark) * q);
+          const u = clamp((1 - q) / band, 0, 1);
+          return clamp(1.1 * cv / covDark, 0, 1) * u * u * (3 - 2 * u);
+        },
+      };
+      return v2Memo;
+    };
+    // Share of full darkness at sample `smp` after the glint: below V2_PAPER_DENS this sample is bare paper (the ruling breaks).
+    const V2_PAPER_DENS_POSE = 0.12;
+    const v2Dens = (smp) => {
+      const keep = Regions.specularKeep(clamp(finite(smp && smp.S, 0), 0, 1));
+      return (isEvenLadder() ? v2Curve().rel(smp.I) : 1) * keep;
+    };
     const ladderCov = (I) => {
       const x = clamp(finite(I, 0), 0, 1);
+      if (v2On) { const c = v2Curve(); return masterPitch * c.rel(x) / c.pd; }
       let cov;
       if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
       else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
@@ -5824,6 +5859,8 @@
       return chartOrientMemo;
     };
 
+    // Light model v2 (H2): the shading context of the scene (null = legacy, nothing below changes).
+    const v2Ctx = (opts.toneModel === 'v2' && opts.lightCtx && Regions && typeof Regions.shade === 'function') ? opts.lightCtx : null;
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
       const aa = clamp01(a);
@@ -5897,6 +5934,11 @@
       // `nz` = the camera-space normal's z. It is 1 facing the camera and 0 ON
       // the silhouette, so it is the exact, projection-correct measure of "how
       // close to the contour is this sample" — used by the limb taper below.
+      if (v2Ctx) {
+        // Light model v2 (H2): the sample carries its diffuse luminance L (= the shaped I) and the specular S that removes ink.
+        const sh = Regions.shade(wN, world, v2Ctx.lights, v2Ctx);
+        return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, L: I, S: sh.S, wN, world, dA, dB };
+      }
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, S, wN, world, dA, dB };
     };
 
@@ -9843,6 +9885,9 @@
         onSurf[s] = on;
         if (gradIs && on) gradIs[s] = gradIAt(pr);
         smps[s] = on ? smp : null;
+        // Light model v2: a sample whose remaining ink (tone x glint) is under the paper threshold is bare paper, so the ruling
+        // breaks there (a hard cut like a zone gate). The glint is therefore paper; the stub cull (MIN_MARK) then drops orphans.
+        if (v2On && on && v2Dens(smp) < V2_PAPER_DENS_POSE) smps[s] = null;
         // The zone gate is a HARD cut, so a gated-out sample is not part of any
         // span; folding it in here keeps the span segmentation and the emit
         // loop's cut in step.

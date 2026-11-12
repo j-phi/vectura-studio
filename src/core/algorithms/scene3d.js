@@ -3759,8 +3759,11 @@
             front: true,
             nz: camNz,
             I: clamp(finite(intensityFn(normalWorld, world), 0), 0, 1),
-            S: (typeof specularFn === 'function')
-              ? clamp(finite(specularFn(normalWorld, world), 0), 0, 1) : 0,
+            ...(poseV2 ? { L: clamp(finite(intensityFn(normalWorld, world), 0), 0, 1) } : {}),
+            S: poseV2
+              ? clamp(finite(Regions.shade(normalWorld, world, activeLights, v2LightCtx()).S, 0), 0, 1)
+              : ((typeof specularFn === 'function')
+                ? clamp(finite(specularFn(normalWorld, world), 0), 0, 1) : 0),
             wN: normalWorld,
             world,
             get dA() {
