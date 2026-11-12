@@ -1876,7 +1876,8 @@
       const env = toneEnvelope();
       const pDark = masterPitch > 1e-6 ? masterPitch / Math.max(1e-6, env.covDark) : floorPitch;
       const pLight = masterPitch > 1e-6 ? masterPitch / Math.max(1e-6, env.covLight) : litMaxPitchPen() * penWidth;
-      toneAmp = { aDark: areaAt(pDark), aLight: areaAt(pLight), pDark, pLight };
+      // Light model v2: the light end is PAPER (no lit floor), so every law that states its tone as an area follows cov_target.
+      toneAmp = { aDark: areaAt(pDark), aLight: opts.toneModel === 'v2' ? 0 : areaAt(pLight), pDark, pLight };
       return toneAmp;
     };
     // Radiance → target ink area, such that PERCEIVED grey is linear in radiance.
@@ -3520,6 +3521,7 @@
     // The light end never moves: weight 1 on the base grid. That is what "the
     // light end stays delicate" means arithmetically.
     const wLightArea = () => {
+      if (opts.toneModel === 'v2') return 0.005; // paper end (light model v2)
       const p = masterPitch > 1e-6
         ? masterPitch / Math.max(1e-6, weightBaseCov())
         : litMaxPitchPen() * penWidth;
@@ -4000,7 +4002,7 @@
     // and inside its own ink width, so the marks still touch — they just are not
     // asked to overlap.
     const PEN_DEEP_AREA = 0.93;
-    const penLightArea = () => clamp(penInk(0) / Math.max(1e-6, litMaxPitchPen() * penWidth), 0.005, 0.98);
+    const penLightArea = () => (opts.toneModel === 'v2' ? 0.005 : clamp(penInk(0) / Math.max(1e-6, litMaxPitchPen() * penWidth), 0.005, 0.98));
     const penDarkArea = () => clamp(Math.min(penMaxArea(2), PEN_DEEP_AREA), 0.02, 0.98);
     const penTarget = (I) => areaForTone(I, penDarkArea(), penLightArea());
     //
@@ -5329,7 +5331,7 @@
     const V2_PAPER_DENS_POSE = 0.12;
     const v2Dens = (smp) => {
       const keep = Regions.specularKeep(clamp(finite(smp && smp.S, 0), 0, 1));
-      return (isEvenLadder() ? v2Curve().rel(smp.I) : 1) * keep;
+      return v2Curve().rel(smp.I) * keep;
     };
     const ladderCov = (I) => {
       const x = clamp(finite(I, 0), 0, 1);
