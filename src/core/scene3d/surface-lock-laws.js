@@ -48,12 +48,7 @@
     V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
     V2_MAX_SEG_MM: 2.0,     // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
     V2_PAPER_BAND: 0.15,    // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
-    TICK_LEN_PITCH: 0.9,    // D1 mkTick: tick length, x the row pitch (raised to 1.15 x the minimum mark)
-    DOT_KAPPA: 2.0,         // D1 mkDotScreen: dot lattice spacing, x the full-ink ruling pitch
-    DOT_SEGS: 8,            // D1 mkDotScreen: vertices of a dot ring
-    RAMP_PERIOD_MARKS: 6.6, // D1 mkDashRamp: cell period, x the minimum mark (each sixth-cell piece must clear it: the frame drops a lone short piece before a neighbour can join it)
-    SCRIBBLE_K: 3.0,        // D1 mkScribble: zigzag period, x the full-ink ruling pitch
-    SCRIBBLE_AMP: 0.4,      // D1 mkScribble: peak amplitude, x the row pitch
+    RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core, a third of it, must clear it)
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
     MAX_VERTS: 200000,      // contract §2 budget
@@ -373,28 +368,36 @@
   // `lam` = the baked ruling pitch / the designed row pitch (the chart rounds the ruling count, so it is 0.7 .. 1.4): the marks are
   // re-sized for the pitch the rulings actually have, so the full-ink coverage stays pen / peff. The tone LUT uses lam = 1 (it
   // reads only peff and rowPitch, which do not depend on it).
+  const DOT_RADII = [0.7, 1.7, 2.7, 3.7];  // D1 mkDotScreen: nested ring radii, x (1.2 pen)
+  const SCRIB_LEVELS = 3;                   // D1 mkScribble: nested zigzag amplitudes a j / 3
+  const scribLen = (a, h) => { let t = 0; for (let j = 1; j <= SCRIB_LEVELS; j++) t += Math.hypot(1, 2 * a * j / (SCRIB_LEVELS * h)); return t; };
   const markModel = (law, T, lam) => {
     const peff = dutyModel(T).pitch;            // full-ink ruling pitch (screen mm): coverage pen / peff
     const m = { peff, rowPitch: peff, lam: lam || 1 };
     const rowAct = (rp) => rp * m.lam;
     if (law === 'mkTick') {
-      m.len = Math.max(K.TICK_LEN_PITCH * peff * m.lam, 1.15 * T.MARKMIN);
+      // Regular comb: a tick across the rows per cell, drawn centre-out at half and full length.
+      m.len = Math.max(3 * peff * m.lam, 3.3 * T.MARKMIN);
       m.period = m.len * peff / rowAct(m.rowPitch);
     } else if (law === 'mkDotScreen') {
-      m.rowPitch = 0.8660254 * K.DOT_KAPPA * peff;
-      m.period = K.DOT_KAPPA * peff * m.lam;
-      const circ = rowAct(m.rowPitch) * m.period / peff;
-      m.radius = circ / (2 * K.DOT_SEGS * Math.sin(Math.PI / K.DOT_SEGS));
+      // Regular screen: a dot per cell; tone grows its size as nested rings (a superset at every darker tone).
+      const delta = 1.2 * T.PEN;
+      m.ringR = DOT_RADII.map((f) => f * delta);
+      m.sumC = m.ringR.reduce((acc, r) => acc + 2 * Math.PI * r, 0);
+      m.rowPitch = Math.sqrt(0.8660254 * m.sumC * peff);
+      m.period = m.sumC * peff / rowAct(m.rowPitch);
     } else if (law === 'mkDashRamp') {
       m.period = Math.max(K.RAMP_PERIOD_MARKS * T.MARKMIN, 2 * T.FLOOR);
       m.keyScale = 1 / Math.min(1, m.lam);      // denser rulings than designed: fewer cells drawn
     } else if (law === 'mkScribble') {
-      m.period = K.SCRIBBLE_K * peff;
-      let row = peff;
-      for (let i = 0; i < 24; i++) { const a = K.SCRIBBLE_AMP * row; row = peff * 4 * Math.hypot(m.period / 4, a) / m.period; }
-      m.rowPitch = row;
-      const lz = rowAct(row) * m.period / peff;          // zigzag length per period that keeps the coverage
-      m.amp = Math.sqrt(Math.max(0, (lz / 4) * (lz / 4) - (m.period / 4) * (m.period / 4)));
+      // Nested zigzags (amplitudes a/3, 2a/3, a) along the WHOLE ruling: tone draws more of them, never chops one.
+      m.h = scribLen(1, 1) * peff * 0.42;       // half period = the design amplitude (a / h = 1)
+      m.rowPitch = scribLen(1, 1) * peff;
+      const target = rowAct(m.rowPitch) / peff;
+      let lo = 0; let hi = 0.5 * rowAct(m.rowPitch);
+      if (scribLen(hi, m.h) <= target) lo = hi; else for (let i = 0; i < 40; i++) { const mid = 0.5 * (lo + hi); if (scribLen(mid, m.h) < target) lo = mid; else hi = mid; }
+      m.amp = lo;
+      m.levelLen = [1, 2, 3].map((j) => Math.hypot(1, 2 * m.amp * j / (SCRIB_LEVELS * m.h)));
     } else { // bundleCount
       m.rowPitch = Math.max(2, Math.round(K.BUNDLE_N)) * peff;
       m.n = clamp(Math.round(K.BUNDLE_N * m.lam), 2, 5);
@@ -438,7 +441,7 @@
     const out = [0, 0, 0];
     const meta = Object.assign({}, lad.meta, {
       lawId: law, gain: 2, toneModel: 'pitch', scaleRef, p0: pEff, rho, lstar, toneScaleFree: true, toneModelV2: true,
-      capKey: 'ruling', minMarkMM: T.MARKMIN, joinTouching: law === 'mkDashRamp' || law === 'mkScribble',
+      capKey: 'ruling', minMarkMM: T.MARKMIN, joinTouching: law === 'mkDashRamp' || law === 'mkTick',
     });
     const cell = M.period / scaleRef;
     const emitP = (pts, key, fam, flags, capRank) => emitPoly(B, pts, key, fam, flags, capRank, tmp);
@@ -453,23 +456,36 @@
       const ph = frac((idx + 1) * K.GOLDEN + phase);
       const keyOf = (c) => rho * frac(vdc2(c) + ph);
       const ks = M.keyScale || 1;
-      if (law === 'mkTick' || law === 'mkDotScreen') {
-        const stagger = law === 'mkDotScreen' ? 0.5 * (idx % 2) + 0.25 * ph : ph;
+      if (law === 'mkTick') {
         let c = 0;
+        const stagger = ph;
         for (let c0 = -stagger * cell; c0 < R.total + cell; c0 += cell, c++) {
           const xc = c0 + 0.5 * cell;
           if (xc < 0 || xc > R.total) continue;
           const F = frameAt(R, xc);
-          if (law === 'mkTick') {
-            const h = 0.5 * M.len / scaleRef;
-            emitP([offsetPt(F.P, F.s, -h), offsetPt(F.P, F.s, h)], keyOf(c), fam, 0, capRank);
-          } else {
-            const rad = M.radius / scaleRef; const ring = [];
-            for (let q = 0; q < K.DOT_SEGS; q++) {
-              const a = 2 * Math.PI * q / K.DOT_SEGS; const ca = Math.cos(a) * rad; const sa = Math.sin(a) * rad;
+          const u = frac(vdc2(c) + ph); const h = 0.5 * M.len / scaleRef;
+          // centre-out halves: outer, core, outer; level 1, 0, 1 (the core is half the tick, the pair the other half)
+          const seq = [[-1, -0.5, 1], [-0.5, 0.5, 0], [0.5, 1, 1]];
+          for (let q = 0; q < seq.length; q++) emitP([offsetPt(F.P, F.s, seq[q][0] * h), offsetPt(F.P, F.s, seq[q][1] * h)], rho * (seq[q][2] + u) / 2, fam, 0, capRank);
+        }
+      } else if (law === 'mkDotScreen') {
+        let c = 0;
+        const stagger = 0.5 * (idx % 2) + 0.25 * ph;
+        for (let c0 = -stagger * cell; c0 < R.total + cell; c0 += cell, c++) {
+          const xc = c0 + 0.5 * cell;
+          if (xc < 0 || xc > R.total) continue;
+          const F = frameAt(R, xc);
+          const u = frac(vdc2(c) + ph);
+          let cum = 0;
+          for (let j = 0; j < M.ringR.length; j++) {
+            const inc = 2 * Math.PI * M.ringR[j] / M.sumC;
+            const rad = M.ringR[j] / scaleRef; const segs = clamp(Math.round(2 * Math.PI * M.ringR[j] / 0.45), 8, 24); const ring = [];
+            for (let q = 0; q < segs; q++) {
+              const a = 2 * Math.PI * q / segs; const ca = Math.cos(a) * rad; const sa = Math.sin(a) * rad;
               ring.push([F.P[0] + F.t[0] * ca + F.s[0] * sa, F.P[1] + F.t[1] * ca + F.s[1] * sa, F.P[2] + F.t[2] * ca + F.s[2] * sa, F.P[3], F.P[4], F.P[5]]);
             }
-            emitP(ring, keyOf(c), fam, SM.FLAG.CLOSED, capRank);
+            emitP(ring, rho * (cum + u * inc), fam, SM.FLAG.CLOSED, capRank);
+            cum += inc;
           }
         }
       } else if (law === 'mkDashRamp') {
@@ -490,22 +506,23 @@
           }
         }
       } else if (law === 'mkScribble') {
-        const amp = M.amp / scaleRef;
-        let c = 0;
-        const ph0 = frac((idx + 1) * K.GOLDEN + phase);
-        for (let c0 = -ph0 * cell; c0 < R.total; c0 += cell, c++) {
-          const sa = c0; const sb = c0 + cell;
-          if (sb <= 0 || sa >= R.total) continue;
-          const pts = [];
-          const legs = [[0, 0], [0.25, 1], [0.75, -1], [1, 0]];
-          let ok = true;
-          for (let q = 0; q < legs.length; q++) {
-            const x = sa + legs[q][0] * cell;
-            if (x < 0 || x > R.total) { ok = false; break; }
-            const F = frameAt(R, x);
-            pts.push(offsetPt(F.P, F.s, legs[q][1] * amp));
+        // Nested triangle waves of amplitude a/3, 2a/3, a along the whole ruling. A run is gated per vertex by the tone, so the wave
+        // fades out where the tone lightens (it is shortened, never cut into dashes); level j draws once D passes its cumulative share.
+        const hh = M.h / scaleRef; const amp = M.amp / scaleRef;
+        const tot = M.levelLen.reduce((x, y) => x + y, 0);
+        const u = frac(vdc2(idx) + phase);
+        const x0 = -frac(ph * 1.37) * 2 * hh;
+        let cum = 0;
+        for (let j = 1; j <= SCRIB_LEVELS; j++) {
+          const inc = M.levelLen[j - 1] / tot; const pts = [];
+          for (let k = 0, x = x0; x < R.total + 2 * hh; k++, x += hh) {
+            const xx = clamp(x, 0, R.total);
+            const F = frameAt(R, xx);
+            pts.push(offsetPt(F.P, F.s, (k % 2 ? -1 : 1) * amp * j / SCRIB_LEVELS * (x < 0 || x > R.total ? 0 : 1)));
           }
-          if (ok) emitP(pts, keyOf(c), fam, 0, capRank);
+          // drop the zero-amplitude clamped end points that duplicate the ruling's ends
+          emitP(pts, rho * (cum + u * inc), fam, 0, capRank);
+          cum += inc;
         }
       } else { // bundleCount
         const gap = M.gap / scaleRef;

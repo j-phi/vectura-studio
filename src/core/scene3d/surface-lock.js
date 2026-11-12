@@ -536,6 +536,12 @@
     const glyph = meta.glyph || null;
     const join = meta.joinTouching === true; // A11
     let tail = null; let tailRun = -2;
+    const flushTail = () => { // drop the pending last piece when it never grew to the minimum mark (join mode only)
+      if (tail && minMark > 0 && lineLength(tail) < minMark && out[out.length - 1] === tail) {
+        out.pop(); acc.runsOut -= 1; acc.verticesOut -= tail.length;
+      }
+      tail = null;
+    };
     const persp = F.persp;
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
@@ -620,14 +626,19 @@
           && Math.abs(tail[tail.length - 1].y - line[0].y) < 1e-4 && Math.abs(tail[tail.length - 1].z - line[0].z) < 1e-4) {
           for (let q = 1; q < line.length; q++) tail.push(line[q]);
           acc.verticesOut += line.length - 1; tailRun = r;
-          if (subs.length > 1) tail = null;
+          if (subs.length > 1) { flushTail(); tail = null; }
           continue;
         }
-        if (minMark > 0 && lineLength(line) < minMark) continue;
+        // A20: under joinTouching the minimum-mark cull is deferred for the LAST piece of a run (a later run may still extend it),
+        // so a short piece next to a drawn neighbour is merged before it is judged. Any other piece is judged at once.
+        if (join) flushTail();
+        const last = join && s === subs.length - 1;
+        if (minMark > 0 && !last && lineLength(line) < minMark) continue;
         line.back = false; out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
-        if (join) { tail = (s === subs.length - 1) ? line : null; tailRun = r; }
+        if (join) { tail = last ? line : null; tailRun = r; }
       }
     }
+    if (join) flushTail();
   };
 
   const frameSetup = (pose) => {
