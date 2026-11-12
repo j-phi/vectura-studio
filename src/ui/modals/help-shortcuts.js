@@ -146,6 +146,9 @@
         <p><strong>Seed</strong> (Transform section) and <strong>RANDOMIZE</strong> change every random choice in the
         fill: jitter, dither, stripe phase. A fill with no random choice does not change. A document saved before
         the Seed was wired keeps its old look until you edit the Seed.</p>
+        <p>The Scene's own <strong>Transform</strong> (Pos X/Y, Scale X/Y, Rotation) moves, scales and turns the whole
+        finished drawing about the centre of the page, like any other layer. A single object, light or the ground is
+        placed from the Scene panel or the canvas handles, so its Transform rows are hidden.</p>
         <p><strong>Shadow look</strong> is the Fill Style row in the Shadow section. It picks the texture drawn inside cast
         shadows. It offers the sub-controls of each family that look different on a flat footprint.</p>
         <p><strong>Artistic controls</strong> are all off until you move them:</p>

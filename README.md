@@ -755,6 +755,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - 3D Scene Transform and Seed work
+- **Transform moves the whole Scene.** Pos, Scale and Rotation on a 3D Scene now apply to the finished drawing about the page centre, including while you drag. Seed is live again on the default surface-locked scene. Single objects, lights and the ground hide the Transform rows (place them from the Scene panel).
+
 ### Unreleased - 3D Scene marks lock to the surface
 - **Hatch, crosshatch, contour, spiral and stipple marks lock to the object.** New objects bake their marks once on the surface and re-frame them per angle, so a drag frame is the export and turns at frame rate (about 10-12 ms a drag frame on a Mezzotint or Hatch sphere; a whole-scene generate takes about 8-15 ms, against about 150-230 ms before).
 - **Saved files and presets look the same.** They open with **Lock marks to surface** off and render byte-identically; switch it on per object when you want it.
