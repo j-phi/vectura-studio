@@ -1609,6 +1609,7 @@
       penWidth: finite(bounds.penWidth, 0.3), convex: record.convex,
       scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
       seed: G3.snapshotSeedState(),
+      ...(p.tone && p.tone.model === 'v2' ? { toneModel: 'v2' } : {}),
     };
   };
 
@@ -2057,6 +2058,30 @@
           return lockToneShape ? Regions.shapeTone(I, wp, lockToneShape) : I;
         }
         : null;
+      // Light model v2 (H2): the Level F lock dispatch uses the SAME diffuse tone function and light context as Level S
+      // (SurfaceLock.toneFnV2 / lightCtxOf), so drag, export and Level S agree. Legacy scenes get exactly the old arguments.
+      // Emissive point lights ride along through the per-record `activeLights` (a pseudo scene with those lights).
+      const lockV2 = Boolean(p.tone && p.tone.model === 'v2' && lockToneOn && Vectura.Scene3D.SurfaceLock
+        && typeof Vectura.Scene3D.SurfaceLock.toneFnV2 === 'function');
+      const lockToneArgs = (spec, lockObj, hlOff) => {
+        const SL = Vectura.Scene3D.SurfaceLock;
+        const lt = (lockObj && lockObj.transform) || {};
+        const tctx = { tone: p.tone, penWidth, noHighlight: hlOff };
+        let toneFn = lockToneFn;
+        let toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
+          ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
+            lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
+          : null;
+        let toneModel;
+        if (lockV2 && spec && spec.toneModel === 'v2') {
+          const pv = activeLights === p.lights ? p : { ...p, lights: activeLights };
+          tctx.light = SL.lightCtxOf(pv, null);
+          toneFn = SL.toneFnV2(pv, spec, null);
+          if (toneKey !== null) toneKey += '|v2|' + finite(p.tone.ambient, '') + '|' + finite(p.tone.bounce, '');
+          toneModel = 'v2';
+        }
+        return { toneFn, toneKey, tone: SL.toneTable(spec, tctx), toneModel };
+      };
 
       // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
       // (faceHatchLines, below, is the consumer.) "Parametrize the plane rather
@@ -4896,17 +4921,14 @@
           }) !== 'surface') return null;
           const ms = SurfaceLock.bake(spec);
           if (!ms) return null;
-          const lt = lockObj.transform || {};
-          const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
-            ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
-              lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
-            : null;
+          const ta = lockToneArgs(spec, lockObj, hlOff);
           const lines = SurfaceLock.frame([ms], SurfaceLock.poseOf(lockObj.transform, p.camera, bounds), {
-            toneFn: lockToneFn,
-            toneKey,
-            tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: hlOff }),
+            toneFn: ta.toneFn,
+            toneKey: ta.toneKey,
+            tone: ta.tone,
             penWidth,
             objectId: rec.id,
+            toneModel: ta.toneModel,
           });
           return Array.isArray(lines) ? lines : null;
         };
@@ -5294,19 +5316,16 @@
                 if (ms) {
                   // toneKey: identifies everything the tone function reads besides the camera, so a frame may reuse
                   // evaluations across camera moves (FX-A). null (never reuse) under a shadow caster or a depth fade.
-                  const lt = lockObj.transform || {};
-                  const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
-                    ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
-                      lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
-                    : null;
+                  const ta = lockToneArgs(spec, lockObj, grpHLOff);
                   lines = SurfaceLock.frame([ms],
                     SurfaceLock.poseOf(lockObj.transform, p.camera, bounds),
                     {
-                      toneFn: lockToneFn,
-                      toneKey,
-                      tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: grpHLOff }),
+                      toneFn: ta.toneFn,
+                      toneKey: ta.toneKey,
+                      tone: ta.tone,
                       penWidth,
                       objectId: record.id,
+                      toneModel: ta.toneModel,
                     });
                   lockedFill = Array.isArray(lines);
                 }
