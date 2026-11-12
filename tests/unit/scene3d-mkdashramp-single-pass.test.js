@@ -92,6 +92,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 const { goldenValues } = require('../helpers/golden-values');
 
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
@@ -345,6 +346,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     test('T4b\'s own fixture (engine.addLayer insert pipeline, d=220) is unaffected', () => {
       const engine = new V.VectorEngine();
       const groupId = engine.addLayer('scene3d');
+      pinLegacySun(engine, groupId); // golden tuned to the pre-v7 sun (az 135 / el 45)
       const group = engine.getLayerById(groupId);
       engine.getLayerDescendants(groupId)
         .filter((l) => l && l.type === 'sceneGround3d')
@@ -383,6 +385,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
 
       const neutralEngine = new neutralRuntime.window.Vectura.VectorEngine();
       const neutralGroupId = neutralEngine.addLayer('scene3d');
+      pinLegacySun(neutralEngine, neutralGroupId); // same pre-v7 sun as the measured engine above
       const neutralGroup = neutralEngine.getLayerById(neutralGroupId);
       neutralEngine.getLayerDescendants(neutralGroupId)
         .filter((l) => l && l.type === 'sceneGround3d')

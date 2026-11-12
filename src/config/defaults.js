@@ -2107,7 +2107,12 @@
       // Rendered Phase 2; schema present now (A-15: typed so point/spot extend
       // without a migration).
       lights: [
-        { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true },
+        // v7: a NEW scene's key light is a classic illustration key, upper-left and
+        // in FRONT of the subject (az 330 / el 40: camera-space z ~ +0.58 at the default camera, so the cast
+        // shadow still lands clear of the subject on the ground),
+        // so the lit side, terminator and glint are visible. Pre-v7 documents and
+        // presets keep their saved lights (az 135 / el 45 was BEHIND the subject).
+        { id: 'sun', type: 'directional', azimuth: 330, elevation: 40, castShadows: true },
       ],
       // CONTRACT L3: light-driven tone banding. enabled:false ⇒ Phase 1 flat look.
       tone: {
@@ -2285,8 +2290,8 @@
       is3d: true,
       preset: 'scenelight3d-default',
       type: 'directional', // 'directional' | 'point' | 'spot' | 'area' | 'ambient'
-      azimuth: 135,
-      elevation: 45,
+      azimuth: 330, // keep in lockstep with ALGO_DEFAULTS.scene3d.lights[0] (v7 front key)
+      elevation: 40,
       intensity: 1,
       castShadows: true,
     },

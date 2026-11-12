@@ -243,7 +243,7 @@ describe('surface lock ground shadow', () => {
     };
     const measure = (opts, pose) => {
       const SL = V.Scene3D.SurfaceLock; const real = SL.frameable;
-      const s = buildSurfaceLockScene(V, { toneLaw: 'ladder', mapper: 'hatch', markSpace: 'surface', ...opts });
+      const s = buildSurfaceLockScene(V, { toneLaw: 'ladder', mapper: 'hatch', markSpace: 'surface', legacySun: true, ...opts });
       s.setPose(pose);
       SL.resetStats();
       const a = shadowOf(s.composeFull());

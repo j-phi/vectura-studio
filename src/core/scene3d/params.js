@@ -455,7 +455,10 @@
     projection: 'orthographic', yaw: -30, pitch: 20, roll: 0,
     cameraDistance: 620, focalLength: 520, zoom: 1,
   };
-  const DEFAULT_LIGHT = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  // The pre-v7 default sun (BEHIND the subject at the default camera). Only ever applied to
+  // payloads saved before v7; see migrateToneModelLegacy and normalizeParams.
+  const LEGACY_SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  const DEFAULT_LIGHT = { id: 'sun', type: 'directional', azimuth: 330, elevation: 40, castShadows: true };
   // Positional (point/spot) light defaults. `position` is a world-space point;
   // `range` is the LINEAR falloff distance in world mm (0 ⇒ no falloff). A spot
   // adds a `target` (cone axis = normalize(target − position)), a `coneAngle`
@@ -1619,8 +1622,12 @@
     };
   };
 
-  const normalizeLight = (light, index) => {
+  // `legacy` = the payload predates v7: a missing sun angle falls back to the pre-v7
+  // sun (az 135 / el 45), never the v7 front key, so an un-migrated old payload cannot
+  // change its light by being normalized.
+  const normalizeLight = (light, index, legacy = false) => {
     const src = isObject(light) ? light : {};
+    const dflt = legacy ? LEGACY_SUN : DEFAULT_LIGHT;
     // A-15: type field is kept verbatim for unknown (future) light types so new
     // kinds round-trip without a format migration. v1 renders 'directional' (the
     // sun), 'ambient' (a constant fill), and the positional 'point'/'spot'
@@ -1629,8 +1636,8 @@
     const out = {
       id: typeof src.id === 'string' && src.id ? src.id : (index === 0 ? 'sun' : `light-${index + 1}`),
       type,
-      azimuth: finite(src.azimuth, DEFAULT_LIGHT.azimuth),
-      elevation: finite(src.elevation, DEFAULT_LIGHT.elevation),
+      azimuth: finite(src.azimuth, dflt.azimuth),
+      elevation: finite(src.elevation, dflt.elevation),
       // Per-light weight. Directional defaults to 1 (a lone sun stays exactly
       // Phase-2); ambient defaults to a soft 0.25 fill. Total intensity is
       // clamped to [0,1] downstream, so this can push/fill without overflow.
@@ -1747,11 +1754,12 @@
     // resurrect the sun on regen. Mirrors the objects contract above. A lightless
     // scene shades flat and casts no shadows: lightWorldDir/combinedIntensity and
     // the castShadows loop in scene3d.js all degrade gracefully on an empty list.
+    const preV7 = Number.isFinite(src.sceneVersion) && src.sceneVersion < 7;
     const hasLightsKey = Array.isArray(src.lights);
     const lights = (hasLightsKey ? src.lights : [])
       .filter(isObject)
-      .map((light, index) => normalizeLight(light, index));
-    out.lights = lights.length || hasLightsKey ? lights : [{ ...DEFAULT_LIGHT }];
+      .map((light, index) => normalizeLight(light, index, preV7));
+    out.lights = lights.length || hasLightsKey ? lights : [{ ...(preV7 ? LEGACY_SUN : DEFAULT_LIGHT) }];
     out.tone = normalizeTone(src.tone);
     out.shadow = normalizeShadow(src.shadow);
     out.ground = normalizeGround(src.ground);
@@ -2143,10 +2151,29 @@
     const src = isObject(params) ? params : {};
     const sceneLike = isObject(src.tone) || Array.isArray(src.objects)
       || Array.isArray(src.lights) || isObject(src.camera);
-    if (!sceneLike) return src;
+    if (!sceneLike) {
+      // A standalone object3d LEAF has no tone block: object3d.js takes its tone
+      // and lights from the scene defaults at render time. migrateScene stamps
+      // sceneVersion 7 on it, so the version alone can no longer tell a saved leaf
+      // from a new one. Pin the saved leaf with toneModel 'legacy' (object3d.js
+      // reads it); a leaf that already names one is respected.
+      if (typeof src.primitive === 'string' && !TONE_MODELS.includes(src.toneModel)) {
+        return { ...src, toneModel: 'legacy' };
+      }
+      return src;
+    }
     const tone = isObject(src.tone) ? src.tone : {};
     if (TONE_MODELS.includes(tone.model)) return src;
-    return { ...src, tone: { ...tone, model: 'legacy' } };
+    // DEFAULT_LIGHT is the v7 front key (az 330 / el 40). A pre-v7 payload must keep the
+    // sun it was authored with: seed an absent lights key with the legacy sun and
+    // pin any light that omits its angles, so normalization never reaches the
+    // new default for a saved document.
+    const legacyLights = Array.isArray(src.lights)
+      ? src.lights.map((l) => (isObject(l) && (!Number.isFinite(l.azimuth) || !Number.isFinite(l.elevation))
+        ? { ...l, azimuth: Number.isFinite(l.azimuth) ? l.azimuth : LEGACY_SUN.azimuth, elevation: Number.isFinite(l.elevation) ? l.elevation : LEGACY_SUN.elevation }
+        : l))
+      : [{ ...LEGACY_SUN }];
+    return { ...src, lights: legacyLights, tone: { ...tone, model: 'legacy' } };
   };
   SCENE_MIGRATIONS[6] = migrateToneModelLegacy;
 

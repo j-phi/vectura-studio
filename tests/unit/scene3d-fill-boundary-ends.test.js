@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 /*
  * A RULING ENDS ON THE BOUNDARY OF VISIBLE SURFACE — NOT ONE SAMPLE SHORT OF IT.
@@ -67,6 +68,7 @@ describe('Scene3D.SurfaceFill — a ruling ends on the boundary, not a sample sh
     const eng = new V.VectorEngine();
     eng.currentProfile = { width: 200, height: 200, name: 'boundary-ends' };
     const gid = eng.addSceneTree();
+    pinLegacySun(eng, gid); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
     const obj = eng.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
     obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface
     if (primitive !== 'sphere') eng.setObjectPrimitive(obj.id, primitive);

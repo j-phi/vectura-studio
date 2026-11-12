@@ -87,6 +87,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 const { goldenValues } = require('../helpers/golden-values');
 
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
@@ -319,6 +320,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     test('T4b\'s own fixture (engine.addLayer insert pipeline, d=220) is unaffected', () => {
       const engine = new V.VectorEngine();
       const groupId = engine.addLayer('scene3d');
+      pinLegacySun(engine, groupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
       const group = engine.getLayerById(groupId);
       engine.getLayerDescendants(groupId)
         .filter((l) => l && l.type === 'sceneGround3d')
@@ -352,6 +354,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
 
       const neutralEngine = new neutralRuntime.window.Vectura.VectorEngine();
       const neutralGroupId = neutralEngine.addLayer('scene3d');
+      pinLegacySun(neutralEngine, neutralGroupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
       const neutralGroup = neutralEngine.getLayerById(neutralGroupId);
       neutralEngine.getLayerDescendants(neutralGroupId)
         .filter((l) => l && l.type === 'sceneGround3d')

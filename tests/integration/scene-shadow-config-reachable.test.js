@@ -176,7 +176,7 @@ describe('Shadow configuration is reachable and means "restyle", not "move" (RC1
     expect(lights.length).toBe(1);
     // …and the compositor still sees a sun, via collectSceneParams.
     expect(grp._sceneAssembled.lights.length).toBe(1);
-    expect(grp._sceneAssembled.lights[0].azimuth).toBe(135);
+    expect(grp._sceneAssembled.lights[0].azimuth).toBe(330); // v7 front key (was 135)
     // No light ROWS in this panel's tree — which is exactly why the shadow
     // block was unreachable before the fix.
     app.ui.buildControls();

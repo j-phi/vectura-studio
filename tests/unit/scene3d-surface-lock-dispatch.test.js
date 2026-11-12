@@ -22,7 +22,9 @@ describe('surface lock Level F dispatch', () => {
   afterAll(() => { SL.frameable = realFrameable; if (rt) rt.cleanup(); });
 
   const build = (law, extra = {}) => buildSurfaceLockScene(V, {
-    kind: 'sphere', toneLaw: law, mapper: 'hatch', markSpace: 'surface', shadow: false, ground: false, ...extra,
+    kind: 'sphere', toneLaw: law, mapper: 'hatch', markSpace: 'surface', shadow: false, ground: false,
+    legacySun: true, // tuned to the pre-v7 sun (az 135 / el 45); this suite is not about the default light
+    ...extra,
   });
 
   // Spy on SurfaceLock.frame: keeps every call's (markSet, pose, view) and the lines it returned.

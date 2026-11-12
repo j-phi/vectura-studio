@@ -151,6 +151,7 @@
  *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 const {
   captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate,
 } = require('../helpers/scene3d-ring-coverage');
@@ -201,6 +202,7 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
     [...LAWS, ...CONTROL_LAWS].forEach((toneLaw) => {
       const engine = new V.VectorEngine();
       const groupId = engine.addLayer('scene3d');
+      pinLegacySun(engine, groupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
       const group = engine.layers.find((l) => l && l.id === groupId);
       const obj = engine.getLayerDescendants(groupId)
         .filter((l) => l && l.type === 'object3d')[0];

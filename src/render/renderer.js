@@ -12926,11 +12926,15 @@
     _sceneLight(layer, ensure = false) {
       const params = (layer && layer.params) || {};
       if (!Array.isArray(params.lights) || !params.lights.length) {
+        // Legacy-tone documents keep the pre-v7 sun (az 135); new/v2 scenes get the front key (az 330 / el 40).
+        const legacyTone = params.tone && params.tone.model === 'legacy';
+        const az = legacyTone ? 135 : 330;
+        const el = legacyTone ? 45 : 40;
         if (ensure) {
-          params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }];
+          params.lights = [{ id: 'sun', type: 'directional', azimuth: az, elevation: el, castShadows: true }];
           return params.lights[0];
         }
-        return { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+        return { id: 'sun', type: 'directional', azimuth: az, elevation: el, castShadows: true };
       }
       return params.lights[0];
     }
@@ -14107,7 +14111,7 @@
       return true;
     }
 
-    // Restore the selected light to its factory default (sun → az135/el45;
+    // Restore the selected light to its factory default (sun → az330/el40;
     // point/spot → position {120,200,120}, range 400, spot target/cone/penumbra).
     // Used by the on-canvas restore handle AND the panel "Reset light" button.
     restoreSceneLight(layer, lightId) {
@@ -14117,8 +14121,8 @@
       if (!light) return false;
       this._scenePushHistory();
       if (light.type === 'directional') {
-        light.azimuth = 135;
-        light.elevation = 45;
+        light.azimuth = 330;
+        light.elevation = 40;
       } else if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         light.position = { x: 120, y: 200, z: 120 };
         if (light.type === 'area') {
