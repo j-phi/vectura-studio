@@ -51,7 +51,7 @@
     TICK_LEN_PITCH: 0.9,    // D1 mkTick: tick length, x the row pitch (raised to 1.15 x the minimum mark)
     DOT_KAPPA: 2.0,         // D1 mkDotScreen: dot lattice spacing, x the full-ink ruling pitch
     DOT_SEGS: 8,            // D1 mkDotScreen: vertices of a dot ring
-    RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core is one third of it)
+    RAMP_PERIOD_MARKS: 6.6, // D1 mkDashRamp: cell period, x the minimum mark (each sixth-cell piece must clear it: the frame drops a lone short piece before a neighbour can join it)
     SCRIBBLE_K: 3.0,        // D1 mkScribble: zigzag period, x the full-ink ruling pitch
     SCRIBBLE_AMP: 0.4,      // D1 mkScribble: peak amplitude, x the row pitch
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
