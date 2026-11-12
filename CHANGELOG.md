@@ -6,6 +6,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: 3D Scene realistic light (tone model v2) now drives every fill
+- **Surface-locked fills (Level S and the per-object Level F path) and pose fills share one light model.** New scenes get ambient + bounce light, no lit floor and a compact specular glint that is bare paper. Level F now uses the same diffuse tone function and light context as Level S, so a drag, the export and the settled frame agree (the Level S == Level F parity tests are green again).
+- **Pose marks follow the model too.** Pose samples carry the diffuse luminance and the glint; the pose ladder follows the surface ladder's L*-linear curve with paper at the light end and a broken ruling where the glint is; Duty Cycle, End Shorten, Mezzotint and the other mono laws read the same light context. Mark - Dash Ramp, Pen Interleave / Reserve / Cross and Weight Modulated now run out to paper instead of staying flat.
+- **Density keeps working past 100** for the mono laws (it used to saturate at the clamp by about 80).
+- **Look:** default glint is smaller (Specular size 0.4 for new scenes) and the paper band is the lightest 6 % of the tone range, so the highlight fades through sparser marks instead of a large blank patch. Saved scenes and presets stay on the legacy model, byte for byte.
+
 ### Changed: Fill Style caveats are informational unless they warn
 - Each tone-law caveat now carries a `caveatKind` (`info` or `warning`, set in `docs/tone-laws/laws.json`). Explanations of intended behaviour (for example Duty Cycle's "open paper in highlights is intentional") use a calm `.is-info` note in the context-bar flyouts; only genuine limitations (flood to solid black, moire, a dropped nib, little shading effect, a seam gap) keep the red `.is-caveat` warning. Caveat copy tightened. The docked panel twin follows separately.
 
