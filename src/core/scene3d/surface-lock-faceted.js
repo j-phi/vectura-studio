@@ -41,11 +41,17 @@
     ZOOM_HEADROOM: 1.5,
     PHASE_FAM1: 0.37, // family 1 lattice offset (fraction of the level-0 pitch), so the two families do not start together
     GAIN_LIT: 0.5, // the faceted pose law's spacing gain at coverage 0 (lit): pitch = hatchSpacing / (GAIN_LIT + GAIN_SPAN * coverage)
+    DOT_SEGS: 8, // tone model v2 stipple: dot polygon segments
+    SPIRAL_MIN_S: 0.03, // tone model v2 spiral: stop when the scale toward the face centre drops under this
     GAIN_SPAN: 1.1, // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
   };
   const C = Object.assign({}, DEFAULTS);
 
   const FIT_MAPPERS = ['hatch', 'crosshatch'];
+  // Tone model v2 (light-realism U6) also bakes contour (concentric outlines), spiral (one inward spiral) and stipple (a dot lattice)
+  // per face, so these mappers respond to the light on a box instead of the pose fill's light-blind concentric squares. They are
+  // gated on spec.toneModel === 'v2' so a saved (legacy) document keeps the pose fill it was made with.
+  const V2_MAPPERS = ['contour', 'spiral', 'stipple'];
   const FIT_PRIMITIVES = ['box', 'plane', 'solid'];
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(FIT_MAPPERS.slice()),
@@ -79,6 +85,10 @@
   const now = () => (typeof performance !== 'undefined' && performance && typeof performance.now === 'function' ? performance.now() : 0);
   const RANK_CAP = 0.999999;
 
+  const LAD = () => Scene3D.SurfaceLockLadder;
+  const isV2 = (spec) => !!spec && spec.toneModel === 'v2' && !!(LAD() && LAD().v2);
+  const litMaxPitchPen = () => (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : 12);
+
   // ---- supports ----------------------------------------------------------------------------------------------
   const supports = (spec) => {
     if (!spec || typeof spec !== 'object') return false;
@@ -86,7 +96,7 @@
     const law = spec.toneLaw;
     const style = spec.style || {};
     const ok = FIT.some((row) => {
-      if (row.mappers.indexOf(spec.mapper) === -1) return false;
+      if (row.mappers.indexOf(spec.mapper) === -1 && !(isV2(spec) && V2_MAPPERS.indexOf(spec.mapper) !== -1)) return false;
       if (!(law === undefined || law === null || law === '' || row.laws.indexOf(law) !== -1)) return false;
       if (row.primitives.indexOf(spec.primitive) === -1) return false;
       return !Object.keys(row.refuse || {}).some((k) => row.refuse[k].indexOf(style[k]) !== -1);
@@ -115,6 +125,7 @@
       pen,
       density: clamp(finite(st.fillDensity, 50), 0, 500),
       angle: finite(st.fillAngle, 45),
+      dotR: clamp(finite(st.dotSize, 0.7), 0.1, 3),
       crossDelta: clamp(finite(st.crossAngleDelta, 90), 10, 170),
       crossRatio: clamp(finite(st.crossDensityRatio, 1), 0.25, 2),
       scaleRef: finite(spec && spec.scaleRef, 1) > 0 ? spec.scaleRef : 1,
@@ -132,6 +143,7 @@
   // lut[k] = 1 / screen pitch at I = k / 256 (contract §5). Not reproduced (pose-only, per facet): the rank-spread band grade
   // (O20), the glint facet cap, the dark-side second family and shadowSensitivity; the toned look is single-family here.
   const toneLUT = (spec, toneCtx) => {
+    if (isV2(spec)) return LAD().v2.toneLUT(spec, toneCtx); // one continuous L*-linear curve, no lit floor (same as the curved ladder)
     sync();
     const r = read(spec);
     const tone = (toneCtx && toneCtx.tone) || null;
@@ -217,12 +229,17 @@
     // Level count (contract §9): p0 is the lit maximum screen pitch / scaleRef; the finest level reaches the darkest pitch the
     // law asks for at ZOOM_HEADROOM x the bake zoom. A vertex-budget guard trims the finest level.
     const floor = floorOf(r);
-    const p0S = p0Screen(r);
+    const v2 = isV2(spec);
+    const dots = v2 && spec.mapper === 'stipple';
+    const p0S = v2 ? Math.max(hatchSpacing(r.density), litMaxPitchPen() * r.pen) : p0Screen(r);
     const p0 = p0S / r.scaleRef;
-    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, darkestPitch(r));
+    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, v2 ? LAD().v2.darkPitch(spec) : darkestPitch(r));
     let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * C.ZOOM_HEADROOM / minPitch))), 1, maxLevels);
     const share = cross ? (1 + 1 / r.crossRatio) : 1;
-    const estVerts = (levels) => (totalArea / (p0 / Math.pow(2, levels - 1))) * share / C.STEP_MM;
+    const estVerts = (levels) => {
+      const pf = p0 / Math.pow(2, levels - 1);
+      return dots ? totalArea / (pf * pf) : (totalArea / pf) * share / C.STEP_MM;
+    };
     while (L > 1 && estVerts(L) > C.MAX_VERTS) L -= 1;
     const pFine = p0 / Math.pow(2, L - 1);
     const lvl0Step = Math.pow(2, L - 1);
@@ -288,10 +305,133 @@
       }
     };
 
+
+    // ---- tone model v2: contour / spiral / stipple on a face (in-plane frame, centre-anchored for the rings) ----------
+    const polyOf = (g) => {
+      let cx = 0; let cy = 0; let cz = 0;
+      g.pts.forEach((q) => { cx += q[0]; cy += q[1]; cz += q[2]; });
+      const k = 1 / g.pts.length; cx *= k; cy *= k; cz *= k;
+      const P2 = g.pts.map((q) => [(q[0] - cx) * g.U[0] + (q[1] - cy) * g.U[1] + (q[2] - cz) * g.U[2], (q[0] - cx) * g.V[0] + (q[1] - cy) * g.V[1] + (q[2] - cz) * g.V[2]]);
+      // inradius about the centre (distance to the nearest edge line), a convex face assumed
+      let rin = Infinity;
+      for (let a = 0; a < P2.length; a++) {
+        const b = (a + 1) % P2.length; const ex = P2[b][0] - P2[a][0]; const ey = P2[b][1] - P2[a][1]; const el = Math.hypot(ex, ey);
+        if (el < 1e-9) continue;
+        rin = Math.min(rin, Math.abs(P2[a][0] * ey - P2[a][1] * ex) / el);
+      }
+      return { c: [cx, cy, cz], P2, rin };
+    };
+    const to3 = (g, c, x, y) => [c[0] + g.U[0] * x + g.V[0] * y + 0, c[1] + g.U[1] * x + g.V[1] * y, c[2] + g.U[2] * x + g.V[2] * y];
+    const lvlRank = (i, none) => {
+      const lv = i === 0 ? 0 : Math.max(0, L - 1 - ctz(i));
+      const kk = lv === 0 ? Math.round(i / lvl0Step) : Math.floor(i / Math.pow(2, L - lv));
+      return { lv, rank: none ? 0.5 : Math.min(RANK_CAP, vdc2((kk + 1048576) >>> 0)) };
+    };
+    const contourFace = (g, pitch) => {
+      const pl = polyOf(g);
+      if (!(pl.rin > 2 * C.EDGE_MM)) return;
+      const fine = pitch / Math.pow(2, L - 1);
+      const iMax = Math.floor((pl.rin - C.EDGE_MM) / fine);
+      for (let i = 1; i <= iMax; i++) {
+        const sc = 1 - (i * fine) / pl.rin;
+        if (sc <= 0.02) break;
+        const { lv, rank } = lvlRank(i, false);
+        builder.beginRun(lv, rank, 0, SM.FLAG.CLOSED);
+        for (let a = 0; a < pl.P2.length; a++) {
+          const b = (a + 1) % pl.P2.length;
+          const x0 = pl.P2[a][0] * sc; const y0 = pl.P2[a][1] * sc; const x1 = pl.P2[b][0] * sc; const y1 = pl.P2[b][1] * sc;
+          const nSeg = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / C.STEP_MM));
+          for (let v = 0; v < nSeg; v++) {
+            const p = to3(g, pl.c, x0 + (x1 - x0) * v / nSeg, y0 + (y1 - y0) * v / nSeg);
+            emit(p[0], p[1], p[2], g.n);
+          }
+        }
+        builder.endRun();
+      }
+    };
+    // distance from the centre to the boundary along direction (cos, sin)
+    const boundaryR = (P2, ca, sa) => {
+      let best = Infinity;
+      for (let a = 0; a < P2.length; a++) {
+        const b = (a + 1) % P2.length;
+        const ex = P2[b][0] - P2[a][0]; const ey = P2[b][1] - P2[a][1];
+        const den = ca * ey - sa * ex;
+        if (Math.abs(den) < 1e-12) continue;
+        const t = (P2[a][0] * ey - P2[a][1] * ex) / den;
+        const u = (P2[a][0] * sa - P2[a][1] * ca) / den;
+        if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9 && t < best) best = t;
+      }
+      return Number.isFinite(best) ? best : 0;
+    };
+    const spiralFace = (g, pitch, phaseFrac) => {
+      const pl = polyOf(g);
+      if (!(pl.rin > 2 * C.EDGE_MM)) return;
+      const N = Math.pow(2, L - 1);
+      const perTurn = pitch / pl.rin; // scale lost per turn at level 0
+      const ph0 = phaseFrac * 2 * Math.PI;
+      for (let m = 0; m < N; m++) {
+        const s0 = 1 - (m / N) * perTurn;
+        if (s0 <= C.SPIRAL_MIN_S) continue;
+        const lr = lvlRank(m, false); const lv = lr.lv; const rank = m === 0 ? 0.5 : lr.rank; // the lone level-0 arm needs a real demand, or it never reaches paper
+        const pts = [];
+        let phi = 0; let guard = 0;
+        for (;;) {
+          const sc = 1 - (phi / (2 * Math.PI) + m / N) * perTurn;
+          if (sc <= C.SPIRAL_MIN_S) break;
+          const ca = Math.cos(ph0 + phi); const sa = Math.sin(ph0 + phi);
+          const R = boundaryR(pl.P2, ca, sa) * sc;
+          if (R > 1e-6) pts.push(to3(g, pl.c, R * ca, R * sa));
+          phi += clamp(C.STEP_MM / Math.max(R, 0.5), 0.005, 0.3);
+          if (++guard > 200000) break;
+        }
+        if (pts.length < 2) continue;
+        builder.beginRun(lv, rank, 0, 0);
+        pts.forEach((q) => emit(q[0], q[1], q[2], g.n));
+        builder.endRun();
+      }
+    };
+    const inside2 = (P2, x, y, margin) => {
+      let inn = false; let dmin = Infinity;
+      for (let a = 0, b = P2.length - 1; a < P2.length; b = a++) {
+        const xa = P2[a][0]; const ya = P2[a][1]; const xb = P2[b][0]; const yb = P2[b][1];
+        if ((ya > y) !== (yb > y) && x < ((xb - xa) * (y - ya)) / (yb - ya) + xa) inn = !inn;
+        const ex = xb - xa; const ey = yb - ya; const l2 = ex * ex + ey * ey || 1;
+        const t = clamp(((x - xa) * ex + (y - ya) * ey) / l2, 0, 1);
+        dmin = Math.min(dmin, Math.hypot(x - xa - t * ex, y - ya - t * ey));
+      }
+      return inn && dmin >= margin;
+    };
+    const stippleFace = (g, pitch, phaseFrac) => {
+      const pl = polyOf(g);
+      const fine = pitch / Math.pow(2, L - 1);
+      let xmin = Infinity; let xmax = -Infinity; let ymin = Infinity; let ymax = -Infinity;
+      pl.P2.forEach((q) => { xmin = Math.min(xmin, q[0]); xmax = Math.max(xmax, q[0]); ymin = Math.min(ymin, q[1]); ymax = Math.max(ymax, q[1]); });
+      // the lattice is anchored to the face's own centre-frame so the dots turn with the object
+      const i0 = Math.ceil((xmin - phaseFrac * pitch) / fine); const i1 = Math.floor((xmax - phaseFrac * pitch) / fine);
+      const j0 = Math.ceil((ymin - phaseFrac * pitch) / fine); const j1 = Math.floor((ymax - phaseFrac * pitch) / fine);
+      const margin = Math.max(C.EDGE_MM, r.dotR * 0.75);
+      const counter = new Array(L).fill(0);
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          const lv = Math.max(0, L - 1 - Math.min(ctz(i), ctz(j), L - 1));
+          const x = phaseFrac * pitch + i * fine; const y = phaseFrac * pitch + j * fine;
+          if (!inside2(pl.P2, x, y, margin)) continue;
+          const rank = Math.min(RANK_CAP, vdc2(counter[lv]++));
+          const p = to3(g, pl.c, x, y);
+          builder.beginRun(lv, rank, 0, SM.FLAG.DOT);
+          emit(p[0], p[1], p[2], g.n);
+          builder.endRun();
+        }
+      }
+    };
+
     for (let fi = 0; fi < geoms.length; fi++) {
       if (only >= 0 && fi !== only) continue;
       const g = geoms[fi];
       if (!g) continue;
+      if (v2 && spec.mapper === 'contour') { contourFace(g, p0); continue; }
+      if (v2 && spec.mapper === 'spiral') { spiralFace(g, p0, phase0); continue; }
+      if (dots) { stippleFace(g, p0, phase0); continue; }
       ruleFace(g, 0, r.angle, p0, phase0);
       if (cross) ruleFace(g, 1, r.angle + C.CROSS_OBJ_DEG + (r.crossDelta - 90), p0 * r.crossRatio, frac(phase0 + C.PHASE_FAM1));
     }
@@ -301,8 +441,8 @@
     ms.bakerId = 'faceted';
     ms.meta = {
       p0,
-      gain: 2,
-      toneModel: 'pitch',
+      gain: dots ? 4 : 2,
+      toneModel: dots ? 'area' : 'pitch',
       scaleRef: r.scaleRef,
       minMarkMM: 2 * r.pen,
       sepBarFrac: 1, // informational spacing bar only; no minSepFrac, so the frame cap never thins a ruled face
@@ -311,6 +451,7 @@
       levelsDesigned: L,
       msBake: now() - t0,
     };
+    if (dots) ms.meta.glyph = { kind: 'circle', r: r.dotR, segs: C.DOT_SEGS };
     return ms;
   };
 
