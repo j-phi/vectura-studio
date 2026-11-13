@@ -52,6 +52,7 @@
   const STRIDE_SLACK = CFG.CAP_STRIDE_SLACK || 0.3; // A21: the stride cap's own floor slack; the crowd guard is the exact spacing bar
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
+  const V2_GUARD_PEN = Number.isFinite(CFG.V2 && CFG.V2.GUARD_PEN) ? CFG.V2.GUARD_PEN : 0;
   const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
@@ -634,7 +635,9 @@
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
     const capCont = capSep && meta.capContinuous === true;
-    const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(view.floorPitch * GUARD_FRAC) : null;
+    // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
+    const guardD = view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC;
+    const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(guardD) : null;
     const capOk = capCont ? (vi, rr) => {
       const c0 = SCAP[vi]; if (c0 === Infinity) return true;
       const w = rcap[rr]; const c = c0 * ((w >> 12) / CAP_RHO_STEPS);
@@ -766,11 +769,13 @@
     return (R && Number.isFinite(R.PLOT_FLOOR_PEN)) ? R.PLOT_FLOOR_PEN : FALLBACK_FLOOR_PEN;
   };
 
+  // Tone model v2 has its own plot floor (config V2.FLOOR_PEN; the owner's "go darker" decision); legacy keeps Regions.PLOT_FLOOR_PEN.
+  const v2FloorPenOf = () => { const v = CFG.V2 && CFG.V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
   const frame = (markSets, pose, view) => {
     const t0 = now();
     const sets = Array.isArray(markSets) ? markSets : [markSets];
     const v = Object.assign({}, view || {});
-    v.floorPitch = floorPenOf() * num(v.penWidth, 0);
+    v.floorPitch = (v.toneModel === 'v2' ? v2FloorPenOf() : floorPenOf()) * num(v.penWidth, 0);
     v.penWidth = num(v.penWidth, 0);
     const F = frameSetup(pose);
     let total = 0; sets.forEach((ms) => { if (ms) total = Math.max(total, ms.vertexCount || 0); });

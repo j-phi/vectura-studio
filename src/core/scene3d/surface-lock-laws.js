@@ -39,6 +39,8 @@
     DUTY_PERIOD_FLOOR: 2.0, // dutyConst mark period, x plot floor (pose: FLOOR * 2.0)
     DUTY_PITCH_FLOOR: 1.05, // dutyConst ruling pitch, x plot floor
     END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+    V2_DUTY_PITCH_FLOOR: 0.95, // tone model v2 dutyConst ruling pitch, x the v2 plot floor (the baked chart delivers ~0.85 of the nominal pitch: 1.33 pens draws ~0.65 coverage)
+    V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
     END_RETRACT: 0.84,      // endShorten: fraction of a ruling spent at full light (2 x 0.42 span)
     MERGE_PERIOD_FLOOR: 1.8,// mergeLadder mark period, x plot floor
     MERGE_M_MIN: 0.03,
@@ -93,11 +95,13 @@
   const MS = () => Scene3D.SurfaceLockMarkSet;
 
   // ---- tone parameters: copies of makeCtx's pure maths --------------------------------------------------------
-  const toneParams = (spec) => {
+  // Tone model v2 has its own, lower plot floor (config V2.FLOOR_PEN: the owner's "go darker" decision); `v2` selects it. Legacy: Regions.PLOT_FLOOR_PEN.
+  const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
+  const toneParams = (spec, v2) => {
     const R = regions();
     const PEN = Math.max(0.02, finite(spec && spec.penWidth, 0.3));
     const INK = PEN * (1 + K.INK_SPREAD);
-    const FLOOR = (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : K.PLOT_FLOOR_PEN) * PEN;
+    const FLOOR = (v2 ? v2FloorPen() : (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : K.PLOT_FLOOR_PEN)) * PEN;
     const litMax = (Number.isFinite(R.LIT_MAX_PITCH_PEN) ? R.LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * PEN;
     const DS = clamp(finite(spec && spec.style && spec.style.densityScale, 1), 0.25, 4);
     const PMAX0 = Math.max(FLOOR * 1.6, litMax);
@@ -110,14 +114,14 @@
     const L_LIGHT = Lstar(1 - A_LIGHT); const L_DARK = Lstar(1 - K.A_DARK);
     const areaFor = (I) => clamp(1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, K.A_DARK);
     const pitchFor = (I) => clamp(INK / areaFor(I) / DS, INK / K.A_DARK, PMAX);
-    return { PEN, INK, FLOOR, litMax, DS, PMAX0, PMAX, SPARSE, MARKMIN, areaFor, pitchFor };
+    return { PEN, INK, FLOOR, litMax, DS, PMAX0, PMAX, SPARSE, MARKMIN, areaFor, pitchFor, v2: !!v2 };
   };
 
   // ---- per-law tone maps. Each returns { theta(I) -> gate threshold >= 0, pitch (nominal screen pitch) } ----------
   // The LUT entry is theta(I) / pitch for the fixed-pitch laws (the frame multiplies by p0 * s, so t = rho * theta at
   // the bake scale; the bake folds rho into the keys) and 1 / pitch(I) for the pitch laws.
   const dutyModel = (T) => {
-    const P0 = T.FLOOR * K.DUTY_PITCH_FLOOR * T.SPARSE;
+    const P0 = T.FLOOR * (T.v2 ? K.V2_DUTY_PITCH_FLOOR : K.DUTY_PITCH_FLOOR) * T.SPARSE;
     const tDense = clamp((1 - 1 / T.DS) / (1 - 1 / 4), 0, 1);
     const cov0 = T.PEN / P0;
     const P = tDense > 0 ? T.PEN / (cov0 + (1 - cov0) * tDense) : P0;
@@ -129,7 +133,7 @@
     return { pitch: P, period: PERIOD, minDuty, theta: (I) => { const d = duty(I); return d * PERIOD < T.MARKMIN ? 0 : d; } };
   };
   const endModel = (T) => ({
-    pitch: T.FLOOR * K.END_PITCH_FLOOR * T.SPARSE,
+    pitch: T.FLOOR * (T.v2 ? K.V2_END_PITCH_FLOOR : K.END_PITCH_FLOOR) * T.SPARSE,
     theta: (I) => { const x = clamp(finite(I, 0), 0, 1); return 1 - K.END_RETRACT * (x * x * (3 - 2 * x)); },
   });
   const mergeModel = (T) => {
@@ -175,10 +179,10 @@
 
   const toneLUT = (spec, toneCtx) => {
     sync();
-    const T = toneParams(spec);
+    const law = spec && spec.toneLaw;
+    const T = toneParams(spec, (MARK_LAW_IDS.indexOf(law) !== -1 || law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx));
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
-    const law = spec && spec.toneLaw;
     let fn;
     if (MARK_LAW_IDS.indexOf(law) !== -1) {
       const M = markModel(law, T, 1);
@@ -218,13 +222,15 @@
   // Pose Density 0..100 -> hatchSpacing (ladder's private map, algorithms/scene3d.js hatchSpacing). The ladder's level-0
   // pitch is max(hatchSpacing(density), LIT_MAX_PITCH_PEN * pen), so a derived density sets the law's own p0.
   const densityForSpacing = (p) => clamp((14 - p) / 0.13, 0, K.HATCH_D_MAX);
-  const ladderSpec = (spec, p0Screen) => Object.assign({}, spec, {
+  const ladderSpec = (spec, p0Screen, finest) => Object.assign({}, spec, {
     toneLaw: 'ladder',
+    lawBake: true, // the ladder keeps its master-pitch level count for a law's ruling set (the law's own pitch is not the user's Density)
+    lawFinest: finest, // v2: the finest ruling pitch (screen mm) the law draws; the ladder bakes enough levels to reach it
     style: Object.assign({}, spec.style, { fillDensity: densityForSpacing(p0Screen) }),
   });
-  const bakeLadder = (spec, p0Screen) => {
+  const bakeLadder = (spec, p0Screen, finest) => {
     const L = ladder();
-    const ls = ladderSpec(spec, p0Screen);
+    const ls = ladderSpec(spec, p0Screen, finest);
     if (!L || !L.supports(ls)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec');
     return L.bake(ls);
   };
@@ -472,13 +478,13 @@
 
   const bakeMarks = (spec) => {
     const law = spec.toneLaw;
-    const T = toneParams(spec);
+    const T = toneParams(spec, bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
     const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
     const litCap = (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * T.PEN;
     const M0 = markModel(law, T, 1);
     const lstar = Math.max(0, Math.ceil(Math.log2(litCap / M0.rowPitch)));
-    const lad = bakeLadder(spec, M0.rowPitch * Math.pow(2, lstar));
+    const lad = bakeLadder(spec, M0.rowPitch * Math.pow(2, lstar), M0.rowPitch);
     const gate = Math.pow(2, lstar);
     const pEff = lad.meta.p0 / gate;
     const rho = (pEff * scaleRef) / M0.rowPitch;
@@ -610,7 +616,7 @@
     const law = spec && spec.toneLaw;
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
     if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
-    const T = toneParams(spec);
+    const T = toneParams(spec, (law === 'dutyConst' || law === 'endShorten') && bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
     const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
     const litCap = (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * T.PEN;
@@ -622,7 +628,7 @@
       lstar = Math.max(0, Math.ceil(Math.log2(litCap / model.pitch)));
       p0Screen = model.pitch * Math.pow(2, lstar);
     } else p0Screen = T.PMAX;
-    const lad = bakeLadder(spec, p0Screen);
+    const lad = bakeLadder(spec, p0Screen, fixed ? model.pitch : undefined);
     const SM = MS();
     const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
     const tmp = { count: 0 };

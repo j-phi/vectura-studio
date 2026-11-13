@@ -50,6 +50,7 @@
     SEED_ARC_STEPS: 2,       // new seeds along an accepted line every max(d_l, this x STEP)
     MIN_MARK_PEN: 4,         // surface-fill uses 2; 4 drops the 0.6-1.5 mm specks (H5, review §7.4)
     SEP_MARGIN: 0.97,        // declared minSepFrac = STOP_FACTOR x this: the screen-space gap of a stop-radius pair loses ~2 % to chord and projection error
+    V2_P0_SCALE: 0.99,       // tone model v2: p0 = PMAX x this, so the finest level (3) sits at 1.4 pens: the densest the v2 plot floor admits (stop 0.8 x 1.4 = ink width), dark end ~0.6 instead of 0.43
     P0_SCALE: 1.2,           // p0 = PMAX x this (O4): moves the finest-level front from c 0.83 to about 0.69 (H2)
     MAX_LEVELS_LAW: 4,       // cap on the law-floor level count: the formula asks for 5 at P0_SCALE 1.2, but L5 doubles the bake (1.4 s against 0.65 s); zoom past ~1.4x loses the finest level until the next scaleRef octave re-bakes
     INK_SPREAD: 0.12,        // surface-fill INK_SPREAD (private there)
@@ -143,6 +144,8 @@
     const c = toneCtx || {};
     return ((c.light && c.light.model) || (c.tone && c.tone.model)) === 'v2';
   };
+  // p0 = PMAX x this: legacy P0_SCALE; a spec that says toneModel 'v2' (the hub copies it) takes V2_P0_SCALE.
+  const p0ScaleOf = (spec) => (spec && spec.toneModel === 'v2' ? K.V2_P0_SCALE : K.P0_SCALE);
   const toneIsOff = (toneCtx) => !!toneCtx && ((toneCtx.tone && toneCtx.tone.enabled === false)
     || (toneCtx.light && Array.isArray(toneCtx.light.lights) && toneCtx.light.lights.length === 0));
   // v2 target (light-plan 2.2, same curve as the laws baker's targetOf): the L*-linear span of the pose map's own areaFor,
@@ -175,8 +178,9 @@
         // exactly the baked ceiling keeps the curve graded from the darkest tone up.
         const D = v2Density(T);
         const HEADROOM = Number.isFinite(cfg().ZOOM_HEADROOM) ? cfg().ZOOM_HEADROOM : 1.5;
-        const Lv = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * K.P0_SCALE * HEADROOM) / (T.INK / K.A_DARK))) + 1e-9), 1, Math.min(cfg().MAX_LEVELS || 6, K.MAX_LEVELS_LAW));
-        const dark = Math.min(1 / pitchFor(0), 0.9999 * 2 ** (Lv - 1) / (T.PMAX * K.P0_SCALE));
+        const P0S = p0ScaleOf(spec);
+        const Lv = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * P0S * HEADROOM) / (T.INK / K.A_DARK))) + 1e-9), 1, Math.min(cfg().MAX_LEVELS || 6, K.MAX_LEVELS_LAW));
+        const dark = Math.min(1 / pitchFor(0), 0.9999 * 2 ** (Lv - 1) / (T.PMAX * P0S));
         for (let k = 0; k <= size; k++) lut[k] = D(k / size) * dark;
       }
       return { lut, scaleFn: null };
@@ -200,7 +204,8 @@
     const salt = (seedSpec.salt | 0); const phase = finite(seedSpec.phase, 0);
     const scaleRef = Math.max(1e-6, finite(spec.scaleRef, 1));
     const T = toneParams(spec);
-    const p0 = (T.PMAX * K.P0_SCALE) / scaleRef;
+    const P0S = p0ScaleOf(spec);
+    const p0 = (T.PMAX * P0S) / scaleRef;
     const STEP = (K.STEP_SCREEN * K.STEP_MULT) / scaleRef;
     const fillAngle = finite(style.fillAngle, 45);
     const crossDeg = (regionsLib().CROSS_OBJ_DEG || K.CROSS_OBJ_DEG) + (clamp(finite(style.crossAngleDelta, 90), 10, 170) - 90);
@@ -251,7 +256,7 @@
     // scale when its screen pitch p0 * HEADROOM / 2^l is at least the declared law floor (the darkest pitch the law
     // can ask for, INK / A_DARK, which is also meta.floorPitchPen x pen). p0 here is the scaled bake pitch.
     const lawFloor = T.INK / K.A_DARK;
-    let L = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * K.P0_SCALE * HEADROOM) / lawFloor)) + 1e-9), 1, Math.min(MAX_LEVELS, K.MAX_LEVELS_LAW));
+    let L = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * P0S * HEADROOM) / lawFloor)) + 1e-9), 1, Math.min(MAX_LEVELS, K.MAX_LEVELS_LAW));
     const estVerts = (lv) => (nFam * area) / ((p0 / 2 ** (lv - 1)) * 1.1) / STEP;
     while (L > 1 && estVerts(L) > K.MAX_VERTICES * 0.95) L -= 1;
 

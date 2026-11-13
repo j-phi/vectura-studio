@@ -60,8 +60,11 @@
     ZOOM_HEADROOM: 1.5,
     RELABEL_MIN_MM: 4, // FX-R: a relabel piece shorter than this (object mm) takes its finer neighbour's label
     RELABEL_STAGGER: 0.5, // FX-R: relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
-    V2_P0_PEN: 4, // tone model v2: the darkest pitch at Density 0, in pens (it falls to the plot floor at Density 200)
-    V2_DENSITY_EXP: 3, // tone model v2: Density -> darkest pitch curve (1 - d/200)^exp, so 100 and 200 stay distinct
+    V2_P0_PEN: 3.6, // tone model v2: the darkest pitch at Density 0, in pens (mirrors the config)
+    V2_DENSITY_EXP: 14, // tone model v2: Density -> darkest pitch curve (mirrors the config)
+    V2_TAIL_PEN: 0.16, // tone model v2: Density 50..200 tail of the darkest pitch, in pens (mirrors the config)
+    V2_TAIL_EXP: 1.7, //
+    V2_DARK_MIN_PEN: 1.25, // tone model v2: the densest darkest pitch (Density 200), in pens (mirrors the config) tone model v2: exponent of that tail (mirrors the config)
     V2_PAPER_BAND: 0.15, // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
   };
   const C = Object.assign({}, DEFAULTS);
@@ -95,6 +98,9 @@
   const CH = () => Scene3D.SurfaceLockChart;
   const regions = () => Scene3D.Regions || {};
   const plotFloorPen = () => (Number.isFinite(regions().PLOT_FLOOR_PEN) ? regions().PLOT_FLOOR_PEN : 2.2);
+  // Tone model v2 has its own, lower plot floor (config V2.FLOOR_PEN, owner decision "go darker"); legacy keeps plotFloorPen().
+  const v2GuardPen = () => { const v = cfg().V2 && cfg().V2.GUARD_PEN; return Number.isFinite(v) && v > 1 ? v : 1.2; };
+  const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
   const litMaxPitchPen = () => (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : 12);
   const ctz = (m) => (m === 0 ? 99 : 31 - Math.clz32(m & -m));
   const vdc2 = (i) => {
@@ -152,10 +158,12 @@
       scale: { sx: finite(sc.sx, 1), sy: finite(sc.sy, 1), sz: finite(sc.sz, 1) },
       seed: (spec && spec.seed && typeof spec.seed === 'object') ? spec.seed : {},
       stipple: spec && spec.mapper === 'stipple',
+      v2: !!spec && spec.toneModel === 'v2',
+      cross: !!spec && spec.mapper === 'crosshatch',
     };
   };
   const floorOf = (r) => {
-    const f = plotFloorPen() * r.pen;
+    const f = (r.v2 ? v2FloorPen() : plotFloorPen()) * r.pen;
     return r.stipple ? Math.max(f, C.DOT_CLEAR * r.dotR) : f;
   };
   const masterPitch = (r) => Math.max(floorOf(r), hatchSpacing(r.density) / C.TONE_SUBDIV);
@@ -183,10 +191,17 @@
   const isV2 = (spec) => !!spec && spec.toneModel === 'v2';
   // Darkest pitch (screen mm). Density runs 0..200 across the WHOLE range (the legacy master pitch hits the plot floor at about
   // Density 82, so 100 and 200 were identical): floor + (P0 - floor) * (1 - d/200)^exp.
+  // The tail term keeps Density 100 and 200 apart (the v2 plot floor is reached by about Density 80 otherwise): see V2_TAIL_PEN.
   const darkPitchV2 = (r) => {
-    const floor = floorOf(r);
+    const floor = r.stipple ? floorOf(r) : Math.max(C.V2_DARK_MIN_PEN * r.pen, v2GuardPen() * r.pen);
+    const g = clamp(1 - r.density / 200, 0, 1);
+    const tail = Math.max(0, C.V2_TAIL_PEN) * r.pen;
     const p0 = Math.max(floor * 2.2, C.V2_P0_PEN * r.pen);
-    return floor + (p0 - floor) * Math.pow(clamp(1 - r.density / 200, 0, 1), Math.max(0.2, C.V2_DENSITY_EXP));
+    let pd = floor + tail * Math.pow(g, Math.max(0.2, C.V2_TAIL_EXP)) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, C.V2_DENSITY_EXP));
+    // Crosshatch draws TWO families whose coverages add (a union 1 - (1 - a)^2): each carries the share that makes the pair reach the
+    // same dark end as a single family does.
+    if (r.cross && !r.stipple) { const c1 = clamp(r.pen / pd, 0.02, 0.95); pd = r.pen / (1 - Math.sqrt(1 - c1)); }
+    return pd;
   };
   const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
   const invLstar = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
@@ -317,7 +332,9 @@
     // The level count is the legacy one for v2 too: SurfaceLockLaws (dutyConst / endShorten, U4) bakes its ladder through this
     // function with the same spec.toneModel, and its v2 curves are tuned to these levels. The v2 darkest pitch sits within the
     // finest level's reach (finest <= master / 1.5).
-    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, masterPitch(r));
+    // Tone model v2 (a plain ladder, not a law's ruling set): the finest level must reach the Density-set DARKEST pitch (the dark end
+    // is ~0.67 coverage), not the legacy master pitch (spacing / 5), or the dark end is quantised to an octave far too coarse.
+    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, !r.v2 ? masterPitch(r) : (spec.lawBake ? (finite(spec.lawFinest, 0) > 0 ? spec.lawFinest : masterPitch(r)) : darkPitchV2(r)));
     let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * C.ZOOM_HEADROOM / minPitch))), 1, maxLevels);
     const families = cross ? 2 : 1;
     const estVerts = (levels) => {
@@ -455,8 +472,14 @@
       const pmRef = median(pms);
       if (!(pmRef > 0)) return;
       // n0 is a power of two so every coarser set {ctz >= v} is evenly spaced (a fan thins by halves).
-      const k0 = clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, Math.floor(Math.log2(C.MAX_CELLS)) - (L - 1));
-      const n0 = Math.pow(2, Math.max(0, k0));
+      // Legacy: the level-0 ruling count is a power of two, so the ruling pitch lands within x1.41 of the one asked for. Tone model v2 takes
+      // ANY integer count (the coarser sets {ctz >= v} are evenly spaced whatever n0 is): the effective pitch is within a few percent of
+      // the asked one. The dark end (~0.67 coverage) sits within 1.2 x the plot floor, where a x0.8 miss made the frame's crowd guard
+      // drop every other ruling (coverage 0.42 instead of 0.67).
+      const maxK = Math.floor(Math.log2(C.MAX_CELLS)) - (L - 1);
+      const n0 = r.v2
+        ? clamp(Math.round(Math.max(1e-9, (pmRef * w) / P)), 1, Math.max(1, Math.floor(C.MAX_CELLS / Math.pow(2, L - 1))))
+        : Math.pow(2, Math.max(0, clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, maxK)));
       const N = n0 * Math.pow(2, L - 1);
       const logN = Math.round(Math.log2(N));
       effPitch = (pmRef * w) / n0;
