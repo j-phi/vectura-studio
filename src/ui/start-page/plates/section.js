@@ -392,6 +392,9 @@
     // model, no drag-to-rotate, no sway. It only differs in its framing (the dense body of the drawing, with air; see layouts.js) and in the
     // square '3d' plate aspect. It plots in with the same animate-in as the rest.
     const is3dPiece = (e) => !!art3d(e);
+    // Non-scene 3D pieces (Topoform, Spiralizer, Terrain, Polyhedron) are live drag-to-rotate StartPageOrbit3D models; a 3D Scene is the still drawing.
+    const isSceneId = (m) => /^scene:/.test(String(m || ''));
+    const liveModel = (e) => { const m = art3d(e); return m && !isSceneId(m) ? m : null; };
     // The plate's own motion (set in its editor) wins over the page defaults in Settings.
     const entryNow = (id) => entries.find((x) => x.id === id) || null;
     const plateAnimateIn = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.animateIn || ctx.prefs().animateIn || 'plot'; };
@@ -492,17 +495,6 @@
     let headInfo = null;
     const tool = (act, label, icon, titleText) => h('button', { type: 'button', class: 'sp-pl-tool', 'data-act': act, title: titleText, 'aria-label': titleText, html: `${icon}<span>${label}</span>` });
 
-    // A plate that mounts outside the scroller's viewport (inside the lazy-mount margin) must not scroll in as an empty 3D disc:
-    // the model's own plot-in waits for 30 % visible, so it would still be blank when the visitor reaches it.
-    const offscreen = (w) => {
-      const r = w.getBoundingClientRect();
-      if (!(r.height > 0)) return false; // not laid out: unknown, keep the plot-in
-      const sc = ctx.scroller();
-      const top = sc ? sc.getBoundingClientRect().top : 0;
-      const bottom = sc ? sc.getBoundingClientRect().bottom : (G.innerHeight || 0);
-      return r.bottom <= top || r.top >= bottom;
-    };
-
     const renderPlate = async (w) => {
       const st = w._sp;
       let e = entries.find((x) => x.id === w.dataset.plateId);
@@ -522,6 +514,7 @@
       if (i < 0) return;
       const cw = setData(w, e, i, svg ? layoutFor(e, i, is3dPiece(e) ? '3d' : orientationOf(svg)) : undefined);
       if (!cw || !svg) { w.dataset.state = 'error'; return; }
+      const model = liveModel(e);
       const is3d = is3dPiece(e);
       const orientation = is3d ? '3d' : orientationOf(svg);
       const eff = effective(e);
@@ -530,7 +523,7 @@
       let article;
       try {
         article = Layouts().render(layout, {
-          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, is3d, name: e.art.name, seen: st.seenArtId === e.art.id, plotted: offscreen(w) }, colorway: cw, index: i, total: entries.length,
+          plate: { id: e.id, orientation, frame }, art: { id: e.art.id, svg, is3d, model, name: e.art.name, seen: st.seenArtId === e.art.id, plotted: false }, colorway: cw, index: i, total: entries.length,
           texts: textsFor(e, cw, svg, i), frame, autoMount: false,
         });
       } catch (err) {
@@ -541,9 +534,11 @@
       const inner = w.querySelector('.sp-pl-in');
       // A plate whose art was already drawn once stays "seen" across a drop (st.seenArtId outlives dropPlate): it comes back
       // finished, with no blank frame and no re-plot. Only a never-drawn plate, or one whose art changed, animates in.
+      // seenArtId is set when the animate-in has actually PLAYED (the plate was scrolled into view), not when it was mounted: a plate
+      // mounted ahead of the viewport (lazy margin, idle pre-mount) stays undrawn until the visitor reaches it.
       const fresh = st.seenArtId !== e.art.id;
       st.artId = e.art.id;
-      st.seenArtId = e.art.id;
+      if (st.visCancel) { st.visCancel(); st.visCancel = null; }
       if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
       if (st.article) { try { Layouts().destroy(st.article); } catch (_) { /* noop */ } }
       if (st.article && st.article.parentNode === inner) { st.article.replaceWith(article); } else inner.replaceChildren(article);
@@ -564,22 +559,31 @@
       if (main) { main.classList.add('sp-pl-art'); onOpenClick(main, () => { if (!w.dataset.editing) open(entries.findIndex((x) => x.id === w.dataset.plateId), false); }); } // opens by plate id: a re-sync rebuilds the entry objects
       // Fresh plates draw themselves in (the plate's own style, else the page default). Still / reduced motion: shown finished.
       const M = Motion();
-      const plays = !!(M && main && !reduced() && !M.isStill() && M.styleId(plateAnimateIn(e.id)) !== 'none');
+      const plays = !!(M && main && !model && !reduced() && !M.isStill() && M.styleId(plateAnimateIn(e.id)) !== 'none');
       if (plays && fresh) main.classList.add('sp-pre');
+      if (!(plays && fresh) && !(model && fresh)) st.seenArtId = e.art.id; // nothing to wait for: already played, or no animate-in
       const mounted = Layouts().mount(article);
       if (M && main) {
         if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } }
         st.bind = M.bindArt(main, { handle: () => main._spInk || null, animateIn: () => plateAnimateIn(e.id), hover: () => plateHover(e.id), kind: 'plate' });
+        const artId = e.art.id;
         Promise.resolve(mounted).then(() => {
           if (st.bind) st.bind.sync();
+          if (my !== st.gen) return; // a newer render or a drop owns the plate now
           if (plays && fresh && main.isConnected && main._spInk) {
-            M.replay(main._spInk, plateAnimateIn(e.id));
-            let n = 0;
-            const reveal = () => { if (++n < 3) G.requestAnimationFrame(reveal); else main.classList.remove('sp-pre'); };
-            G.requestAnimationFrame(reveal);
+            // Hold the art blank until the plate is >= 30 % in view, then draw it in (once per page view).
+            st.visCancel = M.whenVisible(main, () => {
+              st.visCancel = null; st.seenArtId = artId;
+              if (!main.isConnected || !main._spInk) { main.classList.remove('sp-pre'); return; }
+              M.replay(main._spInk, plateAnimateIn(e.id));
+              let n = 0;
+              const reveal = () => { if (++n < 3) G.requestAnimationFrame(reveal); else main.classList.remove('sp-pre'); };
+              G.requestAnimationFrame(reveal);
+            }, { root: ctx.scroller() || null });
           } else main.classList.remove('sp-pre');
         });
-        setTimeout(() => main.classList.remove('sp-pre'), 2500); // never leave a plate hidden
+        // a live 3D model plots in by itself at 30 % visible; it counts as seen from then on
+        if (model && fresh) st.visCancel = M.whenVisible(main, () => { st.visCancel = null; st.seenArtId = artId; }, { root: ctx.scroller() || null });
       }
       paintFills(article, cw);
       try { w.dispatchEvent(new G.CustomEvent('sp-plate-rerender', { bubbles: true })); } catch (_) { /* noop */ }
@@ -644,6 +648,7 @@
       if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
       try { Layouts().destroy(st.article); } catch (_) { /* noop */ }
       w.querySelector('.sp-pl-in').replaceChildren(placeholder(w));
+      if (st.visCancel) { st.visCancel(); st.visCancel = null; }
       st.article = null; st.sig = null; st.artId = null;
       st.gen = (st.gen || 0) + 1;
       w.dataset.state = 'idle';
@@ -925,6 +930,7 @@
       const M = Motion();
       const main = w && w._sp.article && w._sp.article.querySelector('.spl-print.sp-pl-art');
       if (!M || !main) return Promise.resolve(null);
+      if (main._vorbit) { if (!M.isStill()) main._vorbit.setModel(main._vorbit.model, { replot: true }); return Promise.resolve(main._vorbit); }
       return main._spInk ? M.replay(main._spInk, plateAnimateIn(id)) : Promise.resolve(null);
     };
     const openEditor = (info, btn) => {
@@ -937,7 +943,7 @@
       const svg = svgCache.get(e.art.id) || '';
       const handle = Ed.open(art, {
         record: Object.assign(e.rec ? JSON.parse(JSON.stringify(e.rec)) : { id: e.id, artId: e.artId }, shippedColors(e) ? { colors: fullColors(shippedColors(e)) } : {}),
-        art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, is3d: is3dPiece(e), ownColors: e.art.ownColors },
+        art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, is3d: is3dPiece(e), model: liveModel(e), ownColors: e.art.ownColors },
         devExample: devActive, mode: mode(), index: i, colorway: placed[i] && placed[i].colorway, placed: placed.map((p, k) => { // neighbors count with the background they really show (a manual Curated background changes its class)
           const cwk = k === i ? null : resolveCw(entries[k], k);
           return cwk && p.colorway ? { id: p.id, colorway: Object.assign({}, p.colorway, { class: cwk.class || p.colorway.class, ground: cwk.ground || p.colorway.ground }) } : p;

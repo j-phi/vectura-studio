@@ -331,6 +331,17 @@ describe('Start Page shell', () => {
       expect(sp.textContent).toMatch(/Document Setup/);
     });
 
+    test('the header carries the wordmark only: no "Start Page" crumb or divider', async () => {
+      await boot();
+      app.startPage.show();
+      await app.startPage.render();
+      const hdr = document.querySelector('#start-page .sp-hdr');
+      expect(hdr).toBeTruthy();
+      expect(hdr.textContent).not.toMatch(/Start Page/i);
+      expect(hdr.querySelector('.sp-crumb, .sp-div')).toBeNull();
+      expect(hdr.querySelector('.sp-wm')).toBeTruthy();
+    });
+
     test('"Back to canvas" only when the canvas holds a document; wordmark and Shift+Cmd+H navigate', async () => {
       await boot();
       app.startPage.show();

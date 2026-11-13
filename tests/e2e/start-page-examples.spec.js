@@ -28,7 +28,7 @@ test.describe('Start Page example plates', () => {
     await expect(page.locator('#sp-plates [data-act="edit"]').first()).toBeAttached({ timeout: 15000 });
     await expect(page.locator('#sp-pl-arrange')).toBeVisible();
 
-    // no plate is a live, draggable 3D model any more: the three 3D examples are still drawings framed whole
+    // the "drag it" copy is only where a live 3D model (.vorbit) is mounted
     for (let i = 0; i < 10; i++) {
       const pl = plates.nth(i);
       await pl.scrollIntoViewIfNeeded();
@@ -36,9 +36,8 @@ test.describe('Start Page example plates', () => {
       await expect(pl.locator('.sp-pl-info button')).toHaveCount(1); // the (i) after the name, while mounted (plates far from the viewport drop their art again)
       await expect(pl.locator('.sp-pl-example')).toHaveCount(0); // the dashed EXAMPLE badge is gone
       const live3d = i === 3 || i === 4 || i === 5; // Coiled Sphere, High Sierra and Torus Contours
-      await expect(pl.locator('.vorbit, .sp-scene-orbit')).toHaveCount(0);
-      await expect(pl.locator('.spl-note, .spl-wrap-txt').filter({ hasText: 'drag it to turn it' })).toHaveCount(0);
-      await expect(pl.locator('.spl-print[data-3d]')).toHaveCount(live3d ? 1 : 0);
+      await expect(pl.locator('.vorbit')).toHaveCount(live3d ? 1 : 0, { timeout: 20000 });
+      await expect(pl.locator('.spl-note, .spl-wrap-txt').filter({ hasText: 'drag it to turn it' })).toHaveCount(live3d ? 1 : 0);
     }
 
     const first = plates.first();

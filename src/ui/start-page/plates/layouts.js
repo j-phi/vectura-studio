@@ -7,7 +7,7 @@
  *
  *   render(layoutId, { plate, art, colorway, index, total, texts, frame?, autoMount? }) -> HTMLElement
  *     plate    { id, orientation: 'landscape' | 'portrait' | 'square' | '3d', frame?: { fit, z, cx, cy } }
- *     art      { id, svg, is3d?, seen? }   (is3d marks a 3D piece: still drawing, its print carries data-3d and is framed whole (fit 'focus'), no drag; seen = drawn before, plotted = mounted off screen; either way a live model mounts already plotted)
+ *     art      { id, svg, is3d?, model?, seen? }   (model marks a live 3D model (Topoform / Spiralizer / Terrain / Polyhedron): drag-to-rotate, its print carries data-3d and a drag hint; is3d marks any 3D piece: a 3D Scene is a still drawing, its print carries data-3d and is framed whole (fit 'focus'), no drag; seen = drawn before, plotted = mounted off screen; either way a live model mounts already plotted)
  *     colorway a placed plate colorway ({ ground, ink, accent, class } or { paper, ink })
  *     texts    { word, title, description, algorithm?, summary?, specs: [[label, value]] | [{ label, value }],
  *                actions?: [{ id, label, primary?, onClick? }] }
@@ -142,13 +142,16 @@
   };
 
   /* ------------------------------------------------------------------ plate context + parts */
+  const HINT3 = ' Drawn live in 3D here: drag it to turn it.';
+
   const makeCtx = (id, o) => {
     const texts = o.texts || {};
     const plate = o.plate || {};
     const orientation = plate.orientation || 'landscape';
     const c = {
       id, plate, art: o.art, cw: o.colorway, index: o.index | 0, total: o.total | 0, orientation,
-      is3d: orientation === '3d' || !!(o.art && o.art.is3d), // a 3D piece is a still drawing framed whole (fit 'focus'), like any plate
+      is3d: orientation === '3d' || !!(o.art && (o.art.is3d || o.art.model)), // a 3D Scene is a still drawing framed whole (fit 'focus'); a live model turns
+      live3d: !!(o.art && o.art.model),
       vars: T.plateVars(o.colorway || {}),
       word: String(texts.word == null ? '' : texts.word), title: String(texts.title == null ? '' : texts.title),
       desc: String(texts.description == null ? '' : texts.description), algo: String(texts.algorithm || texts.word || ''),
@@ -156,7 +159,7 @@
       prints: [], crops: [], words: [], stages: [], ko: null, frameOverride: o.frame || plate.frame || null,
     };
     c.short = c.specs.slice(0, 4);
-    c.note = c.desc;
+    c.note = c.desc + (c.live3d ? HINT3 : '');
     c.algoBase = c.algo.split(/[·,]/)[0].trim() || c.word;
     c.ar = T.aspectOf(orientation);
     return c;
@@ -167,6 +170,7 @@
     const p = el('span', `spl-print${cls ? ` ${cls}` : ''}`, { attrs: { role: 'img', 'aria-label': `${c.title}, ${c.algo}`.replace(/^, |, $/g, '') } });
     p.dataset.shape = shape; p.style.setProperty('--ar', c.ar);
     if (c.is3d) p.dataset['3d'] = '1';
+    if (c.live3d) { if (c.art.model) p.dataset.model = c.art.model; p.dataset.hint = 'Drag to rotate'; }
     c.prints.push({ el: p, shape, disc: !!(o && o.disc), main: !!(o && o.main) });
     return p;
   };
@@ -201,7 +205,7 @@
     o = o || {};
     const cap = el('div', `spl-cap${o.cls ? ` ${o.cls}` : ''}`);
     cap.appendChild(el('h3', 'spl-title', { text: c.title }));
-    if (!o.noNote) cap.appendChild(el('p', 'spl-note', { text: o.firstSentence ? T.firstSentence(c.desc) : c.note }));
+    if (!o.noNote) cap.appendChild(el('p', 'spl-note', { text: o.firstSentence ? T.firstSentence(c.desc) + (c.live3d ? HINT3 : '') : c.note }));
     if (o.specs !== false && c.specs.length) cap.appendChild(mkSpec(o.specs || c.specs));
     if (!o.noActions) cap.appendChild(mkActions(c));
     return cap;
@@ -213,6 +217,7 @@
     'spec-sheet': (c) => [mkV(c, c.word, false), mkPrint(c, 'rect', '', { main: true }), mkCap(c)],
     'text-wrap': (c) => {
       const disc = el('div', 'spl-disc', { kids: [mkPrint(c, 'circle', '', { main: true, disc: true })] });
+      if (c.live3d) disc.appendChild(el('span', 'spl-3dhint', { text: 'Drag to rotate', attrs: { 'aria-hidden': 'true' } }));
       const p = el('p', 'spl-wrap-txt');
       p.appendChild(el('b', null, { text: c.title }));
       p.appendChild(el('span', 'al', { text: c.algoBase }));
@@ -251,7 +256,7 @@
     'full-bleed-band': (c) => [
       el('div', 'spl-bleed-art', { kids: [mkPrint(c, 'band', '', { main: true })] }),
       el('div', 'spl-cband', { kids: [el('div', 'spl-band-w', { kids: [mkH(c, c.word, 74)] }),
-        el('div', null, { kids: [el('h3', 'spl-title', { text: c.title }), el('p', 'spl-note', { text: T.firstSentence(c.desc) })] }),
+        el('div', null, { kids: [el('h3', 'spl-title', { text: c.title }), el('p', 'spl-note', { text: T.firstSentence(c.desc) + (c.live3d ? HINT3 : '') })] }),
         c.short.length ? mkSpec(c.short) : null, mkActions(c)] })],
     'diptych': (c) => [
       el('div', 'spl-dip-l', { kids: [mkPrint(c, 'square', 'framed', { main: true })] }),
@@ -260,7 +265,7 @@
       el('div', 'spl-spm-label', { text: `Specimen Nº ${T.pad2(c.index + 1)} · ${c.algoBase}` }),
       el('div', 'spl-spm-frame', { kids: [mkPrint(c, 'rect', '', { main: true })] }),
       el('h3', 'spl-title', { text: c.title }),
-      el('p', 'spl-note', { text: T.firstSentence(c.desc) }),
+      el('p', 'spl-note', { text: T.firstSentence(c.desc) + (c.live3d ? HINT3 : '') }),
       el('div', 'spl-spm-meta', { kids: c.short.map((s) => el('span', null, { text: s.value })) }),
       mkActions(c)],
     'big-numeral': (c) => [
@@ -364,13 +369,22 @@
     c.mounted = true;
     const Ink = ink();
     const jobs = [];
+    const O3 = Vectura.StartPageOrbit3D;
     if (Ink) {
       c.prints.forEach((p) => {
+        // A live 3D model (not a 3D Scene) is drag-to-rotate (idle sway, plot-in at 30 % visible), drawn in the plate's colors.
+        if (c.art && c.art.model && O3 && p.main) {
+          try {
+            O3.mount(p.el, { model: c.art.model, colorway: () => artColorway(c, p.disc), hint: false, plotted: !!(c.art.seen || c.art.plotted), label: `${c.title}, ${c.algo}`.replace(/^, |, $/g, '') });
+            p.el.classList.add('sp-print-3d');
+            return;
+          } catch (err) { if (W.console) W.console.warn('[PlateLayouts] 3D model failed, using the drawing', err); if (p.el._vorbit) p.el._vorbit.destroy(); }
+        }
         const user = p.main ? c.frameOverride : null;
         // A 3D piece (Scene 3D / Object 3D / the 3D models) is a still drawing like every other plate, framed whole: 'object'
         // fit scales the ink box to the plate with a little air, so it reads at a glance, neither tiny nor cropped. An author's
         // own fit choice (the editor's Frame art) still wins.
-        const is3d = !!(c.art && c.art.is3d);
+        const is3d = !!(c.art && c.art.is3d && !c.art.model);
         const fit = user && user.fit === 'contain' ? 'contain' : (is3d && p.main ? 'focus' : 'cover');
         const pad = fit === 'focus' ? frame3d(p.disc) : 0;
         const frame = fit === 'focus' ? Object.assign(T.frameFor(p.shape, user), user && Number.isFinite(+user.z) ? {} : { z: 1 }) : T.frameFor(p.shape, user);
@@ -402,7 +416,7 @@
     if (!c) return;
     c.cw = cw; c.vars = T.plateVars(cw || {});
     applyVars(root, c);
-    c.prints.forEach((p) => { const h = p.el._spInk; if (h) h.setColorway(artColorway(c, p.disc)); });
+    c.prints.forEach((p) => { const h = p.el._spInk; if (h) h.setColorway(artColorway(c, p.disc)); if (p.el._vorbit) p.el._vorbit.setColorway(() => artColorway(c, p.disc)); });
     c.crops.forEach((k) => { const h = k.el._spInk; if (h) h.setColorway(artColorway(c, false)); });
     if (c.ko && c.ko._spWord) c.ko._spWord.setColorway({ paper: c.vars['--spl-paper'], ink: c.vars['--spl-art'], ink2: null });
     redrawStages(c);
@@ -414,7 +428,7 @@
     c.dead = true;
     const Ink = ink();
     if (Ink) {
-      c.prints.forEach((p) => { Ink.unmount(p.el); });
+      c.prints.forEach((p) => { if (p.el._vorbit) p.el._vorbit.destroy(); Ink.unmount(p.el); });
       c.crops.forEach((k) => Ink.unmount(k.el));
       if (c.ko) Ink.unmount(c.ko);
     }

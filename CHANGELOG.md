@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Start Page live 3D models turn again; animate-in plays when a plate scrolls into view
+- **Non-scene 3D models are draggable again.** #171 over-reached: only 3D *Scene* pieces (Scene 3D / Object 3D, `scene:` models) should be still plates. Topoform, Spiralizer, Terrain and Polyhedron plates, and the Portfolio band for them, are live drag-to-rotate `StartPageOrbit3D` models again (idle sway, "Drag to rotate" hint, `START_PAGE.ORBIT_SWAY`). Scenes stay still, framed whole.
+- **Animate-in plays on scroll.** A plate mounted ahead of the viewport (lazy margin, idle pre-mount) used to draw in at mount time, so it was already finished when reached. The draw-in is now held (`sp-pre`) until the art is 30 % visible (`StartPageMotion.whenVisible`), once per page view; Still / reduced motion / animate-in None show it finished. Live 3D models plot in when visible too; the community lead and studio-pick cards follow the same rule.
+- **The header no longer reads "Start Page"** (the crumb and its divider are gone).
+
 ### Fixed: 3D Scene Transform and Seed reach the drawing
 - **Transform was never applied to a Scene.** Pos X/Y, Scale X/Y and Rotation on a 3D Scene did nothing. They now act on the finished ink like every other layer, about the centre of the page (a bbox pivot would swim as the camera orbits), in both surface-locked and pose marks, during a Level S drag and after it. The compose memo, surface-lock caches and pose snapshot never see the Transform; pick faces, pick polygons and the object / light gizmos move with it (a gizmo drag is taken back through the Transform, so an arrow moves the object the way it points), and the pre-baked spin ring draws its rasters through a move or turn (it stands down only under a Scale, which would change the stroke weight). At identity the ink is byte-identical to before.
 - **Seed was greyed out on the default scene.** The reach table was measured for pose marks; surface-locked plain ladder hatch (the default) and its ground shadow do draw from the Seed, so the field is live again. Seed-free scenes still grey with the reason. The salt comes from the Seed, never from the layer id (pinned by test); legacy files are untouched, so no `SCENE_VERSION` change.

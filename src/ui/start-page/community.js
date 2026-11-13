@@ -54,6 +54,16 @@
         if (dead || myGen !== gen) return;
         const M = Vectura.StartPageMotion;
         if (M && artEl) bind = M.bindArt(artEl, { handle: () => artEl._spInk || null, animateIn: 'plot', hover: hoverPref, kind: 'card' });
+        // It plots in when the lead piece is scrolled into view (>= 30 %), not when it mounts ahead of the viewport.
+        if (M && artEl && typeof M.whenVisible === 'function' && !M.isStill() && typeof ink.drawIn === 'function') {
+          const el = artEl;
+          el.classList.add('sp-pre');
+          M.whenVisible(el, () => {
+            ink.drawIn(el, { style: 'plot' });
+            let n = 0; const reveal = () => { if (++n < 3) W.requestAnimationFrame(reveal); else el.classList.remove('sp-pre'); };
+            W.requestAnimationFrame(reveal);
+          });
+        }
       } catch (err) { if (W.console) W.console.warn('[StartPageCommunity]', err); }
     };
 

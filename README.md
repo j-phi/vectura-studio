@@ -775,7 +775,10 @@ CI lives in `.github/workflows/test.yml`:
 ### Unreleased - Plates keep their drawing on a fast scroll
 - **No more flicker on a fast scroll.** A plate you have already seen comes back drawn instead of fading in and re-plotting, and plates now load as they near the screen whether or not you have saved works.
 
-### Unreleased - 3D pieces are still plates on the Start Page
+### Unreleased - Start Page: live 3D models turn, animate-in plays on scroll
+- **Live 3D models turn again; Scenes stay still.** Topoform, Spiralizer, Terrain and Polyhedron plates are drag-to-rotate again; only Scene 3D / Object 3D pieces are still plates. Every plate, the community lead and the studio picks now draw in when scrolled into view (30 % visible), once per page view, not at mount. The header no longer says "Start Page".
+
+### Earlier - 3D pieces are still plates on the Start Page
 - **3D pieces no longer rotate.** A Scene 3D, Object 3D or other 3D piece on a plate, the Portfolio band or the cover is a still drawing framed on the object with some air, drawn in with the same animate-in as every other plate. There is no drag, no sway and no hint.
 
 ### Superseded - 3D Scenes rotate on the Start Page
