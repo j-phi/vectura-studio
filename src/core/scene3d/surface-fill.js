@@ -282,6 +282,14 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
+  // Tone model v2 has its own, lower plot floor (config SCENE3D_SURFACE_LOCK.V2.FLOOR_PEN; owner decision "go darker") for the fills that follow the
+  // shared v2 dark end (Default ladder, Duty Cycle - Constant, End Shorten); every other pose law keeps PLOT_FLOOR_PEN.
+  const V2_DARK_LAWS = { '': true, ladder: true, dutyConst: true, endShorten: true };
+  const poseFloorPen = (opts) => {
+    if (!opts || opts.toneModel !== 'v2' || !V2_DARK_LAWS[typeof opts.toneLaw === 'string' ? opts.toneLaw : '']) return PLOT_FLOOR_PEN;
+    const v = ((Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {}).FLOOR_PEN;
+    return Number.isFinite(v) && v > 1 ? v : 1.4;
+  };
   // I5 follow-up — this is the DEFAULT for the master grid's line-count
   // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
   // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
@@ -6220,7 +6228,7 @@
         // sample coverage capping, crosshatch separation, mark-length
         // safety, …) and it always reads PLOT_FLOOR_PEN, unrelaxed.
         const floorPenMult = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0
-          ? opts.masterFloorPen : PLOT_FLOOR_PEN;
+          ? opts.masterFloorPen : poseFloorPen(opts);
         const floorPen = floorPenMult * penWidth;
         if (TONE_UNCAPPED) {
           // THE BUDGET IS OFF. The master grid is ruled at the plot floor
@@ -6251,7 +6259,7 @@
     litFloorCov = masterPitch > 0
       ? clamp(masterPitch / (litMaxPitchPen() * penWidth), 0.05, 1)
       : LIT_FLOOR;
-    floorPitch = PLOT_FLOOR_PEN * penWidth;
+    floorPitch = poseFloorPen(opts) * penWidth;
     const BRIDGE_MM = BRIDGE_PEN * penWidth;
     const SPECK_MM = SPECK_PEN * penWidth;
     const MIN_MARK_MM = MIN_MARK_PEN * penWidth;
