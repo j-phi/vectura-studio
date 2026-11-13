@@ -50,6 +50,7 @@ describe('SurfaceLockLaws (W3-B)', () => {
     LAWS.forEach((law) => {
       const scene = buildSurfaceLockScene(V, { kind: 'sphere', toneLaw: law, mapper: 'hatch', markSpace: 'pose' });
       win.__MONO_TRACE = 1; win.__MONO_CTX = null;
+      scene.group.params.tone = Object.assign({}, scene.group.params.tone, { model: 'legacy' }); // the maps below are the LEGACY pose maps (v2 has its own plot floor)
       scene.composeFull();
       ctxByLaw[law] = win.__MONO_CTX; win.__MONO_TRACE = 0;
     });
@@ -283,7 +284,7 @@ describe('SurfaceLockLaws (W3-B)', () => {
         // §14.6 spacing: away from the limb, the perpendicular gap between side-by-side drawn fill runs (measured against the local
         // tangent, so curved rulings are fair) stays at the plot floor (2.2 x pen 0.3). The pose reference measures 0.456 with the same
         // probe (vertex-sampled, so it reads slightly under the true gap): require 0.65 x floor, and no worse than the pose ink - 0.03.
-        const floor = 2.2 * 0.3;
+        const floor = 1.4 * 0.3; // the scene is v2: its plot floor is V2.FLOOR_PEN (1.4 pens), not the legacy 2.2
         const gap = (paths) => {
           let worst = Infinity;
           const inner = paths.filter((p) => { const m = p[p.length >> 1]; return Math.hypot(m.x - cx, m.y - cy) < R - 0.5 && p.length >= 3; });

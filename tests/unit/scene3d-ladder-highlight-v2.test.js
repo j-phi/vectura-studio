@@ -36,7 +36,7 @@ describe('SurfaceLockLadder / Faceted tone model v2 (U6)', () => {
     const cover = (I, region, areas, ctx) => {
       const tone = baker.toneLUT(spec, ctx || { tone: { enabled: I !== null, ladder: [0.33, 0.66], thresholds: [0.33, 0.66] } });
       SL.resetStats();
-      const lines = SL.frame([ms], pose, { toneFn: I === null ? null : () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1' });
+      const lines = SL.frame([ms], pose, { toneFn: I === null ? null : () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1', toneModel: spec.toneModel === 'v2' ? 'v2' : undefined });
       const len = new Array(areas.length).fill(0);
       lines.forEach((ln) => {
         for (let i = 1; i < ln.length; i++) {
@@ -50,7 +50,7 @@ describe('SurfaceLockLadder / Faceted tone model v2 (U6)', () => {
     };
     return { spec, ms, pose, cover, lines: (I, ctx) => {
       const tone = baker.toneLUT(spec, ctx || { tone: { enabled: true, ladder: [0.33, 0.66], thresholds: [0.33, 0.66] } });
-      return SL.frame([ms], pose, { toneFn: () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1' });
+      return SL.frame([ms], pose, { toneFn: () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1', toneModel: spec.toneModel === 'v2' ? 'v2' : undefined });
     } };
   };
   // the disc: centre third (r < R/2) and limb third (0.7 R .. 0.95 R)
@@ -100,7 +100,12 @@ describe('SurfaceLockLadder / Faceted tone model v2 (U6)', () => {
 
     it('Density keeps working: 100 vs 200 differ, and 20 < 50 < 100 < 200 in dark ink', () => {
       const dark = [20, 50, 100, 200].map((den) => { const r = rig(LAD, { style: { fillAngle: 45, fillDensity: den, densityScale: 1 } }); const d = discRegions(r); return r.cover(0, d.reg, d.areas)[0]; });
-      for (let i = 1; i < dark.length; i++) expect(dark[i], `step ${i}`).toBeGreaterThan(dark[i - 1] + 0.02);
+      // Dark-end decision: Density 50 already draws ~0.58 of the ~0.62 the guard allows, so the ink saturates above ~Density 100 (legacy: 82).
+      // 20 < 50 < 100 stay clearly apart; 200 never draws less than 100, and its nominal pitch stays finer (next test).
+      for (let i = 1; i < 3; i++) expect(dark[i], `step ${i}`).toBeGreaterThan(dark[i - 1] + 0.02);
+      expect(dark[3], 'step 3').toBeGreaterThanOrEqual(dark[2] - 0.01);
+      const lut = (den) => LAD.toneLUT(specOf({ style: { fillAngle: 45, fillDensity: den, densityScale: 1 } }), { tone: { enabled: true, ladder: [0.33, 0.66], thresholds: [0.33, 0.66] } }).lut[0];
+      expect(lut(200)).toBeGreaterThan(lut(100) * 1.02);
     });
 
     it('tone off draws the uniform Density', () => {
@@ -109,7 +114,10 @@ describe('SurfaceLockLadder / Faceted tone model v2 (U6)', () => {
       const leg = rig(LAD, { toneModel: 'legacy' }); const dl = discRegions(leg);
       const cl = leg.cover(null, dl.reg, dl.areas, { tone: { enabled: false } })[0];
       expect(c).toBeGreaterThan(0.01);
-      expect(Math.abs(c - cl)).toBeLessThan(0.003); // the same uniform Density as the legacy tone-off ink
+      // Dark-end decision: the v2 ruling count is any integer (the legacy one a power of two, which thins this ink to 0.018), so v2 tone-off
+      // draws the user's Density itself: pen / hatch spacing = 0.3 / 7.5 = 0.040 (legacy keeps its own number).
+      expect(Math.abs(c - 0.3 / 7.5)).toBeLessThan(0.008);
+      expect(cl).toBeGreaterThan(0.01);
     });
 
     it('a stipple, contour and spiral sphere also reach paper and stay monotone', () => {

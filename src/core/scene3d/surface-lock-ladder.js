@@ -99,7 +99,7 @@
   const regions = () => Scene3D.Regions || {};
   const plotFloorPen = () => (Number.isFinite(regions().PLOT_FLOOR_PEN) ? regions().PLOT_FLOOR_PEN : 2.2);
   // Tone model v2 has its own, lower plot floor (config V2.FLOOR_PEN, owner decision "go darker"); legacy keeps plotFloorPen().
-  const v2GuardPen = () => { const v = cfg().V2 && cfg().V2.GUARD_PEN; return Number.isFinite(v) && v > 1 ? v : 1.2; };
+  const v2GuardPen = () => { const v = cfg().V2 && cfg().V2.GUARD_PEN; return Number.isFinite(v) && v > 1 ? v : 1.3; };
   const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
   const litMaxPitchPen = () => (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : 12);
   const ctz = (m) => (m === 0 ? 99 : 31 - Math.clz32(m & -m));

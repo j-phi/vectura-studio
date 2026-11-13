@@ -47,7 +47,7 @@ describe('SurfaceLockLaws tone model v2 (U4)', () => {
     const cover = (I, ctx) => {
       const tone = Z.toneLUT(spec, ctx || { tone: { enabled: I !== null } });
       SL.resetStats();
-      const lines = SL.frame([ms], pose, { toneFn: I === null ? null : () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1' });
+      const lines = SL.frame([ms], pose, { toneFn: I === null ? null : () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1', toneModel: spec.toneModel === 'v2' ? 'v2' : undefined });
       let len = 0;
       lines.forEach((ln) => {
         for (let i = 1; i < ln.length; i++) {

@@ -39,6 +39,7 @@
     DUTY_PERIOD_FLOOR: 2.0, // dutyConst mark period, x plot floor (pose: FLOOR * 2.0)
     DUTY_PITCH_FLOOR: 1.05, // dutyConst ruling pitch, x plot floor
     END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+    V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
     V2_DUTY_PITCH_FLOOR: 0.95, // tone model v2 dutyConst ruling pitch, x the v2 plot floor (the baked chart delivers ~0.85 of the nominal pitch: 1.33 pens draws ~0.65 coverage)
     V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
     END_RETRACT: 0.84,      // endShorten: fraction of a ruling spent at full light (2 x 0.42 span)
@@ -53,7 +54,7 @@
     V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
     V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
     V2_MAX_SEG_MM: 2.0,     // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
-    V2_PAPER_BAND: 0.15,    // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+    V2_PAPER_BAND: 0.18,    // tone model v2: the lightest 18 % of the tone range rolls off to paper (no lit floor)
     RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core, a third of it, must clear it)
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
@@ -186,7 +187,7 @@
     let fn;
     if (MARK_LAW_IDS.indexOf(law) !== -1) {
       const M = markModel(law, T, 1);
-      if (toneIsOff(toneCtx)) { const off = clamp(M.peff / T.PMAX, 0, 1) / M.rowPitch; fn = () => off; } // contract §5: uniform Density
+      if (toneIsOff(toneCtx)) { const off = clamp(Math.max(M.peff / T.PMAX, T.v2 ? K.V2_OFF_FRACTION * (law === 'bundleCount' ? 1.35 : 1) : 0), 0, 1) / M.rowPitch; fn = () => off; } // contract §5: uniform Density
       else { const D = targetOf(T); fn = (I) => D(I) / M.rowPitch; }
     }
     else if ((law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx)) {

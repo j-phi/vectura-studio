@@ -58,9 +58,9 @@
       // caps ink coverage at 1 / FLOOR_PEN (0.71 at 1.4), the shared dark end; the finest admitted pitch is PLOT_FLOOR_SLACK x this
       // (1.12 pens), still wider than the ink (pen x 1.12), so darker never overlaps lines. Every v2 baker / the frame reads this one key.
       FLOOR_PEN: 1.4,
-      // The frame's crowd guard in v2, in pens: no two kept pieces of different rulings closer than this (ink is pen x 1.12, so 1.2 pens leaves a
+      // The frame's crowd guard in v2, in pens: no two kept pieces of different rulings closer than this (ink is pen x 1.12, so 1.3 pens leaves a
       // hair of paper between them). Legacy keeps CAP_GUARD_FRAC x the plot floor (2.1 pens).
-      GUARD_PEN: 1.2,
+      GUARD_PEN: 1.3,
     }),
     // ---- per-module tuning (behaviour-neutral: each value is the literal the module carried before). Each module keeps
     // the same numbers as a safe fallback for when this table is not loaded.
@@ -164,6 +164,7 @@
       DUTY_PERIOD_FLOOR: 2.0,  // dutyConst mark period, x plot floor
       DUTY_PITCH_FLOOR: 1.05,  // dutyConst ruling pitch, x plot floor
       END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+      V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
       V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
       END_RETRACT: 0.84,  // endShorten: fraction of a ruling spent at full light
@@ -179,7 +180,7 @@
       V2_DASH_MIN_CELLS: 5,  // ... and never fewer cells than this per group
       V2_TOL_MM: 0.02,  // tone model v2: chord tolerance of the decimated polylines (object mm)
       V2_MAX_SEG_MM: 2.0,  // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
-      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+      V2_PAPER_BAND: 0.18,  // tone model v2: the lightest 18 % of the tone range rolls off to paper (no lit floor)
     }),
     // surface-lock-faceted.js (box, plane, polyhedron). The two keys it shares with the ladder / mezzo (PLOT_FLOOR_SLACK, ZOOM_HEADROOM) are its own copies here.
     FACETED: Object.freeze({
