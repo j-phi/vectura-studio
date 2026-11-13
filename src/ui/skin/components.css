@@ -17522,8 +17522,6 @@ html[data-sp-boot] .sp, .sp[data-no-fx] { animation: none; }
 .sp-mark { width: 16px; height: 16px; background: var(--ui-accent); flex: none; }
 .sp-wm { font: 700 12px/1 var(--font-mono); letter-spacing: 0.14em; color: var(--ui-accent); white-space: nowrap; }
 .sp-wm i { font-style: normal; font-weight: 300; color: var(--ui-text-2); }
-.sp-div { width: 1px; height: 18px; background: var(--ui-border); margin: 0 14px 0 12px; flex: none; }
-.sp-crumb { font-weight: 600; font-size: 11.5px; white-space: nowrap; }
 .sp-spacer { flex: 1; }
 .sp-today { font: 400 11px/1 var(--font-mono); color: var(--ui-muted); margin-right: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sp-hdr-tools { display: inline-flex; align-items: center; gap: 6px; }
@@ -17655,7 +17653,7 @@ html[data-sp-boot] .sp, .sp[data-no-fx] { animation: none; }
 @container sp (max-width: 900px) {
   .sp-rail { display: none; }
   .sp-main { --sp-gut: 18px; }
-  .sp-today, .sp-crumb, .sp-div { display: none; }
+  .sp-today { display: none; }
 }
 @container sp (max-width: 460px) {
   .sp-back span:last-child { display: none; }
@@ -18027,6 +18025,7 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
 .spl-print,.spl-crop{display:block;position:relative;overflow:hidden;min-width:0}
 .spl-print{aspect-ratio:var(--ar,4/3)}
 .spl-print.framed{box-shadow:0 0 0 1px var(--spl-line)}
+.spl-print[data-3d][data-hint]::after{content:attr(data-hint);position:absolute;left:50%;bottom:8px;transform:translateX(-50%);font:400 10px/1 var(--font-mono,monospace);letter-spacing:.06em;color:var(--spl-mute);pointer-events:none;opacity:.8}
 .spl-crop{box-shadow:0 0 0 1px var(--spl-line)}
 .spl-title{margin:0;font:300 28px/1.12 var(--font-ui,'Space Grotesk',system-ui,sans-serif);letter-spacing:-.02em;color:var(--spl-text)}
 .spl-note{margin:10px 0 0;font-size:12.5px;line-height:1.6;max-width:52ch;color:var(--spl-text);overflow-wrap:anywhere}
@@ -18066,6 +18065,8 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
 .spl-lay-text-wrap .spl-b{display:flow-root}
 .spl-disc{float:left;position:relative;width:min(400px,42%);aspect-ratio:1;margin:0 34px 14px 0;border-radius:50%;shape-outside:circle(50%);shape-margin:14px;background:var(--spl-disc);transition:background-color 460ms var(--ease,ease)}
 .spl-disc .spl-print{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;border-radius:50%;overflow:hidden;box-shadow:none}
+.spl-disc .spl-print[data-3d]::after{display:none}
+.spl-3dhint{position:absolute;left:50%;bottom:7%;z-index:2;transform:translateX(-50%);font-size:10px;letter-spacing:.06em;color:color-mix(in srgb,var(--spl-mute) 55%,var(--spl-text));white-space:nowrap}
 .spl-wrap-txt{margin:6px 0 0;font:400 25px/1.42 var(--font-ui,'Space Grotesk',system-ui,sans-serif);letter-spacing:-.01em;color:var(--spl-text);overflow-wrap:anywhere}
 .spl-wrap-txt b{font-weight:600}
 .spl-wrap-txt .al{margin:0 10px 0 8px;font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--spl-acc);vertical-align:4px}
@@ -18608,6 +18609,13 @@ button.sp-cm-card { cursor: pointer; }
 }
 
 .spl-edit-replay { margin-top: 8px; }
+/* live 3D models (StartPageOrbit3D) on the Portfolio band and on plates */
+.sp-pf .sp-pf-3d { position: absolute; inset: 0 0 0 24%; z-index: 0; }
+.sp-pf[data-live="3d"] .sp-pf-in { pointer-events: none; }
+.sp-pf[data-live="3d"] .sp-pf-in :is(button, input, a) { pointer-events: auto; }
+.spl-print[data-3d].vorbit { box-shadow: none; outline: none; border: 0; }
+.spl-print[data-3d].vorbit::after { display: none; }
+.spl-disc .vorbit, .spl-disc .vorbit > canvas { border: 0; outline: 0; box-shadow: none; }
 /* ===== END Start Page - P3 ===== */
 /* ===== END Start Page — plate editor, arrange, fan ===== */
 

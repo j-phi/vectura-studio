@@ -299,8 +299,6 @@
         h('button', { class: 'sp-brand', type: 'button', 'data-act': 'top', 'aria-label': 'Vectura Studio, back to the top of the Start Page' },
           h('span', { class: 'sp-mark' }),
           h('span', { class: 'sp-wm', html: 'VECTURA<i>.STUDIO</i>' })),
-        h('span', { class: 'sp-div', 'aria-hidden': 'true' }),
-        h('span', { class: 'sp-crumb', text: 'Start Page' }),
         h('span', { class: 'sp-spacer' }),
         h('span', { class: 'sp-dev-pill', id: 'sp-dev-pill', hidden: true, title: 'Developer Mode is on (Document Setup > Contributor / Presets). The example plates are editable.', text: 'Developer Mode' }),
         h('button', { class: 'sp-back', type: 'button', 'data-act': 'back', hidden: true, title: 'Back to canvas (Esc)' },

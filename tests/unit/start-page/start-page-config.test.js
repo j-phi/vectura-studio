@@ -22,9 +22,13 @@ describe('START_PAGE config', () => {
   let SP;
   beforeAll(() => { SP = load(); });
 
-  it('has no turning-3D settings left (the orbit and its budgets were retired)', () => {
+  it('carries the live-model sway rates (3D Scene orbit settings are gone), and orbit3d mirrors them', () => {
     expect(SP.SCENE_ORBIT).toBeUndefined();
-    expect(SP.ORBIT_SWAY).toBeUndefined();
+    expect(Object.isFrozen(SP.ORBIT_SWAY)).toBe(true);
+    expect(SP.ORBIT_SWAY).toEqual({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 });
+    const ob = fs.readFileSync(path.join(ROOT, 'src/ui/start-page/orbit3d.js'), 'utf8');
+    const lit = (src, re) => Function(`return (${src.match(re)[1]})`)();
+    expect(lit(ob, /Object\.assign\((\{ fps[^}]*\}), \(Vectura\.START_PAGE/)).toEqual(SP.ORBIT_SWAY);
   });
 
   it('carries the 3D plate framing (a still piece framed on its dense body with air)', () => {
