@@ -306,7 +306,11 @@ describe('SurfaceLockLaws (W3-B)', () => {
         };
         const worst = gap(ms.fills); const worstPose = gap(mp.fills);
         expect(worst, 'min side-by-side spacing').toBeGreaterThanOrEqual(0.65 * floor);
-        expect(worst, 'no tighter than pose').toBeGreaterThanOrEqual(worstPose - 0.03);
+        // Owner decision (lr-dark, "keep darker, allow touching"): the v2 dutyConst dark end keeps every ruling where the surface turns away
+        // (its dashes shorten instead), so near the limb lines may TOUCH but never overlap: the closest centre gap is at least one pen
+        // width (was: no tighter than the pose reference, ~0.348 mm, which only a 1.3-pen guard that halved the rulings could meet).
+        void worstPose;
+        expect(worst, 'lines may touch, never overlap').toBeGreaterThanOrEqual(1.0 * PEN);
       });
     });
 

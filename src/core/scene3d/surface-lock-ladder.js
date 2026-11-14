@@ -484,6 +484,7 @@
         : Math.pow(2, Math.max(0, clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, maxK)));
       const N = n0 * Math.pow(2, L - 1);
       const logN = Math.round(Math.log2(N));
+      const stampM = spec.lawBake === true && N + 1 < SM.RANK_SCALE;
       effPitch = (pmRef * w) / n0;
       const phi = SC.hash(salt, famId, 3) * 0.999;
       const mFrom = (uPeriodic ? 0 : 1);
@@ -513,7 +514,10 @@
         const rankOf = (eff) => vdc2(eff === 0 ? (m >> (L - 1)) : (m >> (v + 1)));
         const flush = (closedFull) => {
           if (xs.length >= 2 || (closedFull && xs.length >= 3)) {
-            builder.beginRun(curEff, rankOf(curEff), famId, closedFull ? FLAG.CLOSED : 0);
+            // A law bake (SurfaceLockLaws) also gets the ruling's own index m (its position m / N across the family) as the run's
+            // capRank: a ruling is split into several runs and relabelled finer near a pole, so (level, rank) alone does not say where it
+            // lies or which runs belong together.
+            builder.beginRun(curEff, rankOf(curEff), famId, closedFull ? FLAG.CLOSED : 0, stampM && m + 1 < SM.RANK_SCALE ? (m + 1) / SM.RANK_SCALE : undefined);
             for (let q = 0; q < xs.length; q++) emit(xs[q]);
             builder.endRun();
           }

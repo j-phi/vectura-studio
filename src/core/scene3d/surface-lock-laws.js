@@ -50,6 +50,8 @@
     JIT_FRAC: 0.2,          // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch (keeps the 0.8 bar)
     CAP_ORD_MAX: 4095,      // A21: ruling ordinal range of the cap word (low 12 bits)
     CAP_RHO_STEPS: 8,       // A21: local pitch ratio resolution of the cap word (high 4 bits, 1/8 steps, 15/8 max)
+    V2_DUTY_SEP: 1.08,       // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
+    V2_DUTY_GUARD_PEN: 1.05, // tone model v2 dutyConst: crowd guard, in pens (ink width + a hair: lines may touch, never overlap)
     V2_DASH_GROUP_MM: 12,    // tone model v2 dutyConst: cells keyed in groups this long (screen mm)
     V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
     V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
@@ -241,7 +243,30 @@
   // A21: the spatial ORDER of the kept rulings. The ladder stores a ruling as (level, bit-reversed rank); inverting that recovers its
   // position along the family (m / N), so sorting by it numbers the kept rulings 0, 1, 2 ... side by side. The frame's stride cap
   // (capContinuous) draws every g-th ruling, which is exactly regular only on this numbering.
-  const rulingOrdinals = (lad, lstar) => {
+  // A law bake of the ladder stamps every run with its ruling's index m (capRank = (m + 1) / RANK_SCALE): the exact spatial order, and
+  // the runs of one ruling (split at pole relabels) share one ordinal. (level, rank) alone is ambiguous there: a ruling relabelled
+  // finer near a pole keeps its own rank under another level, so several rulings decoded to the same place, the ordinal neighbours were
+  // far apart (the local pitch ratio read 15/8 on most rulings) and the crowd guard visited rulings out of spatial order.
+  const rulingOrdinalsByM = (lad, lstar) => {
+    const nr = lad.runCount; const cap = lad.runCapRank;
+    const byFam = new Map();
+    for (let r = 0; r < nr; r++) {
+      if (lad.runLevel[r] > lstar || !(cap[r] > 0)) continue;
+      const f = lad.runFamily[r]; if (!byFam.has(f)) byFam.set(f, new Map());
+      const ms = byFam.get(f); const m = cap[r] - 1; if (!ms.has(m)) ms.set(m, []); ms.get(m).push(r);
+    }
+    const ord = new Int32Array(nr).fill(-1); const nbrs = new Map();
+    byFam.forEach((ms) => {
+      const keys = Array.from(ms.keys()).sort((a, b) => a - b);
+      keys.forEach((m, i) => {
+        const nb = (i > 0 ? ms.get(keys[i - 1]) : []).concat(i + 1 < keys.length ? ms.get(keys[i + 1]) : []);
+        ms.get(m).forEach((r) => { ord[r] = i; nbrs.set(r, nb.length ? nb : [-1]); });
+      });
+    });
+    return { ord, nbrs };
+  };
+  const rulingOrdinals = (lad, lstar, byIndex) => {
+    if (byIndex && lad.runCapRank) return rulingOrdinalsByM(lad, lstar);
     const nr = lad.runCount; const SM = MS();
     const groups = new Map();
     for (let r = 0; r < nr; r++) {
@@ -512,7 +537,7 @@
     const cell = M.period / scaleRef;
     const emitP = (pts, key, fam, flags, capRank) => emitPoly(B, pts, key, fam, flags, capRank, tmp);
     let idx = 0;
-    const RO = rulingOrdinals(lad, lstar);
+    const RO = rulingOrdinals(lad, lstar); // mark laws keep the (level, rank) ordinals they were tuned on
     for (let r = 0; r < lad.runCount; r++) {
       if (lad.runLevel[r] > lstar) continue;
       if ((lad.runFlags[r] & SM.FLAG.CLOSED) !== 0) continue;
@@ -522,6 +547,7 @@
       // A21: cap word = (local pitch ratio, min over three samples of the ruling) << 12 | ruling ordinal (see the dutyConst branch)
       let dn = Infinity;
       (RO.nbrs.get(r) || [-1, -1]).forEach((n) => { if (n >= 0) [0.25, 0.5, 0.75].forEach((u) => { const m = frameAt(R, u * R.total).P; dn = Math.min(dn, distToRun(lad, n, m[0], m[1], m[2])); }); });
+      // (mark laws keep their tuned ratio: object distance over the screen pitch; dutyConst v2 below uses the true object ratio)
       const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15);
       const capRank = ((rq << 12) | Math.min(K.CAP_ORD_MAX, RO.ord[r])) / SM.RANK_SCALE;
       const ph = frac((idx + 1) * K.GOLDEN + phase);
@@ -679,7 +705,7 @@
         const minCell = T.MARKMIN / scaleRef;
         const groupN = Math.max(K.V2_DASH_MIN_CELLS, Math.round(K.V2_DASH_GROUP_MM / Math.max(1e-6, model.period)));
         let idx = 0;
-        const RO = rulingOrdinals(lad, lstar); const ordOf = RO.ord;
+        const RO = rulingOrdinals(lad, lstar, true); const ordOf = RO.ord;
         for (let r = 0; r < nr; r++) {
           if (lad.runLevel[r] > lstar) continue;
           const R = readRun(lad, r, out);
@@ -703,7 +729,7 @@
             const mid = frameAt(R, 0.5 * (sa + sb)).P;
             let dn = Infinity;
             nb.forEach((n) => { if (n >= 0) dn = Math.min(dn, distToRun(lad, n, mid[0], mid[1], mid[2])); });
-            const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15);
+            const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff) * K.CAP_RHO_STEPS), 1, 15);
             const capRank = ((rq << 12) | ordPart) / MS().RANK_SCALE;
             emitPoly(B, decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * key, lad.runFamily[r], 0, capRank, tmp);
           }
@@ -714,6 +740,15 @@
         meta.capKey = 'ruling';
         meta.capContinuous = true;
         meta.capGuard = true;   // rulings are the marks: no piece of one may sit closer than the floor to another (frame crowd guard)
+        // Screen-density compensation (replaces the frame's mean-foreshortening facing term): the frame scales the cell fraction by
+        // min(1, local screen ruling gap / strideSepPen), so foreshortened rulings draw proportionally shorter dashes and the ink per
+        // screen area is the target everywhere. No ruling is dropped for density; the crowd guard is the ink width only (rim crowding).
+        // Before: a 1.3-pen guard sat right at the face-on screen gap (~1.34 pens), so it kept every ruling where the gap cleared it and
+        // every other ruling where it did not: a 2x density step along a facing contour (the dense oval of the darker dark end).
+        meta.strideSepPen = model.pitch * K.V2_DUTY_SEP / T.PEN;
+        meta.capCompensate = true;
+        meta.noFacingComp = true;
+        meta.guardPen = K.V2_DUTY_GUARD_PEN;
         meta.joinTouching = true;
       } else {
         const edges = bandEdges(model.minDuty);
