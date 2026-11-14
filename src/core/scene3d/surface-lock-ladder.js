@@ -62,8 +62,8 @@
     RELABEL_STAGGER: 0.5, // FX-R: relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
     V2_P0_PEN: 3.6, // tone model v2: the darkest pitch at Density 0, in pens (mirrors the config)
     V2_DENSITY_EXP: 14, // tone model v2: Density -> darkest pitch curve (mirrors the config)
-    V2_TAIL_PEN: 0.16, // tone model v2: Density 50..200 tail of the darkest pitch, in pens (mirrors the config)
-    V2_TAIL_EXP: 1.7, //
+    V2_TAIL_PEN: 0.24, // tone model v2: Density 50..200 tail of the darkest pitch, in pens (mirrors the config)
+    V2_TAIL_EXP: 1.0, //
     V2_DARK_MIN_PEN: 1.25, // tone model v2: the densest darkest pitch (Density 200), in pens (mirrors the config) tone model v2: exponent of that tail (mirrors the config)
     V2_PAPER_BAND: 0.15, // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
   };

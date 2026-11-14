@@ -60,6 +60,7 @@
       FLOOR_PEN: 1.4,
       // The frame's crowd guard in v2, in pens: no two kept pieces of different rulings closer than this (ink is pen x 1.12, so 1.3 pens leaves a
       // hair of paper between them). Legacy keeps CAP_GUARD_FRAC x the plot floor (2.1 pens).
+      FLOOR_SLACK: 0.72,   // v2 octave cap admits a level once its pitch >= this x FLOOR_PEN x pen (0.72 x 1.4 = 1.0 pen: lines touch, never overlap)
       GUARD_PEN: 1.3,
     }),
     // ---- per-module tuning (behaviour-neutral: each value is the literal the module carried before). Each module keeps
@@ -90,8 +91,8 @@
       RELABEL_STAGGER: 0.5,  // relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
       V2_P0_PEN: 3.6,  // tone model v2: the darkest pitch at Density 0, in pens (it falls to the v2 plot floor, V2.FLOOR_PEN, plus the tail below, by Density 200); was 4 before the dark-end decision
       V2_DENSITY_EXP: 14,  // tone model v2: Density -> darkest pitch: DARK_MIN + TAIL x g^TAIL_EXP + (P0 - DARK_MIN - TAIL) x g^EXP, g = 1 - d/200; Density 50 draws coverage ~0.64 (was ~0.30 with exp 3 and the 2.2 floor)
-      V2_TAIL_PEN: 0.16,  // tone model v2: a second, slow term of the darkest pitch, in pens, so Density 100 and 200 stay visibly darker than 50 (steps of ~0.04 coverage)
-      V2_TAIL_EXP: 1.7,  // tone model v2: exponent of the tail term
+      V2_TAIL_PEN: 0.24,  // tone model v2: a second, slow term of the darkest pitch, in pens, so Density 100 and 200 stay visibly darker than 50 (steps of ~0.04 coverage)
+      V2_TAIL_EXP: 1.0,  // tone model v2: exponent of the tail term
       V2_DARK_MIN_PEN: 1.25,  // tone model v2: the densest darkest pitch (Density 200), in pens: coverage 0.8; never under the v2 guard (V2.GUARD_PEN), so lines never overlap
       V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 12 % of the tone range rolls off to paper (no lit floor; 15 % made a large blank lit area, 9 % left ink at I 0.95)
     }),
@@ -192,7 +193,7 @@
       PHASE_FAM1: 0.37,  // family 1 lattice offset (fraction of the level-0 pitch), so the two families do not start together
       GAIN_LIT: 0.5,  // the faceted pose law's spacing gain at coverage 0 (lit): pitch = hatchSpacing / (GAIN_LIT + GAIN_SPAN * coverage)
       GAIN_SPAN: 1.1,  // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
-      PLOT_FLOOR_SLACK: 0.8,  // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
+      PLOT_FLOOR_SLACK: 0.72, // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
       ZOOM_HEADROOM: 1.5,  // as the top-level key: finest baked level reaches the darkest pitch at this multiple of the bake scale
       DOT_SEGS: 8,  // tone model v2 stipple: dot polygon segments
       SPIRAL_MIN_S: 0.03,  // tone model v2 spiral: stop when the scale toward the face centre drops under this

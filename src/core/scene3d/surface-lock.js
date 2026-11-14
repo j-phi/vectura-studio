@@ -45,6 +45,7 @@
   const AUX_CACHE_MAX = CFG.AUX_CACHE_ENTRIES || 16;
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
+  const V2_FLOOR_SLACK = (CFG.V2 && CFG.V2.FLOOR_SLACK) || FLOOR_SLACK;
   const CAP_RHO_STEPS = 8; // mirror of the laws baker's cap-word resolution (A21)
   const RIM_FACING = CFG.CAP_RIM_FACING || 0.3; // A21: below this facing the stride demand is damped (rulings crowd at the rim)
   const GUARD_FACING = CFG.CAP_GUARD_FACING || 0.5; // A21: the crowd guard acts below this facing
@@ -476,7 +477,7 @@
             fac = Math.min(1, facing / pl) * Math.min(1, facing / RIM_FACING);
           }
         }
-        const cr = p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : FLOOR_SLACK));
+        const cr = p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : (view.toneModel === 'v2' ? V2_FLOOR_SLACK : FLOOR_SLACK)));
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)

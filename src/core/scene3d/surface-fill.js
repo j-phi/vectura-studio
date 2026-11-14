@@ -5323,9 +5323,9 @@
       const V2c = (Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {};
       const floor = Math.max(finite(C.V2_DARK_MIN_PEN, 1.25), finite(V2c.GUARD_PEN, 1.3)) * penWidth;
       const g = clamp(1 - dens / 200, 0, 1);
-      const tail = Math.max(0, finite(C.V2_TAIL_PEN, 0.16)) * penWidth;
+      const tail = Math.max(0, finite(C.V2_TAIL_PEN, 0.24)) * penWidth;
       const p0 = Math.max(floor * 2.2, finite(C.V2_P0_PEN, 3.6) * penWidth);
-      let pd = floor + tail * Math.pow(g, Math.max(0.2, finite(C.V2_TAIL_EXP, 1.7))) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, finite(C.V2_DENSITY_EXP, 14)));
+      let pd = floor + tail * Math.pow(g, Math.max(0.2, finite(C.V2_TAIL_EXP, 1.0))) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, finite(C.V2_DENSITY_EXP, 14)));
       if (opts.mapper === 'crosshatch') { const c1 = clamp(penWidth / pd, 0.02, 0.95); pd = penWidth / (1 - Math.sqrt(1 - c1)); }
       const covDark = clamp(penWidth / pd, 0.02, 0.95);
       const lDark = Lstar(1 - covDark); const lLight = Lstar(1);

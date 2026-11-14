@@ -455,7 +455,7 @@
       m.levelLen = [1, 2, 3].map((j) => Math.hypot(1, 2 * m.amp * j / (SCRIB_LEVELS * m.h)));
     } else { // bundleCount
       m.rowPitch = Math.max(2, Math.round(K.BUNDLE_N)) * peff;
-      m.n = clamp(Math.round(K.BUNDLE_N * m.lam), 2, 5);
+      m.n = clamp(Math.round(K.BUNDLE_N * m.lam + (T.v2 ? 0.15 : 0)), 2, 5);
       m.gap = K.BUNDLE_GAP_PEN * T.PEN;
     }
     return m;
@@ -511,7 +511,7 @@
       // A21: cap word = (local pitch ratio, min over three samples of the ruling) << 12 | ruling ordinal (see the dutyConst branch)
       let dn = Infinity;
       (RO.nbrs.get(r) || [-1, -1]).forEach((n) => { if (n >= 0) [0.25, 0.5, 0.75].forEach((u) => { const m = frameAt(R, u * R.total).P; dn = Math.min(dn, distToRun(lad, n, m[0], m[1], m[2])); }); });
-      const rq = Number.isFinite(dn) ? clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15) : 15;
+      const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15);
       const capRank = ((rq << 12) | Math.min(K.CAP_ORD_MAX, RO.ord[r])) / SM.RANK_SCALE;
       const ph = frac((idx + 1) * K.GOLDEN + phase);
       const keyOf = (c) => rho * frac(vdc2(c) + ph);
@@ -599,7 +599,7 @@
         for (let j = 0; j < nPass; j++) {
           const off = sides[j] * gap;
           const pts = base.map((P, i) => offsetPt(P, dirs[i], off));
-          emitP(pts, rho * (j + rr) / nPass, fam, 0, capRank);
+          emitP(pts, rho * (T.v2 ? (j + Math.pow(rr, 1.8)) / nPass * 0.92 : (j + rr) / nPass), fam, 0, capRank);
         }
       }
       if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
@@ -676,24 +676,23 @@
           const ordPart = Math.min(K.CAP_ORD_MAX, ordOf[r]);
           const ph = frac((idx + 1) * K.GOLDEN + phase);
           let c = 0;
-          // Cell keys ramp 0..1 across a GROUP of cells (a sawtooth, shifted per ruling), so the cells drawn at a tone form ONE
+          // Cell keys ramp 0..1 across a GROUP of cells (a sawtooth, shifted half a group on alternate rulings: a regular brick pattern), so the cells drawn at a tone form ONE
           // dash per group (long in shadow, gaps opening toward the light) instead of scattered specks. Still a subset of every
           // darker tone's cells (monotone); the per-ruling shift keeps the gaps from lining up across rulings.
-          const sh = Math.floor(ph * groupN);
-          for (let c0 = -ph * cellLen; c0 < R.total; c0 += cellLen, c++) {
+          const sh = Math.floor(groupN * frac(ordOf[r] * 0.3819660113));
+          for (let c0 = 0; c0 < R.total; c0 += cellLen, c++) {
             const sa = clamp(c0, 0, R.total); const sb = clamp(c0 + cellLen, 0, R.total);
             if (!(sb - sa >= minCell)) continue;
             // u (per ruling and group, low discrepancy) jitters where inside a cell the dash ends, so the coverage is D on average
             // instead of D rounded to whole cells.
-            const gi = Math.floor((c + sh) / groupN);
-            const key = (((c + sh) % groupN) + frac(gi * 0.7548776662466927 + ph)) / groupN;
+                        const key = (((c + sh) % groupN) + frac(ordOf[r] * 0.6180339887 + 0.17)) / groupN;
             // A21: cap word = (local pitch ratio, 4 bits) << 12 | ruling ordinal. The ratio is this cell's distance to the nearest
             // neighbouring ruling over the nominal pitch p0 (object space), rounded DOWN in 1/8 steps: where rulings crowd
             // (a chart pole, a seam) the frame thins harder, instead of trusting one nominal pitch.
             const mid = frameAt(R, 0.5 * (sa + sb)).P;
             let dn = Infinity;
             nb.forEach((n) => { if (n >= 0) dn = Math.min(dn, distToRun(lad, n, mid[0], mid[1], mid[2])); });
-            const rq = Number.isFinite(dn) ? clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15) : 15;
+            const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15);
             const capRank = ((rq << 12) | ordPart) / MS().RANK_SCALE;
             emitPoly(B, decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * key, lad.runFamily[r], 0, capRank, tmp);
           }
