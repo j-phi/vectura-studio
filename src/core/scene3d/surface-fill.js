@@ -5330,8 +5330,12 @@
       const covDark = clamp(penWidth / pd, 0.02, 0.95);
       const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
       const band = Math.max(1e-3, finite(C.V2_PAPER_BAND, 0.15));
+      // Density past 200: the darkest pitch has reached the v2 floor, so the master grid's relaxed floor (opts.masterFloorPen, 1.2x pen at 200
+      // -> 0.7x at 500, the same taper that sets the grid) carries on shrinking the wanted pitch; tone (covDark, rel) stays the Density-200 one.
+      const mfp = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0 ? opts.masterFloorPen : 0;
+      const pdOut = dens > 200 && mfp > 0 && mfp < 1.2 ? pd * (mfp / 1.2) : pd;
       v2Memo = {
-        pd,
+        pd: pdOut,
         rel: (xx) => {
           const q = clamp(finite(xx, 0), 0, 1);
           const cv = 1 - invLstar(lDark + (lLight - lDark) * q);
