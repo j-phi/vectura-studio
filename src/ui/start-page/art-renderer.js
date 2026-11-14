@@ -174,10 +174,7 @@
   const loadDocumentImages = (payload) => {
     if (!payload.images || typeof payload.images !== 'object') return;
     const store = (Vectura.NOISE_IMAGES = Vectura.NOISE_IMAGES || {});
-    Object.entries(payload.images).forEach(([id, img]) => {
-      if (!img || !Array.isArray(img.data)) return;
-      store[id] = { width: img.width, height: img.height, data: new Uint8ClampedArray(img.data) };
-    });
+    Object.assign(store, Vectura.ImageCodec.decodeAll(payload.images));
   };
 
   const documentJob = (payload) => {

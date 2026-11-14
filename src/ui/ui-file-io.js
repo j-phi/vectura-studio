@@ -83,13 +83,11 @@
       try {
         const version = this.getAppVersion();
         const images = window.Vectura?.NOISE_IMAGES || {};
-        const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
+        // Compact lossless form (base64 RGBA, byte-identical images deduped); legacy number arrays only if the codec is absent.
+        const codec = window.Vectura?.ImageCodec;
+        const imagePayload = codec ? codec.encodeAll(images) : Object.entries(images).reduce((acc, [id, img]) => {
           if (!img || !img.data) return acc;
-          acc[id] = {
-            width: img.width,
-            height: img.height,
-            data: Array.from(img.data),
-          };
+          acc[id] = { width: img.width, height: img.height, data: Array.from(img.data) };
           return acc;
         }, {});
         // TUX-037: lock ids are an undo-snapshot detail, not part of the .vectura format.
@@ -230,14 +228,13 @@
         }
         if (parsed?.images) {
           const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-          Object.entries(parsed.images).forEach(([id, img]) => {
-            if (!img || !Array.isArray(img.data)) return;
-            store[id] = {
-              width: img.width,
-              height: img.height,
-              data: new Uint8ClampedArray(img.data),
-            };
-          });
+          const decoded = window.Vectura.ImageCodec
+            ? window.Vectura.ImageCodec.decodeAll(parsed.images)
+            : Object.entries(parsed.images).reduce((acc, [id, img]) => {
+              if (img && Array.isArray(img.data)) acc[id] = { width: img.width, height: img.height, data: new Uint8ClampedArray(img.data) };
+              return acc;
+            }, {});
+          Object.assign(store, decoded);
         }
         this.app.applyState(state);
       } catch (err) {
