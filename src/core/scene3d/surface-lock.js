@@ -54,6 +54,7 @@
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
   const V2_GUARD_PEN = Number.isFinite(CFG.V2 && CFG.V2.GUARD_PEN) ? CFG.V2.GUARD_PEN : 0;
+  const LIMB_KNEE_BAND = 1; // the knee acts over the whole threshold range, fading to 0 at the darkest
   const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
@@ -430,6 +431,7 @@
     // patch, so the tone demand is scaled by g(c) = 1 + strength * (2c / (1 + c) - 1) (the mean foreshortening of a mark of any
     // direction in the tangent plane is (1 + c) / 2). Off (strength 0) unless the caller says view.toneModel === 'v2'.
     const facingComp = view.toneModel === 'v2' ? FACING_COMP : 0;
+    const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
     const remapLuts = new Map();
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
@@ -477,6 +479,9 @@
             fac = Math.min(1, facing / pl) * Math.min(1, facing / RIM_FACING);
           }
         }
+        // Tone model v2 octave cap: a ruling family's mean foreshortening is (1 + facing) / 2 (see A17), not the worst-case facing,
+        // so a limb patch is not dropped a whole level coarser than the centre at the same tone (M7).
+        if (!capCont && view.toneModel === 'v2') fac = (1 + facing) / 2;
         const cr = p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : (view.toneModel === 'v2' ? V2_FLOOR_SLACK : FLOOR_SLACK)));
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
@@ -547,6 +552,13 @@
         }
         te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
         if (facingComp > 0) te *= 1 + facingComp * (2 * facing / (1 + facing) - 1);
+        // Faint tones must not leave stray rulings at the limb: a ruling of low rank draws for any tone > 0, and a foreshortened patch holds many of
+        // them in little screen area (M7). Tone model v2 takes a knee off the threshold, in proportion to the turned-away part of the surface
+        // (1 - facing; 0 face-on, so the disc centre is untouched) and to how light the tone is (0 at the darkest tone, so the dark end is untouched).
+        if (facingComp > 0 && limbKnee > 0 && te > 0 && te !== Infinity) {
+          const dDark = q === 1 ? p0 * sv * lut[0] : Math.pow(p0 * sv * lut[0], q);
+          if (dDark > 0 && te < LIMB_KNEE_BAND * dDark) te = Math.max(0, te - limbKnee * (1 - facing) * dDark * (1 - te / (LIMB_KNEE_BAND * dDark)));
+        }
       }
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
