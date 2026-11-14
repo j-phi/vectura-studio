@@ -129,6 +129,7 @@
     openVecturaFile(file, opts = {}) {
       if (!file) return;
       const rejectInvalid = () => {
+        if (opts.silentInvalid) return;
         toast('Invalid .vectura file', 'danger');
         const errBody = document.createElement('p');
         errBody.className = 'modal-text';
@@ -144,6 +145,47 @@
       });
     },
 
+    // Open several .vectura files as separate Start Page works. One discard confirmation up front; the files
+    // then open strictly one after another and each Recents record is AWAITED, because record() snapshots the
+    // CURRENT canvas for its thumbnail and doc copy. The last file that opened stays on the canvas. Invalid
+    // files are skipped quietly and summarized in a single toast. `handles` (parallel to `files`) keeps the FSA
+    // handles so Recents can reopen from disk. A single file takes the plain openVecturaFile path.
+    async openVecturaFiles(files, { handles = [] } = {}) {
+      const list = Array.from(files || []).filter(Boolean);
+      if (!list.length) return { opened: 0, failed: [] };
+      if (list.length === 1) {
+        const ok = await this.openVecturaFile(list[0], { handle: handles[0] || null });
+        return { opened: ok === false ? 0 : 1, failed: ok === false ? [list[0].name] : [] };
+      }
+      if (typeof this.app?.confirmDiscardChanges === 'function'
+        && !(await this.app.confirmDiscardChanges({ title: 'Open these files?', message: 'The current canvas has changes that are not saved to a file. Opening replaces it, and that cannot be undone.', confirmLabel: 'Open' }))) {
+        return { opened: 0, failed: [], cancelled: true };
+      }
+      const progress = startProgress(`Opening ${list.length} projects…`);
+      const failed = [];
+      let opened = 0;
+      try {
+        for (let i = 0; i < list.length; i += 1) {
+          const file = list[i];
+          progress.update?.({ label: `Opening ${i + 1} of ${list.length}…` });
+          let ok = false;
+          try {
+            ok = await this.openVecturaFile(file, { handle: handles[i] || null, awaitRecord: true, quiet: true, silentInvalid: true });
+          } catch (err) {
+            console.error('openVecturaFiles: file failed', err);
+          }
+          if (ok === false) failed.push(file.name || 'untitled.vectura'); else opened += 1;
+        }
+      } finally {
+        progress.done();
+      }
+      const total = list.length;
+      if (!failed.length) toast(`Opened ${opened} projects \u2014 each is on the Start Page`, 'success', 5000);
+      else if (opened) toast(`Opened ${opened} of ${total} projects; ${failed.length} could not be read (${failed.join(', ')})`, 'warning', 7000);
+      else toast(`None of the ${total} files could be read (${failed.join(', ')})`, 'danger', 7000);
+      return { opened, failed };
+    },
+
     // Open a file from anywhere: Chromium's file picker (keeps a handle for Recents) when it is usable,
     // otherwise a plain <input type=file>. Under automation the input path is always used, so the
     // existing specs (and their filechooser events) are unaffected.
@@ -152,12 +194,14 @@
         && !(typeof navigator !== 'undefined' && navigator.webdriver === true) && window.isSecureContext !== false;
       if (canUseFsa) {
         window.showOpenFilePicker({
-          multiple: false,
+          multiple: true,
           types: [{ description: 'Vectura project', accept: { 'application/json': ['.vectura', '.json'] } }],
-        }).then(async ([handle]) => {
-          if (!handle) return;
-          const file = await handle.getFile();
-          this.openVecturaFile(file, { handle });
+        }).then(async (picked) => {
+          const handles = (picked || []).filter(Boolean);
+          if (!handles.length) return;
+          const files = await Promise.all(handles.map((h) => h.getFile()));
+          if (files.length === 1) this.openVecturaFile(files[0], { handle: handles[0] });
+          else this.openVecturaFiles(files, { handles });
         }).catch((err) => {
           if (err && err.name === 'AbortError') return;
           console.warn('showOpenFilePicker failed; using the input fallback', err);
@@ -173,14 +217,22 @@
         el.id = 'sp-transient-open';
         el.type = 'file';
         el.hidden = true;
+        el.multiple = true;
         el.onchange = () => {
-          const file = el.files?.[0];
-          if (file) this.openVecturaFile(file);
+          this._openFromFileList(el.files);
           el.remove();
         };
         (host || document.body).appendChild(el);
       }
       Vectura.FilePicker.pickFile({ kind: 'vectura', input: el });
+    },
+
+    // A FileList from an <input type=file multiple>: one file opens as today, several open as a batch.
+    _openFromFileList(fileList) {
+      const files = Array.from(fileList || []);
+      if (files.length > 1) return this.openVecturaFiles(files);
+      if (files.length === 1) return this.openVecturaFile(files[0]);
+      return undefined;
     },
 
     _readVecturaFile(file, opts = {}) {
@@ -191,11 +243,14 @@
           let parsed = null;
           try { parsed = JSON.parse(reader.result); } catch (_) { parsed = null; }
           if (opts.fromRecent && !(parsed && (parsed.state || parsed).engine && (parsed.state || parsed).settings)) { resolve(false); return; }
-          if (!this.loadVecturaPayload(parsed, { name: file.name })) { resolve(false); return; }
+          if (!this.loadVecturaPayload(parsed, { name: file.name, quiet: !!opts.quiet, silentInvalid: !!opts.silentInvalid })) { resolve(false); return; }
           // Recents: every successful Open records a full copy (and the handle, when there is one).
-          this.app.recents?.record({ source: 'open', name: file.name || 'untitled.vectura', handle: opts.handle || null, payload: parsed });
+          const recorded = this.app.recents?.record({ source: 'open', name: file.name || 'untitled.vectura', handle: opts.handle || null, payload: parsed });
           this.app.startPage?.hide?.({ restoreFocus: false });
-          resolve(true);
+          // Batch opens wait for the record (its thumbnail reads the current canvas) before the next file loads.
+          if (opts.awaitRecord && recorded && typeof recorded.then === 'function') {
+            recorded.then(() => resolve(true), () => resolve(true));
+          } else resolve(true);
         };
         reader.readAsText(file);
       });
@@ -204,7 +259,7 @@
     // Apply a parsed .vectura object. Returns true when it loaded; on failure the editor is rolled back and
     // the user is told. `quiet` skips the "Project loaded" toast (callers that have their own message).
     // `name`: the file (or recent) the document came from; Save then keeps it ("Riverbed.vectura" -> "Riverbed").
-    loadVecturaPayload(parsed, { quiet = false, name = null } = {}) {
+    loadVecturaPayload(parsed, { quiet = false, name = null, silentInvalid = false } = {}) {
       // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
       // roll the engine + SETTINGS back so the user is never stranded with
       // a half-loaded project. Bugs-9.
@@ -242,6 +297,7 @@
         // safely undoes any half-applied SETTINGS or engine.layers mutation.
         try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
         console.error('openVecturaFile failed', err);
+        if (silentInvalid) return false;
         toast('Invalid .vectura file', 'danger');
         // Bugs-4: build the body as a Node so we never feed an HTML string
         // through the modal's sanitizer for this error path.
@@ -821,9 +877,9 @@
     }
     if (btnOpenVectura && fileOpenVectura) {
       btnOpenVectura.onclick = () => this.pickVecturaFile({ input: fileOpenVectura });
+      fileOpenVectura.multiple = true;
       fileOpenVectura.onchange = () => {
-        const file = fileOpenVectura.files?.[0];
-        if (file) this.openVecturaFile(file);
+        this._openFromFileList(fileOpenVectura.files);
         fileOpenVectura.value = '';
       };
     }

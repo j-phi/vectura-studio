@@ -86,3 +86,49 @@ describe('UI.Menus.DragDropRouter (compile gate)', () => {
     expect(el).not.toBeNull();
   });
 });
+
+describe('UI.Menus.DragDropRouter multi-file drops', () => {
+  const setup = () => {
+    const runtime = loadUIComponent(['utils', 'drag-drop', 'src/ui/menus/drag-drop-router']);
+    const R = runtime.window.Vectura.UI.Menus.DragDropRouter;
+    R.bind({});
+    return { runtime, R };
+  };
+  const f = (name) => ({ name });
+
+  test('3 .vectura files go to openVecturaFiles once, in order', () => {
+    const { runtime, R } = setup();
+    const ui = { openVecturaFile: vi.fn(), openVecturaFiles: vi.fn(), importSvgFile: vi.fn() };
+    const files = [f('a.vectura'), f('b.vectura'), f('c.vectura')];
+    R._routeMany(ui, files);
+    expect(ui.openVecturaFiles).toHaveBeenCalledTimes(1);
+    expect(ui.openVecturaFiles.mock.calls[0][0]).toEqual(files);
+    expect(ui.openVecturaFile).not.toHaveBeenCalled();
+    R._reset(); runtime.cleanup();
+  });
+
+  test('one .vectura keeps the single-file path; svg-only imports the first svg', () => {
+    const { runtime, R } = setup();
+    const ui = { openVecturaFile: vi.fn(), openVecturaFiles: vi.fn(), importSvgFile: vi.fn() };
+    R._routeMany(ui, [f('a.vectura')]);
+    expect(ui.openVecturaFile).toHaveBeenCalledTimes(1);
+    expect(ui.openVecturaFiles).not.toHaveBeenCalled();
+    R._routeMany(ui, [f('1.svg'), f('2.svg')]);
+    expect(ui.importSvgFile).toHaveBeenCalledTimes(1);
+    R._reset(); runtime.cleanup();
+  });
+
+  test('mixed drop opens the projects, then imports the svg', async () => {
+    const { runtime, R } = setup();
+    const order = [];
+    const ui = {
+      openVecturaFiles: vi.fn(async () => { order.push('open'); }),
+      importSvgFile: vi.fn(() => order.push('svg')),
+    };
+    R._routeMany(ui, [f('a.vectura'), f('x.svg'), f('b.vectura')]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ui.openVecturaFiles.mock.calls[0][0].map((x) => x.name)).toEqual(['a.vectura', 'b.vectura']);
+    expect(order).toEqual(['open', 'svg']);
+    R._reset(); runtime.cleanup();
+  });
+});
