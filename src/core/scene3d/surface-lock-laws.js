@@ -251,16 +251,27 @@
       groups.get(key).push(r);
     }
     const pos = new Float64Array(nr).fill(-1);
+    // Rank is the van der Corput of the ruling index (level 0: i = m >> (L-1); level l: j, ruling (2j+1) of that level), so the index is
+    // the bit reversal of the rank. The v2 ladder takes ANY integer level-0 count n0 (not a power of two): the spatial position is
+    // i / n0 at level 0 and (2j+1) / (n0 2^l) at level l, with n0 = the largest level-0 index + 1 of the family.
+    const idxOf = new Int32Array(nr).fill(-1);
+    const n0Fam = new Map();
     groups.forEach((rs) => {
       let B = 0;
       while (B < 16 && !rs.every((r) => { const x = SM.rankOf(lad, r) * (1 << B); return Math.abs(x - Math.round(x)) < 1e-6; })) B += 1;
-      const count = 1 << B; const level = lad.runLevel[rs[0]];
+      const count = 1 << B;
       rs.forEach((r) => {
         let q = 0; const x = Math.round(SM.rankOf(lad, r) * count);
         for (let b = 0; b < B; b++) if (x & (1 << b)) q |= 1 << (B - 1 - b);
-        pos[r] = level === 0 ? q / count : (2 * q + 1) / (2 * count);
+        idxOf[r] = q;
+        if (lad.runLevel[r] === 0) { const f = lad.runFamily[r]; n0Fam.set(f, Math.max(n0Fam.get(f) || 1, q + 1)); }
       });
     });
+    for (let r = 0; r < nr; r++) {
+      if (idxOf[r] < 0) continue;
+      const n0 = n0Fam.get(lad.runFamily[r]) || 1; const level = lad.runLevel[r];
+      pos[r] = level === 0 ? idxOf[r] / n0 : (2 * idxOf[r] + 1) / (n0 * Math.pow(2, level));
+    }
     const byFam = new Map();
     for (let r = 0; r < nr; r++) if (pos[r] >= 0) { const f = lad.runFamily[r]; if (!byFam.has(f)) byFam.set(f, []); byFam.get(f).push(r); }
     const ord = new Int32Array(nr).fill(-1);

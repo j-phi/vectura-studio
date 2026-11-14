@@ -651,11 +651,18 @@
     // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
     const guardD = view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC;
     const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(guardD) : null;
+    const fracStride = view.toneModel === 'v2';
     const capOk = capCont ? (vi, rr) => {
       const c0 = SCAP[vi]; if (c0 === Infinity) return true;
       const w = rcap[rr]; const c = c0 * ((w >> 12) / CAP_RHO_STEPS);
       if (!(c > 1e-6)) return false;
-      return c >= 1 || (w & 4095) % Math.ceil(1 / c - 1e-9) === 0;
+      if (c >= 1) return true;
+      const o = w & 4095;
+      // Fractional stride (v2, any integer level-0 count): the drawn ordinals are the regular Bresenham subset of density c, so the
+      // gap is floor or ceil of 1/c and a zone boundary never steps the stride 2x (an integer ceil(1/c) left a dense patch where
+      // 1/c crossed an integer). Legacy keeps the integer stride (byte-identical).
+      if (fracStride) return Math.floor((o + 1) * c + 1e-9) > Math.floor(o * c + 1e-9);
+      return o % Math.ceil(1 / c - 1e-9) === 0;
     } : (vi, rr, ckv) => SCAP[vi] > ckv;
     const DOT = MS.FLAG.DOT; const CLOSED = MS.FLAG.CLOSED; const RS = MS.RANK_SCALE;
     const order = crowd ? capOrderOf(ms) : null;

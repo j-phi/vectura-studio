@@ -50,6 +50,7 @@
     SEED_ARC_STEPS: 2,       // new seeds along an accepted line every max(d_l, this x STEP)
     MIN_MARK_PEN: 4,         // surface-fill uses 2; 4 drops the 0.6-1.5 mm specks (H5, review §7.4)
     SEP_MARGIN: 0.97,        // declared minSepFrac = STOP_FACTOR x this: the screen-space gap of a stop-radius pair loses ~2 % to chord and projection error
+    V2_LIMB_KNEE: 0.7,       // tone model v2: knee the frame takes off the tone threshold at the limb (M7)
     V2_P0_SCALE: 0.99,       // tone model v2: p0 = PMAX x this, so the finest level (3) sits at 1.4 pens: the densest the v2 plot floor admits (stop 0.8 x 1.4 = ink width), dark end ~0.6 instead of 0.43
     P0_SCALE: 1.2,           // p0 = PMAX x this (O4): moves the finest-level front from c 0.83 to about 0.69 (H2)
     MAX_LEVELS_LAW: 4,       // cap on the law-floor level count: the formula asks for 5 at P0_SCALE 1.2, but L5 doubles the bake (1.4 s against 0.65 s); zoom past ~1.4x loses the finest level until the next scaleRef octave re-bakes
@@ -690,7 +691,7 @@
       // Cap-aware tone (review §7.2 R-a): the frame maps the LUT's log-density range onto the foreshortening cap.
       capToneRemap: true,
       // v2: the frame takes this knee off the tone threshold at the limb (see SurfaceLock's tone step; M7). Absent = none.
-      ...(spec.toneModel === 'v2' ? { limbKnee: 0.7 } : {}),
+      ...(spec.toneModel === 'v2' ? { limbKnee: K.V2_LIMB_KNEE } : {}),
       floorPitchPen: (T.INK / K.A_DARK) / T.PEN,
       bounds: { min: bmin, max: bmax, radius: brad },
       convex: CONVEX.has(spec.primitive),

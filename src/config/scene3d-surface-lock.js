@@ -94,6 +94,7 @@
       V2_TAIL_PEN: 0.24,  // tone model v2: a second, slow term of the darkest pitch, in pens, so Density 100 and 200 stay visibly darker than 50 (steps of ~0.04 coverage)
       V2_TAIL_EXP: 1.0,  // tone model v2: exponent of the tail term
       V2_DARK_MIN_PEN: 1.25,  // tone model v2: the densest darkest pitch (Density 200), in pens: coverage 0.8; never under the v2 guard (V2.GUARD_PEN), so lines never overlap
+      V2_KNEE: 0.12,  // tone model v2: the lightest 12 % of the relative darkness is paper, so a faint tone at the limb leaves no stray ruling (M7)
       V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 12 % of the tone range rolls off to paper (no lit floor; 15 % made a large blank lit area, 9 % left ink at I 0.95)
     }),
     // surface-lock-mezzo.js (mezzotint). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
@@ -117,6 +118,7 @@
       SEED_ARC_STEPS: 2,  // new seeds along an accepted line every max(d_l, this x STEP)
       MIN_MARK_PEN: 4,  // surface-fill uses 2; 4 drops the 0.6-1.5 mm specks (H5)
       SEP_MARGIN: 0.97,  // declared minSepFrac = STOP_FACTOR x this
+      V2_LIMB_KNEE: 0.7,  // tone model v2: the frame takes this knee off the mezzo tone threshold at the limb (M7)
       V2_P0_SCALE: 0.99,  // tone model v2: p0 = PMAX x this (finest level at 1.4 pens, the densest the v2 plot floor admits)
       P0_SCALE: 1.2,  // p0 = PMAX x this (O4)
       MAX_LEVELS_LAW: 4,  // cap on the law-floor level count
