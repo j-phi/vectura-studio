@@ -3681,6 +3681,8 @@
       // numbers or the same law would land on a different ramp on the two paths.
       const MONO_INK_SPREAD = 0.12;
       const MONO_PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
+      // Tone model v2 has its own, lower plot floor (config SCENE3D_SURFACE_LOCK.V2.FLOOR_PEN; owner decision "go darker").
+      const MONO_V2_PLOT_FLOOR_PEN = (() => { const v = ((Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {}).FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; })();
       const monoLitMaxPitch = () => {
         const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
         const pen = (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
@@ -3814,7 +3816,7 @@
             penWidth: monoPen,
             substrateDraft: lawDraft ? MONO_DRAFT_SUBSTRATE : null,
             inkWidth: monoPen * (1 + MONO_INK_SPREAD),
-            floorPitch: MONO_PLOT_FLOOR_PEN * monoPen,
+            floorPitch: (poseV2 ? MONO_V2_PLOT_FLOOR_PEN : MONO_PLOT_FLOOR_PEN) * monoPen,
             // What the facet's own ladder rung asked for, so Density and the
             // tone band still set the scale the law works at.
             masterPitch: Math.max(monoPen, finite(sb.spacing, hatchSpacing(styleParams.fillDensity))),

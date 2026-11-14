@@ -282,6 +282,14 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
+  // Tone model v2 has its own, lower plot floor (config SCENE3D_SURFACE_LOCK.V2.FLOOR_PEN; owner decision "go darker") for the fills that follow the
+  // shared v2 dark end (Default ladder, Duty Cycle - Constant, End Shorten); every other pose law keeps PLOT_FLOOR_PEN.
+  const V2_DARK_LAWS = { '': true, ladder: true, dutyConst: true, endShorten: true };
+  const poseFloorPen = (opts) => {
+    if (!opts || opts.toneModel !== 'v2' || !V2_DARK_LAWS[typeof opts.toneLaw === 'string' ? opts.toneLaw : '']) return PLOT_FLOOR_PEN;
+    const v = ((Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {}).FLOOR_PEN;
+    return Number.isFinite(v) && v > 1 ? v : 1.4;
+  };
   // I5 follow-up — this is the DEFAULT for the master grid's line-count
   // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
   // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
@@ -5310,14 +5318,24 @@
       if (v2Memo) return v2Memo;
       const C = v2Cfg();
       const dens = finite(opts.fillDensity, 50);
-      const floor = PLOT_FLOOR_PEN * penWidth;
-      const p0 = Math.max(floor * 2.2, finite(C.V2_P0_PEN, 4) * penWidth);
-      const pd = floor + (p0 - floor) * Math.pow(clamp(1 - dens / 200, 0, 1), Math.max(0.2, finite(C.V2_DENSITY_EXP, 3)));
+      // Same curve as surface-lock-ladder.js darkPitchV2 (the surface and pose fills must agree, M6): Density -> darkest pitch, with the
+      // v2 plot floor / guard (config SCENE3D_SURFACE_LOCK.V2) in place of PLOT_FLOOR_PEN.
+      const V2c = (Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {};
+      const floor = Math.max(finite(C.V2_DARK_MIN_PEN, 1.25), finite(V2c.GUARD_PEN, 1.3)) * penWidth;
+      const g = clamp(1 - dens / 200, 0, 1);
+      const tail = Math.max(0, finite(C.V2_TAIL_PEN, 0.24)) * penWidth;
+      const p0 = Math.max(floor * 2.2, finite(C.V2_P0_PEN, 3.6) * penWidth);
+      let pd = floor + tail * Math.pow(g, Math.max(0.2, finite(C.V2_TAIL_EXP, 1.0))) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, finite(C.V2_DENSITY_EXP, 14)));
+      if (opts.mapper === 'crosshatch') { const c1 = clamp(penWidth / pd, 0.02, 0.95); pd = penWidth / (1 - Math.sqrt(1 - c1)); }
       const covDark = clamp(penWidth / pd, 0.02, 0.95);
       const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
       const band = Math.max(1e-3, finite(C.V2_PAPER_BAND, 0.15));
+      // Density past 200: the darkest pitch has reached the v2 floor, so the master grid's relaxed floor (opts.masterFloorPen, 1.2x pen at 200
+      // -> 0.7x at 500, the same taper that sets the grid) carries on shrinking the wanted pitch; tone (covDark, rel) stays the Density-200 one.
+      const mfp = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0 ? opts.masterFloorPen : 0;
+      const pdOut = dens > 200 && mfp > 0 && mfp < 1.2 ? pd * (mfp / 1.2) : pd;
       v2Memo = {
-        pd,
+        pd: pdOut,
         rel: (xx) => {
           const q = clamp(finite(xx, 0), 0, 1);
           const cv = 1 - invLstar(lDark + (lLight - lDark) * q);
@@ -6214,7 +6232,7 @@
         // sample coverage capping, crosshatch separation, mark-length
         // safety, …) and it always reads PLOT_FLOOR_PEN, unrelaxed.
         const floorPenMult = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0
-          ? opts.masterFloorPen : PLOT_FLOOR_PEN;
+          ? opts.masterFloorPen : poseFloorPen(opts);
         const floorPen = floorPenMult * penWidth;
         if (TONE_UNCAPPED) {
           // THE BUDGET IS OFF. The master grid is ruled at the plot floor
@@ -6245,7 +6263,7 @@
     litFloorCov = masterPitch > 0
       ? clamp(masterPitch / (litMaxPitchPen() * penWidth), 0.05, 1)
       : LIT_FLOOR;
-    floorPitch = PLOT_FLOOR_PEN * penWidth;
+    floorPitch = poseFloorPen(opts) * penWidth;
     const BRIDGE_MM = BRIDGE_PEN * penWidth;
     const SPECK_MM = SPECK_PEN * penWidth;
     const MIN_MARK_MM = MIN_MARK_PEN * penWidth;

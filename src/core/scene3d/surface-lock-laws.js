@@ -39,6 +39,9 @@
     DUTY_PERIOD_FLOOR: 2.0, // dutyConst mark period, x plot floor (pose: FLOOR * 2.0)
     DUTY_PITCH_FLOOR: 1.05, // dutyConst ruling pitch, x plot floor
     END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+    V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
+    V2_DUTY_PITCH_FLOOR: 0.95, // tone model v2 dutyConst ruling pitch, x the v2 plot floor (the baked chart delivers ~0.85 of the nominal pitch: 1.33 pens draws ~0.65 coverage)
+    V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
     END_RETRACT: 0.84,      // endShorten: fraction of a ruling spent at full light (2 x 0.42 span)
     MERGE_PERIOD_FLOOR: 1.8,// mergeLadder mark period, x plot floor
     MERGE_M_MIN: 0.03,
@@ -47,11 +50,13 @@
     JIT_FRAC: 0.2,          // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch (keeps the 0.8 bar)
     CAP_ORD_MAX: 4095,      // A21: ruling ordinal range of the cap word (low 12 bits)
     CAP_RHO_STEPS: 8,       // A21: local pitch ratio resolution of the cap word (high 4 bits, 1/8 steps, 15/8 max)
+    V2_DUTY_SEP: 1.08,       // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
+    V2_DUTY_GUARD_PEN: 1.05, // tone model v2 dutyConst: crowd guard, in pens (ink width + a hair: lines may touch, never overlap)
     V2_DASH_GROUP_MM: 12,    // tone model v2 dutyConst: cells keyed in groups this long (screen mm)
     V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
     V2_TOL_MM: 0.02,        // tone model v2: chord tolerance of the decimated polylines (object mm)
     V2_MAX_SEG_MM: 2.0,     // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
-    V2_PAPER_BAND: 0.15,    // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
+    V2_PAPER_BAND: 0.18,    // tone model v2: the lightest 18 % of the tone range rolls off to paper (no lit floor)
     RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core, a third of it, must clear it)
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
@@ -93,11 +98,13 @@
   const MS = () => Scene3D.SurfaceLockMarkSet;
 
   // ---- tone parameters: copies of makeCtx's pure maths --------------------------------------------------------
-  const toneParams = (spec) => {
+  // Tone model v2 has its own, lower plot floor (config V2.FLOOR_PEN: the owner's "go darker" decision); `v2` selects it. Legacy: Regions.PLOT_FLOOR_PEN.
+  const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
+  const toneParams = (spec, v2) => {
     const R = regions();
     const PEN = Math.max(0.02, finite(spec && spec.penWidth, 0.3));
     const INK = PEN * (1 + K.INK_SPREAD);
-    const FLOOR = (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : K.PLOT_FLOOR_PEN) * PEN;
+    const FLOOR = (v2 ? v2FloorPen() : (Number.isFinite(R.PLOT_FLOOR_PEN) ? R.PLOT_FLOOR_PEN : K.PLOT_FLOOR_PEN)) * PEN;
     const litMax = (Number.isFinite(R.LIT_MAX_PITCH_PEN) ? R.LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * PEN;
     const DS = clamp(finite(spec && spec.style && spec.style.densityScale, 1), 0.25, 4);
     const PMAX0 = Math.max(FLOOR * 1.6, litMax);
@@ -110,14 +117,14 @@
     const L_LIGHT = Lstar(1 - A_LIGHT); const L_DARK = Lstar(1 - K.A_DARK);
     const areaFor = (I) => clamp(1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, K.A_DARK);
     const pitchFor = (I) => clamp(INK / areaFor(I) / DS, INK / K.A_DARK, PMAX);
-    return { PEN, INK, FLOOR, litMax, DS, PMAX0, PMAX, SPARSE, MARKMIN, areaFor, pitchFor };
+    return { PEN, INK, FLOOR, litMax, DS, PMAX0, PMAX, SPARSE, MARKMIN, areaFor, pitchFor, v2: !!v2 };
   };
 
   // ---- per-law tone maps. Each returns { theta(I) -> gate threshold >= 0, pitch (nominal screen pitch) } ----------
   // The LUT entry is theta(I) / pitch for the fixed-pitch laws (the frame multiplies by p0 * s, so t = rho * theta at
   // the bake scale; the bake folds rho into the keys) and 1 / pitch(I) for the pitch laws.
   const dutyModel = (T) => {
-    const P0 = T.FLOOR * K.DUTY_PITCH_FLOOR * T.SPARSE;
+    const P0 = T.FLOOR * (T.v2 ? K.V2_DUTY_PITCH_FLOOR : K.DUTY_PITCH_FLOOR) * T.SPARSE;
     const tDense = clamp((1 - 1 / T.DS) / (1 - 1 / 4), 0, 1);
     const cov0 = T.PEN / P0;
     const P = tDense > 0 ? T.PEN / (cov0 + (1 - cov0) * tDense) : P0;
@@ -129,7 +136,7 @@
     return { pitch: P, period: PERIOD, minDuty, theta: (I) => { const d = duty(I); return d * PERIOD < T.MARKMIN ? 0 : d; } };
   };
   const endModel = (T) => ({
-    pitch: T.FLOOR * K.END_PITCH_FLOOR * T.SPARSE,
+    pitch: T.FLOOR * (T.v2 ? K.V2_END_PITCH_FLOOR : K.END_PITCH_FLOOR) * T.SPARSE,
     theta: (I) => { const x = clamp(finite(I, 0), 0, 1); return 1 - K.END_RETRACT * (x * x * (3 - 2 * x)); },
   });
   const mergeModel = (T) => {
@@ -175,14 +182,14 @@
 
   const toneLUT = (spec, toneCtx) => {
     sync();
-    const T = toneParams(spec);
+    const law = spec && spec.toneLaw;
+    const T = toneParams(spec, (MARK_LAW_IDS.indexOf(law) !== -1 || law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx));
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
-    const law = spec && spec.toneLaw;
     let fn;
     if (MARK_LAW_IDS.indexOf(law) !== -1) {
       const M = markModel(law, T, 1);
-      if (toneIsOff(toneCtx)) { const off = clamp(M.peff / T.PMAX, 0, 1) / M.rowPitch; fn = () => off; } // contract §5: uniform Density
+      if (toneIsOff(toneCtx)) { const off = clamp(Math.max(M.peff / T.PMAX, T.v2 ? K.V2_OFF_FRACTION * (law === 'bundleCount' ? 1.35 : 1) : 0), 0, 1) / M.rowPitch; fn = () => off; } // contract §5: uniform Density
       else { const D = targetOf(T); fn = (I) => D(I) / M.rowPitch; }
     }
     else if ((law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx)) {
@@ -218,13 +225,15 @@
   // Pose Density 0..100 -> hatchSpacing (ladder's private map, algorithms/scene3d.js hatchSpacing). The ladder's level-0
   // pitch is max(hatchSpacing(density), LIT_MAX_PITCH_PEN * pen), so a derived density sets the law's own p0.
   const densityForSpacing = (p) => clamp((14 - p) / 0.13, 0, K.HATCH_D_MAX);
-  const ladderSpec = (spec, p0Screen) => Object.assign({}, spec, {
+  const ladderSpec = (spec, p0Screen, finest) => Object.assign({}, spec, {
     toneLaw: 'ladder',
+    lawBake: true, // the ladder keeps its master-pitch level count for a law's ruling set (the law's own pitch is not the user's Density)
+    lawFinest: finest, // v2: the finest ruling pitch (screen mm) the law draws; the ladder bakes enough levels to reach it
     style: Object.assign({}, spec.style, { fillDensity: densityForSpacing(p0Screen) }),
   });
-  const bakeLadder = (spec, p0Screen) => {
+  const bakeLadder = (spec, p0Screen, finest) => {
     const L = ladder();
-    const ls = ladderSpec(spec, p0Screen);
+    const ls = ladderSpec(spec, p0Screen, finest);
     if (!L || !L.supports(ls)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec');
     return L.bake(ls);
   };
@@ -234,7 +243,30 @@
   // A21: the spatial ORDER of the kept rulings. The ladder stores a ruling as (level, bit-reversed rank); inverting that recovers its
   // position along the family (m / N), so sorting by it numbers the kept rulings 0, 1, 2 ... side by side. The frame's stride cap
   // (capContinuous) draws every g-th ruling, which is exactly regular only on this numbering.
-  const rulingOrdinals = (lad, lstar) => {
+  // A law bake of the ladder stamps every run with its ruling's index m (capRank = (m + 1) / RANK_SCALE): the exact spatial order, and
+  // the runs of one ruling (split at pole relabels) share one ordinal. (level, rank) alone is ambiguous there: a ruling relabelled
+  // finer near a pole keeps its own rank under another level, so several rulings decoded to the same place, the ordinal neighbours were
+  // far apart (the local pitch ratio read 15/8 on most rulings) and the crowd guard visited rulings out of spatial order.
+  const rulingOrdinalsByM = (lad, lstar) => {
+    const nr = lad.runCount; const cap = lad.runCapRank;
+    const byFam = new Map();
+    for (let r = 0; r < nr; r++) {
+      if (lad.runLevel[r] > lstar || !(cap[r] > 0)) continue;
+      const f = lad.runFamily[r]; if (!byFam.has(f)) byFam.set(f, new Map());
+      const ms = byFam.get(f); const m = cap[r] - 1; if (!ms.has(m)) ms.set(m, []); ms.get(m).push(r);
+    }
+    const ord = new Int32Array(nr).fill(-1); const nbrs = new Map();
+    byFam.forEach((ms) => {
+      const keys = Array.from(ms.keys()).sort((a, b) => a - b);
+      keys.forEach((m, i) => {
+        const nb = (i > 0 ? ms.get(keys[i - 1]) : []).concat(i + 1 < keys.length ? ms.get(keys[i + 1]) : []);
+        ms.get(m).forEach((r) => { ord[r] = i; nbrs.set(r, nb.length ? nb : [-1]); });
+      });
+    });
+    return { ord, nbrs };
+  };
+  const rulingOrdinals = (lad, lstar, byIndex) => {
+    if (byIndex && lad.runCapRank) return rulingOrdinalsByM(lad, lstar);
     const nr = lad.runCount; const SM = MS();
     const groups = new Map();
     for (let r = 0; r < nr; r++) {
@@ -244,16 +276,27 @@
       groups.get(key).push(r);
     }
     const pos = new Float64Array(nr).fill(-1);
+    // Rank is the van der Corput of the ruling index (level 0: i = m >> (L-1); level l: j, ruling (2j+1) of that level), so the index is
+    // the bit reversal of the rank. The v2 ladder takes ANY integer level-0 count n0 (not a power of two): the spatial position is
+    // i / n0 at level 0 and (2j+1) / (n0 2^l) at level l, with n0 = the largest level-0 index + 1 of the family.
+    const idxOf = new Int32Array(nr).fill(-1);
+    const n0Fam = new Map();
     groups.forEach((rs) => {
       let B = 0;
       while (B < 16 && !rs.every((r) => { const x = SM.rankOf(lad, r) * (1 << B); return Math.abs(x - Math.round(x)) < 1e-6; })) B += 1;
-      const count = 1 << B; const level = lad.runLevel[rs[0]];
+      const count = 1 << B;
       rs.forEach((r) => {
         let q = 0; const x = Math.round(SM.rankOf(lad, r) * count);
         for (let b = 0; b < B; b++) if (x & (1 << b)) q |= 1 << (B - 1 - b);
-        pos[r] = level === 0 ? q / count : (2 * q + 1) / (2 * count);
+        idxOf[r] = q;
+        if (lad.runLevel[r] === 0) { const f = lad.runFamily[r]; n0Fam.set(f, Math.max(n0Fam.get(f) || 1, q + 1)); }
       });
     });
+    for (let r = 0; r < nr; r++) {
+      if (idxOf[r] < 0) continue;
+      const n0 = n0Fam.get(lad.runFamily[r]) || 1; const level = lad.runLevel[r];
+      pos[r] = level === 0 ? idxOf[r] / n0 : (2 * idxOf[r] + 1) / (n0 * Math.pow(2, level));
+    }
     const byFam = new Map();
     for (let r = 0; r < nr; r++) if (pos[r] >= 0) { const f = lad.runFamily[r]; if (!byFam.has(f)) byFam.set(f, []); byFam.get(f).push(r); }
     const ord = new Int32Array(nr).fill(-1);
@@ -448,7 +491,7 @@
       m.levelLen = [1, 2, 3].map((j) => Math.hypot(1, 2 * m.amp * j / (SCRIB_LEVELS * m.h)));
     } else { // bundleCount
       m.rowPitch = Math.max(2, Math.round(K.BUNDLE_N)) * peff;
-      m.n = clamp(Math.round(K.BUNDLE_N * m.lam), 2, 5);
+      m.n = clamp(Math.round(K.BUNDLE_N * m.lam + (T.v2 ? 0.15 : 0)), 2, 5);
       m.gap = K.BUNDLE_GAP_PEN * T.PEN;
     }
     return m;
@@ -472,13 +515,13 @@
 
   const bakeMarks = (spec) => {
     const law = spec.toneLaw;
-    const T = toneParams(spec);
+    const T = toneParams(spec, bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
     const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
     const litCap = (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * T.PEN;
     const M0 = markModel(law, T, 1);
     const lstar = Math.max(0, Math.ceil(Math.log2(litCap / M0.rowPitch)));
-    const lad = bakeLadder(spec, M0.rowPitch * Math.pow(2, lstar));
+    const lad = bakeLadder(spec, M0.rowPitch * Math.pow(2, lstar), M0.rowPitch);
     const gate = Math.pow(2, lstar);
     const pEff = lad.meta.p0 / gate;
     const rho = (pEff * scaleRef) / M0.rowPitch;
@@ -494,7 +537,7 @@
     const cell = M.period / scaleRef;
     const emitP = (pts, key, fam, flags, capRank) => emitPoly(B, pts, key, fam, flags, capRank, tmp);
     let idx = 0;
-    const RO = rulingOrdinals(lad, lstar);
+    const RO = rulingOrdinals(lad, lstar); // mark laws keep the (level, rank) ordinals they were tuned on
     for (let r = 0; r < lad.runCount; r++) {
       if (lad.runLevel[r] > lstar) continue;
       if ((lad.runFlags[r] & SM.FLAG.CLOSED) !== 0) continue;
@@ -504,7 +547,8 @@
       // A21: cap word = (local pitch ratio, min over three samples of the ruling) << 12 | ruling ordinal (see the dutyConst branch)
       let dn = Infinity;
       (RO.nbrs.get(r) || [-1, -1]).forEach((n) => { if (n >= 0) [0.25, 0.5, 0.75].forEach((u) => { const m = frameAt(R, u * R.total).P; dn = Math.min(dn, distToRun(lad, n, m[0], m[1], m[2])); }); });
-      const rq = Number.isFinite(dn) ? clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15) : 15;
+      // (mark laws keep their tuned ratio: object distance over the screen pitch; dutyConst v2 below uses the true object ratio)
+      const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15);
       const capRank = ((rq << 12) | Math.min(K.CAP_ORD_MAX, RO.ord[r])) / SM.RANK_SCALE;
       const ph = frac((idx + 1) * K.GOLDEN + phase);
       const keyOf = (c) => rho * frac(vdc2(c) + ph);
@@ -592,7 +636,7 @@
         for (let j = 0; j < nPass; j++) {
           const off = sides[j] * gap;
           const pts = base.map((P, i) => offsetPt(P, dirs[i], off));
-          emitP(pts, rho * (j + rr) / nPass, fam, 0, capRank);
+          emitP(pts, rho * (T.v2 ? (j + Math.pow(rr, 1.8)) / nPass * 0.92 : (j + rr) / nPass), fam, 0, capRank);
         }
       }
       if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
@@ -610,7 +654,7 @@
     const law = spec && spec.toneLaw;
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
     if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
-    const T = toneParams(spec);
+    const T = toneParams(spec, (law === 'dutyConst' || law === 'endShorten') && bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
     const phase = Number.isFinite(spec.seed && spec.seed.phase) ? frac(spec.seed.phase) : 0;
     const litCap = (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * T.PEN;
@@ -622,7 +666,7 @@
       lstar = Math.max(0, Math.ceil(Math.log2(litCap / model.pitch)));
       p0Screen = model.pitch * Math.pow(2, lstar);
     } else p0Screen = T.PMAX;
-    const lad = bakeLadder(spec, p0Screen);
+    const lad = bakeLadder(spec, p0Screen, fixed ? model.pitch : undefined);
     const SM = MS();
     const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
     const tmp = { count: 0 };
@@ -661,7 +705,7 @@
         const minCell = T.MARKMIN / scaleRef;
         const groupN = Math.max(K.V2_DASH_MIN_CELLS, Math.round(K.V2_DASH_GROUP_MM / Math.max(1e-6, model.period)));
         let idx = 0;
-        const RO = rulingOrdinals(lad, lstar); const ordOf = RO.ord;
+        const RO = rulingOrdinals(lad, lstar, true); const ordOf = RO.ord;
         for (let r = 0; r < nr; r++) {
           if (lad.runLevel[r] > lstar) continue;
           const R = readRun(lad, r, out);
@@ -669,24 +713,23 @@
           const ordPart = Math.min(K.CAP_ORD_MAX, ordOf[r]);
           const ph = frac((idx + 1) * K.GOLDEN + phase);
           let c = 0;
-          // Cell keys ramp 0..1 across a GROUP of cells (a sawtooth, shifted per ruling), so the cells drawn at a tone form ONE
+          // Cell keys ramp 0..1 across a GROUP of cells (a sawtooth, shifted half a group on alternate rulings: a regular brick pattern), so the cells drawn at a tone form ONE
           // dash per group (long in shadow, gaps opening toward the light) instead of scattered specks. Still a subset of every
           // darker tone's cells (monotone); the per-ruling shift keeps the gaps from lining up across rulings.
-          const sh = Math.floor(ph * groupN);
-          for (let c0 = -ph * cellLen; c0 < R.total; c0 += cellLen, c++) {
+          const sh = Math.floor(groupN * frac(ordOf[r] * 0.3819660113));
+          for (let c0 = 0; c0 < R.total; c0 += cellLen, c++) {
             const sa = clamp(c0, 0, R.total); const sb = clamp(c0 + cellLen, 0, R.total);
             if (!(sb - sa >= minCell)) continue;
             // u (per ruling and group, low discrepancy) jitters where inside a cell the dash ends, so the coverage is D on average
             // instead of D rounded to whole cells.
-            const gi = Math.floor((c + sh) / groupN);
-            const key = (((c + sh) % groupN) + frac(gi * 0.7548776662466927 + ph)) / groupN;
+                        const key = (((c + sh) % groupN) + frac(ordOf[r] * 0.6180339887 + 0.17)) / groupN;
             // A21: cap word = (local pitch ratio, 4 bits) << 12 | ruling ordinal. The ratio is this cell's distance to the nearest
             // neighbouring ruling over the nominal pitch p0 (object space), rounded DOWN in 1/8 steps: where rulings crowd
             // (a chart pole, a seam) the frame thins harder, instead of trusting one nominal pitch.
             const mid = frameAt(R, 0.5 * (sa + sb)).P;
             let dn = Infinity;
             nb.forEach((n) => { if (n >= 0) dn = Math.min(dn, distToRun(lad, n, mid[0], mid[1], mid[2])); });
-            const rq = Number.isFinite(dn) ? clamp(Math.floor(dn / Math.max(1e-9, pEff * scaleRef) * K.CAP_RHO_STEPS), 1, 15) : 15;
+            const rq = !Number.isFinite(dn) ? 15 : clamp(Math.floor(dn / Math.max(1e-9, pEff) * K.CAP_RHO_STEPS), 1, 15);
             const capRank = ((rq << 12) | ordPart) / MS().RANK_SCALE;
             emitPoly(B, decimate(cellPoints(R, sa, sb), K.V2_TOL_MM, K.V2_MAX_SEG_MM), rho * key, lad.runFamily[r], 0, capRank, tmp);
           }
@@ -697,6 +740,15 @@
         meta.capKey = 'ruling';
         meta.capContinuous = true;
         meta.capGuard = true;   // rulings are the marks: no piece of one may sit closer than the floor to another (frame crowd guard)
+        // Screen-density compensation (replaces the frame's mean-foreshortening facing term): the frame scales the cell fraction by
+        // min(1, local screen ruling gap / strideSepPen), so foreshortened rulings draw proportionally shorter dashes and the ink per
+        // screen area is the target everywhere. No ruling is dropped for density; the crowd guard is the ink width only (rim crowding).
+        // Before: a 1.3-pen guard sat right at the face-on screen gap (~1.34 pens), so it kept every ruling where the gap cleared it and
+        // every other ruling where it did not: a 2x density step along a facing contour (the dense oval of the darker dark end).
+        meta.strideSepPen = model.pitch * K.V2_DUTY_SEP / T.PEN;
+        meta.capCompensate = true;
+        meta.noFacingComp = true;
+        meta.guardPen = K.V2_DUTY_GUARD_PEN;
         meta.joinTouching = true;
       } else {
         const edges = bandEdges(model.minDuty);

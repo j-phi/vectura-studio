@@ -6,6 +6,17 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: 3D Scene Duty Cycle (Constant) dark end is an even fill, not a dense oval
+- **At the darker v2 dark end, Duty Cycle drew a sharp-edged dense patch** (rulings ~1.2 pens apart) where the sphere faces the camera, every other ruling elsewhere, and scattered voids. The crowd guard sat exactly at the face-on ruling gap. Now no ruling is dropped for density: where rulings crowd on screen their dashes shorten instead, so one tone draws one coverage and the fill darkens smoothly into the shadow (dark-end coverage ~0.65 kept).
+- Owner decision "keep darker, allow touching": near the limb Duty Cycle lines may touch (centre gap >= 1 pen width) but never overlap.
+- Two bake bugs fixed for Duty Cycle v2: ruling neighbours were decoded from (level, rank), which a pole relabel makes ambiguous (most "neighbours" were far away), and the local pitch ratio mixed object and screen units. Legacy scenes and the Mark laws are unchanged.
+- Tests: the torus Density/angle check now compares bearings at the same surface locations (owner decision "fix the measurement"; a whole-object mean of ~15 lines measured where they landed, not their direction).
+
+### Changed: 3D Scene realistic light draws a darker shadow (owner decision "go darker")
+- **The shared v2 dark end rose from ~0.43 to ~0.65 coverage at Density 50** (legacy is ~0.8). The owner's config (sphere, Hatch, Duty Cycle - Constant, angle 45, Density 50) now reads as near-continuous hatching in shadow; highlights and the specular glint are still paper and the gradation is still graded. Measured on the shadowed centre of the sphere (back light): Default hatch 0.22 -> 0.60, Duty Cycle - Constant 0.37 -> 0.61, End Shorten 0.39 -> 0.63, Mezzotint 0.45 -> 0.53, Crosshatch (sum of both families) 0.43 -> 0.78.
+- Lines never overlap: v2 has its own plot floor (1.4 pens, was 2.2) and a crowd guard of 1.3 pens (the ink is 1.12 pens wide); Crosshatch's two families each carry a share so the pair reaches the same dark end. The v2 ruling count is any integer (it was a power of two, which landed the pitch up to 40 % off and made the guard drop every other ruling). Legacy scenes and presets are byte-identical.
+- Known: the limb ring reaches less ink than the centre (about 0.35 vs 0.58 at the dark end, octave-quantised plot-floor cap), and Density saturates above ~100 in v2.
+
 ### Changed: 3D Scene Duty Cycle (Constant) draws long dashes, not specks, and Tick / Dash Ramp reach the limb
 - **Duty Cycle - Constant (v2)** now keys its cells in groups, so a tone draws one long dash per group (long in the dark, gaps opening toward the light) instead of scattered single cells; the glint stays paper.
 - **Plot-floor cap at the limb (v2, locked)** thins the rulings by an exactly regular stride from the true screen gap between rulings (it used to keep every 2nd, 4th, 8th ruling by a coarse local-pitch estimate), and a crowd guard keeps Duty Cycle's drawn lines a plot-floor apart. The limb ring keeps about 35 % of the pose ink (it kept 13-17 %), and Mark - Tick / Dash Ramp / Scribble / Dot Screen / Bundle use the same stride so their limb no longer thins out. Legacy scenes are unchanged.

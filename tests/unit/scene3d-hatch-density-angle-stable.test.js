@@ -190,11 +190,69 @@ describe('Scene3D — the per-location fill direction field is Density-invariant
   // tight enough to catch a real regression, loose enough for curvature/
   // sampling-location noise inherent to a wrapped parametric family.
   const TOLERANCE_DEG = 3;
+  // Mutation proof hook: 5 here turns every Density-150 line 5 deg about its own centre (a direction-field change at the same
+  // places) and must fail the torus check (measured: mean local gap 1.1 deg at 0, 5.6 deg at 5, 3.5 deg at 3).
+  const TORUS_ROTATE_DEG = 0;
+  const rotateEachPath = (paths, deg) => {
+    if (!deg) return paths;
+    const c = Math.cos((deg * Math.PI) / 180); const s = Math.sin((deg * Math.PI) / 180);
+    return paths.map((pp) => {
+      const cx = pp.reduce((a, q) => a + q.x, 0) / pp.length; const cy = pp.reduce((a, q) => a + q.y, 0) / pp.length;
+      return pp.map((q) => ({ x: cx + (q.x - cx) * c - (q.y - cy) * s, y: cy + (q.x - cx) * s + (q.y - cy) * c }));
+    });
+  };
+
+  // Local (per surface location) bearing: fixed screen probes on a 1.5 mm grid; at each, the length-weighted doubled-angle mean
+  // bearing of the fill segments whose midpoint lies within PROBE_R. Returns the mean gap over probes inked in both path sets.
+  const PROBE_R = 1.2;
+  const localBearings = (paths) => {
+    const out = new Map();
+    paths.forEach((pp) => {
+      for (let i = 0; i + 1 < pp.length; i++) {
+        const dx = pp[i + 1].x - pp[i].x; const dy = pp[i + 1].y - pp[i].y; const len = Math.hypot(dx, dy);
+        if (len < 1e-6) continue;
+        const n = Math.max(1, Math.ceil(len / 0.25));
+        for (let k = 0; k < n; k++) {
+          const mx = pp[i].x + dx * (k + 0.5) / n; const my = pp[i].y + dy * (k + 0.5) / n;
+          const gx0 = Math.floor((mx - PROBE_R) / 1.5); const gx1 = Math.floor((mx + PROBE_R) / 1.5);
+          const gy0 = Math.floor((my - PROBE_R) / 1.5); const gy1 = Math.floor((my + PROBE_R) / 1.5);
+          for (let gx = gx0; gx <= gx1 + 1; gx++) for (let gy = gy0; gy <= gy1 + 1; gy++) {
+            if (Math.hypot(gx * 1.5 - mx, gy * 1.5 - my) > PROBE_R) continue;
+            const key = `${gx},${gy}`; const r = 2 * Math.atan2(dy, dx); const w = len / n;
+            const a = out.get(key) || { sx: 0, sy: 0, w: 0 }; a.sx += Math.cos(r) * w; a.sy += Math.sin(r) * w; a.w += w; out.set(key, a);
+          }
+        }
+      }
+    });
+    const res = new Map();
+    out.forEach((a, k) => { if (a.w > 0.5) { let m = (Math.atan2(a.sy, a.sx) * 90) / Math.PI; if (m < 0) m += 180; res.set(k, m); } });
+    return res;
+  };
+  const localBearingGap = (pa, pb) => {
+    const A = localBearings(pa); const B = localBearings(pb);
+    let s = 0; let n = 0;
+    A.forEach((m, k) => { if (B.has(k)) { s += bearingGap(m, B.get(k)); n += 1; } });
+    return { mean: n ? s / n : NaN, probes: n };
+  };
 
   describe.each(Object.keys(CURVED))('%s', (primitive) => {
     const params = CURVED[primitive];
 
     test('hatch: mean rendered bearing is stable across Density 50 -> 150 -> 50', () => {
+      if (primitive === 'torus') {
+        // Owner decision (lr-dark, "fix the measurement"): with the v2 dark end a torus at Density 50 draws only ~15 lines whose
+        // bearings span ~160 deg around the tube, so the whole-object mean says WHERE the few lines landed, not which way they run
+        // (it drifted 3.6 deg with every line individually unchanged). The torus therefore compares the rendered direction at the
+        // SAME surface locations: fixed screen probes (camera and object are identical across Densities), each reading the local
+        // bearing of the ink within PROBE_R; the mean gap over probes inked at both Densities keeps the 3 deg bar.
+        const f50 = fillsOf(primitive, params, 'hatch', FILL_ANGLE, 50);
+        const f150 = rotateEachPath(fillsOf(primitive, params, 'hatch', FILL_ANGLE, 150), TORUS_ROTATE_DEG);
+        const gap = localBearingGap(f50, f150);
+        expect(gap.probes).toBeGreaterThanOrEqual(8);
+        expect(gap.mean).toBeLessThan(TOLERANCE_DEG);
+        expect(localBearingGap(fillsOf(primitive, params, 'hatch', FILL_ANGLE, 50), f50).mean).toBe(0); // determinism
+        return;
+      }
       const b50 = meanBearing(fillsOf(primitive, params, 'hatch', FILL_ANGLE, 50));
       const b150 = meanBearing(fillsOf(primitive, params, 'hatch', FILL_ANGLE, 150));
       const b50again = meanBearing(fillsOf(primitive, params, 'hatch', FILL_ANGLE, 50));

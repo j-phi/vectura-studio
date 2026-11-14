@@ -37,7 +37,7 @@ describe('surface lock wave D1: v2 mark laws', () => {
     const R = spec.sizes.sx * ps.cam.scale * 0.5; const area = Math.PI * R * R;
     const cover = (I, ctx) => {
       const tone = Z.toneLUT(spec, ctx || { tone: { enabled: I !== null } });
-      const lines = SL.frame([ms], ps, { toneFn: I === null ? null : () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1' });
+      const lines = SL.frame([ms], ps, { toneFn: I === null ? null : () => I, tone, penWidth: PEN, floorPitch: 2.2 * PEN, objectId: 'o1', toneModel: spec.toneModel === 'v2' ? 'v2' : undefined });
       let len = 0;
       lines.forEach((ln) => {
         for (let i = 1; i < ln.length; i++) {

@@ -45,6 +45,7 @@
   const AUX_CACHE_MAX = CFG.AUX_CACHE_ENTRIES || 16;
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
+  const V2_FLOOR_SLACK = (CFG.V2 && CFG.V2.FLOOR_SLACK) || FLOOR_SLACK;
   const CAP_RHO_STEPS = 8; // mirror of the laws baker's cap-word resolution (A21)
   const RIM_FACING = CFG.CAP_RIM_FACING || 0.3; // A21: below this facing the stride demand is damped (rulings crowd at the rim)
   const GUARD_FACING = CFG.CAP_GUARD_FACING || 0.5; // A21: the crowd guard acts below this facing
@@ -52,6 +53,8 @@
   const STRIDE_SLACK = CFG.CAP_STRIDE_SLACK || 0.3; // A21: the stride cap's own floor slack; the crowd guard is the exact spacing bar
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
+  const V2_GUARD_PEN = Number.isFinite(CFG.V2 && CFG.V2.GUARD_PEN) ? CFG.V2.GUARD_PEN : 0;
+  const LIMB_KNEE_BAND = 1; // the knee acts over the whole threshold range, fading to 0 at the darkest
   const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
@@ -406,6 +409,15 @@
   const mkPt = (x, y, z) => ({ x, y, z });
   const lineLength = (pts) => { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; };
 
+  // Per vertex: 1 where it is the last vertex of its run (cached per MarkSet).
+  const runLasts = new WeakMap();
+  const runLastOf = (ms) => {
+    let o = runLasts.get(ms); if (o) return o;
+    o = new Uint8Array(ms.vertexCount);
+    for (let r = 0; r < ms.runCount; r++) { const e = ms.runStart[r + 1] - 1; if (e >= ms.runStart[r]) o[e] = 1; }
+    runLasts.set(ms, o); return o;
+  };
+
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
   const prepass = (ms, F, view) => {
     const nv = ms.vertexCount; const pos = ms.positions; const nrm = decodedNormals(ms);
@@ -427,7 +439,10 @@
     // A17: tone model v2 equalises the ink per SCREEN area: a surface-pitch mark set puts 1/facing more ink into a foreshortened
     // patch, so the tone demand is scaled by g(c) = 1 + strength * (2c / (1 + c) - 1) (the mean foreshortening of a mark of any
     // direction in the tangent plane is (1 + c) / 2). Off (strength 0) unless the caller says view.toneModel === 'v2'.
-    const facingComp = view.toneModel === 'v2' ? FACING_COMP : 0;
+    const facingComp = view.toneModel === 'v2' && meta.noFacingComp !== true ? FACING_COMP : 0;
+    const runLast = capCont ? runLastOf(ms) : null;
+    const strideSep = capCont && Number.isFinite(meta.strideSepPen) && meta.strideSepPen > 0 ? meta.strideSepPen * num(view.penWidth, 0) : 0;
+    const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
     const remapLuts = new Map();
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
@@ -464,7 +479,9 @@
           // A21: the true screen perpendicular gap between neighbouring rulings. The ruling's tangent t spans a parallelogram of area
           // pitch x |t| x facing on the screen, so the perpendicular gap is pitch x facing / |P t|, with |P t| = sqrt(1 - (t . view)^2)
           // (between facing, a ruling along the foreshortening, and 1, one across it).
-          const vn = v + 1 < nv ? v + 1 : v - 1;
+          // the tangent stays inside the run: a run's last vertex looks back (looking ahead read the NEXT run, so the two ends of a
+          // short run disagreed on the stride and the run was dropped)
+          const vn = v + 1 < nv && !runLast[v] ? v + 1 : v - 1;
           const tx = pos[3 * vn] - px; const ty = pos[3 * vn + 1] - py; const tz = pos[3 * vn + 2] - pz;
           const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
           if (tl > 1e-12) {
@@ -475,7 +492,11 @@
             fac = Math.min(1, facing / pl) * Math.min(1, facing / RIM_FACING);
           }
         }
-        const cr = p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : FLOOR_SLACK));
+        // Tone model v2 octave cap: a ruling family's mean foreshortening is (1 + facing) / 2 (see A17), not the worst-case facing,
+        // so a limb patch is not dropped a whole level coarser than the centre at the same tone (M7).
+        if (!capCont && view.toneModel === 'v2') fac = (1 + facing) / 2;
+        const cr = strideSep > 0 ? p0 * sv * fac / strideSep
+          : p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : (view.toneModel === 'v2' ? V2_FLOOR_SLACK : FLOOR_SLACK)));
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
@@ -545,6 +566,13 @@
         }
         te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
         if (facingComp > 0) te *= 1 + facingComp * (2 * facing / (1 + facing) - 1);
+        // Faint tones must not leave stray rulings at the limb: a ruling of low rank draws for any tone > 0, and a foreshortened patch holds many of
+        // them in little screen area (M7). Tone model v2 takes a knee off the threshold, in proportion to the turned-away part of the surface
+        // (1 - facing; 0 face-on, so the disc centre is untouched) and to how light the tone is (0 at the darkest tone, so the dark end is untouched).
+        if (facingComp > 0 && limbKnee > 0 && te > 0 && te !== Infinity) {
+          const dDark = q === 1 ? p0 * sv * lut[0] : Math.pow(p0 * sv * lut[0], q);
+          if (dDark > 0 && te < LIMB_KNEE_BAND * dDark) te = Math.max(0, te - limbKnee * (1 - facing) * dDark * (1 - te / (LIMB_KNEE_BAND * dDark)));
+        }
       }
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
@@ -634,12 +662,26 @@
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
     const capCont = capSep && meta.capContinuous === true;
-    const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(view.floorPitch * GUARD_FRAC) : null;
-    const capOk = capCont ? (vi, rr) => {
+    // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
+    const guardD = view.toneModel === 'v2' && Number.isFinite(meta.guardPen) && meta.guardPen > 0 ? meta.guardPen * num(view.penWidth, 0)
+      : (view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC);
+    const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(guardD) : null;
+    const fracStride = view.toneModel === 'v2';
+    // capCompensate (v2 dutyConst): the stride density c = local screen ruling gap / strideSep never DROPS a ruling; it scales the
+    // run's tone demand by min(1, c), so a foreshortened (crowded) patch draws proportionally shorter dashes on every ruling and the
+    // ink per screen area follows the tone alone. Stable: the keys are fixed per cell, so a small change of c moves dash ends only.
+    const comp = capCont && meta.capCompensate === true;
+    const capOk = comp ? () => true : capCont ? (vi, rr) => {
       const c0 = SCAP[vi]; if (c0 === Infinity) return true;
       const w = rcap[rr]; const c = c0 * ((w >> 12) / CAP_RHO_STEPS);
       if (!(c > 1e-6)) return false;
-      return c >= 1 || (w & 4095) % Math.ceil(1 / c - 1e-9) === 0;
+      if (c >= 1) return true;
+      const o = w & 4095;
+      // Fractional stride (v2, any integer level-0 count): the drawn ordinals are the regular Bresenham subset of density c, so the
+      // gap is floor or ceil of 1/c and a zone boundary never steps the stride 2x (an integer ceil(1/c) left a dense patch where
+      // 1/c crossed an integer). Legacy keeps the integer stride (byte-identical).
+      if (fracStride) return Math.floor((o + 1) * c + 1e-9) > Math.floor(o * c + 1e-9);
+      return o % Math.ceil(1 / c - 1e-9) === 0;
     } : (vi, rr, ckv) => SCAP[vi] > ckv;
     const DOT = MS.FLAG.DOT; const CLOSED = MS.FLAG.CLOSED; const RS = MS.RANK_SCALE;
     const order = crowd ? capOrderOf(ms) : null;
@@ -650,6 +692,10 @@
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
+      if (comp) {
+        const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
+        for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
+      }
       // vertex counters
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
@@ -766,11 +812,13 @@
     return (R && Number.isFinite(R.PLOT_FLOOR_PEN)) ? R.PLOT_FLOOR_PEN : FALLBACK_FLOOR_PEN;
   };
 
+  // Tone model v2 has its own plot floor (config V2.FLOOR_PEN; the owner's "go darker" decision); legacy keeps Regions.PLOT_FLOOR_PEN.
+  const v2FloorPenOf = () => { const v = CFG.V2 && CFG.V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
   const frame = (markSets, pose, view) => {
     const t0 = now();
     const sets = Array.isArray(markSets) ? markSets : [markSets];
     const v = Object.assign({}, view || {});
-    v.floorPitch = floorPenOf() * num(v.penWidth, 0);
+    v.floorPitch = (v.toneModel === 'v2' ? v2FloorPenOf() : floorPenOf()) * num(v.penWidth, 0);
     v.penWidth = num(v.penWidth, 0);
     const F = frameSetup(pose);
     let total = 0; sets.forEach((ms) => { if (ms) total = Math.max(total, ms.vertexCount || 0); });

@@ -133,7 +133,8 @@
       seed: (spec && spec.seed && typeof spec.seed === 'object') ? spec.seed : {},
     };
   };
-  const floorOf = (r) => plotFloorPen() * r.pen;
+  const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
+  const floorOf = (r, v2) => (v2 ? v2FloorPen() : plotFloorPen()) * r.pen;
   // The FACETED pose law (scene3d.js spacingBand / coverageGain), which is NOT the curved ladder's: Density is authoritative and
   // tone is a multiplier, spacing = Density spacing / gain, gain = GAIN_LIT + GAIN_SPAN * coverage in [0.5, 1.6]. The bake sizes its
   // levels from that full range (so it never reads the tone settings); the LUT reads the real tone ladder.
@@ -228,8 +229,8 @@
 
     // Level count (contract §9): p0 is the lit maximum screen pitch / scaleRef; the finest level reaches the darkest pitch the
     // law asks for at ZOOM_HEADROOM x the bake zoom. A vertex-budget guard trims the finest level.
-    const floor = floorOf(r);
     const v2 = isV2(spec);
+    const floor = floorOf(r, v2);
     const dots = v2 && spec.mapper === 'stipple';
     const p0S = v2 ? Math.max(hatchSpacing(r.density), litMaxPitchPen() * r.pen) : p0Screen(r);
     const p0 = p0S / r.scaleRef;
