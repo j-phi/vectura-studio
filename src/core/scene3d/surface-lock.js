@@ -409,6 +409,15 @@
   const mkPt = (x, y, z) => ({ x, y, z });
   const lineLength = (pts) => { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; };
 
+  // Per vertex: 1 where it is the last vertex of its run (cached per MarkSet).
+  const runLasts = new WeakMap();
+  const runLastOf = (ms) => {
+    let o = runLasts.get(ms); if (o) return o;
+    o = new Uint8Array(ms.vertexCount);
+    for (let r = 0; r < ms.runCount; r++) { const e = ms.runStart[r + 1] - 1; if (e >= ms.runStart[r]) o[e] = 1; }
+    runLasts.set(ms, o); return o;
+  };
+
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
   const prepass = (ms, F, view) => {
     const nv = ms.vertexCount; const pos = ms.positions; const nrm = decodedNormals(ms);
@@ -430,7 +439,9 @@
     // A17: tone model v2 equalises the ink per SCREEN area: a surface-pitch mark set puts 1/facing more ink into a foreshortened
     // patch, so the tone demand is scaled by g(c) = 1 + strength * (2c / (1 + c) - 1) (the mean foreshortening of a mark of any
     // direction in the tangent plane is (1 + c) / 2). Off (strength 0) unless the caller says view.toneModel === 'v2'.
-    const facingComp = view.toneModel === 'v2' ? FACING_COMP : 0;
+    const facingComp = view.toneModel === 'v2' && meta.noFacingComp !== true ? FACING_COMP : 0;
+    const runLast = capCont ? runLastOf(ms) : null;
+    const strideSep = capCont && Number.isFinite(meta.strideSepPen) && meta.strideSepPen > 0 ? meta.strideSepPen * num(view.penWidth, 0) : 0;
     const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
     const remapLuts = new Map();
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
@@ -468,7 +479,9 @@
           // A21: the true screen perpendicular gap between neighbouring rulings. The ruling's tangent t spans a parallelogram of area
           // pitch x |t| x facing on the screen, so the perpendicular gap is pitch x facing / |P t|, with |P t| = sqrt(1 - (t . view)^2)
           // (between facing, a ruling along the foreshortening, and 1, one across it).
-          const vn = v + 1 < nv ? v + 1 : v - 1;
+          // the tangent stays inside the run: a run's last vertex looks back (looking ahead read the NEXT run, so the two ends of a
+          // short run disagreed on the stride and the run was dropped)
+          const vn = v + 1 < nv && !runLast[v] ? v + 1 : v - 1;
           const tx = pos[3 * vn] - px; const ty = pos[3 * vn + 1] - py; const tz = pos[3 * vn + 2] - pz;
           const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
           if (tl > 1e-12) {
@@ -482,7 +495,8 @@
         // Tone model v2 octave cap: a ruling family's mean foreshortening is (1 + facing) / 2 (see A17), not the worst-case facing,
         // so a limb patch is not dropped a whole level coarser than the centre at the same tone (M7).
         if (!capCont && view.toneModel === 'v2') fac = (1 + facing) / 2;
-        const cr = p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : (view.toneModel === 'v2' ? V2_FLOOR_SLACK : FLOOR_SLACK)));
+        const cr = strideSep > 0 ? p0 * sv * fac / strideSep
+          : p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : (view.toneModel === 'v2' ? V2_FLOOR_SLACK : FLOOR_SLACK)));
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
@@ -649,10 +663,15 @@
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
     const capCont = capSep && meta.capContinuous === true;
     // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
-    const guardD = view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC;
+    const guardD = view.toneModel === 'v2' && Number.isFinite(meta.guardPen) && meta.guardPen > 0 ? meta.guardPen * num(view.penWidth, 0)
+      : (view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC);
     const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(guardD) : null;
     const fracStride = view.toneModel === 'v2';
-    const capOk = capCont ? (vi, rr) => {
+    // capCompensate (v2 dutyConst): the stride density c = local screen ruling gap / strideSep never DROPS a ruling; it scales the
+    // run's tone demand by min(1, c), so a foreshortened (crowded) patch draws proportionally shorter dashes on every ruling and the
+    // ink per screen area follows the tone alone. Stable: the keys are fixed per cell, so a small change of c moves dash ends only.
+    const comp = capCont && meta.capCompensate === true;
+    const capOk = comp ? () => true : capCont ? (vi, rr) => {
       const c0 = SCAP[vi]; if (c0 === Infinity) return true;
       const w = rcap[rr]; const c = c0 * ((w >> 12) / CAP_RHO_STEPS);
       if (!(c > 1e-6)) return false;
@@ -673,6 +692,10 @@
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
+      if (comp) {
+        const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
+        for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
+      }
       // vertex counters
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
