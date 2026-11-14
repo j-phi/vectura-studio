@@ -206,6 +206,7 @@
   const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
   const invLstar = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
   // Relative darkness d(I) in [0, 1]: 1 at I = 0, 0 at I = 1; L*-linear between paper and the dark coverage, times the roll-off.
+  const KNEE = 0.12; // the lightest 12 % of the relative darkness is paper: a ruling at rank ~0 draws for any tone > 0, so a faint tone left a stray ruling at the limb (M7)
   const relDarkV2 = (covDark) => {
     const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
     const band = Math.max(1e-3, C.V2_PAPER_BAND);
@@ -213,7 +214,8 @@
       const x = clamp(finite(I, 0), 0, 1);
       const cov = 1 - invLstar(lDark + (lLight - lDark) * x);
       const u = clamp((1 - x) / band, 0, 1);
-      return clamp(1.1 * cov / covDark, 0, 1) * u * u * (3 - 2 * u); // 1.1: a short dark shoulder (the finest level cannot quite reach the nominal dark pitch)
+      const rel = clamp(1.1 * cov / covDark, 0, 1) * u * u * (3 - 2 * u); // 1.1: a short dark shoulder (the finest level cannot quite reach the nominal dark pitch)
+      return Math.max(0, (rel - KNEE) / (1 - KNEE));
     };
   };
   const toneIsOffV2 = (ctx) => !!ctx && ((ctx.tone && ctx.tone.enabled === false)

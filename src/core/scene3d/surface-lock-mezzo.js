@@ -689,6 +689,8 @@
       minSepFrac: K.STOP_FACTOR * K.SEP_MARGIN,
       // Cap-aware tone (review §7.2 R-a): the frame maps the LUT's log-density range onto the foreshortening cap.
       capToneRemap: true,
+      // v2: the frame takes this knee off the tone threshold at the limb (see SurfaceLock's tone step; M7). Absent = none.
+      ...(spec.toneModel === 'v2' ? { limbKnee: 0.7 } : {}),
       floorPitchPen: (T.INK / K.A_DARK) / T.PEN,
       bounds: { min: bmin, max: bmax, radius: brad },
       convex: CONVEX.has(spec.primitive),
