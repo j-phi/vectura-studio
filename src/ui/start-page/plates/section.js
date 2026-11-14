@@ -495,6 +495,23 @@
     let headInfo = null;
     const tool = (act, label, icon, titleText) => h('button', { type: 'button', class: 'sp-pl-tool', 'data-act': act, title: titleText, 'aria-label': titleText, html: `${icon}<span>${label}</span>` });
 
+    // A work with neither a stored copy nor a thumbnail: a visible, honest plate (never a collapsed sliver); Open stays available.
+    const renderMissing = (w, e, i) => {
+      const st = w._sp;
+      const inner = w.querySelector('.sp-pl-in');
+      if (!inner) return;
+      if (st && st.article) { try { Layouts().destroy(st.article); } catch (_) { /* noop */ } st.article = null; }
+      if (st && st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
+      const btn = h('button', { type: 'button', class: 'sp-pl-lnk', text: 'Open' });
+      btn.addEventListener('click', () => open(entries.findIndex((x) => x.id === w.dataset.plateId), false));
+      inner.replaceChildren(h('div', { class: 'sp-pl-missing' },
+        h('b', { text: pretty(e.art.name) }),
+        h('span', { text: 'No preview stored for this work. Open the file again to refresh it.' }),
+        btn));
+      w.dataset.state = 'missing';
+      w.style.removeProperty('--sp-pl-h');
+    };
+
     const renderPlate = async (w) => {
       const st = w._sp;
       let e = entries.find((x) => x.id === w.dataset.plateId);
@@ -513,6 +530,7 @@
       const i = e ? entries.indexOf(e) : -1;
       if (i < 0) return;
       const cw = setData(w, e, i, svg ? layoutFor(e, i, is3dPiece(e) ? '3d' : orientationOf(svg)) : undefined);
+      if (cw && !svg) { renderMissing(w, e, i); return; }
       if (!cw || !svg) { w.dataset.state = 'error'; return; }
       const model = liveModel(e);
       const is3d = is3dPiece(e);
