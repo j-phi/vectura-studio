@@ -51,9 +51,9 @@
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^24.1.1",
     "postcss": "^8.5.32",
-    "prettier": "^3.9.10",
-    "tailwindcss": "^4.3.4",
-    "vite": "^8.3.6",
+    "prettier": "^3.10.1",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.8",
     "vitest": "^4.1.11"
   },
   "engines": {
