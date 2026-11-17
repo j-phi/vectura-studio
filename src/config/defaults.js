@@ -2126,6 +2126,7 @@
         model: 'v2',      // 'legacy' | 'v2' (see Scene3D.Params SCENE_MIGRATIONS[6])
         ambient: 0.08,    // v2 only: constant fill light, never shadowed
         bounce: 0.12,     // v2 only: reflected light lifting the attached-shadow side
+        darkness: 50,     // v2 only: the Shading slider (0 light .. 100 darkest; 50 = SCENE3D_SURFACE_LOCK.SHADE.DEFAULT, the A22 look)
       },
       // Phase 5 — scene-level cast-shadow controls. Every value here reproduces
       // the legacy hardcoded shadow (angle 45°, density 50 ⇔ coverage 0.5, solid,

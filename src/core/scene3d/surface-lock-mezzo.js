@@ -182,7 +182,13 @@
         const P0S = p0ScaleOf(spec);
         const Lv = clamp(1 + Math.floor(Math.log2(Math.max(1e-9, (T.PMAX * P0S * HEADROOM) / (T.INK / K.A_DARK))) + 1e-9), 1, Math.min(cfg().MAX_LEVELS || 6, K.MAX_LEVELS_LAW));
         const dark = Math.min(1 / pitchFor(0), 0.9999 * 2 ** (Lv - 1) / (T.PMAX * P0S));
-        for (let k = 0; k <= size; k++) lut[k] = D(k / size) * dark;
+        // A23: the Shading slider. Below the default the dark end and mid-tones draw less (k < 1); past it only the mid-tones darken:
+        // the finest mezzo level already sits at the no-overlap stop distance (0.8 x 1.4 pens = the ink width), so the dark end is capped.
+        const RG = regionsLib();
+        const kf = typeof RG.darknessK === 'function'
+          ? RG.darknessK(spec.toneDarkness, T.PEN * dark, 1 / Math.max(1.05, finite(((cfg().V2) || {}).GUARD_PEN, 1.3))) : 1;
+        if (kf === 1) for (let k = 0; k <= size; k++) lut[k] = D(k / size) * dark;
+        else for (let k = 0; k <= size; k++) lut[k] = Math.min(1, RG.darknessRel(D(k / size), kf)) * dark;
       }
       return { lut, scaleFn: null };
     }

@@ -161,6 +161,7 @@
       stipple: spec && spec.mapper === 'stipple',
       v2: !!spec && spec.toneModel === 'v2',
       cross: !!spec && spec.mapper === 'crosshatch',
+      dark: spec ? spec.toneDarkness : undefined, // A23: the scene's Shading slider (absent = the default)
     };
   };
   const floorOf = (r) => {
@@ -193,17 +194,35 @@
   // Darkest pitch (screen mm). Density runs 0..200 across the WHOLE range (the legacy master pitch hits the plot floor at about
   // Density 82, so 100 and 200 were identical): floor + (P0 - floor) * (1 - d/200)^exp.
   // The tail term keeps Density 100 and 200 apart (the v2 plot floor is reached by about Density 80 otherwise): see V2_TAIL_PEN.
-  const darkPitchV2 = (r) => {
+  // A23: the Shading slider moves the single-family dark coverage c1 by k (Regions.darknessK; cMax = pen / the guard floor, so
+  // lines never overlap); crosshatch then splits the moved c1 between its two families. Returns the default darkest pitch pdDef
+  // (the tone curve's shape), the family's own ratio kf and the darkest pitch actually baked: pdDef / kf when kf > 1 (finer
+  // rulings), pdDef when kf <= 1 (the LUT asks for less of the same rulings).
+  const darkV2 = (r) => {
     const floor = r.stipple ? floorOf(r) : Math.max(C.V2_DARK_MIN_PEN * r.pen, v2GuardPen() * r.pen);
     const g = clamp(1 - r.density / 200, 0, 1);
     const tail = Math.max(0, C.V2_TAIL_PEN) * r.pen;
     const p0 = Math.max(floor * 2.2, C.V2_P0_PEN * r.pen);
     let pd = floor + tail * Math.pow(g, Math.max(0.2, C.V2_TAIL_EXP)) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, C.V2_DENSITY_EXP));
+    const R = regions();
+    const covOf = (p) => (r.stipple ? Math.PI * r.dotR * r.dotR / (p * p) : r.pen / p);
+    const k = typeof R.darknessK === 'function' ? R.darknessK(r.dark, covOf(pd), covOf(floor)) : 1;
     // Crosshatch draws TWO families whose coverages add (a union 1 - (1 - a)^2): each carries the share that makes the pair reach the
     // same dark end as a single family does.
-    if (r.cross && !r.stipple) { const c1 = clamp(r.pen / pd, 0.02, 0.95); pd = r.pen / (1 - Math.sqrt(1 - c1)); }
-    return pd;
+    const share = (c) => r.pen / (1 - Math.sqrt(1 - clamp(c, 0.02, 0.95)));
+    if (k === 1) {
+      if (r.cross && !r.stipple) pd = share(r.pen / pd);
+      return { pdDef: pd, kf: 1, pd };
+    }
+    let pdK = r.stipple ? pd / Math.sqrt(k) : pd / k;
+    if (r.cross && !r.stipple) { const c1 = r.pen / pd; pd = share(c1); pdK = share(c1 * k); }
+    const kf = covOf(pdK) / covOf(pd);
+    return { pdDef: pd, kf, pd: kf > 1 ? pdK : pd };
   };
+  // Darkest pitch (screen mm). Density runs 0..200 across the WHOLE range (the legacy master pitch hits the plot floor at about
+  // Density 82, so 100 and 200 were identical): floor + (P0 - floor) * (1 - d/200)^exp.
+  // The tail term keeps Density 100 and 200 apart (the v2 plot floor is reached by about Density 80 otherwise): see V2_TAIL_PEN.
+  const darkPitchV2 = (r) => darkV2(r).pd;
   const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
   const invLstar = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
   // Relative darkness d(I) in [0, 1]: 1 at I = 0, 0 at I = 1; L*-linear between paper and the dark coverage, times the roll-off.
@@ -229,11 +248,12 @@
       lut.fill(1 / Math.max(floorOf(r), hatchSpacing(r.density)));
       return { lut, scaleFn: null };
     }
-    const pd = darkPitchV2(r);
+    const dv = darkV2(r); const pd = dv.pdDef;
     const covDark = r.stipple ? clamp(Math.PI * r.dotR * r.dotR / (pd * pd), 0.02, 0.95) : clamp(r.pen / pd, 0.02, 0.95);
     const rel = relDarkV2(covDark);
+    const shade = typeof regions().darknessRel === 'function' ? regions().darknessRel : (x) => x;
     for (let k = 0; k < n; k++) {
-      const d = rel(k / (n - 1));
+      const d = shade(rel(k / (n - 1)), dv.kf); // A23: the Shading slider (dv.kf = 1 at the default: rel exactly)
       // lines: coverage ~ 1 / pitch; dots: coverage ~ area ~ 1 / pitch^2. The specular glint is the hub's scaleFn (U1 specularKeep).
       lut[k] = (r.stipple ? Math.sqrt(d) : d) / pd;
     }
@@ -888,6 +908,6 @@
   Scene3D.SurfaceLockLadder = {
     id: 'ladder', FIT, supports, bake, toneLUT,
     // shared with the faceted baker (tone model v2)
-    v2: { isV2, darkPitch: (spec) => { sync(); return darkPitchV2(read(spec)); }, toneLUT: toneLutV2, relDark: relDarkV2 },
+    v2: { isV2, darkPitch: (spec) => { sync(); return darkPitchV2(read(spec)); }, dark: (spec) => { sync(); return darkV2(read(spec)); }, toneLUT: toneLutV2, relDark: relDarkV2 },
   };
 })();

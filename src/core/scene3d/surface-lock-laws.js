@@ -117,12 +117,26 @@
     const L_LIGHT = Lstar(1 - A_LIGHT); const L_DARK = Lstar(1 - K.A_DARK);
     const areaFor = (I) => clamp(1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, K.A_DARK);
     const pitchFor = (I) => clamp(INK / areaFor(I) / DS, INK / K.A_DARK, PMAX);
-    return { PEN, INK, FLOOR, litMax, DS, PMAX0, PMAX, SPARSE, MARKMIN, areaFor, pitchFor, v2: !!v2 };
+    return { PEN, INK, FLOOR, litMax, DS, PMAX0, PMAX, SPARSE, MARKMIN, areaFor, pitchFor, v2: !!v2, dark: spec ? spec.toneDarkness : undefined };
   };
 
   // ---- per-law tone maps. Each returns { theta(I) -> gate threshold >= 0, pitch (nominal screen pitch) } ----------
   // The LUT entry is theta(I) / pitch for the fixed-pitch laws (the frame multiplies by p0 * s, so t = rho * theta at
   // the bake scale; the bake folds rho into the keys) and 1 / pitch(I) for the pitch laws.
+  // A23: the Shading slider on a v2 fixed-pitch law (Duty Cycle, End Shorten). k = Regions.darknessK of the law's dark coverage
+  // pen / pitch, with cMax = pen / (SHADE.DUTY_MIN_PITCH_PEN x pen). The ruling pitch never changes (SHADE.DUTY_SHRINK false): the
+  // rulings already sit at the 1.05-pen crowd guard (the chart delivers ~0.85 of the nominal pitch), and a finer pitch made the guard
+  // drop pieces (measured in the app: total ink 8717 -> 8483 at slider 100). So below the default the LUT draws less, past it the
+  // mid-tones darken and the dark end stays (the LUT is capped at full duty). kf = 1 at the default.
+  const shadeOf = (T, pitch) => {
+    const R = regions();
+    if (!T.v2 || typeof R.darknessK !== 'function') return { pitch, pitchDef: pitch, kf: 1 };
+    const S = (cfg().SHADE) || {};
+    const minPitch = Math.max(0.5, finite(S.DUTY_MIN_PITCH_PEN, 1.15)) * T.PEN;
+    const kf = R.darknessK(T.dark, T.PEN / pitch, T.PEN / Math.min(pitch, minPitch));
+    return { pitch: kf > 1 && S.DUTY_SHRINK === true ? pitch / kf : pitch, pitchDef: pitch, kf };
+  };
+  const shadeRel = (d, kf) => { const R = regions(); return kf === 1 || typeof R.darknessRel !== 'function' ? d : R.darknessRel(d, kf); };
   const dutyModel = (T) => {
     const P0 = T.FLOOR * (T.v2 ? K.V2_DUTY_PITCH_FLOOR : K.DUTY_PITCH_FLOOR) * T.SPARSE;
     const tDense = clamp((1 - 1 / T.DS) / (1 - 1 / 4), 0, 1);
@@ -132,13 +146,17 @@
     const aLight = T.areaFor(1); const aDark = T.areaFor(0);
     const duty = (I) => clamp(0.18 + 0.82 * ((T.areaFor(I) - aLight) / Math.max(1e-6, aDark - aLight)), 0.18, 1);
     const minDuty = clamp(T.MARKMIN / PERIOD, 0, 0.95);
+    const sh = shadeOf(T, P);
     // Pose emitScr refuses a dash shorter than MINMARK, so those tones draw nothing.
-    return { pitch: P, period: PERIOD, minDuty, theta: (I) => { const d = duty(I); return d * PERIOD < T.MARKMIN ? 0 : d; } };
+    return { pitch: sh.pitch, pitchDef: sh.pitchDef, kf: sh.kf, period: PERIOD, minDuty, theta: (I) => { const d = duty(I); return d * PERIOD < T.MARKMIN ? 0 : d; } };
   };
-  const endModel = (T) => ({
-    pitch: T.FLOOR * (T.v2 ? K.V2_END_PITCH_FLOOR : K.END_PITCH_FLOOR) * T.SPARSE,
-    theta: (I) => { const x = clamp(finite(I, 0), 0, 1); return 1 - K.END_RETRACT * (x * x * (3 - 2 * x)); },
-  });
+  const endModel = (T) => {
+    const sh = shadeOf(T, T.FLOOR * (T.v2 ? K.V2_END_PITCH_FLOOR : K.END_PITCH_FLOOR) * T.SPARSE);
+    return {
+      pitch: sh.pitch, pitchDef: sh.pitchDef, kf: sh.kf,
+      theta: (I) => { const x = clamp(finite(I, 0), 0, 1); return 1 - K.END_RETRACT * (x * x * (3 - 2 * x)); },
+    };
+  };
   const mergeModel = (T) => {
     const full = T.INK / T.FLOOR;
     const mOf = (I) => {
@@ -190,14 +208,15 @@
     if (MARK_LAW_IDS.indexOf(law) !== -1) {
       const M = markModel(law, T, 1);
       if (toneIsOff(toneCtx)) { const off = clamp(Math.max(M.peff / T.PMAX, T.v2 ? K.V2_OFF_FRACTION * (law === 'bundleCount' ? 1.35 : 1) : 0), 0, 1) / M.rowPitch; fn = () => off; } // contract §5: uniform Density
-      else { const D = targetOf(T); fn = (I) => D(I) / M.rowPitch; }
+      else { const D = targetOf(T); const kf = dutyModel(T).kf; fn = (I) => Math.min(1, shadeRel(D(I), kf)) / M.rowPitch; } // A23: past the default only the mid-tones darken (the lattice is full at the dark end)
     }
     else if ((law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx)) {
-      const pitch = (law === 'dutyConst' ? dutyModel(T) : endModel(T)).pitch;
+      const Mx = law === 'dutyConst' ? dutyModel(T) : endModel(T);
+      const pitch = Mx.pitch;
       if (toneIsOff(toneCtx)) { // contract §5: tone off draws the uniform Density = the ladder's own tone-off ink (one ruling per lit pitch)
         const off = clamp(pitch / T.PMAX, 0, 1) / pitch;
         fn = () => off;
-      } else { const D = targetOf(T); fn = (I) => D(I) / pitch; }
+      } else { const D = targetOf(T); const pd = Mx.pitchDef; const kf = Mx.kf; const cap = pd / pitch; fn = (I) => Math.min(cap, shadeRel(D(I), kf)) / pd; } // A23: kf = 1 -> D / pitch exactly; never past full duty of the baked pitch
     }
     else if (law === 'dutyConst') { const M = dutyModel(T); fn = (I) => M.theta(I) / M.pitch; }
     else if (law === 'endShorten') { const M = endModel(T); fn = (I) => M.theta(I) / M.pitch; }
@@ -463,7 +482,7 @@
   const SCRIB_LEVELS = 3;                   // D1 mkScribble: nested zigzag amplitudes a j / 3
   const scribLen = (a, h) => { let t = 0; for (let j = 1; j <= SCRIB_LEVELS; j++) t += Math.hypot(1, 2 * a * j / (SCRIB_LEVELS * h)); return t; };
   const markModel = (law, T, lam) => {
-    const peff = dutyModel(T).pitch;            // full-ink ruling pitch (screen mm): coverage pen / peff
+    const peff = dutyModel(T).pitchDef;         // full-ink ruling pitch (screen mm): coverage pen / peff. A23: the mark lattice keeps the default pitch (its marks are sized in pens); the Shading slider moves only its LUT
     const m = { peff, rowPitch: peff, lam: lam || 1 };
     const rowAct = (rp) => rp * m.lam;
     if (law === 'mkTick') {

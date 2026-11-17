@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: 3D Scene Shading slider (owner request "a slider where I can set the density of shading myself")
+- **Shading** (scene Tone section, 0-100, default 50; aria "Shading darkness") sets how dark the v2 shading gets: the dark end and the mid-tones, never the paper or the glint. It is not Density (how many lines, i.e. plot time). 50 reproduces the A22 look byte for byte (no key in the spec or bake key at the default).
+- One shared remap (`Regions.darknessK` / `darknessRel`, constants in `SCENE3D_SURFACE_LOCK.SHADE`) feeds every v2 curve: surface ladder (hatch, crosshatch, contour, spiral, stipple, faceted too), Duty Cycle, End Shorten, Mezzotint Region, the mark laws, and the pose ladder. 0 = 0.6 x the default dark end (~0.39 at Density 50, the pre-A22 light look); 100 = the ladder's no-overlap limit (one ruling per 1.3-pen guard, ~0.77). Duty Cycle, End Shorten, Mezzotint and the mark laws keep their dark end past 50 (their rulings already sit at the crowd guard / stop distance; a finer Duty Cycle pitch made the guard drop pieces) and darken their mid-tones. Measured whole-scene fill ink in the app: default sphere 6665 / 8302 / 8902 mm, Duty Cycle sphere 7024 / 8729 / 9162 mm at 0 / 50 / 100.
+- Legacy-model scenes and the pose mono laws ignore it (the row is disabled with its reason under the legacy model or Flat). Saved as `tone.darkness` in `.vectura` files; a missing key is the default, so no SCENE_VERSION step. Contract A23.
+
 ### Fixed: 3D Scene Duty Cycle (Constant) dark end is an even fill, not a dense oval
 - **At the darker v2 dark end, Duty Cycle drew a sharp-edged dense patch** (rulings ~1.2 pens apart) where the sphere faces the camera, every other ruling elsewhere, and scattered voids. The crowd guard sat exactly at the face-on ruling gap. Now no ruling is dropped for density: where rulings crowd on screen their dashes shorten instead, so one tone draws one coverage and the fill darkens smoothly into the shadow (dark-end coverage ~0.65 kept).
 - Owner decision "keep darker, allow touching": near the limb Duty Cycle lines may touch (centre gap >= 1 pen width) but never overlap.
