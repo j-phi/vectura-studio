@@ -491,6 +491,25 @@
   // Specular ink multiplier shared by every consumer (scaleFn, pose laws).
   const specularKeep = (S, s0 = SHADE_DEFAULTS.s0, s1 = SHADE_DEFAULTS.s1) => 1 - smoothstep(s0, s1, S);
 
+  // A23 — the scene's Shading slider (p.tone.darkness; tone model v2 only). ONE remap shared by every v2 baker and the pose
+  // ladder. darknessK(s, cDef, cMax) is the ratio k = c' / c of a family's dark-end coverage (cDef at the default, cMax its
+  // no-overlap limit); darknessRel(rel, k) the share of the DEFAULT dark end a tone of relative darkness rel draws:
+  // rel (1 + (k - 1) rel). Monotone in k for every rel (d/dk = rel^2), paper (rel 0) stays paper, k = 1 returns rel exactly.
+  const shadeCfg = () => ((Vectura.SCENE3D_SURFACE_LOCK || {}).SHADE) || {};
+  const darknessDefault = () => finite(shadeCfg().DEFAULT, 50);
+  const darknessOf = (s) => clamp(finite(s, darknessDefault()), finite(shadeCfg().MIN, 0), finite(shadeCfg().MAX, 100));
+  const darknessK = (s, cDef, cMax) => {
+    const C = shadeCfg();
+    const D = darknessDefault();
+    const x = darknessOf(s);
+    if (x === D || !(cDef > 0)) return 1;
+    if (x < D) { const lo = clamp(finite(C.LIGHT_RATIO, 0.6), 0.05, 1); return lo + (1 - lo) * (x / D); }
+    const top = Math.max(cDef, finite(cMax, cDef));
+    const hi = finite(C.MAX, 100);
+    return (cDef + (top - cDef) * clamp((x - D) / Math.max(1e-6, hi - D), 0, 1)) / cDef;
+  };
+  const darknessRel = (rel, k) => (k === 1 ? rel : rel * (1 + (k - 1) * rel));
+
   const lightDirAt = (light, P) => {
     if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
       const to = sub(light.position || v(0, 0, 0), P);
@@ -948,6 +967,10 @@
     combinedIntensity,
     shade,
     specularKeep,
+    darknessDefault,
+    darknessOf,
+    darknessK,
+    darknessRel,
     SHADE_DEFAULTS,
     toneCurve,
     toneShapeOf,

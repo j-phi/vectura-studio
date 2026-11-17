@@ -1712,6 +1712,10 @@
       model: TONE_MODELS.includes(src.model) ? src.model : DEFAULT_TONE.model,
       ambient: clamp(finite(src.ambient, DEFAULT_TONE.ambient), 0, 1),
       bounce: clamp(finite(src.bounce, DEFAULT_TONE.bounce), 0, 1),
+      // A23: the Shading slider (0..100, v2 only; inert under 'legacy'). Kept only when the payload carries it: a missing key IS the
+      // default (SCENE3D_SURFACE_LOCK.SHADE.DEFAULT, the A22 look), so no SCENE_VERSION step or migration is needed.
+      ...(Number.isFinite(Number(src.darkness)) && src.darkness !== null && src.darkness !== ''
+        ? { darkness: clamp(Math.round(Number(src.darkness)), 0, 100) } : {}),
     };
   };
 

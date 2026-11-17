@@ -1591,6 +1591,12 @@
     if (Number.isInteger(faceIndex)) sizes.face = faceIndex;
     return sizes;
   };
+  // A23: the scene's Shading slider (p.tone.darkness) for a v2 scene, undefined at the default (or under the legacy model), so a
+  // default scene's specs, bake keys and pose options are exactly the A22 ones. One source: SurfaceLock.toneDarknessOf.
+  const shadeDarkOf = (p) => {
+    const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
+    return SL && typeof SL.toneDarknessOf === 'function' ? SL.toneDarknessOf(p) : undefined;
+  };
   const buildSurfaceLockSpec = (p, bounds, record, obj, g, sp, faceIndex) => {
     const cp = obj ? curvedChartParams(obj) : null;
     const facetedSizes = (!cp && obj) ? facetedLockSizes(obj, faceIndex) : null;
@@ -1614,6 +1620,7 @@
       scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
       seed: G3.snapshotSeedState(),
       ...(p.tone && p.tone.model === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(shadeDarkOf(p) !== undefined ? { toneDarkness: shadeDarkOf(p) } : {}),
     };
   };
 
@@ -5516,6 +5523,7 @@
                 specularFn: grpHLOff ? null : specularFn,
                 specShininess,
                 toneModel: poseV2 ? 'v2' : undefined,
+                toneDarkness: poseV2 ? shadeDarkOf(p) : undefined, // A23: the Shading slider (undefined at the default)
                 lightCtx: v2LightCtx(),
                 noHighlight: grpHLOff,
                 xray: (grpXray && grpXray.backFaces)

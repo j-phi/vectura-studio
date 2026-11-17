@@ -63,6 +63,21 @@
       FLOOR_SLACK: 0.72,   // v2 octave cap admits a level once its pitch >= this x FLOOR_PEN x pen (0.72 x 1.4 = 1.0 pen: lines touch, never overlap)
       GUARD_PEN: 1.3,
     }),
+    // A23: the scene's Shading slider (p.tone.darkness, 0..100; v2 only). It sets how DARK the shading gets (Density sets how many
+    // rulings). One shared remap (Scene3D.Regions.darknessK / darknessRel) moves every v2 family's dark-end coverage c:
+    //   s <  DEFAULT: c' = c x (LIGHT_RATIO + (1 - LIGHT_RATIO) s / DEFAULT)      (0 -> 0.6 c: the dark end ~0.39 at Density 50)
+    //   s == DEFAULT: c' = c, byte-identical to the A22 look (no key, no bake change)
+    //   s >  DEFAULT: c' = c + (cMax - c)(s - DEFAULT) / (100 - DEFAULT)        (100 -> the family's no-overlap limit cMax)
+    // and a tone of relative darkness rel draws rel (1 + (k - 1) rel) of the old dark end (k = c' / c): paper stays paper, the dark end
+    // and mid-tones move, light tones barely. Past the default the darkest baked pitch shrinks by k (part of the bake key).
+    SHADE: Object.freeze({
+      DEFAULT: 50,  // the slider value that reproduces the A22 dark end (~0.65 at Density 50)
+      MIN: 0,
+      MAX: 100,
+      LIGHT_RATIO: 0.6,  // dark-end coverage at slider 0, x the default's (0.65 -> ~0.39: the pre-A22 light look)
+      DUTY_MIN_PITCH_PEN: 1.15,  // Duty Cycle / End Shorten v2: the coverage reference (pen / this) that sets k past the default; the mid-tones darken toward it
+      DUTY_SHRINK: false,  // ... but the ruling pitch stays: a finer pitch made the 1.05-pen crowd guard drop pieces (total ink fell 8717 -> 8483 at 100), so the dark end is capped at the default
+    }),
     // ---- per-module tuning (behaviour-neutral: each value is the literal the module carried before). Each module keeps
     // the same numbers as a safe fallback for when this table is not loaded.
     // surface-lock-ladder.js (hatch, crosshatch, contour, spiral, stipple). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.

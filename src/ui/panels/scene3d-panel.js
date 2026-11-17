@@ -1879,7 +1879,17 @@
   };
   const specularLiveFor = (c) => Boolean(c && c.cls === 'faceted'
     && (c.mapper === 'hatch' || c.mapper === 'crosshatch') && c.law !== 'none' && !c.mono);
+  // A23 — the Shading slider (p.tone.darkness): which Fill Styles follow it. The v2 tone curve is shared by Ladder (Hatch,
+  // Crosshatch, Contour, Spiral, Stipple), Duty Cycle, End Shorten, Mezzotint Region and the mark laws (Tick, Dot Screen, Dash
+  // Ramp, Scribble, Bundle Count: mid-tones only past the default). Every other Fill Style draws its own tone and ignores it.
+  const SHADING_LAWS = new Set(['ladder', 'dutyConst', 'endShorten', 'mezzoRegion', 'mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount']);
+  const shadingLiveFor = (c) => Boolean(c && FILL_MAPPERS.has(c.mapper) && c.law !== 'none'
+    && (c.survivor === 'ladder' || SHADING_LAWS.has(c.law)));
   const TONE_NOTES = {
+    shading: 'How dark the shading gets: the darkest tone and the mid-tones, never the paper or the highlight. Density sets how many lines are drawn (plot time); Shading sets how much ink the shadows get. 50 is the standard look; 0 is light, 100 is as dark as lines can go without overlapping. Followed by Ladder (Hatch, Crosshatch, Contour, Spiral, Stipple), and, with marks locked to the surface, by Duty Cycle, End Shorten, Mezzotint Region and the mark Fill Styles (Tick, Dot Screen, Dash Ramp, Scribble, Bundle Count; past 50 Mezzotint and the marks darken only their mid-tones). Other Fill Styles set their own tone and ignore it.',
+    shadingLegacy: 'Shading needs the realistic light model. This scene uses the legacy model (an older document), so its shading is fixed.',
+    shadingFlat: 'Flat shading has no tone, so Shading changes nothing. Pick 2-4 bands.',
+    shadingNone: 'No object in this scene uses a Fill Style that follows Shading (Ladder, Duty Cycle, End Shorten, Mezzotint Region or a mark Fill Style).',
     bands: 'Bands, Thresholds and Coverage shape Ladder fills, Spiral and Stipple on curved shapes, and Hatch on faceted shapes. Other Fill Styles set their own tone. These rows also shape the ground and the cast shadows.',
     bandsNone: 'No object in this scene uses a Fill Style that reads these bands. They still shape the ground and the cast shadows.',
     specular: 'Specular is drawn only on faceted shapes (box, plane, solid) with Hatch or Crosshatch. Curved shapes do not draw it (PRH-027).',
@@ -5672,6 +5682,29 @@
           renderTone();
         },
       }));
+
+      // A23 — Shading (how dark), the scene-wide darkness of the v2 tone curve. Disabled with its reason under the legacy model
+      // (output stays byte-identical), under Flat, or when no object's Fill Style follows it.
+      {
+        const SH = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.SHADE) || {};
+        const shDef = Number.isFinite(SH.DEFAULT) ? SH.DEFAULT : 50;
+        const shNote = tone.model !== 'v2' ? TONE_NOTES.shadingLegacy
+          : ((tone.enabled === false || tone.bands < 2) ? TONE_NOTES.shadingFlat
+            : (consumers.length && !consumers.some(shadingLiveFor) ? TONE_NOTES.shadingNone : ''));
+        const shRow = sliderRow(toneHost, toneComps, 'Shading', {
+          value: Number.isFinite(tone.darkness) ? tone.darkness : shDef,
+          min: Number.isFinite(SH.MIN) ? SH.MIN : 0, max: Number.isFinite(SH.MAX) ? SH.MAX : 100, step: 1,
+          defaultValue: shDef,
+          ariaLabel: 'Shading darkness',
+          ...liveSliderFull((v) => { if (!shNote) ensureTone().darkness = Math.round(v); }),
+        });
+        shRow.dataset.control = 'toneDarkness';
+        if (shNote) markRowDisabled(shRow, shNote);
+        else {
+          shRow.setAttribute('title', TONE_NOTES.shading);
+          buildLawInfoAffordance(shRow, [{ text: TONE_NOTES.shading }], 'What Shading does');
+        }
+      }
 
       if (tone.enabled === false || tone.bands < 2) {
         const note = document.createElement('p');

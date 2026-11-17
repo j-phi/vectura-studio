@@ -136,6 +136,11 @@
           <li><strong>Pattern laws</strong> &mdash; Turing Stripe, Maze Fill and Voronoi Web draw their own marks and have no ruling angle.</li>
           <li><strong>Three-pen styles</strong> &mdash; draw the fine, medium and broad tone tiers as separate passes.</li>
         </ul>
+        <p><strong>Shading</strong> (scene Tone section, 0 to 100) sets how dark the shading gets: the darkest tone and
+        the mid-tones, never the paper or the highlight. It is not <strong>Density</strong>, which sets how many lines are
+        drawn and so the plot time. 50 is the standard look, 0 is light, and 100 is as dark as lines can go without
+        overlapping. Ladder fills follow it, and so do Duty Cycle, End Shorten, Mezzotint Region and the mark styles when
+        marks are locked to the surface. Older scenes on the legacy light model keep their fixed shading.</p>
         <p>A control that does nothing for the current shape or Fill Style stays visible but greyed. Hover the
         <strong>(i)</strong> badge to see why.</p>
         <p><strong>Lock marks to surface</strong> (Hatch, Crosshatch, Contour, Spiral, Stipple, Mezzotint and the

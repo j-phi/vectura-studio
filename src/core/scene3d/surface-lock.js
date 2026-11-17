@@ -167,6 +167,9 @@
     // A16: the tone model is part of the bake (the v2 bakers draw different marks), so a legacy and a v2 spec never share an
     // entry. Appended only for v2, so every legacy key is byte-identical to the one an older build produced.
     if (spec.toneModel === 'v2') parts.push('v2');
+    // A23: the Shading slider moves the darkest baked pitch, so it is part of the bake. Present only for a v2 spec off the default
+    // (toneDarknessOf), so every default key is byte-identical to the A22 build's.
+    if (spec.toneModel === 'v2' && spec.toneDarkness !== undefined) parts.push('dk' + spec.toneDarkness);
     return JSON.stringify(parts);
   };
 
@@ -320,7 +323,9 @@
     if (!baker) return null;
     const light = toneCtx && toneCtx.light ? toneCtx.light : null;
     const keyCtx = light ? Object.assign({}, toneCtx, { light: { model: light.model, empty: lightsEmpty(light) } }) : toneCtx;
-    const key = JSON.stringify([baker.id, stable(keyCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper]);
+    const keyParts = [baker.id, stable(keyCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper];
+    if (spec.toneDarkness !== undefined) keyParts.push('dk' + spec.toneDarkness); // A23: appended only off the default (old keys unchanged)
+    const key = JSON.stringify(keyParts);
     let t = toneMemo.get(key);
     if (!t) {
       t = baker.toneLUT(spec, toneCtx);
@@ -844,7 +849,18 @@
   // key, its tone-table key and every baker path are those of an older build).
   const toneModelOf = (p) => (p && p.tone && p.tone.model === 'v2' ? 'v2' : 'legacy');
   // `ctx.specFor` may return a whole spec of its own (the compositor's); the model is the scene's whatever it says.
-  const withToneModel = (p, spec) => { if (toneModelOf(p) === 'v2') spec.toneModel = 'v2'; return spec; };
+  // A23: the Shading slider (p.tone.darkness) rides along a v2 spec only when it is off the default, so a default spec is unchanged.
+  const toneDarknessOf = (p) => {
+    if (toneModelOf(p) !== 'v2') return undefined;
+    const R = Scene3D.Regions;
+    if (!R || typeof R.darknessOf !== 'function') return undefined;
+    const s = R.darknessOf(p.tone.darkness);
+    return s === R.darknessDefault() ? undefined : s;
+  };
+  const withToneModel = (p, spec) => {
+    if (toneModelOf(p) === 'v2') { spec.toneModel = 'v2'; const dk = toneDarknessOf(p); if (dk !== undefined) spec.toneDarkness = dk; }
+    return spec;
+  };
   const specOfObject = (p, obj, bounds, seed) => {
     const st = objectStyleOf(p, obj.id);
     const sp = st.params || {};
@@ -857,6 +873,7 @@
       mapper: st.mapper, toneLaw: P && P.resolveToneLaw ? P.resolveToneLaw(sp) : sp.toneLaw,
       style: sp, penWidth: num(bounds && bounds.penWidth, 0), scaleRef: 1, seed: seed || null,
       ...(toneModelOf(p) === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(toneDarknessOf(p) !== undefined ? { toneDarkness: toneDarknessOf(p) } : {}),
     };
   };
   const receiveMapAvailable = () => {
@@ -1234,6 +1251,7 @@
     toneTable,
     exclusionCtx,
     toneModelOf,
+    toneDarknessOf,
     lightCtxOf,
     toneFnV2,
     receiveCtxFor,

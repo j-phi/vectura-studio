@@ -5326,7 +5326,15 @@
       const tail = Math.max(0, finite(C.V2_TAIL_PEN, 0.24)) * penWidth;
       const p0 = Math.max(floor * 2.2, finite(C.V2_P0_PEN, 3.6) * penWidth);
       let pd = floor + tail * Math.pow(g, Math.max(0.2, finite(C.V2_TAIL_EXP, 1.0))) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, finite(C.V2_DENSITY_EXP, 14)));
-      if (opts.mapper === 'crosshatch') { const c1 = clamp(penWidth / pd, 0.02, 0.95); pd = penWidth / (1 - Math.sqrt(1 - c1)); }
+      // A23: the Shading slider (Regions.darknessK on the single-family dark coverage; cMax = pen / the guard floor), the same remap as
+      // surface-lock-ladder.js darkV2. kf = the family's own coverage ratio after the crosshatch share; 1 at the default (no change).
+      const kS = Regions && typeof Regions.darknessK === 'function' ? Regions.darknessK(opts.toneDarkness, penWidth / pd, penWidth / floor) : 1;
+      let kf = 1;
+      if (opts.mapper === 'crosshatch') {
+        const shareOf = (c) => penWidth / (1 - Math.sqrt(1 - clamp(c, 0.02, 0.95)));
+        const c1 = penWidth / pd; pd = shareOf(c1);
+        if (kS !== 1) kf = pd / shareOf(c1 * kS);
+      } else kf = kS;
       const covDark = clamp(penWidth / pd, 0.02, 0.95);
       const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
       const band = Math.max(1e-3, finite(C.V2_PAPER_BAND, 0.15));
@@ -5336,6 +5344,7 @@
       const pdOut = dens > 200 && mfp > 0 && mfp < 1.2 ? pd * (mfp / 1.2) : pd;
       v2Memo = {
         pd: pdOut,
+        kf,
         rel: (xx) => {
           const q = clamp(finite(xx, 0), 0, 1);
           const cv = 1 - invLstar(lDark + (lLight - lDark) * q);
@@ -5353,7 +5362,7 @@
     };
     const ladderCov = (I) => {
       const x = clamp(finite(I, 0), 0, 1);
-      if (v2On) { const c = v2Curve(); return masterPitch * c.rel(x) / c.pd; }
+      if (v2On) { const c = v2Curve(); return masterPitch * (c.kf === 1 ? c.rel(x) : Regions.darknessRel(c.rel(x), c.kf)) / c.pd; } // A23: Shading slider
       let cov;
       if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
       else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
