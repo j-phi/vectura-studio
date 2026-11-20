@@ -1217,6 +1217,26 @@
       paintLock();
     });
 
+    // Floor height (world mm). Outside the linked size block: it is not part of
+    // the width/depth proportion. Absent key = 0, so 0 deletes it (byte-identical files).
+    const yMin = Number.isFinite(Pm.GROUND_Y_MIN) ? Pm.GROUND_Y_MIN : -200;
+    const yMax = Number.isFinite(Pm.GROUND_Y_MAX) ? Pm.GROUND_Y_MAX : 200;
+    const yStep = Number.isFinite(Pm.GROUND_Y_STEP) ? Pm.GROUND_Y_STEP : 0.5;
+    const curY = Number.isFinite(Number(g.y)) ? Math.min(yMax, Math.max(yMin, Number(g.y))) : 0;
+    const yKit = kit.liveSlider((v) => { if (v) g.y = v; else delete g.y; });
+    const ySlider = UI.Slider(labeledRow(host, 'Height (Y)'), {
+      value: curY, min: yMin, max: yMax, step: yStep, defaultValue: 0,
+      ariaLabel: 'Ground height',
+      format: (v) => `${Math.round(v * 10) / 10} mm`,
+      onChange: yKit.onChange,
+      onCommit: yKit.onCommit,
+    });
+    comps.push(ySlider);
+    const yHelp = document.createElement('p');
+    yHelp.className = 'vs3-empty';
+    yHelp.textContent = 'Raise or lower the floor. Objects stay put \u2014 press D (Drop to ground) to rest them on it.';
+    host.appendChild(yHelp);
+
     const actions = document.createElement('div');
     actions.className = 'vs3-row vs3-size-actions';
     host.appendChild(actions);
@@ -3135,7 +3155,7 @@
       };
     });
 
-    mirrorChildToCanvas(ui, layer, null);
+    mirrorChildToCanvas(ui, layer, 'ground');
 
     let destroyed = false;
     const teardown = () => {

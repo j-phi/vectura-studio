@@ -67,4 +67,27 @@ test.describe('Ground size controls', () => {
     expect(reset.x).toBe(1);
     expect(reset.z).toBe(1);
   });
+
+  test('Height (Y) slider raises the floor, double-click resets it, and a canvas Y drag keeps it in sync', async ({ page }) => {
+    await openGroundPanel(page);
+    const slider = page.locator('input.ctrl-slider[aria-label="Ground height"]');
+    await expect(slider).toBeVisible();
+    const box = await slider.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    const y = await page.evaluate(() => window.app.engine.layers.find((x) => x.type === 'sceneGround3d').params.y);
+    expect(y).toBeGreaterThan(20);
+    // A canvas-side change (what a handle drag release does) shows up after the panel rebuild.
+    await page.evaluate(() => {
+      const l = window.app.engine.layers.find((x) => x.type === 'sceneGround3d');
+      l.params.y = 40;
+      window.app.ui.buildControls(l);
+    });
+    expect(Number(await page.locator('input.ctrl-slider[aria-label="Ground height"]').inputValue())).toBeCloseTo(40, 0);
+    await page.locator('input.ctrl-slider[aria-label="Ground height"]').dblclick();
+    const reset = await page.evaluate(() => window.app.engine.layers.find((x) => x.type === 'sceneGround3d').params.y ?? 0);
+    expect(reset).toBe(0);
+  });
 });
