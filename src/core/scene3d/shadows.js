@@ -418,14 +418,15 @@
 
   // Project a world vertex onto the y = 0 ground along the light travel dir,
   // then camera-project. Returns a screen {x,y,z} or null when non-finite.
-  const projectShadowVertex = (P, d, camAngles, projOpts) => {
+  // `gy` = the floor height (world mm, default 0 ⇒ byte-identical).
+  const projectShadowVertex = (P, d, camAngles, projOpts, gy = 0) => {
     if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
     if (Math.abs(d.y) < MIN_ABS_DY) return null;
-    const t = P.y / d.y; // ≤ 0 for a caster above ground
+    const t = (P.y - gy) / d.y; // ≤ 0 for a caster above ground
     const gx = P.x - t * d.x;
     const gz = P.z - t * d.z;
     if (!Number.isFinite(gx) || !Number.isFinite(gz)) return null;
-    const cam = rotatePoint({ x: gx, y: 0, z: gz }, camAngles);
+    const cam = rotatePoint({ x: gx, y: gy, z: gz }, camAngles);
     const proj = projectPoint(cam, projOpts);
     if (!proj || !Number.isFinite(proj.x) || !Number.isFinite(proj.y)) return null;
     return proj;
@@ -439,17 +440,17 @@
   // the hull): the light must sit above the ground (Lp.y > 0); a vertex at or
   // above the light height (Lp.y − P.y ≤ 0) or one whose ray does not cross the
   // ground going downward (t ≤ 0) casts no finite ground shadow and is skipped.
-  const projectShadowVertexPositional = (P, Lp, camAngles, projOpts) => {
+  const projectShadowVertexPositional = (P, Lp, camAngles, projOpts, gy = 0) => {
     if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) return null;
-    if (!Lp || !Number.isFinite(Lp.y) || Lp.y <= 0) return null;
+    if (!Lp || !Number.isFinite(Lp.y) || Lp.y <= gy) return null;
     const denom = Lp.y - P.y;
     if (!(denom > 1e-6)) return null; // vertex at/above the light height
-    const t = Lp.y / denom;
+    const t = (Lp.y - gy) / denom;
     if (!(t > 0) || !Number.isFinite(t)) return null;
     const gx = Lp.x + t * (P.x - Lp.x);
     const gz = Lp.z + t * (P.z - Lp.z);
     if (!Number.isFinite(gx) || !Number.isFinite(gz)) return null;
-    const cam = rotatePoint({ x: gx, y: 0, z: gz }, camAngles);
+    const cam = rotatePoint({ x: gx, y: gy, z: gz }, camAngles);
     const proj = projectPoint(cam, projOpts);
     if (!proj || !Number.isFinite(proj.x) || !Number.isFinite(proj.y)) return null;
     return proj;
@@ -2826,7 +2827,10 @@
     const camAngles0 = { yaw: finite(cam0.yaw, 0), pitch: finite(cam0.pitch, 0), roll: finite(cam0.roll, 0) };
     const projOpts0 = scene.projOpts || {};
     const lightPosition = opts.lightPosition;
-    const positional = Boolean(lightPosition && Number.isFinite(lightPosition.y) && lightPosition.y > 0);
+    // Floor height (world mm): the receiving plane is y = gy (default 0 ⇒ byte-identical).
+    const gy = finite(scene.ground.groundY, 0);
+    const groundAnchor = gy ? { x: 0, y: gy, z: 0 } : null; // null ⇒ GROUND_ANCHOR
+    const positional = Boolean(lightPosition && Number.isFinite(lightPosition.y) && lightPosition.y > gy);
     // Full light record (optional): a SPOT casts only within its illuminated
     // cone, and a positional light with a finite `range` casts nothing past it —
     // a caster the light never reaches drops no ground shadow. A POINT light
@@ -2865,14 +2869,14 @@
     let projectVertex;
     let projectVertexRaw; // ungated (ignores cone/range) — for the hatch-angle probe
     if (positional) {
-      projectVertexRaw = (P) => projectShadowVertexPositional(P, lightPosition, camAngles0, projOpts0);
+      projectVertexRaw = (P) => projectShadowVertexPositional(P, lightPosition, camAngles0, projOpts0, gy);
       projectVertex = (rangeLimit > 0 || isSpot)
         ? (P) => (vertexLit(P) ? projectVertexRaw(P) : null)
         : projectVertexRaw;
     } else {
       const d = lightDir;
       if (!d || !Number.isFinite(d.y) || Math.abs(d.y) < MIN_ABS_DY) return out; // grazing/absent
-      projectVertex = (P) => projectShadowVertex(P, d, camAngles0, projOpts0);
+      projectVertex = (P) => projectShadowVertex(P, d, camAngles0, projOpts0, gy);
       projectVertexRaw = projectVertex;
     }
 
@@ -2924,8 +2928,8 @@
     // the plate as the camera orbits — a fixed SCREEN angle would slide the hatch
     // across the footprint every frame (the "swim" bug, fix-map #1).
     const projectGroundDir = (wx, wz) => {
-      const o = projectPoint(rotatePoint({ x: 0, y: 0, z: 0 }, camAngles0), projOpts0);
-      const p = projectPoint(rotatePoint({ x: wx, y: 0, z: wz }, camAngles0), projOpts0);
+      const o = projectPoint(rotatePoint({ x: 0, y: gy, z: 0 }, camAngles0), projOpts0);
+      const p = projectPoint(rotatePoint({ x: wx, y: gy, z: wz }, camAngles0), projOpts0);
       if (!o || !p || !Number.isFinite(o.x) || !Number.isFinite(p.x)) return null;
       const bx = p.x - o.x; const by = p.y - o.y;
       if (!(Math.hypot(bx, by) > 1e-6)) return null;
@@ -3082,9 +3086,9 @@
         if (P.y > maxY) maxY = P.y;
       }
       if (!Number.isFinite(minY)) return null;
-      const base = Math.max(minY, 0);
+      const base = Math.max(minY, gy);
       const drop = (P) => {
-        const q = projectPoint(rotatePoint({ x: P.x, y: 0, z: P.z }, camAngles0), projOpts0);
+        const q = projectPoint(rotatePoint({ x: P.x, y: gy, z: P.z }, camAngles0), projOpts0);
         return (q && Number.isFinite(q.x) && Number.isFinite(q.y)) ? { x: q.x, y: q.y } : null;
       };
       // Widen the slice until the mesh actually resolves something inside it — a
@@ -3112,7 +3116,7 @@
       const pts = [];
       for (let i = 0; i < world.length; i++) {
         const P = world[i];
-        if (!P || !Number.isFinite(P.y) || P.y > cut || P.y < -1e-6) continue;
+        if (!P || !Number.isFinite(P.y) || P.y > cut || P.y < gy - 1e-6) continue;
         const q = drop(P);
         if (q) pts.push(q);
       }
@@ -3127,9 +3131,9 @@
     (scene.objects || []).forEach((record) => {
       if (!record || record.isGround) return;
       if (!objectCasts(record.id)) return; // per-object cast toggle
-      const hull = casterHull(record, projectVertex);
+      const hull = casterHull(record, projectVertex, groundAnchor);
       if (!hull) return;
-      const loops = casterSilhouetteLoops(record, projectVertex, lightClassifyEdges);
+      const loops = casterSilhouetteLoops(record, projectVertex, lightClassifyEdges, groundAnchor);
       const style = styleOf ? (styleOf(record.id) || {}) : {};
       casters.push({
         id: record.id, hull, loops, contact: nadirContact(record),

@@ -101,6 +101,24 @@ describe('scene3d — ground scale', () => {
     expect(Math.max(...g.projected.map((pt) => pt.y))).toBeGreaterThan(BOUNDS.height);
   });
 
+  test('ground.y: absent => no key (byte-identical), nonzero kept, clamped, junk dropped', () => {
+    expect('y' in Params.normalizeParams({ ground: { enabled: true } }).ground).toBe(false);
+    expect('y' in Params.normalizeParams({ ground: { enabled: true, y: 0 } }).ground).toBe(false);
+    expect('y' in Params.normalizeParams({ ground: { enabled: true, y: 'x' } }).ground).toBe(false);
+    expect(Params.normalizeParams({ ground: { enabled: true, y: 12.5 } }).ground.y).toBe(12.5);
+    expect(Params.normalizeParams({ ground: { enabled: true, y: 9999 } }).ground.y).toBe(Params.GROUND_Y_MAX);
+    expect(Params.normalizeParams({ ground: { enabled: true, y: -9999 } }).ground.y).toBe(Params.GROUND_Y_MIN);
+    expect(Params.GROUND_Y_STEP).toBe(0.5);
+  });
+
+  test('ground.y: survives the scene-tree flatten and a normalize round-trip', () => {
+    const flat = Params.normalizeParams(Params.collectSceneParams({},
+      [{ kind: 'ground', id: 'g1', params: { enabled: true, y: -30 } }]));
+    expect(flat.ground.y).toBe(-30);
+    const again = Params.normalizeParams(JSON.parse(JSON.stringify(flat)));
+    expect(again.ground.y).toBe(-30);
+  });
+
   test('scene tree: the sceneGround3d leaf scale reaches params.ground', () => {
     const flat = Params.normalizeParams(Params.collectSceneParams({},
       [{ kind: 'ground', id: 'g1', params: { enabled: true, scaleX: 3, scaleZ: 5 } }]));

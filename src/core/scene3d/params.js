@@ -1455,20 +1455,30 @@
 
   // Ground plane size factors. scaleX = width, scaleZ = depth, both relative to
   // the default floor (1.5x the artboard's longer side). The plane has no
-  // thickness, so there is no Y factor. The wide upper bound lets the floor run
-  // far past the artboard so its edges leave the frame.
+  // thickness, so there is no Y scale factor; its height is the separate
+  // `y` offset (world mm, default 0, emitted only when nonzero). The wide upper
+  // bound lets the floor run far past the artboard so its edges leave the frame.
   const GROUND_SCALE_MIN = 0.25;
   const GROUND_SCALE_MAX = 256;
+  const GROUND_Y_MIN = -200;
+  const GROUND_Y_MAX = 200;
+  const GROUND_Y_STEP = 0.5;
+  const groundY = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? clamp(n, GROUND_Y_MIN, GROUND_Y_MAX) : 0;
+  };
   const groundScale = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? clamp(n, GROUND_SCALE_MIN, GROUND_SCALE_MAX) : 1;
   };
   const normalizeGround = (g) => {
     const src = isObject(g) ? g : {};
+    const y = groundY(src.y);
     return {
       enabled: isObject(g) ? g.enabled !== false : true,
       scaleX: groundScale(src.scaleX),
       scaleZ: groundScale(src.scaleZ),
+      ...(y ? { y } : {}),
     };
   };
 
@@ -2390,6 +2400,9 @@
     normalizeGround,
     GROUND_SCALE_MIN,
     GROUND_SCALE_MAX,
+    GROUND_Y_MIN,
+    GROUND_Y_MAX,
+    GROUND_Y_STEP,
     migrateScene,
     sanitizeSceneParams,
     writeBackObjectLayerStyle,

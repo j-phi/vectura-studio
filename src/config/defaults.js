@@ -2312,7 +2312,8 @@
       preset: 'sceneground3d-default',
       enabled: true,
       // Floor size factors (1 = 1.5x the artboard's longer side). The plane
-      // has no thickness, so there is no Y factor. scaleLock links the two so
+      // has no thickness, so there is no Y scale factor (its height is the optional
+      // `y` offset, absent = 0). scaleLock links the two so
       // one slider resizes the floor proportionally (Scene3D.Params clamps).
       scaleX: 1,
       scaleZ: 1,
