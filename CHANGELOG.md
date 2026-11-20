@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: 3D object panel Scale X/Y/Z, uniform Scale keeps per-axis shape (owner request "all objects must have rotation, scale and move tools")
+- The tree object panel now has Scale X/Y/Z rows (same range and labels as the scene inspector), so every primitive has Move X/Y/Z, Yaw/Pitch/Roll and per-axis Scale there.
+- Dragging the uniform Scale slider used to delete `transform.sx/sy/sz`, silently wiping a per-axis shape set with the canvas gizmo. It now multiplies the per-axis factors by the same ratio (a 1:2:1 object stays 1:2:1) in both the tree panel and the scene inspector; a uniform object stays uniform. Sibling Scale rows refresh after a commit.
+
 ### Added: 3D Scene Shading slider (owner request "a slider where I can set the density of shading myself")
 - **Shading** (scene Tone section, 0-100, default 50; aria "Shading darkness") sets how dark the v2 shading gets: the dark end and the mid-tones, never the paper or the glint. It is not Density (how many lines, i.e. plot time). 50 reproduces the A22 look byte for byte (no key in the spec or bake key at the default).
 - One shared remap (`Regions.darknessK` / `darknessRel`, constants in `SCENE3D_SURFACE_LOCK.SHADE`) feeds every v2 curve: surface ladder (hatch, crosshatch, contour, spiral, stipple, faceted too), Duty Cycle, End Shorten, Mezzotint Region, the mark laws, and the pose ladder. 0 = 0.6 x the default dark end (~0.39 at Density 50, the pre-A22 light look); 100 = the ladder's no-overlap limit (one ruling per 1.3-pen guard, ~0.77). Duty Cycle, End Shorten, Mezzotint and the mark laws keep their dark end past 50 (their rulings already sit at the crowd guard / stop distance; a finer Duty Cycle pitch made the guard drop pieces) and darken their mid-tones. Measured whole-scene fill ink in the app: default sphere 6665 / 8302 / 8902 mm, Duty Cycle sphere 7024 / 8729 / 9162 mm at 0 / 50 / 100.

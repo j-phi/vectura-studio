@@ -2166,6 +2166,44 @@
 
   // Compact panel for one object3d LEAF layer — Inspector (dims / transform /
   // fidelity / visibility / role) + Style, re-keyed to layer.params.
+  // Uniform Scale slider semantics (B2). `sx/sy/sz` are ABSOLUTE per-axis
+  // factors and `scale` is the uniform base they default to. Dragging the
+  // uniform slider multiplies any per-axis factors by v/oldScale so a canvas-
+  // gizmo or Scale X/Y/Z shape (e.g. 1:2:1) survives; a uniform object stays
+  // uniform (no per-axis keys written).
+  const applyUniformScale = (tr, v) => {
+    const old = Number.isFinite(tr.scale) && tr.scale > 0 ? tr.scale : 1;
+    const f = v / old;
+    ['sx', 'sy', 'sz'].forEach((k) => { if (Number.isFinite(tr[k])) tr[k] = Math.max(0.01, tr[k] * f); });
+    tr.scale = v;
+  };
+
+  // Per-axis (non-uniform) scale row props. Each row shows the effective factor
+  // for its local axis (falls back to the uniform `scale`). Editing one axis
+  // seeds the others from the uniform base so the object becomes non-uniform
+  // without resetting the untouched axes.
+  // After a commit the sibling Scale rows must show the new effective factors.
+  const withRefresh = (kit, rerender) => ({
+    onChange: kit.onChange,
+    onCommit: (v) => { kit.onCommit(v); rerender(); },
+  });
+
+  const axisScaleRowProps = (tr, axis, liveSlider) => {
+    const key = `s${axis}`; // sx / sy / sz
+    const base = Number.isFinite(tr.scale) ? tr.scale : 1;
+    return {
+      value: Number.isFinite(tr[key]) ? tr[key] : base,
+      min: 0.1, max: 5, step: 0.05,
+      defaultValue: 1,
+      ariaLabel: `Scale ${axis.toUpperCase()}`,
+      ...liveSlider((v) => {
+        const b = Number.isFinite(tr.scale) ? tr.scale : 1;
+        ['sx', 'sy', 'sz'].forEach((k) => { if (!Number.isFinite(tr[k])) tr[k] = b; });
+        tr[key] = v;
+      }),
+    };
+  };
+
   const buildObjectPanel = (ui, layer, container) => {
     const UI = Vectura.UI;
     const params = layer.params || (layer.params = {});
@@ -2389,7 +2427,11 @@
       slider(host, 'Scale', {
         value: Number.isFinite(t.scale) ? t.scale : 1, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
         ariaLabel: 'Uniform scale',
-        ...liveSlider((v) => { params.transform.scale = v; delete params.transform.sx; delete params.transform.sy; delete params.transform.sz; }),
+        ...withRefresh(liveSlider((v) => { applyUniformScale(params.transform, v); }), renderObject),
+      });
+      // Per-axis scale — same rows as the scene-group inspector (I23).
+      ['x', 'y', 'z'].forEach((ax) => {
+        slider(host, `Scale ${ax.toUpperCase()}`, axisScaleRowProps(params.transform, ax, (fn) => withRefresh(liveSlider(fn), renderObject)));
       });
 
       // Visibility
@@ -5017,41 +5059,16 @@
       sliderRow(inspectorHost, inspectorComps, 'Pitch', rotProps('pitch', 'Pitch'));
       sliderRow(inspectorHost, inspectorComps, 'Roll', rotProps('roll', 'Roll'));
 
-      // Uniform scale — writes the base `scale` and clears any per-axis (I23)
-      // divergence, so the object snaps back to uniform.
+      // Uniform scale — writes the base `scale` and multiplies any per-axis
+      // (I23) factors by the same ratio, so a non-uniform shape is preserved.
       sliderRow(inspectorHost, inspectorComps, 'Scale', {
         value: Number.isFinite(t.scale) ? t.scale : 1,
         min: 0.1, max: 5, step: 0.05,
         defaultValue: 1,
         ariaLabel: 'Uniform scale',
-        ...liveSlider((v) => {
-          obj.transform.scale = v;
-          delete obj.transform.sx;
-          delete obj.transform.sy;
-          delete obj.transform.sz;
-        }),
+        ...withRefresh(liveSlider((v) => { applyUniformScale(obj.transform, v); }), renderInspector),
       });
-      // Per-axis (non-uniform) scale — I23. Each row shows the effective factor
-      // for its local axis (falls back to the uniform `scale`). Editing one axis
-      // seeds the others from the uniform base so the object becomes non-uniform
-      // without silently resetting the untouched axes.
-      const axisScaleProps = (axis) => {
-        const key = `s${axis}`; // sx / sy / sz
-        const base = Number.isFinite(t.scale) ? t.scale : 1;
-        return {
-          value: Number.isFinite(t[key]) ? t[key] : base,
-          min: 0.1, max: 5, step: 0.05,
-          defaultValue: 1,
-          ariaLabel: `Scale ${axis.toUpperCase()}`,
-          ...liveSlider((v) => {
-            const b = Number.isFinite(obj.transform.scale) ? obj.transform.scale : 1;
-            if (!Number.isFinite(obj.transform.sx)) obj.transform.sx = b;
-            if (!Number.isFinite(obj.transform.sy)) obj.transform.sy = b;
-            if (!Number.isFinite(obj.transform.sz)) obj.transform.sz = b;
-            obj.transform[key] = v;
-          }),
-        };
-      };
+      const axisScaleProps = (axis) => axisScaleRowProps(obj.transform, axis, (fn) => withRefresh(liveSlider(fn), renderInspector));
       sliderRow(inspectorHost, inspectorComps, 'Scale X', axisScaleProps('x'));
       sliderRow(inspectorHost, inspectorComps, 'Scale Y', axisScaleProps('y'));
       sliderRow(inspectorHost, inspectorComps, 'Scale Z', axisScaleProps('z'));
