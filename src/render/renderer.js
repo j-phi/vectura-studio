@@ -672,6 +672,8 @@
       // null | { layerId, objectId, handle, center, startDist, startScale,
       // historyPushed, moved }.
       this._sceneResizeDrag = null;
+      // Ground gizmo drag (size / Y). null | { layerId, leafId, kind, start, grab, historyPushed, moved, ... }.
+      this._sceneGroundGizmoDrag = null;
       // Box face-pull drag state.
       // null | { layerId, objectId, axisKey, center, startDist, startDim,
       // historyPushed, moved }.
@@ -862,6 +864,14 @@
         // Escape mid light-translate gizmo drag restores the pre-drag light.
         if (this._sceneLightGizmoDrag) {
           if (this._cancelSceneLightGizmoDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+        // Escape mid ground-gizmo drag restores the pre-drag size / height.
+        if (this._sceneGroundGizmoDrag) {
+          if (this._cancelSceneGroundGizmoDrag()) {
             e.preventDefault();
             e.stopPropagation();
           }
@@ -6502,6 +6512,8 @@
       // selection box so click targets are legible before clicking.
       if (this.hoverHighlight) this.drawHoverHighlight();
       if (this.hoverCenter) this.drawCenterMarker();
+      // Ground gizmo: drawn unclipped so a floor reaching past the artboard stays grabbable.
+      this.drawSceneGroundGizmo();
       const selectionLayersForBox = this.tempTransform
         ? selectedLayers.filter((l) =>
             !l.displayMaskActive &&
@@ -7742,6 +7754,12 @@
             if (e.cancelable) e.preventDefault();
             return;
           }
+          // The ground gizmo (corner / edge / centre boxes / Y arrow) wins over a ground re-pick.
+          const groundGizmoHit = this.hitSceneGroundGizmo(sx, sy, sceneLayer, e.pointerType);
+          if (groundGizmoHit && this.beginSceneGroundGizmoDrag(groundGizmoHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
           // A corner scale handle wins over an object re-pick underneath it.
           const resizeHit = this.hitSceneResize(sx, sy, sceneLayer);
           if (resizeHit && this.beginSceneResizeDrag(resizeHit, e)) {
@@ -7779,7 +7797,7 @@
         // on the invisible handle geometry must not arm a 2D resize.
         const soleSceneSelected = selectedLayers.length === 1
           && (selectedLayers[0].type === 'scene3d' || selectedLayers[0].type === 'object3d'
-            || selectedLayers[0].type === 'booleanGroup3d');
+            || selectedLayers[0].type === 'booleanGroup3d' || selectedLayers[0].type === 'sceneGround3d');
         if (selectionBounds && !soleSceneSelected && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds, { pointerType: e.pointerType });
           if (handle) {
@@ -8402,6 +8420,12 @@
         return;
       }
 
+      // 3D Scene Studio: live ground gizmo drag (size / height).
+      if (this._sceneGroundGizmoDrag) {
+        this._applySceneGroundGizmoDrag(e);
+        return;
+      }
+
       // 3D Scene Studio: live uniform-scale gizmo drag.
       if (this._sceneResizeDrag) {
         this._applySceneResizeDrag(e);
@@ -8989,6 +9013,12 @@
       // 3D Scene Studio (Unit 1b): commit a selected-light translate drag.
       if (this._sceneLightGizmoDrag) {
         this._endSceneLightGizmoDrag();
+        this.draw();
+        clearActivePointer();
+        return;
+      }
+      if (this._sceneGroundGizmoDrag) {
+        this._endSceneGroundGizmoDrag();
         this.draw();
         clearActivePointer();
         return;
@@ -12056,8 +12086,16 @@
       // that object's CHILD LAYER in the tree (sceneTarget.objectId === child
       // layer id, no lookup table). A monolith's inline object has no child
       // layer → select the scene layer itself (legacy behavior).
-      const pickedChild = layer.isGroup ? this._sceneChildLayerFor(layer, cand.objectId) : null;
+      const groundPick = cand.objectId === 'ground';
+      const groundLeaf = groundPick && layer.isGroup ? this._sceneGroundLeaf(layer) : null;
+      const pickedChild = layer.isGroup ? (this._sceneChildLayerFor(layer, cand.objectId) || groundLeaf) : null;
       const layerToSelect = pickedChild || layer;
+      // Ground already selected BEFORE this press (scene selection or its leaf): a body drag moves its Y.
+      const groundWasSelected = groundPick && Boolean(
+        (groundLeaf && this.selectedLayerIds.has(groundLeaf.id))
+        || (this.sceneSelection && this.sceneSelection.layerId === layer.id && this.sceneSelection.mode === 'object'
+          && Array.isArray(this.sceneSelection.objectIds) && this.sceneSelection.objectIds.length === 1
+          && this.sceneSelection.objectIds[0] === 'ground'));
       if (!this.selectedLayerIds.has(layerToSelect.id)) this.selectLayer(layerToSelect);
       const sel = this.sceneSelection && this.sceneSelection.layerId === layer.id ? this.sceneSelection : null;
       if (isDbl && !additive && !modifiers.alt) {
@@ -12088,6 +12126,11 @@
       const objectIds = already && !modifiers.alt ? sel.objectIds : [cand.objectId];
       this.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
       if (modifiers.alt) return true; // alt-cycle is discrete
+      if (groundPick) {
+        // A ground press only selects; once it is selected a body drag moves the floor's Y.
+        if (groundWasSelected && !additive) this.beginSceneGroundBodyDrag(layer, e);
+        return true;
+      }
       this._beginSceneGroundDrag(layer, objectIds, world);
       return true;
     }
@@ -12871,6 +12914,12 @@
           }
           return null;
         }
+        // A selected sceneGround3d CHILD arms the ground gizmo on its owning scene GROUP.
+        if (s.type === 'sceneGround3d') {
+          const group = this._sceneGroupOfChild(s);
+          if (group && group.visible !== false && !this.isLayerLocked?.(group.id)) return group;
+          return null;
+        }
         if (s.type === 'scene3d' && s.visible !== false && !this.isLayerLocked?.(s.id)) {
           // A directly-selected scene layer uses its own _selectedLightId (the
           // legacy in-panel light tree); no light CHILD is armed.
@@ -13152,6 +13201,8 @@
       if (!this._sceneHelpersVisible()) return null;
       const target = layer || this._sceneLightLayer();
       if (!target || target.type !== 'scene3d') return null;
+      const selLayers = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      if (selLayers.length === 1 && selLayers[0] && selLayers[0].type === 'sceneGround3d') return null;
       const sel = this.getSceneSelection();
       if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds) || sel.objectIds.length !== 1) return null;
       const objId = sel.objectIds[0];
@@ -13552,6 +13603,488 @@
       ctx.beginPath();
       ctx.arc(giz.center.x, giz.center.y, 2.4 * unit, 0, TAU);
       ctx.fill();
+      ctx.restore();
+    }
+
+    // ─── Ground gizmo (Scene3D floor: size + height) ────────────────────────────
+    // Shown while the ground is selected (scene selection {objectIds:['ground']}
+    // or the sceneGround3d leaf). Drawn UNCLIPPED so a floor reaching past the
+    // artboard stays grabbable: a dashed quad with corner (size, proportional)
+    // and edge-midpoint (size) squares, plus a CENTRE gizmo pinned inside the
+    // viewport with a Y arrow (floor height) and width/depth scale boxes, so every
+    // control stays reachable when the corners are off-screen. Drags write the
+    // ground bag (leaf params / params.ground) on the draft regen path — no engine
+    // rebake until release. Body-drag moves Y once the ground is already selected.
+
+    _sceneGroundLeaf(group) {
+      if (!group || !group.isGroup || !this.engine || !Array.isArray(this.engine.layers)) return null;
+      return this.engine.layers.find((l) => l && l.type === 'sceneGround3d' && l.params
+        && this._sceneGroupOfChild(l) === group) || null;
+    }
+
+    // { layer, leaf } for the selected ground, or null.
+    _sceneGroundTarget() {
+      const layer = this._sceneLightLayer();
+      if (!layer || layer.type !== 'scene3d') return null;
+      const sel = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      const leafSel = sel.length === 1 && sel[0] && sel[0].type === 'sceneGround3d' ? sel[0] : null;
+      const ss = this.getSceneSelection();
+      const ssGround = !!(ss && ss.layerId === layer.id && ss.mode === 'object'
+        && Array.isArray(ss.objectIds) && ss.objectIds.length === 1 && ss.objectIds[0] === 'ground');
+      if (!leafSel && !ssGround) return null;
+      // Cheap per-frame check (draw + hover run this): a group's floor is its leaf, a monolith's is params.ground.
+      if (layer.isGroup) {
+        const leaf = leafSel || this._sceneGroundLeaf(layer);
+        return leaf && leaf.params && leaf.params.enabled !== false && leaf.visible !== false ? { layer, leaf } : null;
+      }
+      if (!layer.params || (layer.params.ground && layer.params.ground.enabled === false)) return null;
+      return { layer, leaf: null };
+    }
+
+    _groundBag(target, create) {
+      if (target.leaf) return target.leaf.params;
+      const p = target.layer.params;
+      if (!p.ground && create) p.ground = { enabled: true };
+      return p.ground || null;
+    }
+
+    _groundState(target) {
+      const b = this._groundBag(target, false) || {};
+      const Pm = (window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params) || {};
+      const sMin = Number.isFinite(Pm.GROUND_SCALE_MIN) ? Pm.GROUND_SCALE_MIN : 0.25;
+      const sMax = Number.isFinite(Pm.GROUND_SCALE_MAX) ? Pm.GROUND_SCALE_MAX : 256;
+      const yMin = Number.isFinite(Pm.GROUND_Y_MIN) ? Pm.GROUND_Y_MIN : -200;
+      const yMax = Number.isFinite(Pm.GROUND_Y_MAX) ? Pm.GROUND_Y_MAX : 200;
+      const sc = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? clamp(Number(v), sMin, sMax) : 1);
+      const y = Number.isFinite(Number(b.y)) ? clamp(Number(b.y), yMin, yMax) : 0;
+      return { y, sx: sc(b.scaleX), sz: sc(b.scaleZ), lock: b.scaleLock !== false, sMin, sMax, yMin, yMax };
+    }
+
+    // Ground height (world mm) of a scene layer, 0 when the floor is at its default.
+    _sceneGroundY(layer) {
+      if (!layer) return 0;
+      const S3 = window.Vectura && window.Vectura.Scene3D;
+      const Params = S3 && S3.Params;
+      const source = layer._sceneAssembled || layer.params;
+      const norm = (Params && typeof Params.normalizeParams === 'function')
+        ? Params.normalizeParams(source) : source;
+      const y = norm && norm.ground ? Number(norm.ground.y) : 0;
+      return Number.isFinite(y) ? y : 0;
+    }
+
+    // World → doc point, or null when non-finite / behind the camera.
+    _groundProject(layer, w) {
+      const cam = (layer.params && layer.params.camera) || {};
+      const pt = this._sceneProjectWorld(layer, w);
+      if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+      const Scene = window.Vectura.Scene3D.Scene;
+      let bounds = {};
+      try { bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
+      const po = Scene.buildProjOpts(cam, bounds);
+      if (Number.isFinite(po.focal) && po.focal > 0) {
+        const r = this._rotateCam(w, cam);
+        if (po.focal + (Number(po.cameraDist) || 0) - r.z <= po.focal * 0.1) return null;
+      }
+      return pt;
+    }
+
+    // The doc point's pre-image on the horizontal plane y = gy ({x, z}), or null
+    // when the plane is edge-on. Newton on the shared projection, so it is exact
+    // for orthographic AND perspective, with or without a scene Transform.
+    _groundPlanePoint(layer, gy, doc, guess) {
+      let X = guess ? guess.x : 0;
+      let Z = guess ? guess.z : 0;
+      const P = (x, z) => this._sceneProjectWorld(layer, { x, y: gy, z });
+      for (let i = 0; i < 14; i += 1) {
+        const p = P(X, Z);
+        if (!p) return null;
+        const ex = doc.x - p.x; const ey = doc.y - p.y;
+        if (Math.hypot(ex, ey) < 1e-5) break;
+        const h = 1;
+        const a = P(X + h, Z); const b = P(X, Z + h);
+        if (!a || !b) return null;
+        const ax = a.x - p.x; const ay = a.y - p.y; const bx = b.x - p.x; const by = b.y - p.y;
+        const det = ax * by - bx * ay;
+        if (!Number.isFinite(det) || Math.abs(det) < 1e-9) return null;
+        X += ((ex * by - bx * ey) / det) * h;
+        Z += ((ax * ey - ex * ay) / det) * h;
+        if (!Number.isFinite(X) || !Number.isFinite(Z)) return null;
+      }
+      return { x: X, z: Z };
+    }
+
+    getSceneGroundGizmo() {
+      if (!this._sceneHelpersVisible()) return null;
+      const target = this._sceneGroundTarget();
+      if (!target) return null;
+      const layer = target.layer;
+      const st = this._groundState(target);
+      let bounds = {};
+      try { bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
+      const span = Math.max(Number(bounds.width) || 200, Number(bounds.height) || 200) * 0.75;
+      const Sx = span * st.sx; const Sz = span * st.sz;
+      const gy = st.y;
+      const cfg = (window.Vectura.UI_CONSTANTS && window.Vectura.UI_CONSTANTS.SCENE_GROUND_GIZMO) || {};
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const proj = (x, y, z) => this._groundProject(layer, { x, y, z });
+      const corners = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sgx, sgz]) => ({
+        kind: 'corner', sgx, sgz, pt: proj(sgx * Sx, gy, sgz * Sz), world: { x: sgx * Sx, z: sgz * Sz },
+      }));
+      const edges = [
+        { kind: 'edge', axis: 'x', sgx: 1, sgz: 0, w: { x: Sx, z: 0 } },
+        { kind: 'edge', axis: 'x', sgx: -1, sgz: 0, w: { x: -Sx, z: 0 } },
+        { kind: 'edge', axis: 'z', sgx: 0, sgz: 1, w: { x: 0, z: Sz } },
+        { kind: 'edge', axis: 'z', sgx: 0, sgz: -1, w: { x: 0, z: -Sz } },
+      ].map((e) => ({ ...e, pt: proj(e.w.x, gy, e.w.z), world: e.w }));
+      // Centre gizmo: the floor origin, pinned inside the viewport.
+      const c0 = proj(0, gy, 0);
+      const cw = this.canvas ? (this.canvas.clientWidth || 0) : 0;
+      const ch = this.canvas ? (this.canvas.clientHeight || 0) : 0;
+      const inset = (cfg.viewportInsetPx || 52);
+      let centre = c0;
+      let pinned = false;
+      if (cw > 0 && ch > 0) {
+        const sc = c0 ? this.worldToScreen(c0.x, c0.y) : { x: cw / 2, y: ch / 2 };
+        const cx = clamp(sc.x, inset, Math.max(inset, cw - inset));
+        const cy = clamp(sc.y, inset, Math.max(inset, ch - inset));
+        if (!c0 || cx !== sc.x || cy !== sc.y) {
+          centre = this.screenToWorld(cx, cy);
+          pinned = true;
+        }
+      }
+      if (!centre) return null;
+      const dirOf = (w, fb) => {
+        const a = proj(0, gy, 0); const b = proj(w.x, gy + w.y, w.z);
+        if (!a || !b) return { ...fb, perMm: 0 };
+        const dx = b.x - a.x; const dy = b.y - a.y; const l = Math.hypot(dx, dy);
+        return l > 1e-6 ? { x: dx / l, y: dy / l, perMm: l } : { ...fb, perMm: 0 };
+      };
+      const up = dirOf({ x: 0, y: 1, z: 0 }, { x: 0, y: -1 });
+      const dx = dirOf({ x: 1, y: 0, z: 0 }, { x: 1, y: 0 });
+      let dz = dirOf({ x: 0, y: 0, z: 1 }, { x: 0, y: 1 });
+      // Edge-on (pitch 0): depth has no screen extent; offer a perpendicular stub.
+      if (dz.perMm === 0) dz = { x: -dx.y, y: dx.x, perMm: 0 };
+      const arrowLen = (cfg.arrowPx || 68) * unit;
+      const boxLen = (cfg.boxPx || 48) * unit;
+      const at = (d, len) => ({ x: centre.x + d.x * len, y: centre.y + d.y * len });
+      return {
+        target, layer, st, Sx, Sz, gy, unit, corners, edges, centre, pinned, up, dx, dz,
+        arrow: { base: centre, tip: at(up, arrowLen) },
+        boxX: at(dx, boxLen), boxZ: at(dz, boxLen),
+        proj,
+      };
+    }
+
+    hitSceneGroundGizmo(sx, sy, _layer, pointerType) {
+      const giz = this.getSceneGroundGizmo();
+      if (!giz) return null;
+      const world = this.screenToWorld(sx, sy);
+      const tol = window.Vectura.hitTolerance('groundHandle', pointerType) * giz.unit;
+      const near = (p) => !!p && Math.hypot(world.x - p.x, world.y - p.y) <= tol;
+      if (near(giz.boxX)) return { kind: 'box', axis: 'x', giz };
+      if (near(giz.boxZ)) return { kind: 'box', axis: 'z', giz };
+      let best = null; let bestD = Infinity;
+      giz.corners.forEach((c) => {
+        if (!c.pt) return;
+        const d = Math.hypot(world.x - c.pt.x, world.y - c.pt.y);
+        if (d <= tol && d < bestD) { bestD = d; best = { kind: 'corner', sgx: c.sgx, sgz: c.sgz, giz }; }
+      });
+      if (best) return best;
+      giz.edges.forEach((e) => {
+        if (!e.pt) return;
+        const d = Math.hypot(world.x - e.pt.x, world.y - e.pt.y);
+        if (d <= tol && d < bestD) { bestD = d; best = { kind: 'edge', axis: e.axis, sgx: e.sgx, sgz: e.sgz, giz }; }
+      });
+      if (best) return best;
+      if (near(giz.arrow.tip)
+        || this._gizmoSegDist(world, giz.arrow.base, giz.arrow.tip) <= tol * 0.75) return { kind: 'y', giz };
+      return null;
+    }
+
+    _groundHitCursor(hit) {
+      if (!hit) return null;
+      if (hit.kind === 'y') return 'ns-resize';
+      const giz = hit.giz;
+      let v = null;
+      if (hit.kind === 'box') v = hit.axis === 'x' ? giz.dx : giz.dz;
+      else {
+        const p = hit.kind === 'corner'
+          ? giz.corners.find((c) => c.sgx === hit.sgx && c.sgz === hit.sgz)
+          : giz.edges.find((e) => e.sgx === hit.sgx && e.sgz === hit.sgz);
+        const c0 = giz.proj(0, giz.gy, 0);
+        if (p && p.pt && c0) v = { x: p.pt.x - c0.x, y: p.pt.y - c0.y };
+      }
+      if (!v) return 'move';
+      let a = Math.atan2(v.y, v.x) * 180 / Math.PI;
+      a = ((a % 180) + 180) % 180; // axis, not direction
+      if (a < 22.5 || a >= 157.5) return 'ew-resize';
+      if (a < 67.5) return 'nwse-resize';
+      if (a < 112.5) return 'ns-resize';
+      return 'nesw-resize';
+    }
+
+    // kind: 'corner' | 'edge' | 'box' | 'y' | 'body'. Returns true when armed.
+    beginSceneGroundGizmoDrag(hit, event = {}) {
+      const giz = (hit && hit.giz) || this.getSceneGroundGizmo();
+      if (!giz) return false;
+      const rect = this.canvas.getBoundingClientRect();
+      const grab = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      const kind = hit && hit.kind ? hit.kind : 'body';
+      const drag = {
+        layerId: giz.layer.id,
+        leafId: giz.target.leaf ? giz.target.leaf.id : null,
+        kind,
+        axis: hit && hit.axis ? hit.axis : null,
+        sgx: hit && hit.sgx ? hit.sgx : 0,
+        sgz: hit && hit.sgz ? hit.sgz : 0,
+        grab,
+        start: { y: giz.st.y, sx: giz.st.sx, sz: giz.st.sz },
+        lock: giz.st.lock,
+        hadY: Object.prototype.hasOwnProperty.call(this._groundBag(giz.target, false) || {}, 'y'),
+        Sx: giz.Sx, Sz: giz.Sz, gy: giz.gy,
+        upPerMm: giz.up.perMm,
+        upVec: { x: giz.up.x * giz.up.perMm, y: giz.up.y * giz.up.perMm },
+        boxDir: kind === 'box' ? (hit.axis === 'x' ? { x: giz.dx.x, y: giz.dx.y } : { x: giz.dz.x, y: giz.dz.y }) : null,
+        grabPlane: null,
+        handleVec: null,
+        historyPushed: false,
+        moved: false,
+      };
+      if (kind === 'corner' || kind === 'edge') {
+        const h0 = { x: drag.sgx * giz.Sx, z: drag.sgz * giz.Sz };
+        drag.h0 = h0;
+        drag.grabPlane = this._groundPlanePoint(giz.layer, giz.gy, grab, h0);
+        const hp = giz.proj(h0.x, giz.gy, h0.z); const c0 = giz.proj(0, giz.gy, 0);
+        if (hp && c0) drag.handleVec = { x: hp.x - c0.x, y: hp.y - c0.y };
+      }
+      this._sceneGroundGizmoDrag = drag;
+      this.setCanvasCursor(kind === 'body' || kind === 'y' ? 'ns-resize' : (this._groundHitCursor(hit) || 'move'), 'scene-ground');
+      return true;
+    }
+
+    beginSceneGroundBodyDrag(layer, event = {}) {
+      return this.beginSceneGroundGizmoDrag({ kind: 'body', giz: this.getSceneGroundGizmo() }, event);
+    }
+
+    _groundWrite(drag, patch) {
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) return null;
+      const target = { layer, leaf: drag.leafId ? this.engine.layers.find((l) => l.id === drag.leafId) : null };
+      if (drag.leafId && !target.leaf) return null;
+      const bag = this._groundBag(target, true);
+      if (!bag) return null;
+      if ('y' in patch) { if (patch.y) bag.y = patch.y; else delete bag.y; }
+      if ('sx' in patch) bag.scaleX = patch.sx;
+      if ('sz' in patch) bag.scaleZ = patch.sz;
+      return layer;
+    }
+
+    _applySceneGroundGizmoDrag(event = {}) {
+      const drag = this._sceneGroundGizmoDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) { this._sceneGroundGizmoDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const cur = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      const dxd = cur.x - drag.grab.x; const dyd = cur.y - drag.grab.y;
+      if (!drag.moved && Math.hypot(dxd, dyd) < 2 / (this.scale || 1)) return true;
+      const mods = this.getModifierState(event);
+      const cfg = (window.Vectura.UI_CONSTANTS && window.Vectura.UI_CONSTANTS.SCENE_GROUND_GIZMO) || {};
+      const Pm = (window.Vectura.Scene3D && window.Vectura.Scene3D.Params) || {};
+      const sMin = Number.isFinite(Pm.GROUND_SCALE_MIN) ? Pm.GROUND_SCALE_MIN : 0.25;
+      const sMax = Number.isFinite(Pm.GROUND_SCALE_MAX) ? Pm.GROUND_SCALE_MAX : 256;
+      const yMin = Number.isFinite(Pm.GROUND_Y_MIN) ? Pm.GROUND_Y_MIN : -200;
+      const yMax = Number.isFinite(Pm.GROUND_Y_MAX) ? Pm.GROUND_Y_MAX : 200;
+      let patch = null;
+      let tip = '';
+      if (drag.kind === 'y' || drag.kind === 'body') {
+        const u = drag.upVec;
+        const l2 = u.x * u.x + u.y * u.y;
+        // Doc units per world mm along world-up; top-down views (≈0) fall back to screen-vertical.
+        let dY = l2 > 1e-4 ? (dxd * u.x + dyd * u.y) / l2 : -dyd;
+        const fine = Boolean(mods.alt);
+        if (fine) dY *= 0.1;
+        let y = drag.start.y + dY;
+        y = fine ? Math.round(y * 10) / 10 : Math.round(y * 2) / 2;
+        if (!fine && Math.abs(y) < (cfg.zeroSnapMm || 0.75)) y = 0;
+        y = clamp(y, yMin, yMax);
+        patch = { y };
+        tip = `Y ${y}`;
+      } else {
+        const lockProp = drag.lock;
+        let rx = 1; let rz = 1; // ratios on scaleX / scaleZ
+        if (drag.kind === 'box') {
+          const dpx = (dxd * drag.boxDir.x + dyd * drag.boxDir.y) * (this.scale || 1);
+          const r = Math.pow(2, dpx / (cfg.boxOctavePx || 90));
+          const prop = lockProp !== Boolean(mods.shift);
+          if (prop) { rx = r; rz = r; } else if (drag.axis === 'x') rx = r; else rz = r;
+        } else {
+          let nx = null; let nz = null;
+          const gp = drag.grabPlane;
+          const here = gp ? this._groundPlanePoint(layer, drag.gy, cur, drag.h0) : null;
+          if (gp && here) {
+            // The handle follows the pointer on the floor plane.
+            const hx = drag.h0.x + (here.x - gp.x);
+            const hz = drag.h0.z + (here.z - gp.z);
+            nx = drag.sgx ? (hx * drag.sgx) / drag.Sx : 1;
+            nz = drag.sgz ? (hz * drag.sgz) / drag.Sz : 1;
+          } else if (drag.handleVec) {
+            // Edge-on plane: scale by the pointer's travel along the handle's screen direction.
+            const v = drag.handleVec; const l2 = v.x * v.x + v.y * v.y || 1;
+            const r = 1 + (dxd * v.x + dyd * v.y) / l2;
+            nx = drag.sgx ? r : 1; nz = drag.sgz ? r : 1;
+          }
+          if (nx == null) return true;
+          nx = Math.max(nx, 0.02); nz = Math.max(nz, 0.02);
+          if (drag.kind === 'corner') {
+            if (mods.shift) { rx = nx; rz = nz; } else { const r = (nx + nz) / 2; rx = r; rz = r; }
+          } else {
+            const prop = lockProp !== Boolean(mods.shift);
+            const r = drag.axis === 'x' ? nx : nz;
+            if (prop) { rx = r; rz = r; } else if (drag.axis === 'x') rx = r; else rz = r;
+          }
+        }
+        // One shared factor clamp keeps a proportional drag from pinning one axis only.
+        const fit = (s, r) => clamp(s * r, sMin, sMax);
+        let sx = fit(drag.start.sx, rx); let sz = fit(drag.start.sz, rz);
+        if (rx === rz) {
+          const f = clamp(rx, Math.max(sMin / drag.start.sx, sMin / drag.start.sz), Math.min(sMax / drag.start.sx, sMax / drag.start.sz));
+          sx = drag.start.sx * f; sz = drag.start.sz * f;
+        }
+        sx = Math.round(sx * 1000) / 1000; sz = Math.round(sz * 1000) / 1000;
+        patch = { sx, sz };
+        tip = `W ${sx.toFixed(2)}×  D ${sz.toFixed(2)}×`;
+      }
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      if (!this._groundWrite(drag, patch)) return true;
+      this._scheduleSceneDragRegen(layer.id);
+      this.showDragTooltip(tip, event.clientX ?? 0, event.clientY ?? 0);
+      return true;
+    }
+
+    _clearSceneGroundGizmoRegen() {
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+    }
+
+    _endSceneGroundGizmoDrag() {
+      const drag = this._sceneGroundGizmoDrag;
+      this._sceneGroundGizmoDrag = null;
+      this._clearSceneGroundGizmoRegen();
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.updateFormula?.();
+        // Rebuild the panel so its sliders reflect the dragged values.
+        this.app?.ui?.buildControls?.(this.getSelectedLayer?.() || layer);
+      }
+      this.updateCursor();
+    }
+
+    _cancelSceneGroundGizmoDrag() {
+      const drag = this._sceneGroundGizmoDrag;
+      if (!drag) return false;
+      this._sceneGroundGizmoDrag = null;
+      this._clearSceneGroundGizmoRegen();
+      const layer = this._groundWrite(drag, { y: drag.hadY ? drag.start.y : 0, sx: drag.start.sx, sz: drag.start.sz });
+      if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+        this.app.history.pop();
+      }
+      if (layer && drag.moved) this.engine.generate(layer.id);
+      this.draw();
+      this.updateCursor();
+      return true;
+    }
+
+    drawSceneGroundGizmo() {
+      const giz = this.getSceneGroundGizmo();
+      if (!giz) return;
+      const ctx = this.ctx;
+      const unit = giz.unit;
+      const cfg = (window.Vectura.UI_CONSTANTS && window.Vectura.UI_CONSTANTS.SCENE_GROUND_GIZMO) || {};
+      const touch = this.lastPointerType === 'touch';
+      const grow = touch ? 1.5 : 1;
+      const stroke = getThemeToken('--render-selection-stroke', '#38bdf8');
+      const fillBg = getThemeToken('--render-selection-handle-fill', '#ffffff');
+      const colors = {
+        x: getThemeToken('--render-gizmo-x', '#fbbf24'),
+        y: getThemeToken('--render-gizmo-y', '#a78bfa'),
+        z: getThemeToken('--render-gizmo-z', '#22d3ee'),
+      };
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      // Floor outline (dashed), only when every corner is in front of the camera.
+      if (giz.corners.every((c) => c.pt)) {
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1.25 * unit;
+        ctx.setLineDash([6 * unit, 4 * unit]);
+        ctx.beginPath();
+        giz.corners.forEach((c, i) => (i ? ctx.lineTo(c.pt.x, c.pt.y) : ctx.moveTo(c.pt.x, c.pt.y)));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.globalAlpha = 1;
+      const ch = (cfg.cornerHalfPx || 5) * grow * unit;
+      const eh = (cfg.edgeHalfPx || 4) * grow * unit;
+      giz.corners.forEach((c) => {
+        if (!c.pt) return;
+        ctx.fillStyle = fillBg; ctx.strokeStyle = stroke; ctx.lineWidth = 1.5 * unit;
+        ctx.beginPath(); ctx.rect(c.pt.x - ch, c.pt.y - ch, ch * 2, ch * 2); ctx.fill(); ctx.stroke();
+      });
+      giz.edges.forEach((e) => {
+        if (!e.pt) return;
+        ctx.fillStyle = fillBg; ctx.strokeStyle = e.axis === 'x' ? colors.x : colors.z; ctx.lineWidth = 1.5 * unit;
+        ctx.beginPath();
+        ctx.moveTo(e.pt.x, e.pt.y - eh * 1.2); ctx.lineTo(e.pt.x + eh * 1.2, e.pt.y);
+        ctx.lineTo(e.pt.x, e.pt.y + eh * 1.2); ctx.lineTo(e.pt.x - eh * 1.2, e.pt.y);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+      // Centre gizmo: width/depth boxes and the Y arrow.
+      const c = giz.centre;
+      const boxes = [['x', giz.boxX], ['z', giz.boxZ]];
+      boxes.forEach(([key, p]) => {
+        ctx.strokeStyle = colors[key]; ctx.lineWidth = 1.6 * unit; ctx.globalAlpha = 0.85;
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        ctx.globalAlpha = 1;
+        const bs = 4.5 * grow * unit;
+        ctx.fillStyle = fillBg; ctx.lineWidth = 1.8 * unit;
+        ctx.beginPath(); ctx.rect(p.x - bs, p.y - bs, bs * 2, bs * 2); ctx.fill(); ctx.stroke();
+      });
+      const tip = giz.arrow.tip;
+      ctx.strokeStyle = colors.y; ctx.fillStyle = colors.y; ctx.lineWidth = 2.6 * unit;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+      const a = Math.atan2(tip.y - c.y, tip.x - c.x);
+      const ah = 11 * grow * unit;
+      ctx.beginPath();
+      ctx.moveTo(tip.x + Math.cos(a) * ah * 0.6, tip.y + Math.sin(a) * ah * 0.6);
+      ctx.lineTo(tip.x - Math.cos(a - 0.5) * ah * 0.6, tip.y - Math.sin(a - 0.5) * ah * 0.6);
+      ctx.lineTo(tip.x - Math.cos(a + 0.5) * ah * 0.6, tip.y - Math.sin(a + 0.5) * ah * 0.6);
+      ctx.closePath(); ctx.fill();
+      // Pivot + readout.
+      ctx.fillStyle = fillBg; ctx.strokeStyle = colors.y; ctx.lineWidth = 1.6 * unit;
+      ctx.beginPath(); ctx.arc(c.x, c.y, 4 * unit, 0, TAU); ctx.fill(); ctx.stroke();
+      const label = `Y ${Math.round(giz.gy * 10) / 10}`;
+      ctx.font = `${600} ${11 * unit}px system-ui, sans-serif`;
+      ctx.textBaseline = 'middle';
+      const lx = tip.x + (Math.cos(a) >= 0 ? 8 : -8) * unit;
+      ctx.textAlign = Math.cos(a) >= 0 ? 'left' : 'right';
+      ctx.lineWidth = 3 * unit; ctx.strokeStyle = getThemeToken('--render-gizmo-label-halo', 'rgba(17,24,39,0.85)');
+      ctx.strokeText(label, lx, tip.y + (Math.sin(a) > 0.5 ? 6 : 0) * unit);
+      ctx.fillStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      ctx.fillText(label, lx, tip.y + (Math.sin(a) > 0.5 ? 6 : 0) * unit);
       ctx.restore();
     }
 
@@ -14310,13 +14843,6 @@
       return !!(norm && norm.ground && norm.ground.enabled !== false);
     }
 
-    // The ground quad's world height. scene.js's buildGroundRecord hardcodes
-    // it at world y = 0 (see "The ground plane: a large world quad at y = 0")
-    // — there is no ground height/offset param today, so this always returns
-    // 0. Centralized here (rather than a literal 0 inline below) so the one
-    // call site that needs updating is obvious if a configurable ground
-    // height/offset is ever added.
-    _sceneGroundY(_layer) { return 0; }
 
     // The TRUE lowest world-space Y of one object's rendered geometry — its
     // full transform (per-axis scale, then yaw/pitch/roll, then translate)
@@ -18752,6 +19278,13 @@
             (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB' || hitGuide.type === 'wallpaperRotate') ? 'crosshair' :
             'move'
           );
+          return;
+        }
+      }
+      if (this.activeTool === 'select' && !this._sceneGroundGizmoDrag) {
+        const groundHover = this.hitSceneGroundGizmo(sx, sy, null, e && e.pointerType);
+        if (groundHover) {
+          this.setCanvasCursor(this._groundHitCursor(groundHover) || 'move', 'scene-ground');
           return;
         }
       }

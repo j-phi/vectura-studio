@@ -70,6 +70,7 @@
     '_sceneDrag',
     '_sceneObjectGizmoDrag',
     '_sceneLightGizmoDrag',
+    '_sceneGroundGizmoDrag',
     '_sceneResizeDrag',
     '_sceneFacePullDrag',
     '_sceneLightDrag',
@@ -95,6 +96,7 @@
     '_sceneDrag',
     '_sceneObjectGizmoDrag',
     '_sceneLightGizmoDrag',
+    '_sceneGroundGizmoDrag',
     '_sceneResizeDrag',
     '_sceneFacePullDrag',
     '_sceneLightDrag',
@@ -105,6 +107,7 @@
   const CANCEL_PATHS = Object.freeze([
     '_cancelSceneObjectGizmoDrag',
     '_cancelSceneLightGizmoDrag',
+    '_cancelSceneGroundGizmoDrag',
     '_cancelSceneResizeDrag',
     '_cancelSceneFacePullDrag',
     '_cancelSceneLightDrag',
