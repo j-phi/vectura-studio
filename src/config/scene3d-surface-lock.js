@@ -45,6 +45,10 @@
     // Contract §5, §13 — memo sizes for tone LUTs and for the Level S mesh / ground-hatch bakes.
     TONE_LUT_MEMO_ENTRIES: 32,
     AUX_CACHE_ENTRIES: 16,
+    // H4 — crowd guard: relative band around guardD inside which the exact Math.hypot test is used (outside it the squared distance decides).
+    CROWD: { EXACT_BAND: 1e-9 },
+    // H4 — glint scaleFn: skip the pow where w * nh^sh is provably <= s0 (relative margin keeps boundary cases on the pow side).
+    GLINT: { SKIP_MARGIN: 0.999999, FAST_MARGIN: 0.99999, FAST_EPS: 1e-9 },
     // surface-lock.js (core): FRESH_MAX caps the per-frame fresh-key list; FALLBACK_FLOOR_PEN is the plot floor (x pen) when Regions is absent.
     FRESH_MAX: 256,
     FALLBACK_FLOOR_PEN: 2.2,
