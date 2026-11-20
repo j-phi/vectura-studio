@@ -1885,7 +1885,10 @@
   const SHADING_LAWS = new Set(['ladder', 'dutyConst', 'endShorten', 'mezzoRegion', 'mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount']);
   const shadingLiveFor = (c) => Boolean(c && FILL_MAPPERS.has(c.mapper) && c.law !== 'none'
     && (c.survivor === 'ladder' || SHADING_LAWS.has(c.law)));
+  // Mezzotint Region and the mark laws follow Shading only in the mid-tones (past 50); the Ladder, Duty Cycle and End Shorten follow it fully.
+  const MIDTONE_SHADING_LAWS = new Set(['mezzoRegion', 'mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount']);
   const TONE_NOTES = {
+    shadingMidtones: 'Past 50, this fill style follows Shading only in the mid-tones: the darkest tone and the highlights stay put.',
     shading: 'How dark the shading gets: the darkest tone and the mid-tones, never the paper or the highlight. Density sets how many lines are drawn (plot time); Shading sets how much ink the shadows get. 50 is the standard look; 0 is light, 100 is as dark as lines can go without overlapping. Followed by Ladder (Hatch, Crosshatch, Contour, Spiral, Stipple), and, with marks locked to the surface, by Duty Cycle, End Shorten, Mezzotint Region and the mark Fill Styles (Tick, Dot Screen, Dash Ramp, Scribble, Bundle Count; past 50 Mezzotint and the marks darken only their mid-tones). Other Fill Styles set their own tone and ignore it.',
     shadingLegacy: 'Shading needs the realistic light model. This scene uses the legacy model (an older document), so its shading is fixed.',
     shadingFlat: 'Flat shading has no tone, so Shading changes nothing. Pick 2-4 bands.',
@@ -1894,6 +1897,19 @@
     bandsNone: 'No object in this scene uses a Fill Style that reads these bands. They still shape the ground and the cast shadows.',
     specular: 'Specular is drawn only on faceted shapes (box, plane, solid) with Hatch or Crosshatch. Curved shapes do not draw it (PRH-027).',
   };
+
+  // H3 — is a directional key light in FRONT of or BEHIND the subject, as the camera sees it? Same convention as the
+  // specular hotspot (regions.js): rotate the toward-light vector into camera space, where +z points at the viewer.
+  const lightFacing = (light, camera) => {
+    const Lt = Vectura.Scene3D && Vectura.Scene3D.Lighting;
+    const G3 = Vectura.Geometry3D;
+    if (!Lt || !G3 || typeof G3.rotatePoint !== 'function' || !light) return null;
+    const cam = camera || {};
+    const num = (x, d) => (Number.isFinite(x) ? x : d);
+    const Lc = G3.rotatePoint(Lt.towardLight(light), { yaw: num(cam.yaw, -30), pitch: num(cam.pitch, 20), roll: num(cam.roll, 0) });
+    return Lc && Lc.z >= 0 ? 'front' : 'behind';
+  };
+  const LIGHT_FACING_TEXT = { front: 'Key light: in front of the subject', behind: 'Key light: behind the subject' };
 
   const sectionHeader = (host, text) => {
     const hdr = document.createElement('div');
@@ -2962,10 +2978,39 @@
     host.appendChild(note);
 
     if (isDir) {
+      // H3 — compact read-only front/behind readout (camera read live off the owning scene group).
+      const engine = ui.app && ui.app.engine;
+      const sceneCamera = () => {
+        let q = layer; const seen = new Set();
+        while (q && q.parentId && engine && engine.getLayerById && !seen.has(q.id)) {
+          seen.add(q.id); q = engine.getLayerById(q.parentId);
+          if (q && q.type === 'scene3d' && q.params) return q.params.camera;
+        }
+        return null;
+      };
+      const facingEl = document.createElement('p');
+      facingEl.className = 'vs3-lawnote is-info vs3-light-facing';
+      facingEl.dataset.control = 'lightFacing';
+      const refreshLightFacing = () => {
+        const f = lightFacing(p, sceneCamera());
+        if (!f) { facingEl.hidden = true; return; }
+        facingEl.hidden = false;
+        facingEl.dataset.facing = f;
+        facingEl.textContent = LIGHT_FACING_TEXT[f];
+        facingEl.setAttribute('aria-label', `${LIGHT_FACING_TEXT[f]} (relative to the camera)`);
+      };
+      refreshLightFacing();
+      host.appendChild(facingEl);
+      const onAnyEdit = () => {
+        if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); return; }
+        refreshLightFacing();
+      };
+      document.addEventListener('input', onAnyEdit, true);
+      document.addEventListener('pointerup', onAnyEdit, true);
       slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 330, min: 0, max: 360, step: 1, defaultValue: 330,
-        ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); }) });
+        ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); refreshLightFacing(); }) });
       slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 40, min: 0, max: 90, step: 1, defaultValue: 40,
-        ariaLabel: 'Light elevation (degrees)', ...liveSlider((v) => { p.elevation = Math.round(v); }) });
+        ariaLabel: 'Light elevation (degrees)', ...liveSlider((v) => { p.elevation = Math.round(v); refreshLightFacing(); }) });
     }
     if (isPoint || isSpot || isArea) vec3('position', 'Position', { x: 120, y: 200, z: 120 });
     if (isPoint || isSpot) {
@@ -4708,17 +4753,38 @@
             : 'Positional light — drag the on-canvas 3-axis gizmo to move it, or use the controls below.'));
       inspectorHost.appendChild(note);
       if (isDir) {
+        // H3 — compact read-only front/behind readout, kept live by refreshLightFacing (slider apply + any panel input).
+        const facingEl = document.createElement('p');
+        facingEl.className = 'vs3-lawnote is-info vs3-light-facing';
+        facingEl.dataset.control = 'lightFacing';
+        const refreshLightFacing = () => {
+          const lt = lightById(lid) || light;
+          const f = lightFacing(lt, params.camera);
+          if (!f) { facingEl.hidden = true; return; }
+          facingEl.hidden = false;
+          facingEl.dataset.facing = f;
+          facingEl.textContent = LIGHT_FACING_TEXT[f];
+          facingEl.setAttribute('aria-label', `${LIGHT_FACING_TEXT[f]} (relative to the camera)`);
+        };
+        refreshLightFacing();
+        inspectorHost.appendChild(facingEl);
+        const onAnyEdit = () => {
+          if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); return; }
+          refreshLightFacing();
+        };
+        document.addEventListener('input', onAnyEdit, true);
+        document.addEventListener('pointerup', onAnyEdit, true);
         sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
           value: Number.isFinite(light.azimuth) ? light.azimuth : 330,
           min: 0, max: 360, step: 1, defaultValue: 330,
           ariaLabel: 'Light azimuth (degrees)',
-          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.azimuth = Math.round(v); }),
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.azimuth = Math.round(v); refreshLightFacing(); }),
         });
         sliderRow(inspectorHost, inspectorComps, 'Elevation', {
           value: Number.isFinite(light.elevation) ? light.elevation : 40,
           min: 0, max: 90, step: 1, defaultValue: 40,
           ariaLabel: 'Light elevation (degrees)',
-          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); }),
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); refreshLightFacing(); }),
         });
       }
       if (isPoint || isSpot || isArea) {
@@ -5703,6 +5769,14 @@
         else {
           shRow.setAttribute('title', TONE_NOTES.shading);
           buildLawInfoAffordance(shRow, [{ text: TONE_NOTES.shading }], 'What Shading does');
+          // H3 — purely informational (not a warning): some live Fill Styles follow Shading only in the mid-tones.
+          if (consumers.some((c) => shadingLiveFor(c) && MIDTONE_SHADING_LAWS.has(c.law))) {
+            const infoNote = document.createElement('p');
+            infoNote.className = 'vs3-lawnote is-info';
+            infoNote.dataset.control = 'toneDarknessMidtones';
+            infoNote.textContent = TONE_NOTES.shadingMidtones;
+            shRow.insertAdjacentElement('afterend', infoNote);
+          }
         }
       }
 
