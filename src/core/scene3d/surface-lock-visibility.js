@@ -355,6 +355,7 @@
     let td = SCR.td; let tObj = SCR.tObj; let tFace = SCR.tFace; let tb = SCR.tb;
     let cellStart = SCR.cellStart; let cellTris = SCR.cellTris;
     let n = 0; let nx = 1; let ny = 1; let cs = 1; let gx0 = 0; let gy0 = 0;
+    let cellMask = null; // per cell: bit o set when a triangle of object o touches it (null above 31 objects)
 
     // Builds the screen-space triangle buffer and its grid into the shared scratch and claims ownership of it.
     const build = () => {
@@ -411,6 +412,10 @@
         nx = Math.min(TUNE.MAX_CELLS, Math.floor((maxX - gx0) / cs) + 1); ny = Math.min(TUNE.MAX_CELLS, Math.floor((maxY - gy0) / cs) + 1);
         binTriangles(tb, n, gx0, gy0, cs, nx, ny);
         cellStart = SCR.cellStart; cellTris = SCR.cellTris;
+        if (list.length <= 31) {
+          cellMask = new Uint32Array(nx * ny);
+          for (let c = 0; c < nx * ny; c++) { let mk = 0; for (let k = cellStart[c]; k < cellStart[c + 1]; k++) mk |= 1 << tObj[cellTris[k]]; cellMask[c] = mk; }
+        } else cellMask = null;
       }
       SCR.owner = token;
     };
@@ -439,6 +444,8 @@
       const gx = Math.floor((x - gx0) / cs); const gy = Math.floor((y - gy0) / cs);
       if (gx < 0 || gy < 0 || gx >= nx || gy >= ny) return false;
       const cell = gy * nx + gx;
+      // H4: a cell holding only the object's own triangles, which a convex (or analytic-torus) object never tests against itself
+      if (cellMask !== null && own >= 0 && !edgeMode && (cellMask[cell] & ~(1 << own)) === 0 && (list[own].convex || probeFor(own))) return false;
       const s1 = cellStart[cell + 1];
       for (let k = cellStart[cell]; k < s1; k++) {
         const t = cellTris[k];
