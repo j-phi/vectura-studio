@@ -1387,6 +1387,16 @@
     };
   };
 
+  // B4 — an OPTIONAL group transform on a boolean group (the combined shape). Same shape as an object's transform, but absent =
+  // identity: this returns null for a missing or identity bag, so only a real move/turn/stretch is ever written.
+  const normalizeGroupTransform = (transform) => {
+    if (!isObject(transform)) return null;
+    const t = normalizeTransform(transform);
+    const identity = t.x === 0 && t.y === 0 && t.z === 0 && t.yaw === 0 && t.pitch === 0 && t.roll === 0
+      && t.scale === 1 && t.sx === undefined;
+    return identity ? null : t;
+  };
+
   // Scene-tree Increment B — assemble ONE scene-group layer's render input by
   // COLLECTING its descendant object3d / booleanGroup3d layers back into exactly
   // today's normalized scene shape (objects[] / groups[] / styleTable), then
@@ -1498,6 +1508,9 @@
     };
   };
 
+  // Spread helper: { transform } only when the group transform is non-identity (absent keeps the assembly byte-identical).
+  const groupTransformEntry = (t) => { const n = normalizeGroupTransform(t); return n ? { transform: n } : {}; };
+
   const collectSceneParams = (groupParams, collected) => {
     const gp = isObject(groupParams) ? groupParams : {};
     const items = Array.isArray(collected) ? collected : [];
@@ -1567,6 +1580,7 @@
           name: typeof bp.name === 'string' && bp.name ? bp.name : item.id,
           op: GROUP_OPS.includes(bp.op) ? bp.op : 'none',
           children: (Array.isArray(item.children) ? item.children : []).filter((c) => typeof c === 'string'),
+          ...groupTransformEntry(bp.transform),
         });
         // Same inherit-when-unstyled rule as an object3d child.
         if (declaresStyle(bp)) byObject[item.id] = normalizeStyle(bp.style);
@@ -1634,6 +1648,7 @@
         name: typeof group.name === 'string' && group.name ? group.name : `Group ${index + 1}`,
         op: GROUP_OPS.includes(group.op) ? group.op : 'none',
         children,
+        ...groupTransformEntry(group.transform),
       });
     });
     return out;
@@ -2412,6 +2427,7 @@
     normalizeObjectLayerParams,
     collectSceneParams,
     normalizeGroups,
+    normalizeGroupTransform,
     normalizeParams,
     normalizeGround,
     objectCastsShadow,

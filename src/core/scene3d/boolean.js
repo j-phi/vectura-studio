@@ -57,6 +57,64 @@
     return { ...obj, params: { ...(obj.params || {}), detail } };
   };
 
+  // ── B4: group transform ──────────────────────────────────────────────────────────────────────────────────────────────
+  // A boolean group may carry an optional `transform` ({x,y,z,yaw,pitch,roll,scale,sx,sy,sz}; absent = identity, so every
+  // existing scene is byte-identical). It is applied AFTER each operand's own transform, about the group PIVOT = the mean of
+  // the operands' own positions (stable while only the group transform changes). x/y/z move the whole group; yaw/pitch/roll
+  // turn it and scale/sx/sy/sz stretch it about the pivot, in world space. For the carved result it is applied to the world
+  // mesh, so non-uniform scale on rotated operands stays exact; the uncarved fallback (draft frames, over-budget carves)
+  // composes it into each operand's transform (exact except non-uniform scale on a rotated operand, which loses its shear).
+  const groupTransformOf = (g) => (g && g.transform && typeof g.transform === 'object' ? g.transform : null);
+
+  const groupPivot = (operandTransforms) => {
+    const list = (operandTransforms || []).filter((t) => t && typeof t === 'object');
+    if (!list.length) return { x: 0, y: 0, z: 0 };
+    let x = 0; let y = 0; let z = 0;
+    list.forEach((t) => { x += Number(t.x) || 0; y += Number(t.y) || 0; z += Number(t.z) || 0; });
+    return { x: x / list.length, y: y / list.length, z: z / list.length };
+  };
+
+  // p' = pivot + T + R·S·(p − pivot)
+  const applyGroupToPoint = (Scene, pt, gt, pivot) => {
+    const q = Scene.applyObjectTransform({ x: pt.x - pivot.x, y: pt.y - pivot.y, z: pt.z - pivot.z }, gt);
+    return { x: q.x + pivot.x, y: q.y + pivot.y, z: q.z + pivot.z };
+  };
+
+  const rad = (d) => (Number(d) || 0) * Math.PI / 180;
+  // Rotation matrix (columns = images of the basis vectors) of an object's yaw/pitch/roll, via the engine's own rotator.
+  const rotMatrix = (Scene, t) => {
+    const col = (e) => Scene.applyObjectTransform(e, { x: 0, y: 0, z: 0, yaw: t.yaw, pitch: t.pitch, roll: t.roll, scale: 1 });
+    const cx = col({ x: 1, y: 0, z: 0 }); const cy = col({ x: 0, y: 1, z: 0 }); const cz = col({ x: 0, y: 0, z: 1 });
+    return [[cx.x, cy.x, cz.x], [cx.y, cy.y, cz.y], [cx.z, cy.z, cz.z]];
+  };
+  const matMul = (a, b) => a.map((row, i) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
+  // Inverse of Scene.rotatePoint's yaw → pitch → roll order (M = Rz(roll)·Rx(pitch)·Ry(yaw)).
+  const eulerOf = (m) => {
+    const sp = Math.max(-1, Math.min(1, m[2][1]));
+    const pitch = Math.asin(sp);
+    let yaw; let roll;
+    if (Math.abs(sp) < 0.999999) {
+      yaw = Math.atan2(-m[2][0], m[2][2]);
+      roll = Math.atan2(-m[0][1], m[1][1]);
+    } else { yaw = 0; roll = Math.atan2(m[1][0], m[0][0]); }
+    const deg = (r) => Math.round((r * 180 / Math.PI) * 1e6) / 1e6;
+    return { yaw: deg(yaw), pitch: deg(pitch), roll: deg(roll) };
+  };
+
+  // An operand's transform with the group transform composed on top (uncarved fallback only).
+  const composeOperandTransform = (Scene, own, gt, pivot) => {
+    const o = own || {};
+    const pos = applyGroupToPoint(Scene, { x: Number(o.x) || 0, y: Number(o.y) || 0, z: Number(o.z) || 0 }, gt, pivot);
+    const so = Number.isFinite(o.scale) ? o.scale : 1;
+    const sg = Number.isFinite(gt.scale) ? gt.scale : 1;
+    const axis = (ov, gv) => (Number.isFinite(ov) ? ov : so) * (Number.isFinite(gv) ? gv : sg);
+    const sx = axis(o.sx, gt.sx); const sy = axis(o.sy, gt.sy); const sz = axis(o.sz, gt.sz);
+    const rot = eulerOf(matMul(rotMatrix(Scene, gt), rotMatrix(Scene, o)));
+    const out = { ...o, x: pos.x, y: pos.y, z: pos.z, yaw: rot.yaw, pitch: rot.pitch, roll: rot.roll, scale: so * sg };
+    if (!(sx === so * sg && sy === so * sg && sz === so * sg)) { out.sx = sx; out.sy = sy; out.sz = sz; } else { delete out.sx; delete out.sy; delete out.sz; }
+    return out;
+  };
+
   // Build a child's WORLD-space mesh (camera-independent): primitive mesh, then
   // applyObjectTransform per vertex. Faces stay n-gon; CSG fan-triangulates.
   // Carries the primitive's per-face ids through for source attribution.
@@ -185,6 +243,17 @@
     return any ? out : null;
   };
 
+  // Every leaf operand OBJECT under a group (depth-first, cycle-safe).
+  const leafOperandsOf = (group, objIndex, groupIndex, acc = [], seen = new Set()) => {
+    if (!group || seen.has(group.id)) return acc;
+    seen.add(group.id);
+    (group.children || []).forEach((cid) => {
+      if (objIndex.has(cid)) acc.push(objIndex.get(cid));
+      else if (groupIndex.has(cid)) leafOperandsOf(groupIndex.get(cid), objIndex, groupIndex, acc, seen);
+    });
+    return acc;
+  };
+
   const combineGroup = (group, objIndex, groupIndex, draft, Scene, CSG, styleTable) => {
     if (draft) return null;                 // CONTRACT L4 — no booleans on draft frames
     if (!CSG || !Scene) return null;
@@ -195,6 +264,11 @@
     const ctx = { objIndex, groupIndex, Scene, CSG, seen: new Set(), tris: 0, overrun: false, primaryId: primary.id };
     const result = combineMesh(group, ctx);
     if (ctx.overrun || !result || !Array.isArray(result.faces) || !result.faces.length) return null;
+    const gt = groupTransformOf(group);
+    if (gt) {
+      const pivot = groupPivot(leafOperandsOf(group, objIndex, groupIndex).map((o) => o.transform));
+      result.vertices = result.vertices.map((pt) => applyGroupToPoint(Scene, pt, gt, pivot));
+    }
 
     const faceStyleOverrides = buildFaceStyleOverrides(result.faceTags, primary.id, styleTable);
     const meshData = {
@@ -270,9 +344,12 @@
       const combined = combineGroup(g, objIndex, groupIndex, draft, Scene, CSG, p.styleTable);
       if (combined) { units.push(combined); return; }
       // Fallback: uncarved leaf objects in child order.
+      const gt = groupTransformOf(g);
+      const pivot = gt ? groupPivot(leafOperandsOf(g, objIndex, groupIndex).map((o) => o.transform)) : null;
       leafObjectsOf(g).forEach((cid) => {
         const c = objIndex.get(cid);
-        if (c) units.push(plainUnit(c));
+        if (!c) return;
+        units.push(plainUnit(gt ? { ...c, transform: composeOperandTransform(Scene, c.transform, gt, pivot) } : c));
       });
     });
     return units;
@@ -280,6 +357,8 @@
 
   const api = {
     resolveAssembly,
+    groupPivot,
+    applyGroupToPoint,
     FACETED,
     CONFIG,
     // Back-compat alias (read-only snapshot); the live cap lives on CONFIG.

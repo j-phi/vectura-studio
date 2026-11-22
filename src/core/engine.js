@@ -1479,6 +1479,8 @@
         // republishes byObject[boolean layer id] from bl.params.style too.
         const grpStyle = resolveObjectStyle(grp.id);
         if (grpStyle) bl.params.style = grpStyle;
+        // B4 — the group transform rides along (normalizeGroups keeps it only when non-identity).
+        if (grp.transform && typeof grp.transform === 'object') bl.params.transform = { ...grp.transform };
         this.layers.splice(insertAt, 0, bl);
         insertAt += 1;
         // Reparent this group's operand object3d children (they were inserted as

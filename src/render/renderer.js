@@ -130,7 +130,7 @@
         // Scene-tree Increment D — resolve the selected object through
         // _sceneObjectById (child-layer aware), not just inline params.objects.
         const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
-          ? (renderer && renderer._sceneObjectById ? renderer._sceneObjectById(layer, sel.objectIds[0]) : null)
+          ? (renderer && renderer._sceneXformTargetById ? renderer._sceneXformTargetById(layer, sel.objectIds[0]) : null)
           : null;
         if (obj) {
           const t = obj.transform || {};
@@ -150,13 +150,14 @@
         // Scene-tree Increment D — write to the selected object's transform via
         // _sceneObjectById (child-layer aware), not just inline params.objects.
         const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
-          ? (renderer && renderer._sceneObjectById ? renderer._sceneObjectById(layer, sel.objectIds[0]) : null)
+          ? (renderer && renderer._sceneXformTargetById ? renderer._sceneXformTargetById(layer, sel.objectIds[0]) : null)
           : null;
         if (obj) {
           const t = obj.transform || (obj.transform = {});
           if (next.yaw !== undefined) t.yaw = next.yaw;
           if (next.pitch !== undefined) t.pitch = next.pitch;
           if (next.roll !== undefined) t.roll = next.roll;
+          if (renderer._sceneTrimGroupTransform) renderer._sceneTrimGroupTransform(layer, sel.objectIds[0]);
           return;
         }
         const cam = params.camera || (params.camera = {});
@@ -11603,6 +11604,51 @@
       return null;
     }
 
+    // B4 — the boolean group layer an id names inside a scene group (or null).
+    _sceneBooleanGroupLayer(layer, id) {
+      if (!layer || !layer.isGroup || !id || id === 'ground' || !this.engine.getLayerById) return null;
+      const child = this.engine.getLayerById(id);
+      if (!child || child.type !== 'booleanGroup3d' || !child.params) return null;
+      return this._sceneChildLayerFor(layer, id) === child ? child : null;
+    }
+
+    // B4 — ids whose paths belong to a scene selection id: a boolean group's carved ink is tagged with its PRIMARY operand's
+    // id, so the group id expands to itself + its operands. Any other id is just itself.
+    _sceneInkIds(layer, id) {
+      const out = new Set([id]);
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      if (grp && this.engine.getLayerChildren) {
+        this.engine.getLayerChildren(grp.id).forEach((c) => { if (c && c.type === 'object3d') out.add(c.id); });
+      }
+      return out;
+    }
+
+    // B4 — the record a transform tool (gizmo / orbit pad / ground drag) writes: the object's params, or a boolean group's
+    // params (its optional group `transform`, created lazily by the writers and dropped again when back at identity).
+    _sceneXformTargetById(layer, id) {
+      const obj = this._sceneObjectById(layer, id);
+      if (obj) return obj;
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      if (!grp) return null;
+      if (grp.params.id !== id) grp.params.id = id;
+      return grp.params;
+    }
+
+    // The group's params when `id` names a boolean group (a ground-drag target), else null.
+    _sceneBooleanGroupXform(layer, id) {
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      return grp ? grp.params : null;
+    }
+
+    // Remove a boolean group's transform bag once it is identity again (absent = identity on disk).
+    _sceneTrimGroupTransform(layer, id) {
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      const t = grp && grp.params.transform;
+      if (!t) return;
+      const P = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params;
+      if (P && typeof P.normalizeGroupTransform === 'function' && !P.normalizeGroupTransform(t)) delete grp.params.transform;
+    }
+
     // Scene-tree Increment D — resolve the CHILD LAYER that an object pick maps
     // to inside a scene GROUP. sceneTarget.objectId === child layer id (identity
     // contract), so this is a direct id lookup restricted to descendants of the
@@ -12076,7 +12122,7 @@
         return false;
       }
       const layer = stack[0].layer;
-      const cand = this._scenePickCandidate(stack, world, 'object', modifiers.alt);
+      let cand = this._scenePickCandidate(stack, world, 'object', modifiers.alt);
       const now = performance.now();
       const prev = this._sceneLastClick;
       const isDbl = Boolean(prev && (now - prev.time) < 400
@@ -12086,6 +12132,12 @@
       // that object's CHILD LAYER in the tree (sceneTarget.objectId === child
       // layer id, no lookup table). A monolith's inline object has no child
       // layer → select the scene layer itself (legacy behavior).
+      // B4 — a click on a combined shape's carved ink selects the combined shape (its operands stay selectable in the tree).
+      const rawPickId = cand.objectId;
+      const pickedOperand = layer.isGroup && cand.objectId !== 'ground' ? this._sceneChildLayerFor(layer, cand.objectId) : null;
+      const pickedBool = pickedOperand && pickedOperand.type === 'object3d' && pickedOperand.parentId
+        ? this._sceneBooleanGroupLayer(layer, pickedOperand.parentId) : null;
+      if (pickedBool && pickedBool.params.op && pickedBool.params.op !== 'none') cand = { ...cand, objectId: pickedBool.id };
       const groundPick = cand.objectId === 'ground';
       const groundLeaf = groundPick && layer.isGroup ? this._sceneGroundLeaf(layer) : null;
       const pickedChild = layer.isGroup ? (this._sceneChildLayerFor(layer, cand.objectId) || groundLeaf) : null;
@@ -12102,7 +12154,7 @@
         // Double-click enters A / face mode on the clicked object (§5.1).
         this.sceneComponentMode = 'face';
         const faceStack = this._sceneCandidatesAtPoint(world, 'face');
-        const face = faceStack.find((c) => c.objectId === cand.objectId) || faceStack[0] || null;
+        const face = faceStack.find((c) => c.objectId === rawPickId) || faceStack[0] || null;
         this.setSceneSelection({
           layerId: layer.id,
           mode: 'face',
@@ -12244,7 +12296,7 @@
       const objects = this._allSceneObjectRecords(layer);
       const start = new Map();
       (objectIds || []).forEach((id) => {
-        const obj = objects.find((o) => o && o.id === id);
+        const obj = objects.find((o) => o && o.id === id) || this._sceneBooleanGroupXform(layer, id);
         if (!obj) return;
         const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
         start.set(id, {
@@ -12299,7 +12351,7 @@
       const objects = this._allSceneObjectRecords(layer);
       const inferTol = 6 / (this.scale || 1);
       drag.objectIds.forEach((id) => {
-        const obj = objects.find((o) => o && o.id === id);
+        const obj = objects.find((o) => o && o.id === id) || this._sceneBooleanGroupXform(layer, id);
         const s = drag.start.get(id);
         if (!obj || !s) return;
         const t = obj.transform || (obj.transform = {});
@@ -13212,7 +13264,17 @@
         // A boolean operand that is fully carved away draws none of its own lines, so there is no
         // ink to centre on: project its transform origin instead so it keeps a gizmo.
         const objDef = this._sceneObjectById(target, objId);
-        const xf = objDef && objDef.transform;
+        let xf = objDef && objDef.transform;
+        const grp = !objDef ? this._sceneBooleanGroupLayer(target, objId) : null;
+        if (grp) {
+          // A combined shape with no ink: anchor on its pivot (operand centroid) plus its own move.
+          const B = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Boolean;
+          const ops = (this.engine.getLayerChildren ? this.engine.getLayerChildren(grp.id) : [])
+            .filter((c) => c && c.type === 'object3d' && c.params).map((c) => c.params.transform);
+          const pv = B && B.groupPivot ? B.groupPivot(ops) : { x: 0, y: 0, z: 0 };
+          const gt = grp.params.transform || {};
+          xf = { x: pv.x + (Number(gt.x) || 0), y: pv.y + (Number(gt.y) || 0), z: pv.z + (Number(gt.z) || 0) };
+        }
         const pt = xf ? this._sceneProjectWorld(target, { x: Number(xf.x) || 0, y: Number(xf.y) || 0, z: Number(xf.z) || 0 }) : null;
         if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
         center = { x: pt.x, y: pt.y };
@@ -13320,7 +13382,7 @@
       if (!layer || !hit) return false;
       const giz = this.getSceneObjectGizmo(layer);
       if (!giz) return false;
-      const obj = this._sceneObjectById(layer, giz.objId);
+      const obj = this._sceneXformTargetById(layer, giz.objId);
       if (!obj) return false;
       const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
       const rect = this.canvas.getBoundingClientRect();
@@ -13403,7 +13465,7 @@
       if (!drag) return false;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (!layer || !layer.params) { this._sceneObjectGizmoDrag = null; return false; }
-      const obj = this._sceneObjectById(layer, drag.objectId);
+      const obj = this._sceneXformTargetById(layer, drag.objectId);
       if (!obj || !obj.transform) { this._sceneObjectGizmoDrag = null; return false; }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
@@ -13503,7 +13565,7 @@
           // fights the user; a stored 400°/-464° is otherwise indistinguishable
           // from 40° in a static plotter tool, so there is no reason to keep
           // an unbounded winding count once the gesture ends.
-          const obj = this._sceneObjectById(layer, drag.objectId);
+          const obj = this._sceneXformTargetById(layer, drag.objectId);
           if (obj?.transform) {
             const wrap360 = (deg) => { const v = deg % 360; return v < 0 ? v + 360 : v; };
             if (drag.axis === 'y') obj.transform.yaw = wrap360(obj.transform.yaw);
@@ -13511,6 +13573,7 @@
             else obj.transform.roll = wrap360(obj.transform.roll);
           }
         }
+        this._sceneTrimGroupTransform(layer, drag.objectId);
         // B3 — the release render is the gesture's ONLY full-quality compose
         // (drag frames are draft tiers). Deferred past the release paint and
         // cancelled by the next drag on this scene, so rapid nudges do not
@@ -13535,7 +13598,7 @@
       }
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
-      const obj = layer && this._sceneObjectById(layer, drag.objectId);
+      const obj = layer && this._sceneXformTargetById(layer, drag.objectId);
       if (obj && obj.transform) {
         Object.assign(obj.transform, drag.start);
         // If the object was uniform when grabbed, a per-axis drag added sx/sy/sz;
@@ -13546,6 +13609,7 @@
           delete obj.transform.sz;
         }
       }
+      if (layer) this._sceneTrimGroupTransform(layer, drag.objectId);
       if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) this.app.history.pop();
       if (layer) this.engine.generate(layer.id);
       this.updateCursor();
@@ -14279,11 +14343,12 @@
 
     _sceneObjectPathCenter(layer, objectId) {
       const paths = this.getInteractionPaths(layer) || [];
+      const inkIds = this._sceneInkIds(layer, objectId);
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       let found = false;
       paths.forEach((path) => {
         const target = path && path.meta && path.meta.sceneTarget;
-        if (!target || target.objectId !== objectId || !Array.isArray(path)) return;
+        if (!target || !inkIds.has(target.objectId) || !Array.isArray(path)) return;
         for (let i = 0; i < path.length; i++) {
           const pt = path[i];
           if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
@@ -14862,7 +14927,7 @@
     // detailScale 1 = full published fidelity (the live-drag preview throttle
     // does not apply to a discrete Drop click). Returns null on any failure
     // (missing Scene3D.Scene, malformed params) so callers can skip safely.
-    _sceneObjectWorldMinY(obj) {
+    _sceneObjectWorldMinY(obj, grp = null) {
       if (!obj) return null;
       const S3 = window.Vectura && window.Vectura.Scene3D;
       const Scene = S3 && S3.Scene;
@@ -14874,7 +14939,8 @@
       const t = obj.transform || {};
       let minY = Infinity;
       meshData.vertices.forEach((pt) => {
-        const w = Scene.applyObjectTransform(pt, t);
+        let w = Scene.applyObjectTransform(pt, t);
+        if (grp && w) w = grp.apply(w);
         if (w && Number.isFinite(w.y) && w.y < minY) minY = w.y;
       });
       return Number.isFinite(minY) ? minY : null;
@@ -14917,7 +14983,17 @@
         if (childLayer && childLayer.type === 'booleanGroup3d') {
           const operands = (this.engine.getLayerChildren ? this.engine.getLayerChildren(id) : [])
             .filter((c) => c && c.type === 'object3d' && c.params);
-          if (operands.length) units.push(operands.map((o) => o.params));
+          if (!operands.length) return;
+          const list = operands.map((o) => o.params);
+          // B4 — the group transform is applied after each operand's own, so the lowest point is measured through it.
+          const B = window.Vectura?.Scene3D?.Boolean;
+          const Sc = window.Vectura?.Scene3D?.Scene;
+          const gt = childLayer.params.transform;
+          if (gt && B && Sc && B.groupPivot && B.applyGroupToPoint) {
+            const pivot = B.groupPivot(list.map((o) => o.transform));
+            list.groupXf = { apply: (pt) => B.applyGroupToPoint(Sc, pt, gt, pivot) };
+          }
+          units.push(list);
           return;
         }
         const rec = this._sceneObjectById(layer, id);
@@ -14929,7 +15005,7 @@
       units.forEach((objs) => {
         let minY = Infinity;
         objs.forEach((obj) => {
-          const y = this._sceneObjectWorldMinY(obj);
+          const y = this._sceneObjectWorldMinY(obj, objs.groupXf || null);
           if (Number.isFinite(y) && y < minY) minY = y;
         });
         if (!Number.isFinite(minY)) return; // no readable geometry — skip this unit safely
@@ -15484,7 +15560,8 @@
       const paths = this.getInteractionPaths(layer);
       if (!paths.length) return;
       const edgeOrdinals = this._sceneEdgeOrdinals(paths);
-      const objSet = new Set(sel.objectIds);
+      const objSet = new Set();
+      sel.objectIds.forEach((oid) => this._sceneInkIds(layer, oid).forEach((x) => objSet.add(x)));
       const faceSet = new Set(sel.faceKeys);
       const edgeSet = new Set(sel.edgeKeys);
       const color = SETTINGS.selectionOutlineColor || '#ef4444';

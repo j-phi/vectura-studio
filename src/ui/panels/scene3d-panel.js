@@ -2954,6 +2954,66 @@
       : 'Drag object layers into this group in the Layers panel to add operands.';
     bHost.appendChild(note);
 
+    // B4 — Transform: the combined shape moves / turns / stretches as ONE unit (about its operand centroid), after each operand's
+    // own transform. Same rows as an object. The bag is created on first edit and dropped again at identity (absent = identity).
+    const xfHost = document.createElement('div');
+    bHost.appendChild(xfHost);
+    const xfComps = [];
+    const ensureXf = () => {
+      if (!params.transform || typeof params.transform !== 'object') params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      return params.transform;
+    };
+    const trimXf = () => {
+      const P = Vectura.Scene3D && Vectura.Scene3D.Params;
+      if (params.transform && P && typeof P.normalizeGroupTransform === 'function' && !P.normalizeGroupTransform(params.transform)) delete params.transform;
+    };
+    const renderXf = () => {
+      xfComps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); xfComps.length = 0;
+      xfHost.textContent = '';
+      const t = params.transform || {};
+      const xs = (label, props) => { xfComps.push(UI.Slider(labeledRow(xfHost, label), props)); };
+      // each edit writes the (lazily created) bag; release trims it back to absent when it is identity again
+      const kitFor = (fn, refresh) => {
+        const kit = liveSlider((v) => { fn(ensureXf(), v); });
+        return { onChange: kit.onChange, onCommit: (v) => { kit.onCommit(v); trimXf(); if (refresh) renderXf(); } };
+      };
+      subhead(xfHost, 'Transform');
+      ['x', 'y', 'z'].forEach((ax) => {
+        xs(`${ax.toUpperCase()} (mm)`, {
+          value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -200, max: 200, step: 0.5, defaultValue: 0,
+          ariaLabel: `Position ${ax.toUpperCase()} (mm)`,
+          ...kitFor((tr, v) => { tr[ax] = v; }),
+        });
+      });
+      [['yaw', 'Yaw'], ['pitch', 'Pitch'], ['roll', 'Roll']].forEach(([ax, lbl]) => {
+        xs(lbl, {
+          value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -180, max: 180, step: 1, defaultValue: 0,
+          ariaLabel: `${lbl} (degrees)`,
+          ...kitFor((tr, v) => { tr[ax] = v; }),
+        });
+      });
+      xs('Scale', {
+        value: Number.isFinite(t.scale) ? t.scale : 1, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
+        ariaLabel: 'Uniform scale',
+        ...kitFor((tr, v) => { applyUniformScale(tr, v); }, true),
+      });
+      ['x', 'y', 'z'].forEach((ax) => {
+        const key = `s${ax}`;
+        const base = Number.isFinite(t.scale) ? t.scale : 1;
+        xs(`Scale ${ax.toUpperCase()}`, {
+          value: Number.isFinite(t[key]) ? t[key] : base, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
+          ariaLabel: `Scale ${ax.toUpperCase()}`,
+          ...kitFor((tr, v) => {
+            const b = Number.isFinite(tr.scale) ? tr.scale : 1;
+            ['sx', 'sy', 'sz'].forEach((k) => { if (!Number.isFinite(tr[k])) tr[k] = b; });
+            tr[key] = v;
+          }, true),
+        });
+      });
+    };
+    renderXf();
+    comps.push({ destroy: () => { xfComps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); xfComps.length = 0; } });
+
     // Style tab. Rebuildable in place (U9): the Fill Style row appears/hides
     // with the fill type, and its note block + option list both depend on the
     // current law, so a discrete change has to re-render the tab.
@@ -3000,7 +3060,8 @@
     const renderBoolStyle = () => withSelectFocusKept(sHost, renderBoolStyleImpl);
     renderBoolStyle();
 
-    mirrorChildToCanvas(ui, layer, null);
+    // B4 — a combined shape now has a canvas gizmo, so selecting it selects it on the canvas too.
+    mirrorChildToCanvas(ui, layer, layer.id);
 
     let destroyed = false;
     const teardown = () => {
