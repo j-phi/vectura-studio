@@ -2026,10 +2026,21 @@
       // to pre-Unit-D for every scene that doesn't opt in.
       const ShadowReceive = Vectura.Scene3D.ShadowReceive;
       let currentReceiverObjectId = null;
-      const shadowReceiveOn = Boolean(p.shadow && p.shadow.shadowReceiveOnObjects && ShadowReceive && lightDir);
-      const shadowOccluders = shadowReceiveOn ? ShadowReceive.buildOccluderSet(scene.objects) : null;
+      // Receive toggles: the scene flag is the DEFAULT for an object whose shadow.receive is null; a per-object
+      // true/false overrides it (true receives even with the scene flag off). A Cast-Off object (shadow.enabled
+      // false) is left out of the occluder set, so it shadows no other object either (as it already shadowed no ground).
+      const ShP = Vectura.Scene3D.Params;
+      const sceneReceiveFlag = Boolean(p.shadow && p.shadow.shadowReceiveOnObjects);
+      const srcObjects = Array.isArray(p.objects) ? p.objects : [];
+      const receiverById = new Map(srcObjects.map((o) => [o && o.id, ShP.objectReceivesShadow(o, sceneReceiveFlag)]));
+      const castOffIds = new Set(srcObjects.filter((o) => o && !ShP.objectCastsShadow(o)).map((o) => o.id));
+      const objectReceives = (id) => (receiverById.has(id) ? receiverById.get(id) : sceneReceiveFlag);
+      const shadowReceiveOn = Boolean(ShadowReceive && lightDir && (sceneReceiveFlag || srcObjects.some((o) => o && o.shadow && o.shadow.receive === true)));
+      const shadowOccluders = shadowReceiveOn
+        ? ShadowReceive.buildOccluderSet(castOffIds.size ? scene.objects.filter((r) => !castOffIds.has(r.id)) : scene.objects)
+        : null;
       const shadowFn = shadowOccluders
-        ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
+        ? (wp, lt) => objectReceives(currentReceiverObjectId) && ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
         : null;
       // U6 — the ONE tone-shaping point (gamma, contrast, depth fade). It is
       // reassigned per record from that object's own style; null is the
@@ -2172,6 +2183,7 @@
         if (!(shadowReceiveOn && toneOn && scaf && lightDir && Shadows
           && typeof Shadows.projectAlongDirToPlane === 'function'
           && typeof Shadows.convexHull === 'function')) return null;
+        if (!objectReceives(selfId)) return null; // this receiver has Receive shadows Off
         if (faceFootprintCache.has(scaf.uv)) return faceFootprintCache.get(scaf.uv);
         const faceCCW = asCCW(scaf.uv);
         const anchor = scaf.origin;
@@ -2216,6 +2228,7 @@
         };
         scene.objects.forEach((otherRec) => {
           if (!otherRec || otherRec.id === selfId) return;
+          if (castOffIds.has(otherRec.id)) return; // a Cast-Off object throws no footprint onto another object
           let rawRings;
           if (typeof Shadows.footprintRings === 'function') {
             rawRings = Shadows.footprintRings(otherRec, projectVertexUV, fpLight, anchor, normalWorldArg, fpDir);
@@ -4963,7 +4976,7 @@
             visibility: rec.visibility,
             emissiveCoreBlank: coreBlank,
             csgCarve: rec.primitive === 'csg',
-            receiveShadow: typeof shadowFn === 'function',
+            receiveShadow: typeof shadowFn === 'function' && objectReceives(rec.id),
             areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
           }) !== 'surface') return null;
           const ms = SurfaceLock.bake(spec);
@@ -5356,7 +5369,7 @@
                 visibility: record.visibility,
                 emissiveCoreBlank,
                 csgCarve: record.primitive === 'csg',
-                receiveShadow: typeof shadowFn === 'function',
+                receiveShadow: typeof shadowFn === 'function' && objectReceives(record.id),
                 areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
               }) === 'surface') {
                 const ms = SurfaceLock.bake(spec);
