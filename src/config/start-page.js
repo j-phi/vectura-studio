@@ -119,6 +119,10 @@
   // `pad` is the air around it on a plate (a fraction of each side); `padDisc` is the larger air on a round plate, whose corners are cut.
   const PLATE_3D = Object.freeze({ pad: 0.1, padDisc: 0.2 });
 
+  // The idle sway of the live 3D models (orbit3d.js) redraws at `fps`; with `crowdAt` or more models swaying on screen at once,
+  // or when a frame costs more than `overrunMs` to draw, each model drops to `crowdFps`.
+  const ORBIT_SWAY = Object.freeze({ fps: 15, crowdFps: 8, crowdAt: 2, overrunMs: 24 });
+
   const LIMITS = Object.freeze({
     recentsShown: 8,
     entriesMax: 48,
@@ -235,5 +239,5 @@
     return Object.assign({}, COVER_FONTS.find((f) => f.id === id), { scale });
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, PLATE_3D, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, PLATE_DROP, PLATE_PREMOUNT, PLATE_3D, ORBIT_SWAY, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, adminRegion, replaceAdminRegion, coverType, sanitize });
 })();

@@ -55,7 +55,19 @@
         if (dead || myGen !== gen) return;
         const M = Vectura.StartPageMotion;
         if (M) card.bind = M.bindArt(card.artEl, { handle: () => card.artEl._spInk || null, animateIn: style, hover: hoverPref, kind: 'card' });
-        if (typeof ink.drawIn === 'function') ink.drawIn(card.artEl, { style: style() });
+        // Mounted ahead of the viewport (300 px margin): hold the art blank and draw it in when the card is >= 30 % in view.
+        if (typeof ink.drawIn === 'function') {
+          const art = card.artEl;
+          if (M && typeof M.whenVisible === 'function' && !M.isStill() && M.styleId(style()) !== 'none') {
+            art.classList.add('sp-pre');
+            card.visCancel = M.whenVisible(art, () => {
+              card.visCancel = null;
+              ink.drawIn(art, { style: style() });
+              let n = 0; const reveal = () => { if (++n < 3) W.requestAnimationFrame(reveal); else art.classList.remove('sp-pre'); };
+              W.requestAnimationFrame(reveal);
+            });
+          } else ink.drawIn(art, { style: style() });
+        }
       } catch (err) { if (W.console) W.console.warn('[StartPagePicks]', err); }
     };
 
@@ -64,6 +76,7 @@
       if (io) { io.disconnect(); io = null; }
       cards.forEach((c) => {
         try { c.lift && c.lift.detach(); } catch (_e) { /* ignore */ }
+        try { c.visCancel && c.visCancel(); } catch (_e) { /* ignore */ }
         try { c.bind && c.bind.destroy(); } catch (_e) { /* ignore */ }
         try { c.artEl && Ink() && Ink().unmount(c.artEl); } catch (_e) { /* ignore */ }
       });

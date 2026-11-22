@@ -86,6 +86,8 @@ describe('Start Page plates: remount of a seen plate, the drop rules and the laz
   const wrap = (i) => document.querySelectorAll('#start-page .sp-pl')[i];
   const main = (w) => w.querySelector('.spl-print');
   const enter = async (w) => { fireFar(w, true); fire(w, true); await tick(60); };
+  // the plate's art (.spl-print) scrolled to >= 30 % in view: its animate-in observer fires (animate-in plays on scroll, not on mount)
+  const see = async (w) => { const m = main(w); observers(m).filter((o) => o.opts.threshold).forEach((o) => o.cb([{ target: m, isIntersecting: true, intersectionRatio: 0.5 }])); await tick(60); };
   const leave = async (w) => { fireFar(w, false); await tick(IDLE_MS + 60); };
 
   test('a never-seen plate animates in on its first appearance', async () => {
@@ -94,13 +96,56 @@ describe('Start Page plates: remount of a seen plate, the drop rules and the laz
     expect(w.querySelector('.spl')).toBeNull(); // lazy: nothing built until it is observed on screen
     await enter(w);
     expect(pre).toBeGreaterThan(0); // held blank (sp-pre) until its draw-in starts
+    expect(replays).toHaveLength(0); // ...which waits for the art to be scrolled into view (>= 30 %)
+    expect(main(w).classList.contains('sp-pre')).toBe(true);
+    await see(w);
     expect(replays).toHaveLength(1);
+  });
+
+  // RED (before the fix): the draw-in played at mount time, so a plate mounted ahead of the viewport was already finished
+  // (replays 1, no sp-pre) by the time it was scrolled to.
+  test('a plate mounted below the fold is still undrawn until it scrolls into view, then plays once', async () => {
+    await load();
+    const w = wrap(0);
+    await enter(w); // mounted by the lazy margin / pre-mount, not yet 30 % visible
+    await tick(120);
+    expect(replays).toHaveLength(0);
+    expect(main(w).classList.contains('sp-pre')).toBe(true);
+    await see(w);
+    expect(replays).toHaveLength(1);
+    expect(main(w).classList.contains('sp-pre')).toBe(false);
+    await see(w); // once per page view
+    expect(replays).toHaveLength(1);
+  });
+
+  test('a plate dropped before it was ever seen is still undrawn when it comes back', async () => {
+    await load();
+    const w = wrap(0);
+    await enter(w);
+    await leave(w);
+    pre = 0;
+    await enter(w);
+    expect(pre).toBeGreaterThan(0);
+    expect(replays).toHaveLength(0);
+    await see(w);
+    expect(replays).toHaveLength(1);
+  });
+
+  test('Still / animate-in None: the plate is shown finished at once, never held', async () => {
+    await load();
+    V.StartPageInk.isStill = () => true;
+    V.StartPageMotion.isStill = () => true;
+    const w = wrap(0);
+    await enter(w);
+    expect(pre).toBe(0);
+    expect(main(w).classList.contains('sp-pre')).toBe(false);
   });
 
   test('a plate dropped on exit and re-entered comes back drawn: no sp-pre, no draw-in replay', async () => {
     await load();
     const w = wrap(0);
     await enter(w);
+    await see(w);
     expect(replays).toHaveLength(1);
     await leave(w);
     expect(w.querySelector('.spl')).toBeNull(); // dropped: the DOM is freed
@@ -120,6 +165,7 @@ describe('Start Page plates: remount of a seen plate, the drop rules and the laz
     await tick(60);
     const w = [...document.querySelectorAll('#start-page .sp-pl')].find((x) => x.dataset.plateId === 'copy1');
     await enter(w);
+    await see(w);
     const before = replays.length;
     await leave(w);
     await store.upsert('copy1', { artId: 'work:w2' });
@@ -128,27 +174,37 @@ describe('Start Page plates: remount of a seen plate, the drop rules and the laz
     pre = 0;
     await enter(w);
     expect(pre).toBeGreaterThan(0);
+    await see(w);
     expect(replays.length).toBe(before + 1);
   });
 
-  // A 3D piece is a still drawing like any plate (no live model): same animate-in on first sight, drawn finished when seen.
-  test('a 3D plate mounts no orbit model, animates in once, and a seen one remounts drawn (no sp-pre, no replay)', async () => {
+  test('a seen live 3D model remounts already plotted (no plot-in)', async () => {
     await load();
-    const orbitMounts = [];
-    V.StartPageOrbit3D = { ...V.StartPageOrbit3D, mount: (el, o) => { orbitMounts.push(o); return null; } };
+    const mounts = [];
+    V.StartPageOrbit3D = { ...V.StartPageOrbit3D, mount: (el, o) => { mounts.push(o); return null; }, isScene: () => false };
     V.StartPageMotion.modelFor = () => 'torus';
     const w = wrap(0);
     await enter(w);
-    expect(pre).toBeGreaterThan(0);          // first appearance: held blank, then plotted in like every plate
-    expect(replays).toHaveLength(1);
-    expect(w.querySelector('.spl-print')._spInk).toBeTruthy(); // the normal plate path
-    expect(w.querySelector('.vorbit')).toBeNull();
+    await see(w);
     await leave(w);
-    pre = 0;
     await enter(w);
-    expect(pre).toBe(0);
+    expect(mounts.length).toBe(2);
+    expect(mounts[0].plotted).toBe(false); // first appearance: the model's own plot-in
+    expect(mounts[1].plotted).toBe(true); // seen: shown plotted at once
+  });
+
+  test('a 3D Scene plate mounts no orbit model: a still drawing that animates in when seen', async () => {
+    await load();
+    const mounts = [];
+    V.StartPageOrbit3D = { ...V.StartPageOrbit3D, mount: (el, o) => { mounts.push(o); return null; } };
+    V.StartPageMotion.modelFor = () => 'scene:demo';
+    const w = wrap(0);
+    await enter(w);
+    expect(mounts).toHaveLength(0);
+    expect(w.querySelector('.spl-print')._spInk).toBeTruthy();
+    expect(replays).toHaveLength(0);
+    await see(w);
     expect(replays).toHaveLength(1);
-    expect(orbitMounts).toHaveLength(0);
   });
 
   test('refresh() reaching the section before render(): plates are still observed, mounted on entry and dropped when far', async () => {
@@ -251,6 +307,40 @@ describe('Start Page plates: remount of a seen plate, the drop rules and the laz
       expect(phRule).toMatch(/box-sizing:\s*border-box/);
       expect(phRule).toMatch(/min-height:\s*calc\(var\(--sp-pl-h[^)]*\)\s*-\s*var\(--sp-pl-pad\)\)/);
       expect(phRule).toMatch(/background:\s*var\(--sp-ph-paper/);
+    });
+  });
+
+  describe('live 3D first mount', () => {
+    const stubGeometry = (plateTop) => {
+      const proto = window.HTMLElement.prototype;
+      const orig = proto.getBoundingClientRect;
+      proto.getBoundingClientRect = function rect() {
+        if (this.classList && this.classList.contains('sp-pl')) return { top: plateTop, bottom: plateTop + 600, height: 600, left: 0, right: 100, width: 100 };
+        if (this.id === 'sp-scroll') return { top: 0, bottom: 800, height: 800, left: 0, right: 100, width: 100 };
+        return orig.call(this);
+      };
+      return () => { proto.getBoundingClientRect = orig; };
+    };
+    const run = async (plateTop) => {
+      await load();
+      const mounts = [];
+      V.StartPageOrbit3D = { ...V.StartPageOrbit3D, mount: (el, o) => { mounts.push(o); return null; }, isScene: () => false };
+      V.StartPageMotion.modelFor = () => 'torus';
+      const restore = stubGeometry(plateTop);
+      try { await enter(wrap(0)); } finally { restore(); }
+      return mounts;
+    };
+
+    test('mounting off screen (inside the margin) still plots in when it scrolls into view', async () => {
+      const mounts = await run(1200); // below the 800 px viewport, inside the 800 px mount margin
+      expect(mounts).toHaveLength(1);
+      expect(mounts[0].plotted).toBe(false); // the model's own plot-in waits for 30 % visible
+    });
+
+    test('mounting in view plots in as before', async () => {
+      const mounts = await run(100);
+      expect(mounts).toHaveLength(1);
+      expect(mounts[0].plotted).toBe(false);
     });
   });
 

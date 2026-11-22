@@ -45,6 +45,14 @@ describe('StartPageOrbit3D: 3D Scene pieces', () => {
     expect(O.isScene('torus')).toBe(false);
   });
 
+  it('does not draw a scene: mount() returns null for a scene id and leaves the element alone', () => {
+    const el = W.document.getElementById('m');
+    expect(O.mount(el, { model: ID })).toBe(null);
+    expect(el.querySelector('canvas')).toBe(null);
+    expect(el.classList.contains('vorbit')).toBe(false);
+    expect(O.mount(el, { model: 'torus' }).model).toBe('torus'); // the other 3D pieces still mount
+  });
+
   it('a saved scene TREE (scene group + Object 3D children) is recognised under its own key', () => {
     const obj = (id, primitive, params, x) => ({ id, type: 'object3d', parentId: 'g', visible: true, params: { primitive, params, transform: { x, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 } } });
     const payload = { type: 'vectura', state: { engine: { layers: [

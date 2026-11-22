@@ -91,7 +91,7 @@ describe('Start Page cover and controls', () => {
     expect(SETTINGS.startPage.coverStyle).toBe('band');
     expect(sp().querySelector('.sp-pf')).toBeTruthy();
     // the band draws its piece covering the band, or framed on its body when it is a 3D piece (picks and plates mount too, so look at the band itself)
-    expect(inkCalls.mount.some((c) => (c.o.fit === 'cover' || c.o.fit === 'focus') && !!c.el.closest('.sp-pf'))).toBe(true);
+    expect(inkCalls.mount.some((c) => (c.o.fit === 'cover' || c.o.fit === 'focus') && !!c.el.closest('.sp-pf')) || sp().querySelector('.sp-pf').dataset.live === '3d').toBe(true);
     const snap = app.getPreferenceSnapshot();
     expect(snap.startPage.coverStyle).toBe('band');
   });

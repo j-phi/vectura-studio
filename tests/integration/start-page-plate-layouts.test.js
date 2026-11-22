@@ -168,14 +168,14 @@ describe('StartPagePlateLayouts', () => {
     expect(el.querySelector('.spl-print').style.getPropertyValue('--sp-ink')).toBe('#f8f8f4');
   });
 
-  it('a 3D piece is a still plate: no orbit or drag surface, no hint, framed whole through the normal ink path', async () => {
+  it('a 3D Scene piece is a still plate: no orbit or drag surface, no hint, framed whole through the normal ink path', async () => {
     const o3 = []; const orbit = []; const rendered = [];
     V.StartPageOrbit3D = { mount: (...a) => { o3.push(a); return null; } };
     V.StartPageSceneOrbit = { attach: (...a) => { orbit.push(a); return null; } }; // a stale module would be a regression
     V.StartPageArtRenderer = { renderDocument: (pl) => { rendered.push(pl); return Promise.resolve({ svg }); } };
     const doc = { state: { engine: { layers: [{ id: 'g', type: 'scene3d', params: { camera: { yaw: -32, pitch: 22 } } }] }, settings: {} } };
     // a model id and a scene payload are exactly what used to arm the orbit: they are now ignored
-    const el = render('diptych', { plate: { id: 'p', orientation: '3d' }, art: { id: 'a', svg, is3d: true, model: 'torus', scene: { payload: () => doc } } });
+    const el = render('diptych', { plate: { id: 'p', orientation: '3d' }, art: { id: 'a', svg, is3d: true, scene: { payload: () => doc } } });
     document.body.appendChild(el);
     await L.mount(el);
     await new Promise((r) => setTimeout(r, 20));
@@ -199,6 +199,26 @@ describe('StartPagePlateLayouts', () => {
     const flat = render('diptych'); document.body.appendChild(flat); await L.mount(flat);
     expect(flat.querySelector('.spl-print')._spInk.fit).toBe('cover');
     L.destroy(el);
+  });
+
+  it('a live 3D model (Topoform / Spiralizer / Terrain / Polyhedron) mounts a drag-to-rotate orbit model with its hint; a Scene piece mounts none', async () => {
+    const o3 = [];
+    V.StartPageOrbit3D = { mount: (el, o) => { o3.push(o); el._vorbit = { destroy() {}, setColorway() {} }; el.classList.add('vorbit'); return el._vorbit; } };
+    const live = render('diptych', { plate: { id: 'p', orientation: '3d' }, art: { id: 'a', svg, is3d: true, model: 'coiled-sphere' } });
+    document.body.appendChild(live);
+    await L.mount(live);
+    const main = live.querySelector('.spl-print');
+    expect(o3).toHaveLength(1);
+    expect(o3[0].model).toBe('coiled-sphere');
+    expect(main._vorbit).toBeTruthy();
+    expect(main.dataset.hint).toBe('Drag to rotate');
+    expect(live.textContent).toMatch(/drag it to turn it/i);
+    const scene = render('diptych', { plate: { id: 'p', orientation: '3d' }, art: { id: 'a', svg, is3d: true } });
+    document.body.appendChild(scene);
+    await L.mount(scene);
+    expect(o3).toHaveLength(1);
+    expect(scene.querySelector('.spl-print')._vorbit).toBeUndefined();
+    expect(scene.textContent).not.toMatch(/drag it to turn it/i);
   });
 
   it('knockout fills the word with the art through fillWord', async () => {

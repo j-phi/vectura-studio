@@ -152,5 +152,26 @@
     return D && typeof D.play === 'function' ? D.play(handle, style) : I.drawIn(handle, { style });
   };
 
-  Vectura.StartPageMotion = { STYLES, FX, isStill, styleId, hoverId, plan, artType, modelFor, bindArt, replay, changed };
+  /* whenVisible(el, cb, { threshold = 0.3, root }) -> cancel()
+   * Calls cb() ONCE, when el is at least `threshold` visible in `root` (the scroller; null = the viewport). Animate-in plays
+   * from here, not at mount time: a panel mounted ahead of the viewport (lazy margin, idle pre-mount) must still be undrawn when
+   * the visitor scrolls to it. No IntersectionObserver (or no element): cb runs at once, so nothing is left blank. */
+  const whenVisible = (el, cb, o) => {
+    const opts = Object.assign({ threshold: 0.3, root: null }, o || {});
+    const IO = W.IntersectionObserver;
+    if (!el || typeof IO !== 'function') { cb(); return () => {}; }
+    let io = null, done = false;
+    const stop = () => { if (io) { try { io.disconnect(); } catch (_) { /* noop */ } io = null; } };
+    io = new IO((records) => {
+      // 30 % of the element, or (for one taller than the scroller) 30 % of the scroller's own height
+      const seen = (r) => r.isIntersecting && (r.intersectionRatio == null || r.intersectionRatio >= opts.threshold - 0.001
+        || (r.rootBounds && r.rootBounds.height > 0 && r.intersectionRect && r.intersectionRect.height >= opts.threshold * r.rootBounds.height));
+      if (done || !records.some(seen)) return;
+      done = true; stop(); cb();
+    }, { root: opts.root, threshold: [opts.threshold] });
+    io.observe(el);
+    return () => { done = true; stop(); };
+  };
+
+  Vectura.StartPageMotion = { whenVisible, STYLES, FX, isStill, styleId, hoverId, plan, artType, modelFor, bindArt, replay, changed };
 })();

@@ -61,6 +61,7 @@
       if (hold) { tiles = tiles.filter((t) => t !== hold.tile); }
       tiles.forEach((t) => {
         try { ink && ink.unmount(t.el); } catch (_) { /* noop */ }
+        if (t.el._sp3d) { try { t.el._sp3d.destroy(); } catch (_) { /* noop */ } t.el._sp3d = null; }
       });
       tiles = [];
       if (hold) [...stage.children].forEach((c) => { if (c !== hold.old) c.remove(); });
@@ -342,9 +343,24 @@
       onOpenClick(tools, () => ctx.onOpen(art, tiles[0].cw));
       const style = band.style;
       style.setProperty('--sp-text', cw.textInk || cw.ink);
-      // A 3D piece is the same still drawing as any other, framed whole (the ink box fits the band's art area with some air)
-      // instead of cropped; it plots in with the same animate-in below. No drag, no orbit.
-      const is3d = !!(Vectura.StartPageMotion && Vectura.StartPageMotion.modelFor(art));
+      // A non-3D-Scene 3D piece (Topoform, Spiralizer, Terrain, Polyhedron) is a live, drag-to-rotate model on the right of the band.
+      // A 3D Scene piece is a still drawing framed whole (fit 'focus'); it plots in with the same animate-in below.
+      const model = Vectura.StartPageMotion ? Vectura.StartPageMotion.modelFor(art) : null;
+      const O3 = Vectura.StartPageOrbit3D;
+      const scene = !!(model && O3 && typeof O3.isScene === 'function' && O3.isScene(model));
+      if (model && O3 && !scene) {
+        const host3d = h('div', { class: 'sp-pf-3d' });
+        band.dataset.live = '3d';
+        band.append(host3d);
+        const paint = (c) => { band.style.background = c.paper; band.style.setProperty('--sp-paper', c.paper); band.style.setProperty('--sp-ink', c.ink); };
+        paint(cw);
+        const o3 = O3.mount(host3d, { model, colorway: () => (tiles.find((x) => x.el === band) || t).cw, hint: 'Drag to rotate', paper: false, label: `${art.name.replace(/\.vectura$/, '')}, ${art.algorithm || 'Piece'}` });
+        band._sp3d = { setColorway(c) { paint(c); o3.setColorway(() => c); }, destroy() { o3.destroy(); } };
+        setCwData(t);
+        band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
+        return Promise.resolve();
+      }
+      const is3d = scene;
       const own = override && override.art.id === art.id && override.frame && override.frame.fit !== 'contain' ? override.frame : null;
       if (is3d) band.dataset.art3d = '1';
       const G3 = Vectura.StartPageArtGeometry;
@@ -499,7 +515,7 @@
       tiles.forEach((t, i) => {
         const chosen = choiceCw(style, t.k);
         t.cw = withFill(t.art, chosen || cws[i]);
-        const handle = t.el._spWord || t.el._spInk;
+        const handle = t.el._spWord || t.el._spInk || t.el._sp3d;
         if (handle && handle.setColorway) handle.setColorway(t.cw);
         setCwData(t);
       });
@@ -561,7 +577,7 @@
       if (fade) {
         void old.offsetWidth;
         old.style.opacity = '0';
-        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } old.remove(); stage.style.position = ''; }, 460);
+        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } if (old._sp3d) { try { old._sp3d.destroy(); } catch (_) { /* noop */ } } old.remove(); stage.style.position = ''; }, 460);
       }
     };
     const useAsCover = async (art, o = {}) => {
