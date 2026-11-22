@@ -43,6 +43,7 @@
     GAIN_LIT: 0.5, // the faceted pose law's spacing gain at coverage 0 (lit): pitch = hatchSpacing / (GAIN_LIT + GAIN_SPAN * coverage)
     DOT_SEGS: 8, // tone model v2 stipple: dot polygon segments
     SPIRAL_MIN_S: 0.03, // tone model v2 spiral: stop when the scale toward the face centre drops under this
+    V2_LONE_FACE_MAX_I: 0.84, // tone model v2: a lone face's intensity cap, just under the paper band (see the config table)
     GAIN_SPAN: 1.1, // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
   };
   const C = Object.assign({}, DEFAULTS);
@@ -144,7 +145,16 @@
   // lut[k] = 1 / screen pitch at I = k / 256 (contract §5). Not reproduced (pose-only, per facet): the rank-spread band grade
   // (O20), the glint facet cap, the dark-side second family and shadowSensitivity; the toned look is single-family here.
   const toneLUT = (spec, toneCtx) => {
-    if (isV2(spec)) return LAD().v2.toneLUT(spec, toneCtx); // one continuous L*-linear curve, no lit floor (same as the curved ladder)
+    if (isV2(spec)) {
+      let res = LAD().v2.toneLUT(spec, toneCtx); // one continuous L*-linear curve, no lit floor (same as the curved ladder)
+      if (spec.primitive === 'plane') { // a lone face is lit EVENLY: cap its intensity under the paper band so it keeps the lightest hatch level
+        sync();
+        res = { lut: Float32Array.from(res.lut), scaleFn: res.scaleFn }; const lut = res.lut; const kc = Math.min(lut.length - 1, Math.floor(clamp(C.V2_LONE_FACE_MAX_I, 0, 1) * (lut.length - 1)));
+        for (let k = kc + 1; k < lut.length; k++) lut[k] = lut[kc];
+        if (!res.scaleFn) res.scaleFn = () => 1; // ... and a one-face plane is wholly 'glint' at the mirror angle, which would blank it: no glint keep on a lone face
+      }
+      return res;
+    }
     sync();
     const r = read(spec);
     const tone = (toneCtx && toneCtx.tone) || null;
