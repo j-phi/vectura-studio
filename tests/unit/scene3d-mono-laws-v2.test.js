@@ -96,26 +96,27 @@ const profileOf = (V, rig, cell = 0.25, rimFrac = 0.85) => {
 
 
 
+// Recorded on Node 24 x64 (the CI and golden-values runtime, .nvmrc); Node 22 rounds some math differently.
 const LEGACY_HASH = {
  "etfKang/hatch": "215f288a6e35:63",
- "defectSplit/hatch": "cfcc46f841e4:91",
- "mezzoRegion/hatch": "c9ce2c4b0c70:179",
- "mezzoRegion/crosshatch": "17c1e7d0748c:353",
+ "defectSplit/hatch": "88a1e6ef5a66:91",
+ "mezzoRegion/hatch": "aa1be0f01757:179",
+ "mezzoRegion/crosshatch": "5ca4ad8dc975:353",
  "creviceAO/hatch": "4c93a479f968:88",
- "contactBloom/hatch": "8100aa689e43:83",
+ "contactBloom/hatch": "097c9880cd00:83",
  "transReserveMono/hatch": "0070e4357f82:349",
- "jitterOverdraw/hatch": "b2078a56c7c8:102",
- "mergeLadder/hatch": "f1c5778efa00:60",
- "originSpiral/hatch": "8fed159ea8d4:116",
- "shearClear/hatch": "b3295d1baa09:39",
- "phaseBlue/hatch": "791aa3c87285:42",
+ "jitterOverdraw/hatch": "129cb7eed3f0:102",
+ "mergeLadder/hatch": "de2be5cdda9a:60",
+ "originSpiral/hatch": "a2ecdbffe3b9:116",
+ "shearClear/hatch": "65256c5fe4b0:39",
+ "phaseBlue/hatch": "3442b1d479e8:42",
  "dutyConst/hatch": "8dbcfc15c1a7:225",
  "dutyConst/crosshatch": "528e7a63f75b:435",
  "endShorten/hatch": "4e616d536c00:37",
  "turingStripe/hatch": "a53c99c7c76d:90",
  "voronoiWeb/hatch": "6f9b7f37d498:324",
- "mazeFill/hatch": "4da460713670:902",
- "diffGrowth/hatch": "6554a70ba65c:1",
+ "mazeFill/hatch": "ebe33b8cc964:902",
+ "diffGrowth/hatch": "77327510ffe3:1",
  "spaceColonise/hatch": "71acf2c44bac:69",
  "fiboQuasi/hatch": "86e48f954c4a:47",
  "hachureSlope/hatch": "41c965d38280:43"
