@@ -150,6 +150,7 @@ Select an object and a **Contextual Task Bar** floats just below it with the act
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - **Shading (3D Scene Studio):** the scene **Tone** section has a **Shading** slider (0-100, default 50) that sets how dark the shading gets: the darkest tone and the mid-tones, never the paper or the highlight. It is separate from **Density** (how many lines, i.e. plot time). 0 is the earlier light look, 100 is as dark as lines can go without overlapping. Ladder fills follow it, and so do Duty Cycle, End Shorten, Mezzotint Region and the mark styles when marks are locked to the surface; other Fill Styles and legacy-light scenes ignore it (the row says why)
+- **Ground and shadows (3D Scene Studio):** the ground has a **Height (Y)** slider (-200 to 200 mm) and on-canvas handles when selected: corner squares resize in proportion (Shift = each axis alone), edge diamonds change width or depth, a Y arrow raises and lowers the floor (Alt = fine, snaps to 0) and dragging the body moves Y. Shadows follow the floor and **Drop to ground** (`D`) rests objects on it. Each object and the ground have a **Takes shadow** toggle, and an object with Cast shadow Off also stops shadowing other objects. The Light panel notes whether the key light is in front of or behind the subject. Objects have Scale X/Y/Z rows, and combined (boolean) shapes can be moved, rotated and scaled.
 - **Surface-locked fills (3D Scene Studio):** a Scene3D fill can be locked to the object's surface, so its marks are baked once and only re-framed per angle. New objects start locked; saved scenes and presets open unlocked and unchanged. The **Lock marks to surface** row in the Style tab turns it off per object and explains when it is unavailable.
 
 <details>
@@ -756,6 +757,13 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.5.28 - Scene3D light realism
+- **Realistic light for new 3D Scenes.** Ambient and bounce light, no flat lit floor, a small bare-paper glint and a front key light. Surface-locked and pose fills share one model, so dragging matches the export. A darker, even shadow (Duty Cycle included). Saved scenes keep their old look.
+- **Shading slider.** The scene Tone section's **Shading** (0-100, default 50) sets how dark the shading gets; Density still sets how many lines are drawn. The light panel also tells you whether the key light is in front of or behind the subject.
+- **Movable ground.** A ground **Height (Y)** slider plus on-canvas handles (corners, edges, a Y arrow, body drag); shadows follow the floor and Drop to ground rests objects on it.
+- **Shadow and transform controls.** A per-object and ground **Takes shadow** toggle, Cast Off honoured between objects, Scale X/Y/Z on every object (uniform Scale keeps the shape), and move / rotate / scale for combined shapes. Lit and two-sided planes keep their fill.
+- **Faster turning.** Surface-locked drags are cheaper per frame (sphere about 31 to 19 ms, two objects 73 to about 46 ms per pose); Duty Cycle (about 61 ms) is still being tuned.
+
 ### Unreleased - 3D Scene Transform and Seed work
 - **Transform moves the whole Scene.** Pos, Scale and Rotation on a 3D Scene now apply to the finished drawing about the page centre, including while you drag. Seed is live again on the default surface-locked scene. Single objects, lights and the ground hide the Transform rows (place them from the Scene panel).
 
@@ -799,12 +807,6 @@ CI lives in `.github/workflows/test.yml`:
 
 ### Unreleased - 3D Scene pre-baked spin
 - **Spin a heavy 3D Scene smoothly.** The editor bakes a selected Scene's exact drawing for 72 angles in background workers and a drag shows the nearest baked frame (about 60 fps); release installs the baked frame nearest your pointer, byte-identical to a normal render (export and plot stats too). Memory per scene is capped (about 24 MB of exact drawings plus 16 MB of pictures; less on a phone, fewer angles under the cap), and baking never blocks editing. A free-orbit drag on a ready ring turns the scene around the vertical axis until you move the pointer vertically by more than 5 degrees of tilt, then the earlier preview takes over (pitch always follows the pointer; the drag snaps to the nearest baked 5 degrees). Paper swatch thumbnails wait for the bake, drag and release to be quiet and fill one swatch at a time. Start Page plates bake their angles ahead around where the piece is now and drag only through baked ones (Up / Down keys render the pitched pose live).
-
-### Unreleased - 3D Scene Shading slider
-- **Set how dark the shading gets.** The scene Tone section's new **Shading** slider (0-100) moves the darkest tone and the mid-tones; 50 is today's look exactly, 0 is light, 100 as dark as the lines allow without overlapping. Density still sets how many lines are drawn.
-
-### Unreleased - Realistic light for 3D Scenes
-- **New scenes shade with a realistic light:** a little ambient and bounce light, no flat lit floor, and a small bare-paper glint that fades in through sparser marks. Surface-locked and pose fills use the same model, so dragging matches the export. Saved scenes keep their old look.
 
 ### Unreleased - Start Page tidy
 - **Cover typeface and size.** Start Page settings > Cover has a Typeface menu (Space Grotesk, JetBrains Mono, System sans, Serif) and a Size slider (50-100%), saved with your preferences. Administrators set the global defaults (and can lock them) in the `ADMIN` block of `src/config/start-page.js`.

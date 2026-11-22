@@ -165,7 +165,11 @@
         (Alt drags finely, and it snaps to 0). The centre gizmo stays inside the view, so the controls remain within reach
         when the floor's corners are off screen. Once the ground is selected, dragging its body also moves its height.
         Esc cancels a drag, and each drag is one undo step. Objects stay where they are; press D (Drop to ground) to
-        rest them on the new floor.</p>
+        rest them on the new floor. The <strong>Height (Y)</strong> slider in the ground panel sets the same height.</p>
+        <p><strong>Takes shadow.</strong> Each object has a <strong>Takes shadow</strong> row (Follow scene, On or Off) and
+        the ground has an On / Off one. Off stops that surface receiving cast shadows. An object whose Cast shadow is Off
+        casts none on the ground or on other objects. The Light panel's <em>Key light</em> line says whether the light is
+        in front of or behind the subject.</p>
         <p><strong>Shadow look</strong> is the Fill Style row in the Shadow section. It picks the texture drawn inside cast
         shadows. It offers the sub-controls of each family that look different on a flat footprint.</p>
         <p><strong>Artistic controls</strong> are all off until you move them:</p>
