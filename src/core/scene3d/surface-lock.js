@@ -347,6 +347,7 @@
     const light = toneCtx && toneCtx.light ? toneCtx.light : null;
     const keyCtx = light ? Object.assign({}, toneCtx, { light: { model: light.model, empty: lightsEmpty(light) } }) : toneCtx;
     const keyParts = [baker.id, stable(keyCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper];
+    if (spec.toneModel === 'v2' && spec.primitive === 'plane') keyParts.push('lone'); // faceted v2 plane: its own capped table (appended only then, old keys unchanged)
     if (spec.toneDarkness !== undefined) keyParts.push('dk' + spec.toneDarkness); // A23: appended only off the default (old keys unchanged)
     const key = JSON.stringify(keyParts);
     let t = toneMemo.get(key);

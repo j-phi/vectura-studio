@@ -611,13 +611,17 @@
      * Density, so a mezzotint no longer runs at twice the ink of a dash law for the same tone. */
     const SD2 = Scene3D.Regions || {};
     const spKeep = (S) => (SD2.specularKeep ? SD2.specularKeep(finite(S, 0)) : 1);
+    // A lone face (o.loneFace: a plane) is lit evenly, so under v2 its tone is capped under the paper band (config
+    // FACETED.V2_LONE_FACE_MAX_I) and the glint takes no ink: a lit plane keeps the lightest law marks instead of vanishing.
+    const LONE = V2 && o.loneFace === true;
+    const loneMaxI = (() => { const c = Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.FACETED; const v = c && c.V2_LONE_FACE_MAX_I; return Number.isFinite(v) ? clamp(v, 0, 1) : 1; })();
     const dOf = (x) => {
-      const xx = clamp(finite(x, 0), 0, 1);
+      const xx = LONE ? Math.min(clamp(finite(x, 0), 0, 1), loneMaxI) : clamp(finite(x, 0), 0, 1);
       const aL = areaFor(1); const aD = areaFor(0);
       const rel = clamp((areaFor(xx) - aL) / Math.max(1e-6, aD - aL), 0, 1);
       return rel * smooth01((1 - xx) / V2_PAPER_BAND);
     };
-    const dens = (s) => (V2 ? dOf(lum(s)) * spKeep(s && s.S) : clamp(1 - lum(s), 0, 1));
+    const dens = (s) => (V2 ? dOf(lum(s)) * (LONE ? 1 : spKeep(s && s.S)) : clamp(1 - lum(s), 0, 1));
     const areaMax = clamp((INK / (FLOOR * 1.05)) * DS, 0.02, A_DARK);
     const areaOf = V2 ? (s) => clamp(areaMax * dens(s), 0, A_DARK) : (s) => areaFor(clamp(lum(s), 0, 1));
     const PMAX_V = PMAX * V2_PITCH_X;

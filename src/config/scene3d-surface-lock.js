@@ -212,6 +212,7 @@
       MAX_VERTS: 120000,  // vertex budget guard (contract §2: 200k per object per fill group)
       CROSS_OBJ_DEG: 65,  // family 1 sits at fillAngle + CROSS_OBJ_DEG + (crossAngleDelta - 90), as the ladder's cross does
       PHASE_FAM1: 0.37,  // family 1 lattice offset (fraction of the level-0 pitch), so the two families do not start together
+      V2_LONE_FACE_MAX_I: 0.84,  // tone model v2: a lone face (a plane) is lit evenly, so its intensity is capped just under the paper band (1 - V2_PAPER_BAND) and a lit plane keeps the lightest hatch level instead of vanishing
       GAIN_LIT: 0.5,  // the faceted pose law's spacing gain at coverage 0 (lit): pitch = hatchSpacing / (GAIN_LIT + GAIN_SPAN * coverage)
       GAIN_SPAN: 1.1,  // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
       PLOT_FLOOR_SLACK: 0.72, // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
