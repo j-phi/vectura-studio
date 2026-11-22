@@ -60,6 +60,8 @@
     // TUX-024, 025 and 026 reuse this table; do not add literal radii in the renderer.
     HIT_TOLERANCE: {
       resize: { mouse: 10, pen: 10, touch: 22 },
+      // Scene3D ground gizmo (corner / edge / centre scale boxes / Y arrow), screen px.
+      groundHandle: { mouse: 9, pen: 9, touch: 22 },
       // Outer radius of the rotate band, measured from the handle hit centre.
       rotate: { mouse: 28, pen: 28, touch: 48 },
       // Hit radius of the visible touch rotate handle (0 = no handle).
@@ -120,6 +122,21 @@
       reachPad: 22,
       // Floating chrome the touch gizmo footprint must clear (TUX-025).
       occluders: ['#touch-modifier-bar', '.ctxbar', '#canvas-hud'],
+    },
+
+    // Scene3D ground gizmo layout (screen px; the renderer multiplies by 1/scale). The centre gizmo
+    // (Y arrow + width/depth boxes) pins inside the viewport inset so it stays reachable when the
+    // floor's corners are off-screen.
+    SCENE_GROUND_GIZMO: {
+      arrowPx: 68,
+      boxPx: 48,
+      cornerHalfPx: 5,
+      edgeHalfPx: 4,
+      viewportInsetPx: 52,
+      // Pointer travel (px) that doubles / halves a centre-box scale (log2 drag).
+      boxOctavePx: 90,
+      // Y snaps to 0 within this many mm unless Alt is held (Alt = 0.1x fine drag).
+      zeroSnapMm: 0.75,
     },
 
     // TUX-014: rail tool sub-menus (shape / pen / fill / scissor / algo-draw picker).

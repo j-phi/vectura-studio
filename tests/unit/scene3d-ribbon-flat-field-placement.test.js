@@ -51,6 +51,7 @@
  * retired the env-gated pre-fix switch that reproduced it.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 const { captureRegionRings, buildBlankMap, findBlankClusters } = require('../helpers/scene3d-blank-map');
 
 const PEN_WIDTH = 0.3; // BOUNDS default (tests/fixtures/scene3d-shadow-anatomy.js)
@@ -97,6 +98,7 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
   const buildLaw = async (Vectura, toneLaw) => {
     const engine = new Vectura.VectorEngine();
     const groupId = engine.addLayer('scene3d');
+    pinLegacySun(engine, groupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
     const group = engine.layers.find((l) => l && l.id === groupId);
     const obj = engine.getLayerDescendants(groupId).filter((l) => l && l.type === 'object3d')[0];
     obj.params.primitive = 'torus';

@@ -29,7 +29,7 @@ const buildParams = (V, primitive, fillDensity = 50) => {
   params.ground = { enabled: false };
   params.backdrop = { enabled: false };
   params.camera = clone(Params.DEFAULT_CAMERA);
-  params.tone = { ...clone(params.tone), enabled: true };
+  params.tone = { ...clone(params.tone), enabled: true, model: 'legacy', specular: { enabled: true, size: 1 } };
   params.lights = [SUN];
   params.styleTable = {
     scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity, toneLaw: 'mkTick' } },

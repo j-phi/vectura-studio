@@ -1396,9 +1396,12 @@
   // ignored Density entirely before this (their `makeCtx` never read
   // `masterPitch`). Built from the same curve the curved ladder already uses, so
   // the slider means the same thing on every Fill Style.
-  const monoDensityScale = (density) => clamp(
-    curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4,
-  );
+  // Light model v2 (H2): the legacy curve reaches the laws' clamp (4x) by Density ~80, so 100 and 200 were identical. v2 spends the
+  // same 1..4 span over 50..200 (geometric, 1 at the shipped Density 50) so every Density step still changes the fill.
+  const V2_DENSITY_SPAN = 150;
+  const monoDensityScale = (density, v2) => (v2
+    ? clamp(Math.pow(4, (clamp(finite(density, 50), 0, 200) - 50) / V2_DENSITY_SPAN), 0.25, 4)
+    : clamp(curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4));
 
   // U5 (R3-1) — "Flat vs Surface" is ONE setting, `wrap`: 'surface' (default) wraps the
   // fill round the form, 'flat' draws it in screen space (a Contour's silhouette inset
@@ -1419,6 +1422,7 @@
   // `monoDensityLegacyAt` (see Params.pinLegacyMonoDensity): while Density still
   // equals it, the law reads 50 (what it effectively rendered when Density was
   // inert); an edit releases the pin.
+  const isToneV2 = (p) => Boolean(p && p.tone && p.tone.model === 'v2');
   const monoDensityOf = (sp) => {
     const d = finite(sp && sp.fillDensity, 50);
     const pin = sp && sp.monoDensityLegacyAt;
@@ -1587,13 +1591,25 @@
     if (Number.isInteger(faceIndex)) sizes.face = faceIndex;
     return sizes;
   };
+  // A23: the scene's Shading slider (p.tone.darkness) for a v2 scene, undefined at the default (or under the legacy model), so a
+  // default scene's specs, bake keys and pose options are exactly the A22 ones. One source: SurfaceLock.toneDarknessOf.
+  const shadeDarkOf = (p) => {
+    const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
+    return SL && typeof SL.toneDarknessOf === 'function' ? SL.toneDarknessOf(p) : undefined;
+  };
+  // B4b — objects as the uncarved boolean fallback draws them (group transform composed in); p.objects itself when no group
+  // carries a transform. Surface-lock poses / tone keys read an object's transform by id from this list.
+  const lockObjectsOf = (p) => {
+    const B = Vectura.Scene3D && Vectura.Scene3D.Boolean;
+    return (B && typeof B.composedObjects === 'function') ? B.composedObjects(p) : (p.objects || []);
+  };
   const buildSurfaceLockSpec = (p, bounds, record, obj, g, sp, faceIndex) => {
     const cp = obj ? curvedChartParams(obj) : null;
     const facetedSizes = (!cp && obj) ? facetedLockSizes(obj, faceIndex) : null;
     if (!cp && !facetedSizes) return null;
     const t = (obj && obj.transform) || {};
     const s0 = finite(t.scale, 1);
-    const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp)) };
+    const style = { ...sp, densityScale: monoDensityScale(monoDensityOf(sp), isToneV2(p)) };
     delete style.markSpace;
     // Same zoom reference the camera applies (Scene.buildProjOpts): snapped to a power of two so a wheel zoom
     // inside one octave keeps the bake.
@@ -1609,6 +1625,8 @@
       penWidth: finite(bounds.penWidth, 0.3), convex: record.convex,
       scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
       seed: G3.snapshotSeedState(),
+      ...(p.tone && p.tone.model === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(shadeDarkOf(p) !== undefined ? { toneDarkness: shadeDarkOf(p) } : {}),
     };
   };
 
@@ -1714,7 +1732,7 @@
       G3.setSeedState(groupSeeds);
       const sb = Object.assign({}, bounds, { penWidth: finite(bounds && bounds.penWidth, 0.3) });
       const resolveStyle = makeStyleResolver(p.styleTable);
-      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      const objById = new Map(lockObjectsOf(p).map((o) => [o.id, o]));
       const { seedFor, specFor } = levelSSpecHelpers(p, sb, groupSeeds, groupSeeded, resolveStyle, objById);
       return SL.sceneBakeSpecs(p, sb, { seedFor, specFor });
     } catch (err) {
@@ -1731,7 +1749,7 @@
     const out = [];
     const resolveStyle = makeStyleResolver(p.styleTable);
     const { edgeStyleFor, edgeStyleMeta } = makeEdgeStyleHelpers(p, sb);
-    const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+    const objById = new Map(lockObjectsOf(p).map((o) => [o.id, o]));
     const lights = p.lights || [];
     const light = lights[0] || {};
     const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function' ? Lighting.lightWorldDir(light) : null;
@@ -1830,7 +1848,8 @@
       const penOverride = (typeof bag.shadowPenId === 'string' && bag.shadowPenId) ? bag.shadowPenId : null;
       const casterPen = ids.length ? ((resolveStyle(ids[0], null) || {}).penId || null) : null;
       // Picking polygon: the projected footprint (one caster) or the hull of all footprints.
-      const proj = (ring) => ring.map((q) => SceneM.projectWorldPoint({ x: q.x, y: 0, z: q.z }, p.camera, sb))
+      const gy = finite((p.ground || {}).y, 0);
+      const proj = (ring) => ring.map((q) => SceneM.projectWorldPoint({ x: q.x, y: gy, z: q.z }, p.camera, sb))
         .filter((q) => q && Number.isFinite(q.x)).map((q) => ({ x: q.x, y: q.y }));
       const fps = ((info && info.footprints) || []).map(proj).filter((r) => r.length >= 3);
       let pick = fps.length === 1 ? fps[0] : null;
@@ -1839,7 +1858,7 @@
         const all = []; fps.forEach((r) => r.forEach((q) => all.push(q)));
         pick = Sh && typeof Sh.convexHull === 'function' ? Sh.convexHull(all) : all;
       }
-      const gz = SceneM.projectWorldPoint({ x: 0, y: 0, z: 0 }, p.camera, sb);
+      const gz = SceneM.projectWorldPoint({ x: 0, y: gy, z: 0 }, p.camera, sb);
       const meta = {
         algorithm: 'scene3d',
         kind: 'sceneFill',
@@ -1963,7 +1982,7 @@
 
       // Correlate a scene record back to its source object (records don't carry
       // params/transform) so SurfaceFill can re-evaluate the object's chart.
-      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      const objById = new Map(lockObjectsOf(p).map((o) => [o.id, o]));
       const surfaceLockSpec = (record, obj, g, sp) => buildSurfaceLockSpec(p, bounds, record, obj, g, sp);
       const light = (p.lights && p.lights[0]) || {};
       const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
@@ -2013,10 +2032,21 @@
       // to pre-Unit-D for every scene that doesn't opt in.
       const ShadowReceive = Vectura.Scene3D.ShadowReceive;
       let currentReceiverObjectId = null;
-      const shadowReceiveOn = Boolean(p.shadow && p.shadow.shadowReceiveOnObjects && ShadowReceive && lightDir);
-      const shadowOccluders = shadowReceiveOn ? ShadowReceive.buildOccluderSet(scene.objects) : null;
+      // Receive toggles: the scene flag is the DEFAULT for an object whose shadow.receive is null; a per-object
+      // true/false overrides it (true receives even with the scene flag off). A Cast-Off object (shadow.enabled
+      // false) is left out of the occluder set, so it shadows no other object either (as it already shadowed no ground).
+      const ShP = Vectura.Scene3D.Params;
+      const sceneReceiveFlag = Boolean(p.shadow && p.shadow.shadowReceiveOnObjects);
+      const srcObjects = Array.isArray(p.objects) ? p.objects : [];
+      const receiverById = new Map(srcObjects.map((o) => [o && o.id, ShP.objectReceivesShadow(o, sceneReceiveFlag)]));
+      const castOffIds = new Set(srcObjects.filter((o) => o && !ShP.objectCastsShadow(o)).map((o) => o.id));
+      const objectReceives = (id) => (receiverById.has(id) ? receiverById.get(id) : sceneReceiveFlag);
+      const shadowReceiveOn = Boolean(ShadowReceive && lightDir && (sceneReceiveFlag || srcObjects.some((o) => o && o.shadow && o.shadow.receive === true)));
+      const shadowOccluders = shadowReceiveOn
+        ? ShadowReceive.buildOccluderSet(castOffIds.size ? scene.objects.filter((r) => !castOffIds.has(r.id)) : scene.objects)
+        : null;
       const shadowFn = shadowOccluders
-        ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
+        ? (wp, lt) => objectReceives(currentReceiverObjectId) && ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
         : null;
       // U6 — the ONE tone-shaping point (gamma, contrast, depth fade). It is
       // reassigned per record from that object's own style; null is the
@@ -2045,8 +2075,16 @@
         return sceneDepth;
       };
       const shapeIntensity = (I, wp) => (activeToneShape ? Regions.shapeTone(I, wp, activeToneShape) : I);
+      // Light model v2 (H2): the pose path's diffuse luminance is Regions.shade's L (ambient + bounce, no lit floor), the same
+      // function Level S / F lock fills use (SurfaceLock.toneFnV2). The specular channel S travels beside it (`v2Light`).
+      const poseV2 = Boolean(p.tone && p.tone.model === 'v2' && Regions && typeof Regions.shade === 'function');
+      const poseTone = p.tone || {};
       const intensityFn = toneOn
-        ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        ? (poseV2
+          ? (nw, wp) => shapeIntensity(Regions.shade(nw, wp, activeLights, {
+            model: 'v2', eye: null, ambient: poseTone.ambient, bounce: poseTone.bounce, shadowFn,
+          }).L, wp)
+          : (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp))
         : null;
       // Surface-locked fills read the tone but never the draft tier: the same formula as intensityFn without the
       // `!draft` gate, so a drag frame and the settled frame (and the export) compose the same fill.
@@ -2057,6 +2095,30 @@
           return lockToneShape ? Regions.shapeTone(I, wp, lockToneShape) : I;
         }
         : null;
+      // Light model v2 (H2): the Level F lock dispatch uses the SAME diffuse tone function and light context as Level S
+      // (SurfaceLock.toneFnV2 / lightCtxOf), so drag, export and Level S agree. Legacy scenes get exactly the old arguments.
+      // Emissive point lights ride along through the per-record `activeLights` (a pseudo scene with those lights).
+      const lockV2 = Boolean(p.tone && p.tone.model === 'v2' && lockToneOn && Vectura.Scene3D.SurfaceLock
+        && typeof Vectura.Scene3D.SurfaceLock.toneFnV2 === 'function');
+      const lockToneArgs = (spec, lockObj, hlOff) => {
+        const SL = Vectura.Scene3D.SurfaceLock;
+        const lt = (lockObj && lockObj.transform) || {};
+        const tctx = { tone: p.tone, penWidth, noHighlight: hlOff };
+        let toneFn = lockToneFn;
+        let toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
+          ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
+            lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
+          : null;
+        let toneModel;
+        if (lockV2 && spec && spec.toneModel === 'v2') {
+          const pv = activeLights === p.lights ? p : { ...p, lights: activeLights };
+          tctx.light = SL.lightCtxOf(pv, null);
+          toneFn = SL.toneFnV2(pv, spec, null);
+          if (toneKey !== null) toneKey += '|v2|' + finite(p.tone.ambient, '') + '|' + finite(p.tone.bounce, '');
+          toneModel = 'v2';
+        }
+        return { toneFn, toneKey, tone: SL.toneTable(spec, tctx), toneModel };
+      };
 
       // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
       // (faceHatchLines, below, is the consumer.) "Parametrize the plane rather
@@ -2127,6 +2189,7 @@
         if (!(shadowReceiveOn && toneOn && scaf && lightDir && Shadows
           && typeof Shadows.projectAlongDirToPlane === 'function'
           && typeof Shadows.convexHull === 'function')) return null;
+        if (!objectReceives(selfId)) return null; // this receiver has Receive shadows Off
         if (faceFootprintCache.has(scaf.uv)) return faceFootprintCache.get(scaf.uv);
         const faceCCW = asCCW(scaf.uv);
         const anchor = scaf.origin;
@@ -2171,6 +2234,7 @@
         };
         scene.objects.forEach((otherRec) => {
           if (!otherRec || otherRec.id === selfId) return;
+          if (castOffIds.has(otherRec.id)) return; // a Cast-Off object throws no footprint onto another object
           let rawRings;
           if (typeof Shadows.footprintRings === 'function') {
             rawRings = Shadows.footprintRings(otherRec, projectVertexUV, fpLight, anchor, normalWorldArg, fpDir);
@@ -2207,6 +2271,23 @@
       const specularFn = (toneOn && Regions && typeof Regions.specularTerm === 'function')
         ? (nw, wp) => Regions.specularTerm(nw, wp, activeLights, scene.camera, specShininess) : null;
       const penWidth = finite(bounds.penWidth, 0.3);
+      // The world-space eye vector (toward the camera): the camera rotation maps world to camera space, so camera +z is the
+      // third row of that matrix, i.e. the z of each rotated basis vector.
+      const worldEye = (() => {
+        if (!poseV2 || !G3 || typeof G3.rotatePoint !== 'function' || !scene || !scene.camera) return null;
+        const ex = G3.rotatePoint({ x: 1, y: 0, z: 0 }, scene.camera);
+        const ey = G3.rotatePoint({ x: 0, y: 1, z: 0 }, scene.camera);
+        const ez = G3.rotatePoint({ x: 0, y: 0, z: 1 }, scene.camera);
+        return { x: ex.z, y: ey.z, z: ez.z };
+      })();
+      // What a pose fill needs to shade a sample under v2 (samples carry s.L / s.S; the mono laws read them). `lights` is the
+      // live per-record binding, so an emissive object's co-located lights are picked up exactly like intensityFn.
+      const v2LightCtx = () => (poseV2 ? {
+        model: 'v2', lights: activeLights, eye: worldEye,
+        shininess: specShininess,
+        ks: poseTone.specular && poseTone.specular.enabled === false ? 0 : finite(Regions.SHADE_DEFAULTS && Regions.SHADE_DEFAULTS.ks, 1),
+        ambient: poseTone.ambient, bounce: poseTone.bounce, shadowFn,
+      } : null);
 
       // Mean world position of a face's verts (the point at which point/spot
       // lights are sampled for that face). null when the face has no world verts.
@@ -3627,6 +3708,8 @@
       // numbers or the same law would land on a different ramp on the two paths.
       const MONO_INK_SPREAD = 0.12;
       const MONO_PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
+      // Tone model v2 has its own, lower plot floor (config SCENE3D_SURFACE_LOCK.V2.FLOOR_PEN; owner decision "go darker").
+      const MONO_V2_PLOT_FLOOR_PEN = (() => { const v = ((Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {}).FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; })();
       const monoLitMaxPitch = () => {
         const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
         const pen = (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
@@ -3705,8 +3788,11 @@
             front: true,
             nz: camNz,
             I: clamp(finite(intensityFn(normalWorld, world), 0), 0, 1),
-            S: (typeof specularFn === 'function')
-              ? clamp(finite(specularFn(normalWorld, world), 0), 0, 1) : 0,
+            ...(poseV2 ? { L: clamp(finite(intensityFn(normalWorld, world), 0), 0, 1) } : {}),
+            S: poseV2
+              ? clamp(finite(Regions.shade(normalWorld, world, activeLights, v2LightCtx()).S, 0), 0, 1)
+              : ((typeof specularFn === 'function')
+                ? clamp(finite(specularFn(normalWorld, world), 0), 0, 1) : 0),
             wN: normalWorld,
             world,
             get dA() {
@@ -3757,7 +3843,7 @@
             penWidth: monoPen,
             substrateDraft: lawDraft ? MONO_DRAFT_SUBSTRATE : null,
             inkWidth: monoPen * (1 + MONO_INK_SPREAD),
-            floorPitch: MONO_PLOT_FLOOR_PEN * monoPen,
+            floorPitch: (poseV2 ? MONO_V2_PLOT_FLOOR_PEN : MONO_PLOT_FLOOR_PEN) * monoPen,
             // What the facet's own ladder rung asked for, so Density and the
             // tone band still set the scale the law works at.
             masterPitch: Math.max(monoPen, finite(sb.spacing, hatchSpacing(styleParams.fillDensity))),
@@ -3769,7 +3855,12 @@
             minMarkMM: Math.max(MIN_RUN_MM, 2 * monoPen),
             hash: ldHash,
             angleDeg: screenAngleDeg,
-            densityScale: monoDensityScale(monoDensityOf(styleParams)),
+            densityScale: monoDensityScale(monoDensityOf(styleParams), isToneV2(p)),
+            ...(poseV2 ? { toneModel: 'v2', light: v2LightCtx() } : {}),
+            // A lone face (a plane / one-face record) is lit evenly: the law caps its tone under the paper band and takes no glint keep.
+            // A plane carries a back face too (two-sided, A2), so it is matched by primitive, not only by face count.
+            ...(poseV2 && record && (record.primitive === 'plane'
+              || (Array.isArray(record.faces) && record.faces.length === 1)) ? { loneFace: true } : {}),
             crossDelta: finite(styleParams.crossAngleDelta, 90),
             stripeAlign: styleParams.stripeAlign,
             chainMarks: styleParams.chainMarks,
@@ -4891,22 +4982,19 @@
             visibility: rec.visibility,
             emissiveCoreBlank: coreBlank,
             csgCarve: rec.primitive === 'csg',
-            receiveShadow: typeof shadowFn === 'function',
+            receiveShadow: typeof shadowFn === 'function' && objectReceives(rec.id),
             areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
           }) !== 'surface') return null;
           const ms = SurfaceLock.bake(spec);
           if (!ms) return null;
-          const lt = lockObj.transform || {};
-          const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
-            ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
-              lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
-            : null;
+          const ta = lockToneArgs(spec, lockObj, hlOff);
           const lines = SurfaceLock.frame([ms], SurfaceLock.poseOf(lockObj.transform, p.camera, bounds), {
-            toneFn: lockToneFn,
-            toneKey,
-            tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: hlOff }),
+            toneFn: ta.toneFn,
+            toneKey: ta.toneKey,
+            tone: ta.tone,
             penWidth,
             objectId: rec.id,
+            toneModel: ta.toneModel,
           });
           return Array.isArray(lines) ? lines : null;
         };
@@ -5287,26 +5375,23 @@
                 visibility: record.visibility,
                 emissiveCoreBlank,
                 csgCarve: record.primitive === 'csg',
-                receiveShadow: typeof shadowFn === 'function',
+                receiveShadow: typeof shadowFn === 'function' && objectReceives(record.id),
                 areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
               }) === 'surface') {
                 const ms = SurfaceLock.bake(spec);
                 if (ms) {
                   // toneKey: identifies everything the tone function reads besides the camera, so a frame may reuse
                   // evaluations across camera moves (FX-A). null (never reuse) under a shadow caster or a depth fade.
-                  const lt = lockObj.transform || {};
-                  const toneKey = (lockToneFn && !shadowFn && !(lockToneShape && lockToneShape.fade))
-                    ? JSON.stringify([lt.yaw, lt.pitch, lt.roll, lt.x, lt.y, lt.z, activeLights,
-                      lockToneShape ? [lockToneShape.gamma, lockToneShape.contrast] : null])
-                    : null;
+                  const ta = lockToneArgs(spec, lockObj, grpHLOff);
                   lines = SurfaceLock.frame([ms],
                     SurfaceLock.poseOf(lockObj.transform, p.camera, bounds),
                     {
-                      toneFn: lockToneFn,
-                      toneKey,
-                      tone: SurfaceLock.toneTable(spec, { tone: p.tone, penWidth, noHighlight: grpHLOff }),
+                      toneFn: ta.toneFn,
+                      toneKey: ta.toneKey,
+                      tone: ta.tone,
                       penWidth,
                       objectId: record.id,
+                      toneModel: ta.toneModel,
                     });
                   lockedFill = Array.isArray(lines);
                 }
@@ -5352,7 +5437,7 @@
                 // U4b: mono-law Density / turingStripe alignment, and the
                 // legacy marker that keeps a migrated contField* document on
                 // its original L*-linear curve (see cfWantedPitch).
-                densityScale: monoDensityScale(monoDensityOf(sp)),
+                densityScale: monoDensityScale(monoDensityOf(sp), isToneV2(p)),
                 stripeAlign: sp.stripeAlign,
                 fieldCurve: sp.fieldCurve,
                 // U6: artistic controls. Absent keys keep every engine literal.
@@ -5461,6 +5546,9 @@
                 // and ignored `tone.specular` entirely (O4/O5/O24).
                 specularFn: grpHLOff ? null : specularFn,
                 specShininess,
+                toneModel: poseV2 ? 'v2' : undefined,
+                toneDarkness: poseV2 ? shadeDarkOf(p) : undefined, // A23: the Shading slider (undefined at the default)
+                lightCtx: v2LightCtx(),
                 noHighlight: grpHLOff,
                 xray: (grpXray && grpXray.backFaces)
                   ? { backFaces: true, backDensity: grpCueDensity ? 1 : grpXray.backDensity } : null,
@@ -6219,7 +6307,9 @@
       // full frame does the clean class union. Both are y≥0-clipped so a caster
       // straddling the receiver still projects a correct footprint.
       G3.setSeedState(groupSeeds); // Scene Seed — shadows use the group's salt
-      if (Shadows && typeof Shadows.build === 'function' && Lighting) {
+      // Ground.receiveShadows === false (absent = receives): the ground takes no cast shadow at all.
+      const groundReceivesShadows = !(p.ground && p.ground.receiveShadows === false);
+      if (groundReceivesShadows && Shadows && typeof Shadows.build === 'function' && Lighting) {
         const shadowStyleOf = (objectId) => {
           const st = resolveStyle(objectId, null);
           return { penId: st && st.penId ? st.penId : null };

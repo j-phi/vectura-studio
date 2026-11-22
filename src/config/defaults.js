@@ -2072,8 +2072,11 @@
       //   v4 — Buckyball radius: a fresh `solid` buckyball is built at its TRUE
       //        circumradius (it used to come out 13.1% small). Only OLD (pre-v4)
       //        saved scenes get their stored radius scaled back down to match.
+      //   v7 — Light model: a fresh scene gets tone.model 'v2' (ambient + bounce +
+      //        specular glint). Only OLD (pre-v7) saved scenes and presets are
+      //        stamped 'legacy' so they render byte-identically.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 6,
+      sceneVersion: 7,
       // sf-w4/C4 — Stroke Fill Style. A variable-width fill style draws its
       // ruling as a real ribbon OUTLINE stroked with the real pen, then fills
       // that outline with a pen-width-pitched continuous stroke; this picks the
@@ -2104,7 +2107,12 @@
       // Rendered Phase 2; schema present now (A-15: typed so point/spot extend
       // without a migration).
       lights: [
-        { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true },
+        // v7: a NEW scene's key light is a classic illustration key, upper-left and
+        // in FRONT of the subject (az 330 / el 40: camera-space z ~ +0.58 at the default camera, so the cast
+        // shadow still lands clear of the subject on the ground),
+        // so the lit side, terminator and glint are visible. Pre-v7 documents and
+        // presets keep their saved lights (az 135 / el 45 was BEHIND the subject).
+        { id: 'sun', type: 'directional', azimuth: 330, elevation: 40, castShadows: true },
       ],
       // CONTRACT L3: light-driven tone banding. enabled:false ⇒ Phase 1 flat look.
       tone: {
@@ -2114,7 +2122,11 @@
         bands: 3,
         thresholds: [0.33, 0.66],
         ladder: [0.2, 0.5, 0.85],
-        specular: { enabled: true, size: 1 },
+        specular: { enabled: true, size: 0.4 }, // v2: a compact glint (shininess ~12); legacy scenes keep their stored size 1
+        model: 'v2',      // 'legacy' | 'v2' (see Scene3D.Params SCENE_MIGRATIONS[6])
+        ambient: 0.08,    // v2 only: constant fill light, never shadowed
+        bounce: 0.12,     // v2 only: reflected light lifting the attached-shadow side
+        darkness: 50,     // v2 only: the Shading slider (0 light .. 100 darkest; 50 = SCENE3D_SURFACE_LOCK.SHADE.DEFAULT, the A22 look)
       },
       // Phase 5 — scene-level cast-shadow controls. Every value here reproduces
       // the legacy hardcoded shadow (angle 45°, density 50 ⇔ coverage 0.5, solid,
@@ -2197,7 +2209,7 @@
       // sanitizeParamTree only walks keys the saved payload actually has, so an
       // old leaf still arrives without a sceneVersion and still migrates.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 6,
+      sceneVersion: 7,
       // sf-w4/C4 — kept in lockstep with ALGO_DEFAULTS.scene3d above: a
       // standalone object3d leaf delegates to the same scene3d pipeline, so it
       // must resolve the same Stroke Fill Style. Vocabulary + the bucket gate
@@ -2279,8 +2291,8 @@
       is3d: true,
       preset: 'scenelight3d-default',
       type: 'directional', // 'directional' | 'point' | 'spot' | 'area' | 'ambient'
-      azimuth: 135,
-      elevation: 45,
+      azimuth: 330, // keep in lockstep with ALGO_DEFAULTS.scene3d.lights[0] (v7 front key)
+      elevation: 40,
       intensity: 1,
       castShadows: true,
     },
@@ -2300,7 +2312,8 @@
       preset: 'sceneground3d-default',
       enabled: true,
       // Floor size factors (1 = 1.5x the artboard's longer side). The plane
-      // has no thickness, so there is no Y factor. scaleLock links the two so
+      // has no thickness, so there is no Y scale factor (its height is the optional
+      // `y` offset, absent = 0). scaleLock links the two so
       // one slider resizes the floor proportionally (Scene3D.Params clamps).
       scaleX: 1,
       scaleZ: 1,

@@ -985,7 +985,7 @@
     const op = objParams || {};
     const byFace = gp.styleTable && gp.styleTable.byFace;
     return {
-      receiveShadow: !!(gp.shadow && gp.shadow.shadowReceiveOnObjects),
+      receiveShadow: (op.shadow && op.shadow.receive === true) || (!(op.shadow && op.shadow.receive === false) && !!(gp.shadow && gp.shadow.shadowReceiveOnObjects)),
       areaLight: (gp.lights || []).some((l) => l && l.type === 'area'),
       emissiveCoreBlank: !!(op.emissive && op.emissive.enabled && op.emissive.coreBlank),
       csgCarve: false,
@@ -1033,6 +1033,22 @@
     host.appendChild(row);
     return ctl;
   };
+
+  // Per-object / ground RECEIVE-shadow rows (objects plan C4). Help is one sentence, on the row's hover title.
+  const RECEIVE_OBJECT_HELP = 'Whether shadows from other objects land on this one. Follow scene uses the scene\'s "Shadows land on objects" setting; On or Off overrides it for this object.';
+  const RECEIVE_GROUND_HELP = 'Whether the ground takes the cast shadows of the objects above it; Off leaves the floor bare.';
+  const setRowHelp = (ctl, text) => { if (ctl && ctl.parentNode) ctl.parentNode.title = text; };
+  const receiveSegOptions = () => [{ value: 'inherit', label: 'Follow scene' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
+  const receiveValueOf = (obj) => (obj && obj.shadow && obj.shadow.receive === false ? 'off'
+    : (obj && obj.shadow && obj.shadow.receive === true ? 'on' : 'inherit'));
+  // key written only when non-null, so an untouched object stays byte-identical on disk
+  const writeObjectReceive = (obj, v) => {
+    if (!obj.shadow || typeof obj.shadow !== 'object') obj.shadow = { enabled: null };
+    if (v === 'on') obj.shadow.receive = true;
+    else if (v === 'off') obj.shadow.receive = false;
+    else delete obj.shadow.receive;
+  };
+  const writeGroundReceive = (g, v) => { if (v === 'off') g.receiveShadows = false; else delete g.receiveShadows; };
 
   // fs-m2 Job 1 — every Style-tab control commits through a full re-render
   // (CONTRACT C: a whole-style write always rebuilds the row list, since a
@@ -1216,6 +1232,26 @@
       kit.commit(() => { g.scaleLock = !locked(); });
       paintLock();
     });
+
+    // Floor height (world mm). Outside the linked size block: it is not part of
+    // the width/depth proportion. Absent key = 0, so 0 deletes it (byte-identical files).
+    const yMin = Number.isFinite(Pm.GROUND_Y_MIN) ? Pm.GROUND_Y_MIN : -200;
+    const yMax = Number.isFinite(Pm.GROUND_Y_MAX) ? Pm.GROUND_Y_MAX : 200;
+    const yStep = Number.isFinite(Pm.GROUND_Y_STEP) ? Pm.GROUND_Y_STEP : 0.5;
+    const curY = Number.isFinite(Number(g.y)) ? Math.min(yMax, Math.max(yMin, Number(g.y))) : 0;
+    const yKit = kit.liveSlider((v) => { if (v) g.y = v; else delete g.y; });
+    const ySlider = UI.Slider(labeledRow(host, 'Height (Y)'), {
+      value: curY, min: yMin, max: yMax, step: yStep, defaultValue: 0,
+      ariaLabel: 'Ground height',
+      format: (v) => `${Math.round(v * 10) / 10} mm`,
+      onChange: yKit.onChange,
+      onCommit: yKit.onCommit,
+    });
+    comps.push(ySlider);
+    const yHelp = document.createElement('p');
+    yHelp.className = 'vs3-empty';
+    yHelp.textContent = 'Raise or lower the floor. Objects stay put \u2014 press D (Drop to ground) to rest them on it.';
+    host.appendChild(yHelp);
 
     const actions = document.createElement('div');
     actions.className = 'vs3-row vs3-size-actions';
@@ -1879,11 +1915,37 @@
   };
   const specularLiveFor = (c) => Boolean(c && c.cls === 'faceted'
     && (c.mapper === 'hatch' || c.mapper === 'crosshatch') && c.law !== 'none' && !c.mono);
+  // A23 — the Shading slider (p.tone.darkness): which Fill Styles follow it. The v2 tone curve is shared by Ladder (Hatch,
+  // Crosshatch, Contour, Spiral, Stipple), Duty Cycle, End Shorten, Mezzotint Region and the mark laws (Tick, Dot Screen, Dash
+  // Ramp, Scribble, Bundle Count: mid-tones only past the default). Every other Fill Style draws its own tone and ignores it.
+  const SHADING_LAWS = new Set(['ladder', 'dutyConst', 'endShorten', 'mezzoRegion', 'mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount']);
+  const shadingLiveFor = (c) => Boolean(c && FILL_MAPPERS.has(c.mapper) && c.law !== 'none'
+    && (c.survivor === 'ladder' || SHADING_LAWS.has(c.law)));
+  // Mezzotint Region and the mark laws follow Shading only in the mid-tones (past 50); the Ladder, Duty Cycle and End Shorten follow it fully.
+  const MIDTONE_SHADING_LAWS = new Set(['mezzoRegion', 'mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount']);
   const TONE_NOTES = {
+    shadingMidtones: 'Past 50, this fill style follows Shading only in the mid-tones: the darkest tone and the highlights stay put.',
+    shading: 'How dark the shading gets: the darkest tone and the mid-tones, never the paper or the highlight. Density sets how many lines are drawn (plot time); Shading sets how much ink the shadows get. 50 is the standard look; 0 is light, 100 is as dark as lines can go without overlapping. Followed by Ladder (Hatch, Crosshatch, Contour, Spiral, Stipple), and, with marks locked to the surface, by Duty Cycle, End Shorten, Mezzotint Region and the mark Fill Styles (Tick, Dot Screen, Dash Ramp, Scribble, Bundle Count; past 50 Mezzotint and the marks darken only their mid-tones). Other Fill Styles set their own tone and ignore it.',
+    shadingLegacy: 'Shading needs the realistic light model. This scene uses the legacy model (an older document), so its shading is fixed.',
+    shadingFlat: 'Flat shading has no tone, so Shading changes nothing. Pick 2-4 bands.',
+    shadingNone: 'No object in this scene uses a Fill Style that follows Shading (Ladder, Duty Cycle, End Shorten, Mezzotint Region or a mark Fill Style).',
     bands: 'Bands, Thresholds and Coverage shape Ladder fills, Spiral and Stipple on curved shapes, and Hatch on faceted shapes. Other Fill Styles set their own tone. These rows also shape the ground and the cast shadows.',
     bandsNone: 'No object in this scene uses a Fill Style that reads these bands. They still shape the ground and the cast shadows.',
     specular: 'Specular is drawn only on faceted shapes (box, plane, solid) with Hatch or Crosshatch. Curved shapes do not draw it (PRH-027).',
   };
+
+  // H3 — is a directional key light in FRONT of or BEHIND the subject, as the camera sees it? Same convention as the
+  // specular hotspot (regions.js): rotate the toward-light vector into camera space, where +z points at the viewer.
+  const lightFacing = (light, camera) => {
+    const Lt = Vectura.Scene3D && Vectura.Scene3D.Lighting;
+    const G3 = Vectura.Geometry3D;
+    if (!Lt || !G3 || typeof G3.rotatePoint !== 'function' || !light) return null;
+    const cam = camera || {};
+    const num = (x, d) => (Number.isFinite(x) ? x : d);
+    const Lc = G3.rotatePoint(Lt.towardLight(light), { yaw: num(cam.yaw, -30), pitch: num(cam.pitch, 20), roll: num(cam.roll, 0) });
+    return Lc && Lc.z >= 0 ? 'front' : 'behind';
+  };
+  const LIGHT_FACING_TEXT = { front: 'Key light: in front of the subject', behind: 'Key light: behind the subject' };
 
   const sectionHeader = (host, text) => {
     const hdr = document.createElement('div');
@@ -2140,6 +2202,44 @@
 
   // Compact panel for one object3d LEAF layer — Inspector (dims / transform /
   // fidelity / visibility / role) + Style, re-keyed to layer.params.
+  // Uniform Scale slider semantics (B2). `sx/sy/sz` are ABSOLUTE per-axis
+  // factors and `scale` is the uniform base they default to. Dragging the
+  // uniform slider multiplies any per-axis factors by v/oldScale so a canvas-
+  // gizmo or Scale X/Y/Z shape (e.g. 1:2:1) survives; a uniform object stays
+  // uniform (no per-axis keys written).
+  const applyUniformScale = (tr, v) => {
+    const old = Number.isFinite(tr.scale) && tr.scale > 0 ? tr.scale : 1;
+    const f = v / old;
+    ['sx', 'sy', 'sz'].forEach((k) => { if (Number.isFinite(tr[k])) tr[k] = Math.max(0.01, tr[k] * f); });
+    tr.scale = v;
+  };
+
+  // Per-axis (non-uniform) scale row props. Each row shows the effective factor
+  // for its local axis (falls back to the uniform `scale`). Editing one axis
+  // seeds the others from the uniform base so the object becomes non-uniform
+  // without resetting the untouched axes.
+  // After a commit the sibling Scale rows must show the new effective factors.
+  const withRefresh = (kit, rerender) => ({
+    onChange: kit.onChange,
+    onCommit: (v) => { kit.onCommit(v); rerender(); },
+  });
+
+  const axisScaleRowProps = (tr, axis, liveSlider) => {
+    const key = `s${axis}`; // sx / sy / sz
+    const base = Number.isFinite(tr.scale) ? tr.scale : 1;
+    return {
+      value: Number.isFinite(tr[key]) ? tr[key] : base,
+      min: 0.1, max: 5, step: 0.05,
+      defaultValue: 1,
+      ariaLabel: `Scale ${axis.toUpperCase()}`,
+      ...liveSlider((v) => {
+        const b = Number.isFinite(tr.scale) ? tr.scale : 1;
+        ['sx', 'sy', 'sz'].forEach((k) => { if (!Number.isFinite(tr[k])) tr[k] = b; });
+        tr[key] = v;
+      }),
+    };
+  };
+
   const buildObjectPanel = (ui, layer, container) => {
     const UI = Vectura.UI;
     const params = layer.params || (layer.params = {});
@@ -2363,7 +2463,11 @@
       slider(host, 'Scale', {
         value: Number.isFinite(t.scale) ? t.scale : 1, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
         ariaLabel: 'Uniform scale',
-        ...liveSlider((v) => { params.transform.scale = v; delete params.transform.sx; delete params.transform.sy; delete params.transform.sz; }),
+        ...withRefresh(liveSlider((v) => { applyUniformScale(params.transform, v); }), renderObject),
+      });
+      // Per-axis scale — same rows as the scene-group inspector (I23).
+      ['x', 'y', 'z'].forEach((ax) => {
+        slider(host, `Scale ${ax.toUpperCase()}`, axisScaleRowProps(params.transform, ax, (fn) => withRefresh(liveSlider(fn), renderObject)));
       });
 
       // Visibility
@@ -2387,6 +2491,16 @@
             params.shadow.enabled = v === 'on' ? true : (v === 'off' ? false : null);
           });
         },
+      }));
+
+      // Receive shadows (Follow scene / On / Off): shadows from OTHER objects landing on this one.
+      const recvCtl = labeledRow(host, 'Takes shadow');
+      setRowHelp(recvCtl, RECEIVE_OBJECT_HELP);
+      comps.push(UI.SegCtrl(recvCtl, {
+        options: receiveSegOptions(),
+        value: receiveValueOf(params),
+        ariaLabel: 'Object receives shadows',
+        onChange: (v) => { commit(() => { writeObjectReceive(params, v); }); },
       }));
     };
 
@@ -2840,6 +2954,66 @@
       : 'Drag object layers into this group in the Layers panel to add operands.';
     bHost.appendChild(note);
 
+    // B4 — Transform: the combined shape moves / turns / stretches as ONE unit (about its operand centroid), after each operand's
+    // own transform. Same rows as an object. The bag is created on first edit and dropped again at identity (absent = identity).
+    const xfHost = document.createElement('div');
+    bHost.appendChild(xfHost);
+    const xfComps = [];
+    const ensureXf = () => {
+      if (!params.transform || typeof params.transform !== 'object') params.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
+      return params.transform;
+    };
+    const trimXf = () => {
+      const P = Vectura.Scene3D && Vectura.Scene3D.Params;
+      if (params.transform && P && typeof P.normalizeGroupTransform === 'function' && !P.normalizeGroupTransform(params.transform)) delete params.transform;
+    };
+    const renderXf = () => {
+      xfComps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); xfComps.length = 0;
+      xfHost.textContent = '';
+      const t = params.transform || {};
+      const xs = (label, props) => { xfComps.push(UI.Slider(labeledRow(xfHost, label), props)); };
+      // each edit writes the (lazily created) bag; release trims it back to absent when it is identity again
+      const kitFor = (fn, refresh) => {
+        const kit = liveSlider((v) => { fn(ensureXf(), v); });
+        return { onChange: kit.onChange, onCommit: (v) => { kit.onCommit(v); trimXf(); if (refresh) renderXf(); } };
+      };
+      subhead(xfHost, 'Transform');
+      ['x', 'y', 'z'].forEach((ax) => {
+        xs(`${ax.toUpperCase()} (mm)`, {
+          value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -200, max: 200, step: 0.5, defaultValue: 0,
+          ariaLabel: `Position ${ax.toUpperCase()} (mm)`,
+          ...kitFor((tr, v) => { tr[ax] = v; }),
+        });
+      });
+      [['yaw', 'Yaw'], ['pitch', 'Pitch'], ['roll', 'Roll']].forEach(([ax, lbl]) => {
+        xs(lbl, {
+          value: Number.isFinite(t[ax]) ? t[ax] : 0, min: -180, max: 180, step: 1, defaultValue: 0,
+          ariaLabel: `${lbl} (degrees)`,
+          ...kitFor((tr, v) => { tr[ax] = v; }),
+        });
+      });
+      xs('Scale', {
+        value: Number.isFinite(t.scale) ? t.scale : 1, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
+        ariaLabel: 'Uniform scale',
+        ...kitFor((tr, v) => { applyUniformScale(tr, v); }, true),
+      });
+      ['x', 'y', 'z'].forEach((ax) => {
+        const key = `s${ax}`;
+        const base = Number.isFinite(t.scale) ? t.scale : 1;
+        xs(`Scale ${ax.toUpperCase()}`, {
+          value: Number.isFinite(t[key]) ? t[key] : base, min: 0.1, max: 5, step: 0.05, defaultValue: 1,
+          ariaLabel: `Scale ${ax.toUpperCase()}`,
+          ...kitFor((tr, v) => {
+            const b = Number.isFinite(tr.scale) ? tr.scale : 1;
+            ['sx', 'sy', 'sz'].forEach((k) => { if (!Number.isFinite(tr[k])) tr[k] = b; });
+            tr[key] = v;
+          }, true),
+        });
+      });
+    };
+    renderXf();
+    comps.push({ destroy: () => { xfComps.forEach((c) => { try { c.destroy && c.destroy(); } catch (_) { /* */ } }); xfComps.length = 0; } });
+
     // Style tab. Rebuildable in place (U9): the Fill Style row appears/hides
     // with the fill type, and its note block + option list both depend on the
     // current law, so a discrete change has to re-render the tab.
@@ -2886,7 +3060,8 @@
     const renderBoolStyle = () => withSelectFocusKept(sHost, renderBoolStyleImpl);
     renderBoolStyle();
 
-    mirrorChildToCanvas(ui, layer, null);
+    // B4 — a combined shape now has a canvas gizmo, so selecting it selects it on the canvas too.
+    mirrorChildToCanvas(ui, layer, layer.id);
 
     let destroyed = false;
     const teardown = () => {
@@ -2952,10 +3127,40 @@
     host.appendChild(note);
 
     if (isDir) {
-      slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 135, min: 0, max: 360, step: 1, defaultValue: 135,
-        ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); }) });
-      slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 45, min: 0, max: 90, step: 1, defaultValue: 45,
-        ariaLabel: 'Light elevation (degrees)', ...liveSlider((v) => { p.elevation = Math.round(v); }) });
+      // H3 — compact read-only front/behind readout (camera read live off the owning scene group).
+      const engine = ui.app && ui.app.engine;
+      const sceneCamera = () => {
+        let q = layer; const seen = new Set();
+        while (q && q.parentId && engine && engine.getLayerById && !seen.has(q.id)) {
+          seen.add(q.id); q = engine.getLayerById(q.parentId);
+          if (q && q.type === 'scene3d' && q.params) return q.params.camera;
+        }
+        return null;
+      };
+      const facingEl = document.createElement('p');
+      facingEl.className = 'vs3-lawnote is-info vs3-light-facing';
+      facingEl.dataset.control = 'lightFacing';
+      const refreshLightFacing = () => {
+        const f = lightFacing(p, sceneCamera());
+        if (!f) { facingEl.hidden = true; return; }
+        facingEl.hidden = false;
+        facingEl.dataset.facing = f;
+        facingEl.textContent = LIGHT_FACING_TEXT[f];
+        facingEl.setAttribute('aria-label', `${LIGHT_FACING_TEXT[f]} (relative to the camera)`);
+      };
+      refreshLightFacing();
+      host.appendChild(facingEl);
+      const onAnyEdit = () => {
+        if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); document.removeEventListener('pointercancel', onAnyEdit, true); return; }
+        refreshLightFacing();
+      };
+      document.addEventListener('input', onAnyEdit, true);
+      document.addEventListener('pointerup', onAnyEdit, true);
+      document.addEventListener('pointercancel', onAnyEdit, true); // a cancelled touch drag can still have moved the light gizmo
+      slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 330, min: 0, max: 360, step: 1, defaultValue: 330,
+        ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); refreshLightFacing(); }) });
+      slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 40, min: 0, max: 90, step: 1, defaultValue: 40,
+        ariaLabel: 'Light elevation (degrees)', ...liveSlider((v) => { p.elevation = Math.round(v); refreshLightFacing(); }) });
     }
     if (isPoint || isSpot || isArea) vec3('position', 'Position', { x: 120, y: 200, z: 120 });
     if (isPoint || isSpot) {
@@ -3027,6 +3232,14 @@
       ariaLabel: 'Ground enabled',
       onChange: (v) => { commit(() => { p.enabled = v === 'on'; }); },
     }));
+    const gRecvCtl = labeledRow(host, 'Takes shadow');
+    setRowHelp(gRecvCtl, RECEIVE_GROUND_HELP);
+    comps.push(UI.SegCtrl(gRecvCtl, {
+      options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+      value: p.receiveShadows === false ? 'off' : 'on',
+      ariaLabel: 'Ground receives shadows',
+      onChange: (v) => { commit(() => { writeGroundReceive(p, v); }); },
+    }));
     groundSizeControls(host, comps, p, { commit, liveSlider }, () => {
       const group = sceneGroupOf(ui, layer);
       const engine = ui.app && ui.app.engine;
@@ -3038,7 +3251,7 @@
       };
     });
 
-    mirrorChildToCanvas(ui, layer, null);
+    mirrorChildToCanvas(ui, layer, 'ground');
 
     let destroyed = false;
     const teardown = () => {
@@ -3082,12 +3295,17 @@
     // 2A's normalizeParams also guarantees lights[0], so this is a no-op once
     // the engine has run.
     const ensureLight = () => {
+      // Legacy-tone documents keep the pre-v7 sun (az 135, behind the subject);
+      // a new/v2 scene gets the front key (az 330 / el 40).
+      const legacyTone = params.tone && params.tone.model === 'legacy';
+      const sunAz = legacyTone ? 135 : 330;
+      const sunEl = legacyTone ? 45 : 40;
       if (!Array.isArray(params.lights) || !params.lights.length) {
-        params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }];
+        params.lights = [{ id: 'sun', type: 'directional', azimuth: sunAz, elevation: sunEl, castShadows: true }];
       }
       const l = params.lights[0];
-      if (!Number.isFinite(l.azimuth)) l.azimuth = 135;
-      if (!Number.isFinite(l.elevation)) l.elevation = 45;
+      if (!Number.isFinite(l.azimuth)) l.azimuth = sunAz;
+      if (!Number.isFinite(l.elevation)) l.elevation = sunEl;
       if (typeof l.castShadows !== 'boolean') l.castShadows = true;
       return l;
     };
@@ -3129,7 +3347,7 @@
       if (type === 'area') {
         return { id, type: 'area', position: { x: 120, y: 200, z: 120 }, size: 120, samples: 6, intensity: 1, castShadows: true };
       }
-      return { id, type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true };
+      return { id, type: 'directional', azimuth: 330, elevation: 40, intensity: 1, castShadows: true };
     };
     const addLight = (type) => {
       let newId = null;
@@ -4292,7 +4510,7 @@
       commit(() => {
         const lt = lightById(lid);
         if (!lt) return;
-        if (lt.type === 'directional') { lt.azimuth = 135; lt.elevation = 45; }
+        if (lt.type === 'directional') { lt.azimuth = 330; lt.elevation = 40; }
         else if (lt.type === 'area') {
           lt.position = { x: 120, y: 200, z: 120 };
           lt.size = 120;
@@ -4693,17 +4911,39 @@
             : 'Positional light — drag the on-canvas 3-axis gizmo to move it, or use the controls below.'));
       inspectorHost.appendChild(note);
       if (isDir) {
+        // H3 — compact read-only front/behind readout, kept live by refreshLightFacing (slider apply + any panel input).
+        const facingEl = document.createElement('p');
+        facingEl.className = 'vs3-lawnote is-info vs3-light-facing';
+        facingEl.dataset.control = 'lightFacing';
+        const refreshLightFacing = () => {
+          const lt = lightById(lid) || light;
+          const f = lightFacing(lt, params.camera);
+          if (!f) { facingEl.hidden = true; return; }
+          facingEl.hidden = false;
+          facingEl.dataset.facing = f;
+          facingEl.textContent = LIGHT_FACING_TEXT[f];
+          facingEl.setAttribute('aria-label', `${LIGHT_FACING_TEXT[f]} (relative to the camera)`);
+        };
+        refreshLightFacing();
+        inspectorHost.appendChild(facingEl);
+        const onAnyEdit = () => {
+          if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); document.removeEventListener('pointercancel', onAnyEdit, true); return; }
+          refreshLightFacing();
+        };
+        document.addEventListener('input', onAnyEdit, true);
+        document.addEventListener('pointerup', onAnyEdit, true);
+        document.addEventListener('pointercancel', onAnyEdit, true); // a cancelled touch drag can still have moved the light gizmo
         sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
-          value: Number.isFinite(light.azimuth) ? light.azimuth : 135,
-          min: 0, max: 360, step: 1, defaultValue: 135,
+          value: Number.isFinite(light.azimuth) ? light.azimuth : 330,
+          min: 0, max: 360, step: 1, defaultValue: 330,
           ariaLabel: 'Light azimuth (degrees)',
-          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.azimuth = Math.round(v); }),
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.azimuth = Math.round(v); refreshLightFacing(); }),
         });
         sliderRow(inspectorHost, inspectorComps, 'Elevation', {
-          value: Number.isFinite(light.elevation) ? light.elevation : 45,
-          min: 0, max: 90, step: 1, defaultValue: 45,
+          value: Number.isFinite(light.elevation) ? light.elevation : 40,
+          min: 0, max: 90, step: 1, defaultValue: 40,
           ariaLabel: 'Light elevation (degrees)',
-          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); }),
+          ...liveSlider((v) => { const lt = lightById(lid); if (lt) lt.elevation = Math.round(v); refreshLightFacing(); }),
         });
       }
       if (isPoint || isSpot || isArea) {
@@ -4788,7 +5028,7 @@
         resetBtn.type = 'button';
         resetBtn.className = 'vs3-light-reset';
         resetBtn.textContent = 'Reset light';
-        resetBtn.title = isDir ? 'Restore azimuth 135° / elevation 45°' : 'Restore default position';
+        resetBtn.title = isDir ? 'Restore azimuth 330° / elevation 40°' : 'Restore default position';
         resetBtn.addEventListener('click', () => resetLight(lid));
         resetRow.appendChild(resetBtn);
         inspectorHost.appendChild(resetRow);
@@ -4813,6 +5053,16 @@
         note.textContent = 'Ground plane — style it from the Style tab (pen, hatch, wireframe).';
         inspectorHost.appendChild(note);
         if (!params.ground || typeof params.ground !== 'object') params.ground = { enabled: true };
+        const gRecvHost = document.createElement('div');
+        inspectorHost.appendChild(gRecvHost);
+        const gRecvCtl = labeledRow(gRecvHost, 'Takes shadow');
+        setRowHelp(gRecvCtl, RECEIVE_GROUND_HELP);
+        inspectorComps.push(UI.SegCtrl(gRecvCtl, {
+          options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+          value: params.ground.receiveShadows === false ? 'off' : 'on',
+          ariaLabel: 'Ground receives shadows',
+          onChange: (v) => { commit(() => { writeGroundReceive(params.ground, v); }); },
+        }));
         groundSizeControls(inspectorHost, inspectorComps, params.ground, { commit, liveSlider }, () => {
           const engine = ui.app && ui.app.engine;
           const Pm = P3();
@@ -4936,41 +5186,16 @@
       sliderRow(inspectorHost, inspectorComps, 'Pitch', rotProps('pitch', 'Pitch'));
       sliderRow(inspectorHost, inspectorComps, 'Roll', rotProps('roll', 'Roll'));
 
-      // Uniform scale — writes the base `scale` and clears any per-axis (I23)
-      // divergence, so the object snaps back to uniform.
+      // Uniform scale — writes the base `scale` and multiplies any per-axis
+      // (I23) factors by the same ratio, so a non-uniform shape is preserved.
       sliderRow(inspectorHost, inspectorComps, 'Scale', {
         value: Number.isFinite(t.scale) ? t.scale : 1,
         min: 0.1, max: 5, step: 0.05,
         defaultValue: 1,
         ariaLabel: 'Uniform scale',
-        ...liveSlider((v) => {
-          obj.transform.scale = v;
-          delete obj.transform.sx;
-          delete obj.transform.sy;
-          delete obj.transform.sz;
-        }),
+        ...withRefresh(liveSlider((v) => { applyUniformScale(obj.transform, v); }), renderInspector),
       });
-      // Per-axis (non-uniform) scale — I23. Each row shows the effective factor
-      // for its local axis (falls back to the uniform `scale`). Editing one axis
-      // seeds the others from the uniform base so the object becomes non-uniform
-      // without silently resetting the untouched axes.
-      const axisScaleProps = (axis) => {
-        const key = `s${axis}`; // sx / sy / sz
-        const base = Number.isFinite(t.scale) ? t.scale : 1;
-        return {
-          value: Number.isFinite(t[key]) ? t[key] : base,
-          min: 0.1, max: 5, step: 0.05,
-          defaultValue: 1,
-          ariaLabel: `Scale ${axis.toUpperCase()}`,
-          ...liveSlider((v) => {
-            const b = Number.isFinite(obj.transform.scale) ? obj.transform.scale : 1;
-            if (!Number.isFinite(obj.transform.sx)) obj.transform.sx = b;
-            if (!Number.isFinite(obj.transform.sy)) obj.transform.sy = b;
-            if (!Number.isFinite(obj.transform.sz)) obj.transform.sz = b;
-            obj.transform[key] = v;
-          }),
-        };
-      };
+      const axisScaleProps = (axis) => axisScaleRowProps(obj.transform, axis, (fn) => withRefresh(liveSlider(fn), renderInspector));
       sliderRow(inspectorHost, inspectorComps, 'Scale X', axisScaleProps('x'));
       sliderRow(inspectorHost, inspectorComps, 'Scale Y', axisScaleProps('y'));
       sliderRow(inspectorHost, inspectorComps, 'Scale Z', axisScaleProps('z'));
@@ -5074,6 +5299,25 @@
             obj.shadow.enabled = v === 'on' ? true : (v === 'off' ? false : null);
           });
         },
+      }));
+
+      // Receive shadows (Follow scene / On / Off), beside Cast shadow.
+      const recvRow = document.createElement('div');
+      recvRow.className = 'vs3-row';
+      const recvLbl = document.createElement('label');
+      recvLbl.className = 'vs3-lbl';
+      recvLbl.textContent = 'Takes shadow';
+      recvRow.appendChild(recvLbl);
+      const recvHost = document.createElement('div');
+      recvHost.className = 'vs3-ctl';
+      recvRow.appendChild(recvHost);
+      recvRow.title = RECEIVE_OBJECT_HELP;
+      inspectorHost.appendChild(recvRow);
+      inspectorComps.push(UI.SegCtrl(recvHost, {
+        options: receiveSegOptions(),
+        value: receiveValueOf(obj),
+        ariaLabel: 'Object receives shadows',
+        onChange: (v) => { commit(() => { writeObjectReceive(obj, v); }); },
       }));
 
       // ── Emissive (Phase 7 — the sixth light type). An emissive object glows
@@ -5667,6 +5911,37 @@
           renderTone();
         },
       }));
+
+      // A23 — Shading (how dark), the scene-wide darkness of the v2 tone curve. Disabled with its reason under the legacy model
+      // (output stays byte-identical), under Flat, or when no object's Fill Style follows it.
+      {
+        const SH = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.SHADE) || {};
+        const shDef = Number.isFinite(SH.DEFAULT) ? SH.DEFAULT : 50;
+        const shNote = tone.model !== 'v2' ? TONE_NOTES.shadingLegacy
+          : ((tone.enabled === false || tone.bands < 2) ? TONE_NOTES.shadingFlat
+            : (consumers.length && !consumers.some(shadingLiveFor) ? TONE_NOTES.shadingNone : ''));
+        const shRow = sliderRow(toneHost, toneComps, 'Shading', {
+          value: Number.isFinite(tone.darkness) ? tone.darkness : shDef,
+          min: Number.isFinite(SH.MIN) ? SH.MIN : 0, max: Number.isFinite(SH.MAX) ? SH.MAX : 100, step: 1,
+          defaultValue: shDef,
+          ariaLabel: 'Shading darkness',
+          ...liveSliderFull((v) => { if (!shNote) ensureTone().darkness = Math.round(v); }),
+        });
+        shRow.dataset.control = 'toneDarkness';
+        if (shNote) markRowDisabled(shRow, shNote);
+        else {
+          shRow.setAttribute('title', TONE_NOTES.shading);
+          buildLawInfoAffordance(shRow, [{ text: TONE_NOTES.shading }], 'What Shading does');
+          // H3 — purely informational (not a warning): some live Fill Styles follow Shading only in the mid-tones.
+          if (consumers.some((c) => shadingLiveFor(c) && MIDTONE_SHADING_LAWS.has(c.law))) {
+            const infoNote = document.createElement('p');
+            infoNote.className = 'vs3-lawnote is-info';
+            infoNote.dataset.control = 'toneDarknessMidtones';
+            infoNote.textContent = TONE_NOTES.shadingMidtones;
+            shRow.insertAdjacentElement('afterend', infoNote);
+          }
+        }
+      }
 
       if (tone.enabled === false || tone.bands < 2) {
         const note = document.createElement('p');

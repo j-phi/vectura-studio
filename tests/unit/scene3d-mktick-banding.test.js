@@ -113,7 +113,7 @@ const buildSceneParams = (Params, defaults, {
   p.ground = { enabled: false };
   p.backdrop = { enabled: false };
   p.camera = clone(Params.DEFAULT_CAMERA);
-  p.tone = { ...clone(defaults).tone, enabled: true };
+  p.tone = { ...{ ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } }, enabled: true };
   p.lights = [SUN];
   p.styleTable = {
     scene: {

@@ -202,12 +202,12 @@ describe('3D Scene Studio 1b — selected-light 3-axis translate gizmo', () => {
     });
   });
 
-  test('restoreSceneLight resets a directional sun to az135/el45', async () => {
+  test('restoreSceneLight resets a directional sun to the factory key (az330/el40)', async () => {
     const { renderer, scene } = await setup();
     scene.params.lights[0].azimuth = 12;
     scene.params.lights[0].elevation = 80;
     expect(renderer.restoreSceneLight(scene, 'sun')).toBe(true);
-    expect(scene.params.lights[0].azimuth).toBe(135);
-    expect(scene.params.lights[0].elevation).toBe(45);
+    expect(scene.params.lights[0].azimuth).toBe(330);
+    expect(scene.params.lights[0].elevation).toBe(40);
   });
 });

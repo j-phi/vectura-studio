@@ -68,6 +68,7 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
   // ── Scene builder — one object, the rig above, styled by `mapper` ────────
   const sceneFor = (primitive, mapper, density, extraStyle = {}) => {
     const p = clone(defaults);
+    p.tone = { ...p.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): legacy-look pin
     p.camera = { ...P.DEFAULT_CAMERA };
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };

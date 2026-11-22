@@ -29,6 +29,10 @@
     // Contract §5 (A1) — the plot-floor cap admits a whole density level once its screen pitch is at least this
     // fraction of the floor pitch (the §14.6 bar: no two drawn runs closer than 0.8 x floor).
     PLOT_FLOOR_SLACK: 0.8,
+    CAP_STRIDE_SLACK: 0.1,  // A21: floor slack of the stride cap (capContinuous): the cap thins rulings by a local-pitch estimate
+    CAP_GUARD_FRAC: 0.96,  // A21: crowd guard, x the plot floor: below CAP_GUARD_FACING a kept ruling piece stays this far from every other kept ruling
+    CAP_GUARD_FACING: 1.1,  // A21: the crowd guard acts where the surface faces the camera less than this
+    CAP_RIM_FACING: 0.05,  // A21: below this facing the stride demand is damped
     // Contract §8 — module-level bake cache, least-recently-used by bytes.
     CACHE_MB: 64,
     CACHE_MB_MOBILE: 24,
@@ -41,9 +45,43 @@
     // Contract §5, §13 — memo sizes for tone LUTs and for the Level S mesh / ground-hatch bakes.
     TONE_LUT_MEMO_ENTRIES: 32,
     AUX_CACHE_ENTRIES: 16,
+    // H4 — crowd guard: relative band around guardD inside which the exact Math.hypot test is used (outside it the squared distance decides).
+    CROWD: { EXACT_BAND: 1e-9 },
+    // H4 — glint scaleFn: skip the pow where w * nh^sh is provably <= s0 (relative margin keeps boundary cases on the pow side).
+    GLINT: { SKIP_MARGIN: 0.999999, FAST_MARGIN: 0.99999, FAST_EPS: 1e-9 },
     // surface-lock.js (core): FRESH_MAX caps the per-frame fresh-key list; FALLBACK_FLOOR_PEN is the plot floor (x pen) when Regions is absent.
     FRESH_MAX: 256,
     FALLBACK_FLOOR_PEN: 2.2,
+    // Tone model v2 (light realism; docs/surface-lock-contract.md A16-A18). Read by surface-lock.js (the frame). The per-baker v2
+    // constants (V2_*) sit in the baker's own table below, with the numbers each baker carried before they moved here.
+    V2: Object.freeze({
+      // A17: strength of the facing compensation in the frame's tone demand. g(c) = 1 + strength * (2c / (1 + c) - 1) scales the
+      // demand so equal tone reads equal ink per SCREEN area at the limb (c small) and the centre (c = 1). 0 = off.
+      FACING_COMP: 1,
+      // Owner decision "go darker": the v2 plot floor, in pens (legacy keeps Regions.PLOT_FLOOR_PEN = 2.2). One ruling per FLOOR_PEN x pen
+      // caps ink coverage at 1 / FLOOR_PEN (0.71 at 1.4), the shared dark end; the finest admitted pitch is PLOT_FLOOR_SLACK x this
+      // (1.12 pens), still wider than the ink (pen x 1.12), so darker never overlaps lines. Every v2 baker / the frame reads this one key.
+      FLOOR_PEN: 1.4,
+      // The frame's crowd guard in v2, in pens: no two kept pieces of different rulings closer than this (ink is pen x 1.12, so 1.3 pens leaves a
+      // hair of paper between them). Legacy keeps CAP_GUARD_FRAC x the plot floor (2.1 pens).
+      FLOOR_SLACK: 0.72,   // v2 octave cap admits a level once its pitch >= this x FLOOR_PEN x pen (0.72 x 1.4 = 1.0 pen: lines touch, never overlap)
+      GUARD_PEN: 1.3,
+    }),
+    // A23: the scene's Shading slider (p.tone.darkness, 0..100; v2 only). It sets how DARK the shading gets (Density sets how many
+    // rulings). One shared remap (Scene3D.Regions.darknessK / darknessRel) moves every v2 family's dark-end coverage c:
+    //   s <  DEFAULT: c' = c x (LIGHT_RATIO + (1 - LIGHT_RATIO) s / DEFAULT)      (0 -> 0.6 c: the dark end ~0.39 at Density 50)
+    //   s == DEFAULT: c' = c, byte-identical to the A22 look (no key, no bake change)
+    //   s >  DEFAULT: c' = c + (cMax - c)(s - DEFAULT) / (100 - DEFAULT)        (100 -> the family's no-overlap limit cMax)
+    // and a tone of relative darkness rel draws rel (1 + (k - 1) rel) of the old dark end (k = c' / c): paper stays paper, the dark end
+    // and mid-tones move, light tones barely. Past the default the darkest baked pitch shrinks by k (part of the bake key).
+    SHADE: Object.freeze({
+      DEFAULT: 50,  // the slider value that reproduces the A22 dark end (~0.65 at Density 50)
+      MIN: 0,
+      MAX: 100,
+      LIGHT_RATIO: 0.6,  // dark-end coverage at slider 0, x the default's (0.65 -> ~0.39: the pre-A22 light look)
+      DUTY_MIN_PITCH_PEN: 1.15,  // Duty Cycle / End Shorten v2: the coverage reference (pen / this) that sets k past the default; the mid-tones darken toward it
+      DUTY_SHRINK: false,  // ... but the ruling pitch stays: a finer pitch made the 1.05-pen crowd guard drop pieces (total ink fell 8717 -> 8483 at 100), so the dark end is capped at the default
+    }),
     // ---- per-module tuning (behaviour-neutral: each value is the literal the module carried before). Each module keeps
     // the same numbers as a safe fallback for when this table is not loaded.
     // surface-lock-ladder.js (hatch, crosshatch, contour, spiral, stipple). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
@@ -70,6 +108,13 @@
       MIN_SEP_FRAC: 0.84,  // measured worst local ruling pitch / nominal (hatch, default sphere); the law's separation bar reads it
       RELABEL_MIN_MM: 4,  // a relabel piece shorter than this (object mm) takes its finer neighbour's label
       RELABEL_STAGGER: 0.5,  // relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
+      V2_P0_PEN: 3.6,  // tone model v2: the darkest pitch at Density 0, in pens (it falls to the v2 plot floor, V2.FLOOR_PEN, plus the tail below, by Density 200); was 4 before the dark-end decision
+      V2_DENSITY_EXP: 14,  // tone model v2: Density -> darkest pitch: DARK_MIN + TAIL x g^TAIL_EXP + (P0 - DARK_MIN - TAIL) x g^EXP, g = 1 - d/200; Density 50 draws coverage ~0.64 (was ~0.30 with exp 3 and the 2.2 floor)
+      V2_TAIL_PEN: 0.24,  // tone model v2: a second, slow term of the darkest pitch, in pens, so Density 100 and 200 stay visibly darker than 50 (steps of ~0.04 coverage)
+      V2_TAIL_EXP: 1.0,  // tone model v2: exponent of the tail term
+      V2_DARK_MIN_PEN: 1.25,  // tone model v2: the densest darkest pitch (Density 200), in pens: coverage 0.8; never under the v2 guard (V2.GUARD_PEN), so lines never overlap
+      V2_KNEE: 0.12,  // tone model v2: the lightest 12 % of the relative darkness is paper, so a faint tone at the limb leaves no stray ruling (M7)
+      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 12 % of the tone range rolls off to paper (no lit floor; 15 % made a large blank lit area, 9 % left ink at I 0.95)
     }),
     // surface-lock-mezzo.js (mezzotint). Also reads ZOOM_HEADROOM / PLOT_FLOOR_SLACK above.
     MEZZO: Object.freeze({
@@ -92,6 +137,8 @@
       SEED_ARC_STEPS: 2,  // new seeds along an accepted line every max(d_l, this x STEP)
       MIN_MARK_PEN: 4,  // surface-fill uses 2; 4 drops the 0.6-1.5 mm specks (H5)
       SEP_MARGIN: 0.97,  // declared minSepFrac = STOP_FACTOR x this
+      V2_LIMB_KNEE: 0.7,  // tone model v2: the frame takes this knee off the mezzo tone threshold at the limb (M7)
+      V2_P0_SCALE: 0.99,  // tone model v2: p0 = PMAX x this (finest level at 1.4 pens, the densest the v2 plot floor admits)
       P0_SCALE: 1.2,  // p0 = PMAX x this (O4)
       MAX_LEVELS_LAW: 4,  // cap on the law-floor level count
       INK_SPREAD: 0.12,  // surface-fill INK_SPREAD (private there)
@@ -113,6 +160,7 @@
       PREV_SEED_D: 4,  // seeds beside lower-level lines every max(seedArc, this x d_l)
       FALLBACK_SEEDED: 100,  // random fallback candidates for levels > 0
       CONT_MIN_D: 1,  // a continuation run shorter than this (x d_l) is dropped
+      V2_PAPER_BAND: 0.15,  // tone model v2: the lightest 15 % of the tone range rolls off to paper; same value as the laws baker
     }),
     // surface-lock-shadow.js (locked ground shadow).
     SHADOW: Object.freeze({
@@ -138,6 +186,9 @@
       DUTY_PERIOD_FLOOR: 2.0,  // dutyConst mark period, x plot floor
       DUTY_PITCH_FLOOR: 1.05,  // dutyConst ruling pitch, x plot floor
       END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+      V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
+      V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
+      V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
       END_RETRACT: 0.84,  // endShorten: fraction of a ruling spent at full light
       MERGE_PERIOD_FLOOR: 1.8,  // mergeLadder mark period, x plot floor
       MERGE_M_MIN: 0.03,
@@ -147,6 +198,11 @@
       MAX_VERTS: 200000,  // contract §2 budget
       HATCH_D_MAX: 100,
       GOLDEN: 0.6180339887498949,
+      V2_DASH_GROUP_MM: 12,  // tone model v2 dutyConst: cells are keyed in groups this long (screen mm), so a tone draws one dash per group
+      V2_DASH_MIN_CELLS: 5,  // ... and never fewer cells than this per group
+      V2_TOL_MM: 0.02,  // tone model v2: chord tolerance of the decimated polylines (object mm)
+      V2_MAX_SEG_MM: 2.0,  // tone model v2: longest segment left after decimation (the tone is sampled at vertices)
+      V2_PAPER_BAND: 0.18,  // tone model v2: the lightest 18 % of the tone range rolls off to paper (no lit floor)
     }),
     // surface-lock-faceted.js (box, plane, polyhedron). The two keys it shares with the ladder / mezzo (PLOT_FLOOR_SLACK, ZOOM_HEADROOM) are its own copies here.
     FACETED: Object.freeze({
@@ -156,10 +212,13 @@
       MAX_VERTS: 120000,  // vertex budget guard (contract §2: 200k per object per fill group)
       CROSS_OBJ_DEG: 65,  // family 1 sits at fillAngle + CROSS_OBJ_DEG + (crossAngleDelta - 90), as the ladder's cross does
       PHASE_FAM1: 0.37,  // family 1 lattice offset (fraction of the level-0 pitch), so the two families do not start together
+      V2_LONE_FACE_MAX_I: 0.84,  // tone model v2: a lone face (a plane) is lit evenly, so its intensity is capped just under the paper band (1 - V2_PAPER_BAND) and a lit plane keeps the lightest hatch level instead of vanishing
       GAIN_LIT: 0.5,  // the faceted pose law's spacing gain at coverage 0 (lit): pitch = hatchSpacing / (GAIN_LIT + GAIN_SPAN * coverage)
       GAIN_SPAN: 1.1,  // ... so the pitch runs from 2 x Density spacing (lit) to Density spacing / 1.6 (dark)
-      PLOT_FLOOR_SLACK: 0.8,  // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
+      PLOT_FLOOR_SLACK: 0.72, // as the top-level key: a level is admitted once its pitch is at least this x the floor pitch
       ZOOM_HEADROOM: 1.5,  // as the top-level key: finest baked level reaches the darkest pitch at this multiple of the bake scale
+      DOT_SEGS: 8,  // tone model v2 stipple: dot polygon segments
+      SPIRAL_MIN_S: 0.03,  // tone model v2 spiral: stop when the scale toward the face centre drops under this
     }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({

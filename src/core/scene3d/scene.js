@@ -93,7 +93,8 @@
     const vertices = [
       v(-hx, 0, hz), v(hx, 0, hz), v(hx, 0, -hz), v(-hx, 0, -hz),
     ];
-    return { vertices, faces: [[0, 1, 2, 3]], faceIds: ['face:+Y'] };
+    // Back face shares the four vertices with reversed winding so the underside shades.
+    return { vertices, faces: [[0, 1, 2, 3], [3, 2, 1, 0]], faceIds: ['face:+Y', 'face:-Y'] };
   };
 
   const TOPOFORM_MODES = {
@@ -362,7 +363,9 @@
     const g = ground || {};
     const sx = span * Math.max(0, finite(g.scaleX, 1));
     const sz = span * Math.max(0, finite(g.scaleZ, 1));
-    let vertices = [v(-sx, 0, sz), v(sx, 0, sz), v(sx, 0, -sz), v(-sx, 0, -sz)];
+    // Floor height (world mm). Absent / 0 keeps the historic y = 0 plane byte-identical.
+    const gy = finite(g.y, 0);
+    let vertices = [v(-sx, gy, sz), v(sx, gy, sz), v(sx, gy, -sz), v(-sx, gy, -sz)];
     const persp = Number.isFinite(projOpts.focal) && projOpts.focal > 0;
     const focal = persp ? projOpts.focal : 0;
     const camDist = persp ? finite(projOpts.cameraDist, 0) : 0;
@@ -418,6 +421,7 @@
       }
     });
     record.isGround = true;
+    record.groundY = gy;
     return record;
   };
 
@@ -553,7 +557,7 @@
       ];
     };
     const covers = (k) => {
-      const rec = buildGroundRecord({ width, height }, camAngles, projOpts, null, { scaleX: ax * k, scaleZ: az * k }, { frameClip: false });
+      const rec = buildGroundRecord({ width, height }, camAngles, projOpts, null, { scaleX: ax * k, scaleZ: az * k, y: finite(g.y, 0) }, { frameClip: false });
       if (!rec) return false;
       const poly = rec.projected;
       for (let i = 0; i < poly.length; i += 1) {

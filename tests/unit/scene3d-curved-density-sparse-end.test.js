@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { legacyLights } = require('../helpers/legacy-sun');
 const { normalizePaths } = require('../helpers/path-signature');
 const { goldenValues } = require('../helpers/golden-values');
 
@@ -106,6 +107,8 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
 
   const sceneParams = (objects, extra = {}) => ({
     ...clone(defaults),
+    lights: legacyLights(defaults.lights), // tuned to the pre-v7 sun (az 135 / el 45)
+    tone: { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } }, // ...and the legacy light model (H2)
     seed: 1,
     objects,
     ground: { enabled: false },

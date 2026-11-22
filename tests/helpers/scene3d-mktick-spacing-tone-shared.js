@@ -39,7 +39,7 @@ const buildSceneParams = (Params, defaults, {
   p.ground = { enabled: false };
   p.backdrop = { enabled: false };
   p.camera = clone(Params.DEFAULT_CAMERA);
-  p.tone = { ...clone(defaults).tone, enabled: true };
+  p.tone = { ...clone(defaults).tone, enabled: true, model: 'legacy', specular: { enabled: true, size: 1 } }; // legacy-look pin, like tests/unit/scene3d-mktick-spacing-tone.test.js (H2)
   p.lights = [SUN];
   p.styleTable = {
     scene: {

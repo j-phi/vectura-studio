@@ -27,15 +27,24 @@
   // Object-level `shadow`/`border` live on the object itself (normalized into
   // the object entry); the scene-level `shadow` block is distinct and always
   // taken from the scene defaults here.
-  const sceneDefaults = () => {
+  // v7 light realism: a NEW leaf (born at sceneVersion >= 7, no toneModel stamp)
+  // resolves the factory tone model + front key light. A SAVED leaf (no or older
+  // sceneVersion, or stamped toneModel 'legacy' by the v6 -> v7 migration) keeps
+  // tone.model 'legacy' and the pre-v7 sun (az 135) so it renders byte-identically.
+  const LEGACY_SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  const sceneDefaults = (leaf) => {
     const d = (Vectura.ALGO_DEFAULTS && Vectura.ALGO_DEFAULTS.scene3d) || {};
     const c = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+    const born = leaf && Number.isFinite(leaf.sceneVersion) && leaf.sceneVersion >= 7
+      && leaf.toneModel !== 'legacy';
+    const tone = c(d.tone);
+    if (!born && tone) tone.model = 'legacy';
     return {
       sceneVersion: d.sceneVersion != null ? d.sceneVersion : 1,
       seed: d.seed != null ? d.seed : 0,
       camera: c(d.camera),
-      lights: c(d.lights),
-      tone: c(d.tone),
+      lights: born ? c(d.lights) : [{ ...LEGACY_SUN }],
+      tone,
       shadow: c(d.shadow),
       ground: c(d.ground),
       backdrop: c(d.backdrop),
@@ -66,7 +75,7 @@
       const full = key.indexOf('/') >= 0 ? key : `${object.id}/${key}`;
       byFace[full] = faceStyles[key];
     });
-    const d = sceneDefaults();
+    const d = sceneDefaults(params);
     return {
       sceneVersion: d.sceneVersion,
       seed: d.seed,

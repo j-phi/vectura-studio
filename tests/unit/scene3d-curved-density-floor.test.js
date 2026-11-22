@@ -1,5 +1,6 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { legacyScene3dParams } = require('../helpers/legacy-sun');
 
 // Exact fill-count pins: tests/baselines/golden-values/scene3d-curved-density-floor.json.
 const golden = goldenValues('scene3d-curved-density-floor');
@@ -53,8 +54,9 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
   });
   afterAll(() => runtime.cleanup());
 
+  // A new scene defaults to the v7 front key + light model v2; this golden guards the pre-v7 look (legacy-sun.js).
   const sceneParams = (objects, extra = {}) => ({
-    ...clone(defaults),
+    ...legacyScene3dParams(clone(defaults)),
     seed: 1,
     objects,
     ground: { enabled: false },

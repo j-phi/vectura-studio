@@ -176,6 +176,9 @@ for (const law of doc.laws) {
     weaknesses: law.weaknesses || '',
     chooseWhen: law.chooseWhen || '',
     caveat: (typeof law.caveat === 'string' && law.caveat) ? law.caveat : null,
+    // U5 — 'info' (an explanation of intended behaviour) or 'warning' (a real
+    // limitation the user may hit). Null when there is no caveat.
+    caveatKind: (typeof law.caveat === 'string' && law.caveat) ? (law.caveatKind === 'warning' ? 'warning' : 'info') : null,
     simulated: SIMULATED_IDS.has(id),
     tier: LIBRARY_IDS.includes(id) ? 'library' : 'production',
   };

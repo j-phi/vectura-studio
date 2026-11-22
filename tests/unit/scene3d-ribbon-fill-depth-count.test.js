@@ -60,6 +60,7 @@
  *   npx vitest run tests/unit/scene3d-ribbon-fill-depth-count.test.js
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 // R-27: the per-law existence checks (sec. 1) and the named-cell zero checks
 // (sec. 2) were removed. Sec. 3's healthy baseline still pins contour/weaveDepth
@@ -69,6 +70,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const buildTorusCell = (V, mapper, toneLaw) => {
   const engine = new V.VectorEngine();
   const groupId = engine.addLayer('scene3d'); // redirects to addSceneTree()
+  pinLegacySun(engine, groupId); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
   const group = engine.layers.find((l) => l && l.id === groupId);
   const obj = engine.getLayerDescendants(groupId)
     .filter((l) => l && l.type === 'object3d')[0];

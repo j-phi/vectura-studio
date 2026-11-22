@@ -1,5 +1,6 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 /*
  * U4a item 2 — the Seed field drives every hash / dither site in scene3d fills.
@@ -27,6 +28,7 @@ describe('scene3d Seed', () => {
   const scene = (prim, mapper, params = {}) => {
     const engine = new V.VectorEngine();
     const gid = engine.addSceneTree();
+    pinLegacySun(engine, gid); // pre-v7 sun + legacy light model: this golden guards the pre-v7 look
     const oid = engine.addObjectToScene(gid, prim);
     const child = engine.getLayerById(oid);
     child.params.style = { penId: null, mapper, params };

@@ -1,6 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { pathSignature } = require('../helpers/path-signature');
 const { goldenValues } = require('../helpers/golden-values');
+const { legacyScene3dParams } = require('../helpers/legacy-sun');
 
 /*
  * FS-F1: byte-identity guard for the HLR occluder spatial index (hlr.js) and
@@ -114,8 +115,9 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
     return out;
   };
 
+  // A new scene defaults to the v7 front key + light model v2; this golden guards the pre-v7 look (legacy-sun.js).
   const sceneParams = (objects, extra = {}) => ({
-    ...clone(defaults),
+    ...legacyScene3dParams(clone(defaults)),
     seed: 7,
     objects,
     ground: { enabled: true },

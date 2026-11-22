@@ -96,7 +96,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp LOW-DENSITY row-coverage floor (W-0
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };
     p.camera = clone(Params.DEFAULT_CAMERA);
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...{ ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } }, enabled: true };
     p.lights = [SUN];
     p.styleTable = {
       scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity, toneLaw } }, byObject: {}, byFace: {},

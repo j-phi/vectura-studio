@@ -121,6 +121,11 @@
         <p>A <strong>3D Scene</strong> layer holds objects (box, sphere, torus, solid, imported mesh), lights and
         a camera. Each object has its own <strong>Style</strong> tab. The scene Style editor sets the defaults for
         objects that have no style of their own.</p>
+        <p>The <strong>sun widget</strong> on the canvas aims the light: drag it to move the sun. A <strong>solid</strong>
+        sun with full rays is in front of the scene (on the viewer's side); a <strong>hollow, dashed</strong> sun
+        tagged <em>behind</em> is behind it. A sun at the centre points straight at the camera, and the further it
+        sits from the centre the more side-on the light is. A dragged sun stays on the side it started on; drag it out
+        past the rim and back to send it round to the other side.</p>
         <p><strong>Type</strong> sets what the fill is made of: Hatch, Crosshatch, Contour, Spiral, Stipple or
         Wireframe. <strong>Fill Style</strong> sets the law that spaces the marks by tone. The styles come in
         families, and each family keeps its variants as sub-controls:</p>
@@ -131,6 +136,11 @@
           <li><strong>Pattern laws</strong> &mdash; Turing Stripe, Maze Fill and Voronoi Web draw their own marks and have no ruling angle.</li>
           <li><strong>Three-pen styles</strong> &mdash; draw the fine, medium and broad tone tiers as separate passes.</li>
         </ul>
+        <p><strong>Shading</strong> (scene Tone section, 0 to 100) sets how dark the shading gets: the darkest tone and
+        the mid-tones, never the paper or the highlight. It is not <strong>Density</strong>, which sets how many lines are
+        drawn and so the plot time. 50 is the standard look, 0 is light, and 100 is as dark as lines can go without
+        overlapping. Ladder fills follow it, and so do Duty Cycle, End Shorten, Mezzotint Region and the mark styles when
+        marks are locked to the surface. Older scenes on the legacy light model keep their fixed shading.</p>
         <p>A control that does nothing for the current shape or Fill Style stays visible but greyed. Hover the
         <strong>(i)</strong> badge to see why.</p>
         <p><strong>Lock marks to surface</strong> (Hatch, Crosshatch, Contour, Spiral, Stipple, Mezzotint and the
@@ -149,6 +159,17 @@
         <p>The Scene's own <strong>Transform</strong> (Pos X/Y, Scale X/Y, Rotation) moves, scales and turns the whole
         finished drawing about the centre of the page, like any other layer. A single object, light or the ground is
         placed from the Scene panel or the canvas handles, so its Transform rows are hidden.</p>
+        <p><strong>The ground.</strong> Select the ground (click it, or its row in the layer list) and it shows handles
+        on the canvas: drag a <em>corner</em> to resize it in proportion (hold Shift to resize each side alone), an
+        <em>edge</em> diamond to change its width or depth, and the purple <em>Y arrow</em> to raise or lower the floor
+        (Alt drags finely, and it snaps to 0). The centre gizmo stays inside the view, so the controls remain within reach
+        when the floor's corners are off screen. Once the ground is selected, dragging its body also moves its height.
+        Esc cancels a drag, and each drag is one undo step. Objects stay where they are; press D (Drop to ground) to
+        rest them on the new floor. The <strong>Height (Y)</strong> slider in the ground panel sets the same height.</p>
+        <p><strong>Takes shadow.</strong> Each object has a <strong>Takes shadow</strong> row (Follow scene, On or Off) and
+        the ground has an On / Off one. Off stops that surface receiving cast shadows. An object whose Cast shadow is Off
+        casts none on the ground or on other objects. The Light panel's <em>Key light</em> line says whether the light is
+        in front of or behind the subject.</p>
         <p><strong>Shadow look</strong> is the Fill Style row in the Shadow section. It picks the texture drawn inside cast
         shadows. It offers the sub-controls of each family that look different on a flat footprint.</p>
         <p><strong>Artistic controls</strong> are all off until you move them:</p>

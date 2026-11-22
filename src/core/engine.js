@@ -737,7 +737,8 @@
   // freshly added light child is valid before the next compose. The `id` is set
   // to the child LAYER id at compose time (identity contract) — omitted here.
   const SCENE_LIGHT_SEED = {
-    directional: { type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: true },
+    // v7: the front illustration key (lockstep with ALGO_DEFAULTS.sceneLight3d).
+    directional: { type: 'directional', azimuth: 330, elevation: 40, intensity: 1, castShadows: true },
     point: { type: 'point', position: { x: 120, y: 200, z: 120 }, range: 400, intensity: 1, castShadows: true },
     spot: {
       type: 'spot', position: { x: 120, y: 200, z: 120 }, target: { x: 0, y: 0, z: 0 },
@@ -1478,6 +1479,8 @@
         // republishes byObject[boolean layer id] from bl.params.style too.
         const grpStyle = resolveObjectStyle(grp.id);
         if (grpStyle) bl.params.style = grpStyle;
+        // B4 — the group transform rides along (normalizeGroups keeps it only when non-identity).
+        if (grp.transform && typeof grp.transform === 'object') bl.params.transform = { ...grp.transform };
         this.layers.splice(insertAt, 0, bl);
         insertAt += 1;
         // Reparent this group's operand object3d children (they were inserted as
@@ -1522,6 +1525,13 @@
         const gl = new Layer(gcid, 'sceneGround3d', 'Ground');
         gl.parentId = group.id;
         gl.params.enabled = true;
+        // Receive toggle rides along (absent = receives; written only when switched off).
+        if (group.params.ground && group.params.ground.receiveShadows === false) gl.params.receiveShadows = false;
+        // The floor's size and height ride along too (the normalized ground carries scaleX / scaleZ / y).
+        const mg = (src.ground && typeof src.ground === 'object') ? src.ground : {};
+        if (Number.isFinite(mg.scaleX)) gl.params.scaleX = mg.scaleX;
+        if (Number.isFinite(mg.scaleZ)) gl.params.scaleZ = mg.scaleZ;
+        if (Number.isFinite(mg.y) && mg.y !== 0) gl.params.y = mg.y;
         this.layers.splice(insertAt, 0, gl);
         insertAt += 1;
       }

@@ -12,6 +12,7 @@
  */
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 describe('Fill Style reachability on curved Spiral/Stipple is measured', () => {
   let runtime; let V; let engine; let group; let obj;
@@ -21,6 +22,7 @@ describe('Fill Style reachability on curved Spiral/Stipple is measured', () => {
     V = runtime.window.Vectura;
     engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
+    pinLegacySun(engine, gid); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
     group = engine.getLayerById(gid);
     obj = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
     obj.params.transform.yaw = 25;

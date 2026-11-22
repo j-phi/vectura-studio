@@ -50,6 +50,7 @@ describe('SurfaceFill ribbons — every bucket-B law, every curved primitive', (
       LAWS.forEach((toneLaw) => {
         const engine = new V.VectorEngine();
         const groupId = engine.addLayer('scene3d');
+        engine.getLayerById(groupId).params.tone = { ...engine.getLayerById(groupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
         const obj = engine.getLayerDescendants(groupId)
           .filter((l) => l && l.type === 'object3d')[0];
         obj.params.primitive = primitive;
@@ -158,6 +159,7 @@ describe('SurfaceFill ribbons — every bucket-B law, every curved primitive', (
   test('torus — a fold across a doubly-covered sheet is NOT carved out', () => {
     const engine = new V.VectorEngine();
     const groupId = engine.addLayer('scene3d');
+    engine.getLayerById(groupId).params.tone = { ...engine.getLayerById(groupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
     const group = engine.layers.find((l) => l.id === groupId);
     group.params.camera = { ...(group.params.camera || {}), pitch: 5 };
     const obj = engine.getLayerDescendants(groupId)

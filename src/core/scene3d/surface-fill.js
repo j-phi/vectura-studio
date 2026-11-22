@@ -282,6 +282,14 @@
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
   const PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
+  // Tone model v2 has its own, lower plot floor (config SCENE3D_SURFACE_LOCK.V2.FLOOR_PEN; owner decision "go darker") for the fills that follow the
+  // shared v2 dark end (Default ladder, Duty Cycle - Constant, End Shorten); every other pose law keeps PLOT_FLOOR_PEN.
+  const V2_DARK_LAWS = { '': true, ladder: true, dutyConst: true, endShorten: true };
+  const poseFloorPen = (opts) => {
+    if (!opts || opts.toneModel !== 'v2' || !V2_DARK_LAWS[typeof opts.toneLaw === 'string' ? opts.toneLaw : '']) return PLOT_FLOOR_PEN;
+    const v = ((Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {}).FLOOR_PEN;
+    return Number.isFinite(v) && v > 1 ? v : 1.4;
+  };
   // I5 follow-up — this is the DEFAULT for the master grid's line-count
   // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
   // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
@@ -1876,7 +1884,8 @@
       const env = toneEnvelope();
       const pDark = masterPitch > 1e-6 ? masterPitch / Math.max(1e-6, env.covDark) : floorPitch;
       const pLight = masterPitch > 1e-6 ? masterPitch / Math.max(1e-6, env.covLight) : litMaxPitchPen() * penWidth;
-      toneAmp = { aDark: areaAt(pDark), aLight: areaAt(pLight), pDark, pLight };
+      // Light model v2: the light end is PAPER (no lit floor), so every law that states its tone as an area follows cov_target.
+      toneAmp = { aDark: areaAt(pDark), aLight: opts.toneModel === 'v2' ? 0 : areaAt(pLight), pDark, pLight };
       return toneAmp;
     };
     // Radiance → target ink area, such that PERCEIVED grey is linear in radiance.
@@ -3520,6 +3529,7 @@
     // The light end never moves: weight 1 on the base grid. That is what "the
     // light end stays delicate" means arithmetically.
     const wLightArea = () => {
+      if (opts.toneModel === 'v2') return 0.005; // paper end (light model v2)
       const p = masterPitch > 1e-6
         ? masterPitch / Math.max(1e-6, weightBaseCov())
         : litMaxPitchPen() * penWidth;
@@ -4000,7 +4010,7 @@
     // and inside its own ink width, so the marks still touch — they just are not
     // asked to overlap.
     const PEN_DEEP_AREA = 0.93;
-    const penLightArea = () => clamp(penInk(0) / Math.max(1e-6, litMaxPitchPen() * penWidth), 0.005, 0.98);
+    const penLightArea = () => (opts.toneModel === 'v2' ? 0.005 : clamp(penInk(0) / Math.max(1e-6, litMaxPitchPen() * penWidth), 0.005, 0.98));
     const penDarkArea = () => clamp(Math.min(penMaxArea(2), PEN_DEEP_AREA), 0.02, 0.98);
     const penTarget = (I) => areaForTone(I, penDarkArea(), penLightArea());
     //
@@ -5297,8 +5307,62 @@
     // gates its zone assertions on) — `zone` is always null today, so
     // `coverageForSample` is the only reachable branch and this is byte-for-
     // byte what literal 'ladder' already computed.
+    // ── LIGHT MODEL v2: the pose ladder follows the SAME L*-linear target as the surface-locked ladder ─────────────────
+    // (surface-lock-ladder.js `darkPitchV2` / `relDarkV2`, H2.) No lit floor: the lightest tones run out to paper. The pitch
+    // asked for at tone x is pd / rel(x), pd = the Density-set darkest pitch; `ladderCov` returns that as a coverage of the
+    // master grid so `ladderWantedPitch` (= masterPitch / coverage) lands on it.
+    const v2On = Boolean(opts.toneModel === 'v2' && toneOn && Regions && typeof Regions.shade === 'function');
+    const v2Cfg = () => ((Vectura.SCENE3D_SURFACE_LOCK || {}).LADDER) || {};
+    let v2Memo = null;
+    const v2Curve = () => {
+      if (v2Memo) return v2Memo;
+      const C = v2Cfg();
+      const dens = finite(opts.fillDensity, 50);
+      // Same curve as surface-lock-ladder.js darkPitchV2 (the surface and pose fills must agree, M6): Density -> darkest pitch, with the
+      // v2 plot floor / guard (config SCENE3D_SURFACE_LOCK.V2) in place of PLOT_FLOOR_PEN.
+      const V2c = (Vectura.SCENE3D_SURFACE_LOCK || {}).V2 || {};
+      const floor = Math.max(finite(C.V2_DARK_MIN_PEN, 1.25), finite(V2c.GUARD_PEN, 1.3)) * penWidth;
+      const g = clamp(1 - dens / 200, 0, 1);
+      const tail = Math.max(0, finite(C.V2_TAIL_PEN, 0.24)) * penWidth;
+      const p0 = Math.max(floor * 2.2, finite(C.V2_P0_PEN, 3.6) * penWidth);
+      let pd = floor + tail * Math.pow(g, Math.max(0.2, finite(C.V2_TAIL_EXP, 1.0))) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, finite(C.V2_DENSITY_EXP, 14)));
+      // A23: the Shading slider (Regions.darknessK on the single-family dark coverage; cMax = pen / the guard floor), the same remap as
+      // surface-lock-ladder.js darkV2. kf = the family's own coverage ratio after the crosshatch share; 1 at the default (no change).
+      const kS = Regions && typeof Regions.darknessK === 'function' ? Regions.darknessK(opts.toneDarkness, penWidth / pd, penWidth / floor) : 1;
+      let kf = 1;
+      if (opts.mapper === 'crosshatch') {
+        const shareOf = (c) => penWidth / (1 - Math.sqrt(1 - clamp(c, 0.02, 0.95)));
+        const c1 = penWidth / pd; pd = shareOf(c1);
+        if (kS !== 1) kf = pd / shareOf(c1 * kS);
+      } else kf = kS;
+      const covDark = clamp(penWidth / pd, 0.02, 0.95);
+      const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
+      const band = Math.max(1e-3, finite(C.V2_PAPER_BAND, 0.15));
+      // Density past 200: the darkest pitch has reached the v2 floor, so the master grid's relaxed floor (opts.masterFloorPen, 1.2x pen at 200
+      // -> 0.7x at 500, the same taper that sets the grid) carries on shrinking the wanted pitch; tone (covDark, rel) stays the Density-200 one.
+      const mfp = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0 ? opts.masterFloorPen : 0;
+      const pdOut = dens > 200 && mfp > 0 && mfp < 1.2 ? pd * (mfp / 1.2) : pd;
+      v2Memo = {
+        pd: pdOut,
+        kf,
+        rel: (xx) => {
+          const q = clamp(finite(xx, 0), 0, 1);
+          const cv = 1 - invLstar(lDark + (lLight - lDark) * q);
+          const u = clamp((1 - q) / band, 0, 1);
+          return clamp(1.1 * cv / covDark, 0, 1) * u * u * (3 - 2 * u);
+        },
+      };
+      return v2Memo;
+    };
+    // Share of full darkness at sample `smp` after the glint: below V2_PAPER_DENS this sample is bare paper (the ruling breaks).
+    const V2_PAPER_DENS_POSE = 0.12;
+    const v2Dens = (smp) => {
+      const keep = Regions.specularKeep(clamp(finite(smp && smp.S, 0), 0, 1));
+      return v2Curve().rel(smp.I) * keep;
+    };
     const ladderCov = (I) => {
       const x = clamp(finite(I, 0), 0, 1);
+      if (v2On) { const c = v2Curve(); return masterPitch * (c.kf === 1 ? c.rel(x) : Regions.darknessRel(c.rel(x), c.kf)) / c.pd; } // A23: Shading slider
       let cov;
       if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
       else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
@@ -5824,6 +5888,8 @@
       return chartOrientMemo;
     };
 
+    // Light model v2 (H2): the shading context of the scene (null = legacy, nothing below changes).
+    const v2Ctx = (opts.toneModel === 'v2' && opts.lightCtx && Regions && typeof Regions.shade === 'function') ? opts.lightCtx : null;
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
       const aa = clamp01(a);
@@ -5897,6 +5963,11 @@
       // `nz` = the camera-space normal's z. It is 1 facing the camera and 0 ON
       // the silhouette, so it is the exact, projection-correct measure of "how
       // close to the contour is this sample" — used by the limb taper below.
+      if (v2Ctx) {
+        // Light model v2 (H2): the sample carries its diffuse luminance L (= the shaped I) and the specular S that removes ink.
+        const sh = Regions.shade(wN, world, v2Ctx.lights, v2Ctx);
+        return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, L: I, S: sh.S, wN, world, dA, dB };
+      }
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, S, wN, world, dA, dB };
     };
 
@@ -6170,7 +6241,7 @@
         // sample coverage capping, crosshatch separation, mark-length
         // safety, …) and it always reads PLOT_FLOOR_PEN, unrelaxed.
         const floorPenMult = Number.isFinite(opts.masterFloorPen) && opts.masterFloorPen > 0
-          ? opts.masterFloorPen : PLOT_FLOOR_PEN;
+          ? opts.masterFloorPen : poseFloorPen(opts);
         const floorPen = floorPenMult * penWidth;
         if (TONE_UNCAPPED) {
           // THE BUDGET IS OFF. The master grid is ruled at the plot floor
@@ -6201,7 +6272,7 @@
     litFloorCov = masterPitch > 0
       ? clamp(masterPitch / (litMaxPitchPen() * penWidth), 0.05, 1)
       : LIT_FLOOR;
-    floorPitch = PLOT_FLOOR_PEN * penWidth;
+    floorPitch = poseFloorPen(opts) * penWidth;
     const BRIDGE_MM = BRIDGE_PEN * penWidth;
     const SPECK_MM = SPECK_PEN * penWidth;
     const MIN_MARK_MM = MIN_MARK_PEN * penWidth;
@@ -9843,6 +9914,9 @@
         onSurf[s] = on;
         if (gradIs && on) gradIs[s] = gradIAt(pr);
         smps[s] = on ? smp : null;
+        // Light model v2: a sample whose remaining ink (tone x glint) is under the paper threshold is bare paper, so the ruling
+        // breaks there (a hard cut like a zone gate). The glint is therefore paper; the stub cull (MIN_MARK) then drops orphans.
+        if (v2On && on && v2Dens(smp) < V2_PAPER_DENS_POSE) smps[s] = null;
         // The zone gate is a HARD cut, so a gated-out sample is not part of any
         // span; folding it in here keeps the span segmentation and the emit
         // loop's cut in step.
@@ -13165,6 +13239,8 @@
           hash: sfHash,
           angleDeg: finite(opts.fillAngle, 0),
           densityScale: opts.densityScale,
+          // Light model v2 (H2): the mono laws shade each sample themselves (s.L / s.S) from this context.
+          ...(opts.toneModel === 'v2' ? { toneModel: 'v2', light: opts.lightCtx || null } : {}),
           crossDelta: crossDelta,
           stripeAlign: opts.stripeAlign,
           chainMarks: opts.chainMarks,

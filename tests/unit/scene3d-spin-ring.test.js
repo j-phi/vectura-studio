@@ -32,6 +32,7 @@ describe('Scene3D.SpinRing', () => {
   const make = () => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
+    engine.getLayerById(gid).params.tone = { ...engine.getLayerById(gid).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
     const group = engine.layers.find((l) => l.id === gid);
     const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
     child.params.primitive = 'sphere';

@@ -80,7 +80,7 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
     p.ground = { enabled: false };
     p.camera = { projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
     p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60 } }, byObject: {}, byFace: {} };
-    p.tone = clone(defaults).tone;
+    p.tone = { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } };
     p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 12, castShadows: false }];
     return p;
   };
@@ -142,7 +142,7 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
       scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60, ...(styleParams || {}) } },
       byObject: {}, byFace: {},
     };
-    p.tone = clone(defaults).tone;
+    p.tone = { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } };
     // A near point light just outside the +X/+Y/+Z corner (half-extent 30).
     p.lights = [{ id: 'pt', type: 'point', intensity: 1, range: 240, position: { x: 55, y: 55, z: 55 } }];
     return p;
@@ -211,7 +211,7 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
       scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60, highlightMode: 'lightDriven', highlightTreatment: 'dashed', highlightSensitivity: sensitivity } },
       byObject: {}, byFace: {},
     };
-    p.tone = clone(defaults).tone;
+    p.tone = { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } };
     p.lights = [{ id: 'pt', type: 'point', intensity: 1, range: 260, position: { x: 70, y: 70, z: 120 } }];
     return algo.generate(p, null, null, BOUNDS) || [];
   };
@@ -243,7 +243,7 @@ describe('Scene3D light-driven highlight + direction unify (I8 / I27)', () => {
     p.ground = { enabled: false };
     p.camera = { projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
     p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60, shadowSensitivity } }, byObject: {}, byFace: {} };
-    p.tone = clone(defaults).tone;
+    p.tone = { ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } };
     p.lights = [{ id: 'sun', type: 'directional', azimuth: 90, elevation: 15, castShadows: false }];
     return p;
   };

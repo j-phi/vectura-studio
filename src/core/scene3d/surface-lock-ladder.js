@@ -60,6 +60,13 @@
     ZOOM_HEADROOM: 1.5,
     RELABEL_MIN_MM: 4, // FX-R: a relabel piece shorter than this (object mm) takes its finer neighbour's label
     RELABEL_STAGGER: 0.5, // FX-R: relabel fronts shift toward the coarse side by up to this x the coarse piece, per ruling
+    V2_P0_PEN: 3.6, // tone model v2: the darkest pitch at Density 0, in pens (mirrors the config)
+    V2_DENSITY_EXP: 14, // tone model v2: Density -> darkest pitch curve (mirrors the config)
+    V2_TAIL_PEN: 0.24, // tone model v2: Density 50..200 tail of the darkest pitch, in pens (mirrors the config)
+    V2_TAIL_EXP: 1.0, //
+    V2_DARK_MIN_PEN: 1.25, // tone model v2: the densest darkest pitch (Density 200), in pens (mirrors the config) tone model v2: exponent of that tail (mirrors the config)
+    V2_KNEE: 0.12,       // tone model v2: the lightest 12 % of the relative darkness is paper (M7)
+    V2_PAPER_BAND: 0.15, // tone model v2: the lightest 15 % of the tone range rolls off to paper (no lit floor)
   };
   const C = Object.assign({}, DEFAULTS);
   const CONVEX_MODES = { sphere: true, cylinder: true, cone: true, capsule: true };
@@ -92,6 +99,9 @@
   const CH = () => Scene3D.SurfaceLockChart;
   const regions = () => Scene3D.Regions || {};
   const plotFloorPen = () => (Number.isFinite(regions().PLOT_FLOOR_PEN) ? regions().PLOT_FLOOR_PEN : 2.2);
+  // Tone model v2 has its own, lower plot floor (config V2.FLOOR_PEN, owner decision "go darker"); legacy keeps plotFloorPen().
+  const v2GuardPen = () => { const v = cfg().V2 && cfg().V2.GUARD_PEN; return Number.isFinite(v) && v > 1 ? v : 1.3; };
+  const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
   const litMaxPitchPen = () => (Number.isFinite(regions().LIT_MAX_PITCH_PEN) ? regions().LIT_MAX_PITCH_PEN : 12);
   const ctz = (m) => (m === 0 ? 99 : 31 - Math.clz32(m & -m));
   const vdc2 = (i) => {
@@ -149,10 +159,13 @@
       scale: { sx: finite(sc.sx, 1), sy: finite(sc.sy, 1), sz: finite(sc.sz, 1) },
       seed: (spec && spec.seed && typeof spec.seed === 'object') ? spec.seed : {},
       stipple: spec && spec.mapper === 'stipple',
+      v2: !!spec && spec.toneModel === 'v2',
+      cross: !!spec && spec.mapper === 'crosshatch',
+      dark: spec ? spec.toneDarkness : undefined, // A23: the scene's Shading slider (absent = the default)
     };
   };
   const floorOf = (r) => {
-    const f = plotFloorPen() * r.pen;
+    const f = (r.v2 ? v2FloorPen() : plotFloorPen()) * r.pen;
     return r.stipple ? Math.max(f, C.DOT_CLEAR * r.dotR) : f;
   };
   const masterPitch = (r) => Math.max(floorOf(r), hatchSpacing(r.density) / C.TONE_SUBDIV);
@@ -173,7 +186,82 @@
     return clamp(cov, 0, 1);
   };
 
+  // ---- tone model v2 (light-realism U6) ---------------------------------------------------------------------------
+  // `spec.toneModel === 'v2'` (the hub copies p.tone.model there; it is part of the bake key) selects a continuous, L*-linear
+  // tone curve with NO lit floor: coverage runs from the Density-set dark coverage down to paper, with a short roll-off over
+  // the lightest V2_PAPER_BAND. Absent or 'legacy' = the three-band curve below, byte-identical.
+  const isV2 = (spec) => !!spec && spec.toneModel === 'v2';
+  // Darkest pitch (screen mm). Density runs 0..200 across the WHOLE range (the legacy master pitch hits the plot floor at about
+  // Density 82, so 100 and 200 were identical): floor + (P0 - floor) * (1 - d/200)^exp.
+  // The tail term keeps Density 100 and 200 apart (the v2 plot floor is reached by about Density 80 otherwise): see V2_TAIL_PEN.
+  // A23: the Shading slider moves the single-family dark coverage c1 by k (Regions.darknessK; cMax = pen / the guard floor, so
+  // lines never overlap); crosshatch then splits the moved c1 between its two families. Returns the default darkest pitch pdDef
+  // (the tone curve's shape), the family's own ratio kf and the darkest pitch actually baked: pdDef / kf when kf > 1 (finer
+  // rulings), pdDef when kf <= 1 (the LUT asks for less of the same rulings).
+  const darkV2 = (r) => {
+    const floor = r.stipple ? floorOf(r) : Math.max(C.V2_DARK_MIN_PEN * r.pen, v2GuardPen() * r.pen);
+    const g = clamp(1 - r.density / 200, 0, 1);
+    const tail = Math.max(0, C.V2_TAIL_PEN) * r.pen;
+    const p0 = Math.max(floor * 2.2, C.V2_P0_PEN * r.pen);
+    let pd = floor + tail * Math.pow(g, Math.max(0.2, C.V2_TAIL_EXP)) + Math.max(0, p0 - floor - tail) * Math.pow(g, Math.max(0.2, C.V2_DENSITY_EXP));
+    const R = regions();
+    const covOf = (p) => (r.stipple ? Math.PI * r.dotR * r.dotR / (p * p) : r.pen / p);
+    const k = typeof R.darknessK === 'function' ? R.darknessK(r.dark, covOf(pd), covOf(floor)) : 1;
+    // Crosshatch draws TWO families whose coverages add (a union 1 - (1 - a)^2): each carries the share that makes the pair reach the
+    // same dark end as a single family does.
+    const share = (c) => r.pen / (1 - Math.sqrt(1 - clamp(c, 0.02, 0.95)));
+    if (k === 1) {
+      if (r.cross && !r.stipple) pd = share(r.pen / pd);
+      return { pdDef: pd, kf: 1, pd };
+    }
+    let pdK = r.stipple ? pd / Math.sqrt(k) : pd / k;
+    if (r.cross && !r.stipple) { const c1 = r.pen / pd; pd = share(c1); pdK = share(c1 * k); }
+    const kf = covOf(pdK) / covOf(pd);
+    return { pdDef: pd, kf, pd: kf > 1 ? pdK : pd };
+  };
+  // Darkest pitch (screen mm). Density runs 0..200 across the WHOLE range (the legacy master pitch hits the plot floor at about
+  // Density 82, so 100 and 200 were identical): floor + (P0 - floor) * (1 - d/200)^exp.
+  // The tail term keeps Density 100 and 200 apart (the v2 plot floor is reached by about Density 80 otherwise): see V2_TAIL_PEN.
+  const darkPitchV2 = (r) => darkV2(r).pd;
+  const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
+  const invLstar = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
+  // Relative darkness d(I) in [0, 1]: 1 at I = 0, 0 at I = 1; L*-linear between paper and the dark coverage, times the roll-off.
+  const relDarkV2 = (covDark) => {
+    const lDark = Lstar(1 - covDark); const lLight = Lstar(1);
+    const band = Math.max(1e-3, C.V2_PAPER_BAND);
+    return (I) => {
+      const x = clamp(finite(I, 0), 0, 1);
+      const cov = 1 - invLstar(lDark + (lLight - lDark) * x);
+      const u = clamp((1 - x) / band, 0, 1);
+      const rel = clamp(1.1 * cov / covDark, 0, 1) * u * u * (3 - 2 * u); // 1.1: a short dark shoulder (the finest level cannot quite reach the nominal dark pitch)
+      return Math.max(0, (rel - C.V2_KNEE) / (1 - C.V2_KNEE));
+    };
+  };
+  const toneIsOffV2 = (ctx) => !!ctx && ((ctx.tone && ctx.tone.enabled === false)
+    || (ctx.light && Array.isArray(ctx.light.lights) && ctx.light.lights.length === 0));
+  const toneLutV2 = (spec, toneCtx) => {
+    sync();
+    const r = read(spec);
+    const n = (cfg().TONE_LUT_SIZE || 256) + 1;
+    const lut = new Float32Array(n);
+    if (toneIsOffV2(toneCtx) || !(toneCtx && toneCtx.tone)) { // contract §5: tone off = the user's Density, uniform
+      lut.fill(1 / Math.max(floorOf(r), hatchSpacing(r.density)));
+      return { lut, scaleFn: null };
+    }
+    const dv = darkV2(r); const pd = dv.pdDef;
+    const covDark = r.stipple ? clamp(Math.PI * r.dotR * r.dotR / (pd * pd), 0.02, 0.95) : clamp(r.pen / pd, 0.02, 0.95);
+    const rel = relDarkV2(covDark);
+    const shade = typeof regions().darknessRel === 'function' ? regions().darknessRel : (x) => x;
+    for (let k = 0; k < n; k++) {
+      const d = shade(rel(k / (n - 1)), dv.kf); // A23: the Shading slider (dv.kf = 1 at the default: rel exactly)
+      // lines: coverage ~ 1 / pitch; dots: coverage ~ area ~ 1 / pitch^2. The specular glint is the hub's scaleFn (U1 specularKeep).
+      lut[k] = (r.stipple ? Math.sqrt(d) : d) / pd;
+    }
+    return { lut, scaleFn: null };
+  };
+
   const toneLUT = (spec, toneCtx) => {
+    if (isV2(spec)) return toneLutV2(spec, toneCtx);
     sync();
     const r = read(spec);
     const ctx = toneCtx || {};
@@ -263,7 +351,12 @@
     const p0 = p0S / r.scaleRef;                       // level-0 pitch, scaled local mm
     // Level count (contract §9) with a vertex budget guard.
     // minPitch is the darkest screen pitch the law can ever ask for (coverage <= 1): finer levels are never drawn.
-    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, masterPitch(r));
+    // The level count is the legacy one for v2 too: SurfaceLockLaws (dutyConst / endShorten, U4) bakes its ladder through this
+    // function with the same spec.toneModel, and its v2 curves are tuned to these levels. The v2 darkest pitch sits within the
+    // finest level's reach (finest <= master / 1.5).
+    // Tone model v2 (a plain ladder, not a law's ruling set): the finest level must reach the Density-set DARKEST pitch (the dark end
+    // is ~0.67 coverage), not the legacy master pitch (spacing / 5), or the dark end is quantised to an octave far too coarse.
+    const minPitch = Math.max(C.PLOT_FLOOR_SLACK * floor, !r.v2 ? masterPitch(r) : (spec.lawBake ? (finite(spec.lawFinest, 0) > 0 ? spec.lawFinest : masterPitch(r)) : darkPitchV2(r)));
     let L = clamp(1 + Math.ceil(Math.log2(Math.max(1, p0S * C.ZOOM_HEADROOM / minPitch))), 1, maxLevels);
     const families = cross ? 2 : 1;
     const estVerts = (levels) => {
@@ -401,10 +494,17 @@
       const pmRef = median(pms);
       if (!(pmRef > 0)) return;
       // n0 is a power of two so every coarser set {ctz >= v} is evenly spaced (a fan thins by halves).
-      const k0 = clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, Math.floor(Math.log2(C.MAX_CELLS)) - (L - 1));
-      const n0 = Math.pow(2, Math.max(0, k0));
+      // Legacy: the level-0 ruling count is a power of two, so the ruling pitch lands within x1.41 of the one asked for. Tone model v2 takes
+      // ANY integer count (the coarser sets {ctz >= v} are evenly spaced whatever n0 is): the effective pitch is within a few percent of
+      // the asked one. The dark end (~0.67 coverage) sits within 1.2 x the plot floor, where a x0.8 miss made the frame's crowd guard
+      // drop every other ruling (coverage 0.42 instead of 0.67).
+      const maxK = Math.floor(Math.log2(C.MAX_CELLS)) - (L - 1);
+      const n0 = r.v2
+        ? clamp(Math.round(Math.max(1e-9, (pmRef * w) / P)), 1, Math.max(1, Math.floor(C.MAX_CELLS / Math.pow(2, L - 1))))
+        : Math.pow(2, Math.max(0, clamp(Math.round(Math.log2(Math.max(1e-9, (pmRef * w) / P))), 0, maxK)));
       const N = n0 * Math.pow(2, L - 1);
       const logN = Math.round(Math.log2(N));
+      const stampM = spec.lawBake === true && N + 1 < SM.RANK_SCALE;
       effPitch = (pmRef * w) / n0;
       const phi = SC.hash(salt, famId, 3) * 0.999;
       const mFrom = (uPeriodic ? 0 : 1);
@@ -434,7 +534,10 @@
         const rankOf = (eff) => vdc2(eff === 0 ? (m >> (L - 1)) : (m >> (v + 1)));
         const flush = (closedFull) => {
           if (xs.length >= 2 || (closedFull && xs.length >= 3)) {
-            builder.beginRun(curEff, rankOf(curEff), famId, closedFull ? FLAG.CLOSED : 0);
+            // A law bake (SurfaceLockLaws) also gets the ruling's own index m (its position m / N across the family) as the run's
+            // capRank: a ruling is split into several runs and relabelled finer near a pole, so (level, rank) alone does not say where it
+            // lies or which runs belong together.
+            builder.beginRun(curEff, rankOf(curEff), famId, closedFull ? FLAG.CLOSED : 0, stampM && m + 1 < SM.RANK_SCALE ? (m + 1) / SM.RANK_SCALE : undefined);
             for (let q = 0; q < xs.length; q++) emit(xs[q]);
             builder.endRun();
           }
@@ -802,5 +905,9 @@
     return ms;
   };
 
-  Scene3D.SurfaceLockLadder = { id: 'ladder', FIT, supports, bake, toneLUT };
+  Scene3D.SurfaceLockLadder = {
+    id: 'ladder', FIT, supports, bake, toneLUT,
+    // shared with the faceted baker (tone model v2)
+    v2: { isV2, darkPitch: (spec) => { sync(); return darkPitchV2(read(spec)); }, dark: (spec) => { sync(); return darkV2(read(spec)); }, toneLUT: toneLutV2, relDark: relDarkV2 },
+  };
 })();

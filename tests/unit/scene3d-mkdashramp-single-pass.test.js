@@ -92,6 +92,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 const { goldenValues } = require('../helpers/golden-values');
 
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
@@ -164,7 +165,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     p.ground = { enabled: false };
     p.backdrop = { enabled: false };
     p.camera = clone(Params.DEFAULT_CAMERA);
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...{ ...clone(defaults).tone, model: 'legacy', specular: { enabled: true, size: 1 } }, enabled: true };
     p.lights = [SUN];
     p.styleTable = {
       scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity, toneLaw } }, byObject: {},
@@ -345,6 +346,8 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     test('T4b\'s own fixture (engine.addLayer insert pipeline, d=220) is unaffected', () => {
       const engine = new V.VectorEngine();
       const groupId = engine.addLayer('scene3d');
+      engine.getLayerById(groupId).params.tone = { ...engine.getLayerById(groupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
+      pinLegacySun(engine, groupId); // golden tuned to the pre-v7 sun (az 135 / el 45)
       const group = engine.getLayerById(groupId);
       engine.getLayerDescendants(groupId)
         .filter((l) => l && l.type === 'sceneGround3d')
@@ -383,6 +386,8 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
 
       const neutralEngine = new neutralRuntime.window.Vectura.VectorEngine();
       const neutralGroupId = neutralEngine.addLayer('scene3d');
+      neutralEngine.getLayerById(neutralGroupId).params.tone = { ...neutralEngine.getLayerById(neutralGroupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
+      pinLegacySun(neutralEngine, neutralGroupId); // same pre-v7 sun as the measured engine above
       const neutralGroup = neutralEngine.getLayerById(neutralGroupId);
       neutralEngine.getLayerDescendants(neutralGroupId)
         .filter((l) => l && l.type === 'sceneGround3d')

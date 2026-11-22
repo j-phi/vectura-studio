@@ -204,9 +204,11 @@ describe('Contextual Task Bar — scene TREE object context (RC2)', () => {
     expect(() => CB.restoreState()).not.toThrow();
     expect(CB.getContext().kind).toBe('scene-object');
     expect(CB.getContext().primaryLayer.id).toBe(gid);
-    // The flyout must survive a record-less target rather than throwing.
+    // A combined shape's Shadow pill is disabled (nothing reads group-id style
+    // writes); clicking it must not throw or open a flyout.
     expect(() => pillByLabel('Shadow').click()).not.toThrow();
-    expect(openFly()).toBeTruthy();
+    expect(pillByLabel('Shadow').getAttribute('aria-disabled')).toBe('true');
+    expect(openFly()).toBeFalsy();
     outsideClick();
   });
 

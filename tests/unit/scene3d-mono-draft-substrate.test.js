@@ -18,6 +18,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 const hashPaths = (paths) => {
   let h = 0x811c9dc5 >>> 0; let n = 0; let pts = 0;
@@ -53,6 +54,7 @@ describe('mono fill — lazy fields, draft substrate, full-tier identity', () =>
   const makeScene = (prim, law) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
+    pinLegacySun(engine, gid); // pre-v7 sun + legacy light model: this golden guards the pre-v7 look
     const group = engine.layers.find((l) => l.id === gid);
     const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
     child.params.primitive = prim;

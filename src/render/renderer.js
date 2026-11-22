@@ -130,7 +130,7 @@
         // Scene-tree Increment D — resolve the selected object through
         // _sceneObjectById (child-layer aware), not just inline params.objects.
         const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
-          ? (renderer && renderer._sceneObjectById ? renderer._sceneObjectById(layer, sel.objectIds[0]) : null)
+          ? (renderer && renderer._sceneXformTargetById ? renderer._sceneXformTargetById(layer, sel.objectIds[0]) : null)
           : null;
         if (obj) {
           const t = obj.transform || {};
@@ -150,13 +150,14 @@
         // Scene-tree Increment D — write to the selected object's transform via
         // _sceneObjectById (child-layer aware), not just inline params.objects.
         const obj = sel && sel.layerId === layer.id && sel.mode === 'object' && sel.objectIds.length === 1
-          ? (renderer && renderer._sceneObjectById ? renderer._sceneObjectById(layer, sel.objectIds[0]) : null)
+          ? (renderer && renderer._sceneXformTargetById ? renderer._sceneXformTargetById(layer, sel.objectIds[0]) : null)
           : null;
         if (obj) {
           const t = obj.transform || (obj.transform = {});
           if (next.yaw !== undefined) t.yaw = next.yaw;
           if (next.pitch !== undefined) t.pitch = next.pitch;
           if (next.roll !== undefined) t.roll = next.roll;
+          if (renderer._sceneTrimGroupTransform) renderer._sceneTrimGroupTransform(layer, sel.objectIds[0]);
           return;
         }
         const cam = params.camera || (params.camera = {});
@@ -672,6 +673,8 @@
       // null | { layerId, objectId, handle, center, startDist, startScale,
       // historyPushed, moved }.
       this._sceneResizeDrag = null;
+      // Ground gizmo drag (size / Y). null | { layerId, leafId, kind, start, grab, historyPushed, moved, ... }.
+      this._sceneGroundGizmoDrag = null;
       // Box face-pull drag state.
       // null | { layerId, objectId, axisKey, center, startDist, startDim,
       // historyPushed, moved }.
@@ -862,6 +865,14 @@
         // Escape mid light-translate gizmo drag restores the pre-drag light.
         if (this._sceneLightGizmoDrag) {
           if (this._cancelSceneLightGizmoDrag()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+        // Escape mid ground-gizmo drag restores the pre-drag size / height.
+        if (this._sceneGroundGizmoDrag) {
+          if (this._cancelSceneGroundGizmoDrag()) {
             e.preventDefault();
             e.stopPropagation();
           }
@@ -6502,6 +6513,8 @@
       // selection box so click targets are legible before clicking.
       if (this.hoverHighlight) this.drawHoverHighlight();
       if (this.hoverCenter) this.drawCenterMarker();
+      // Ground gizmo: drawn unclipped so a floor reaching past the artboard stays grabbable.
+      this.drawSceneGroundGizmo();
       const selectionLayersForBox = this.tempTransform
         ? selectedLayers.filter((l) =>
             !l.displayMaskActive &&
@@ -7742,6 +7755,12 @@
             if (e.cancelable) e.preventDefault();
             return;
           }
+          // The ground gizmo (corner / edge / centre boxes / Y arrow) wins over a ground re-pick.
+          const groundGizmoHit = this.hitSceneGroundGizmo(sx, sy, sceneLayer, e.pointerType);
+          if (groundGizmoHit && this.beginSceneGroundGizmoDrag(groundGizmoHit, e)) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
           // A corner scale handle wins over an object re-pick underneath it.
           const resizeHit = this.hitSceneResize(sx, sy, sceneLayer);
           if (resizeHit && this.beginSceneResizeDrag(resizeHit, e)) {
@@ -7779,7 +7798,7 @@
         // on the invisible handle geometry must not arm a 2D resize.
         const soleSceneSelected = selectedLayers.length === 1
           && (selectedLayers[0].type === 'scene3d' || selectedLayers[0].type === 'object3d'
-            || selectedLayers[0].type === 'booleanGroup3d');
+            || selectedLayers[0].type === 'booleanGroup3d' || selectedLayers[0].type === 'sceneGround3d');
         if (selectionBounds && !soleSceneSelected && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds, { pointerType: e.pointerType });
           if (handle) {
@@ -8402,6 +8421,12 @@
         return;
       }
 
+      // 3D Scene Studio: live ground gizmo drag (size / height).
+      if (this._sceneGroundGizmoDrag) {
+        this._applySceneGroundGizmoDrag(e);
+        return;
+      }
+
       // 3D Scene Studio: live uniform-scale gizmo drag.
       if (this._sceneResizeDrag) {
         this._applySceneResizeDrag(e);
@@ -8989,6 +9014,12 @@
       // 3D Scene Studio (Unit 1b): commit a selected-light translate drag.
       if (this._sceneLightGizmoDrag) {
         this._endSceneLightGizmoDrag();
+        this.draw();
+        clearActivePointer();
+        return;
+      }
+      if (this._sceneGroundGizmoDrag) {
+        this._endSceneGroundGizmoDrag();
         this.draw();
         clearActivePointer();
         return;
@@ -11573,6 +11604,51 @@
       return null;
     }
 
+    // B4 — the boolean group layer an id names inside a scene group (or null).
+    _sceneBooleanGroupLayer(layer, id) {
+      if (!layer || !layer.isGroup || !id || id === 'ground' || !this.engine.getLayerById) return null;
+      const child = this.engine.getLayerById(id);
+      if (!child || child.type !== 'booleanGroup3d' || !child.params) return null;
+      return this._sceneChildLayerFor(layer, id) === child ? child : null;
+    }
+
+    // B4 — ids whose paths belong to a scene selection id: a boolean group's carved ink is tagged with its PRIMARY operand's
+    // id, so the group id expands to itself + its operands. Any other id is just itself.
+    _sceneInkIds(layer, id) {
+      const out = new Set([id]);
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      if (grp && this.engine.getLayerChildren) {
+        this.engine.getLayerChildren(grp.id).forEach((c) => { if (c && c.type === 'object3d') out.add(c.id); });
+      }
+      return out;
+    }
+
+    // B4 — the record a transform tool (gizmo / orbit pad / ground drag) writes: the object's params, or a boolean group's
+    // params (its optional group `transform`, created lazily by the writers and dropped again when back at identity).
+    _sceneXformTargetById(layer, id) {
+      const obj = this._sceneObjectById(layer, id);
+      if (obj) return obj;
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      if (!grp) return null;
+      if (grp.params.id !== id) grp.params.id = id;
+      return grp.params;
+    }
+
+    // The group's params when `id` names a boolean group (a ground-drag target), else null.
+    _sceneBooleanGroupXform(layer, id) {
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      return grp ? grp.params : null;
+    }
+
+    // Remove a boolean group's transform bag once it is identity again (absent = identity on disk).
+    _sceneTrimGroupTransform(layer, id) {
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      const t = grp && grp.params.transform;
+      if (!t) return;
+      const P = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params;
+      if (P && typeof P.normalizeGroupTransform === 'function' && !P.normalizeGroupTransform(t)) delete grp.params.transform;
+    }
+
     // Scene-tree Increment D — resolve the CHILD LAYER that an object pick maps
     // to inside a scene GROUP. sceneTarget.objectId === child layer id (identity
     // contract), so this is a direct id lookup restricted to descendants of the
@@ -12046,7 +12122,7 @@
         return false;
       }
       const layer = stack[0].layer;
-      const cand = this._scenePickCandidate(stack, world, 'object', modifiers.alt);
+      let cand = this._scenePickCandidate(stack, world, 'object', modifiers.alt);
       const now = performance.now();
       const prev = this._sceneLastClick;
       const isDbl = Boolean(prev && (now - prev.time) < 400
@@ -12056,15 +12132,29 @@
       // that object's CHILD LAYER in the tree (sceneTarget.objectId === child
       // layer id, no lookup table). A monolith's inline object has no child
       // layer → select the scene layer itself (legacy behavior).
-      const pickedChild = layer.isGroup ? this._sceneChildLayerFor(layer, cand.objectId) : null;
+      // B4 — a click on a combined shape's carved ink selects the combined shape (its operands stay selectable in the tree).
+      const rawPickId = cand.objectId;
+      const pickedOperand = layer.isGroup && cand.objectId !== 'ground' ? this._sceneChildLayerFor(layer, cand.objectId) : null;
+      const pickedBool = pickedOperand && pickedOperand.type === 'object3d' && pickedOperand.parentId
+        ? this._sceneBooleanGroupLayer(layer, pickedOperand.parentId) : null;
+      if (pickedBool && pickedBool.params.op && pickedBool.params.op !== 'none') cand = { ...cand, objectId: pickedBool.id };
+      const groundPick = cand.objectId === 'ground';
+      const groundLeaf = groundPick && layer.isGroup ? this._sceneGroundLeaf(layer) : null;
+      const pickedChild = layer.isGroup ? (this._sceneChildLayerFor(layer, cand.objectId) || groundLeaf) : null;
       const layerToSelect = pickedChild || layer;
+      // Ground already selected BEFORE this press (scene selection or its leaf): a body drag moves its Y.
+      const groundWasSelected = groundPick && Boolean(
+        (groundLeaf && this.selectedLayerIds.has(groundLeaf.id))
+        || (this.sceneSelection && this.sceneSelection.layerId === layer.id && this.sceneSelection.mode === 'object'
+          && Array.isArray(this.sceneSelection.objectIds) && this.sceneSelection.objectIds.length === 1
+          && this.sceneSelection.objectIds[0] === 'ground'));
       if (!this.selectedLayerIds.has(layerToSelect.id)) this.selectLayer(layerToSelect);
       const sel = this.sceneSelection && this.sceneSelection.layerId === layer.id ? this.sceneSelection : null;
       if (isDbl && !additive && !modifiers.alt) {
         // Double-click enters A / face mode on the clicked object (§5.1).
         this.sceneComponentMode = 'face';
         const faceStack = this._sceneCandidatesAtPoint(world, 'face');
-        const face = faceStack.find((c) => c.objectId === cand.objectId) || faceStack[0] || null;
+        const face = faceStack.find((c) => c.objectId === rawPickId) || faceStack[0] || null;
         this.setSceneSelection({
           layerId: layer.id,
           mode: 'face',
@@ -12088,6 +12178,11 @@
       const objectIds = already && !modifiers.alt ? sel.objectIds : [cand.objectId];
       this.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds, faceKeys: [], edgeKeys: [] });
       if (modifiers.alt) return true; // alt-cycle is discrete
+      if (groundPick) {
+        // A ground press only selects; once it is selected a body drag moves the floor's Y.
+        if (groundWasSelected && !additive) this.beginSceneGroundBodyDrag(layer, e);
+        return true;
+      }
       this._beginSceneGroundDrag(layer, objectIds, world);
       return true;
     }
@@ -12201,7 +12296,7 @@
       const objects = this._allSceneObjectRecords(layer);
       const start = new Map();
       (objectIds || []).forEach((id) => {
-        const obj = objects.find((o) => o && o.id === id);
+        const obj = objects.find((o) => o && o.id === id) || this._sceneBooleanGroupXform(layer, id);
         if (!obj) return;
         const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
         start.set(id, {
@@ -12256,7 +12351,7 @@
       const objects = this._allSceneObjectRecords(layer);
       const inferTol = 6 / (this.scale || 1);
       drag.objectIds.forEach((id) => {
-        const obj = objects.find((o) => o && o.id === id);
+        const obj = objects.find((o) => o && o.id === id) || this._sceneBooleanGroupXform(layer, id);
         const s = drag.start.get(id);
         if (!obj || !s) return;
         const t = obj.transform || (obj.transform = {});
@@ -12871,6 +12966,12 @@
           }
           return null;
         }
+        // A selected sceneGround3d CHILD arms the ground gizmo on its owning scene GROUP.
+        if (s.type === 'sceneGround3d') {
+          const group = this._sceneGroupOfChild(s);
+          if (group && group.visible !== false && !this.isLayerLocked?.(group.id)) return group;
+          return null;
+        }
         if (s.type === 'scene3d' && s.visible !== false && !this.isLayerLocked?.(s.id)) {
           // A directly-selected scene layer uses its own _selectedLightId (the
           // legacy in-panel light tree); no light CHILD is armed.
@@ -12931,11 +13032,15 @@
     _sceneLight(layer, ensure = false) {
       const params = (layer && layer.params) || {};
       if (!Array.isArray(params.lights) || !params.lights.length) {
+        // Legacy-tone documents keep the pre-v7 sun (az 135); new/v2 scenes get the front key (az 330 / el 40).
+        const legacyTone = params.tone && params.tone.model === 'legacy';
+        const az = legacyTone ? 135 : 330;
+        const el = legacyTone ? 45 : 40;
         if (ensure) {
-          params.lights = [{ id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true }];
+          params.lights = [{ id: 'sun', type: 'directional', azimuth: az, elevation: el, castShadows: true }];
           return params.lights[0];
         }
-        return { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+        return { id: 'sun', type: 'directional', azimuth: az, elevation: el, castShadows: true };
       }
       return params.lights[0];
     }
@@ -13028,7 +13133,9 @@
       const d = this._lightWorldDir(light);
       const cam = (layer && layer.params && layer.params.camera) || {};
       const rot = this._rotateCam({ x: -d.x, y: -d.y, z: -d.z }, cam); // toward-sun, camera space
-      return { dx: rot.x * baseR, dy: -rot.y * baseR };
+      // dz is the camera-space depth of the toward-sun vector: > 0 the sun is on
+      // the viewer's side of the scene (in front), < 0 it is behind it.
+      return { dx: rot.x * baseR, dy: -rot.y * baseR, dz: rot.z };
     }
 
     // Inverse of _lightHandleOffset: a screen handle offset → {azimuth,elevation}.
@@ -13038,7 +13145,10 @@
     // real is unrecoverable from 2D alone, so pick the branch nearest the current
     // elevation (hintEl) for smooth dragging — defaulting to the front hemisphere
     // (correct for the common mid/high-elevation sun). Un-rotate → az/el.
-    _lightFromHandleOffset(dx, dy, cam, baseR, hintEl) {
+    // `hintZ` (the camera-space depth sign of the current light) wins over the
+    // elevation hint: a light that is behind the scene stays behind while it is
+    // dragged, so the widget never flips between front and back mid-gesture.
+    _lightFromHandleOffset(dx, dy, cam, baseR, hintEl, hintZ) {
       const R = Math.max(baseR, 1e-6);
       let rx = clamp(dx / R, -1, 1);
       let ry = clamp(-dy / R, -1, 1);
@@ -13052,11 +13162,18 @@
         return {
           azimuth: (Math.atan2(w.x, w.z) * 180 / Math.PI + 360) % 360,
           elevation: Math.asin(ny) * 180 / Math.PI,
+          rawEl: Math.asin(ny) * 180 / Math.PI,
         };
       };
       const front = solve(rz); const back = solve(-rz);
       let best;
-      if (Number.isFinite(hintEl)) {
+      if (Number.isFinite(hintZ) && hintZ !== 0) {
+        const want = hintZ > 0 ? front : back;
+        const other = hintZ > 0 ? back : front;
+        // Elevation is clamped to [0, 90]: when the preferred hemisphere maps
+        // below the horizon but the other does not, the other is the real one.
+        best = (want.rawEl < 0 && other.rawEl >= 0) ? other : want;
+      } else if (Number.isFinite(hintEl)) {
         best = Math.abs(front.elevation - hintEl) <= Math.abs(back.elevation - hintEl) ? front : back;
       } else {
         best = front; // front hemisphere: correct for the common mid/high sun
@@ -13065,6 +13182,14 @@
         azimuth: Math.round(best.azimuth * 10) / 10,
         elevation: Math.round(clamp(best.elevation, 0, 90) * 10) / 10,
       };
+    }
+
+    // Camera-space depth sign of a light: > 0 in front of the scene (viewer's
+    // side), < 0 behind it. Drives the widget variant and the drag hemisphere.
+    _sceneLightDepth(layer, light) {
+      const cam = (layer && layer.params && layer.params.camera) || {};
+      const d = this._lightWorldDir(light);
+      return this._rotateCam({ x: -d.x, y: -d.y, z: -d.z }, cam).z;
     }
 
     // Handle geometry (world coords) for the current sun, or null when the
@@ -13105,6 +13230,8 @@
         baseR,
         unit,
         light,
+        z: off.dz,
+        behind: off.dz < -1e-4,
       };
     }
 
@@ -13126,12 +13253,32 @@
       if (!this._sceneHelpersVisible()) return null;
       const target = layer || this._sceneLightLayer();
       if (!target || target.type !== 'scene3d') return null;
+      const selLayers = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      if (selLayers.length === 1 && selLayers[0] && selLayers[0].type === 'sceneGround3d') return null;
       const sel = this.getSceneSelection();
       if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds) || sel.objectIds.length !== 1) return null;
       const objId = sel.objectIds[0];
       if (!objId || objId === 'ground') return null;
-      const center = this._sceneObjectPathCenter(target, objId);
-      if (!center) return null;
+      let center = this._sceneObjectPathCenter(target, objId);
+      if (!center) {
+        // A boolean operand that is fully carved away draws none of its own lines, so there is no
+        // ink to centre on: project its transform origin instead so it keeps a gizmo.
+        const objDef = this._sceneObjectById(target, objId);
+        let xf = objDef && objDef.transform;
+        const grp = !objDef ? this._sceneBooleanGroupLayer(target, objId) : null;
+        if (grp) {
+          // A combined shape with no ink: anchor on its pivot (operand centroid) plus its own move.
+          const B = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Boolean;
+          const ops = (this.engine.getLayerChildren ? this.engine.getLayerChildren(grp.id) : [])
+            .filter((c) => c && c.type === 'object3d' && c.params).map((c) => c.params.transform);
+          const pv = B && B.groupPivot ? B.groupPivot(ops) : { x: 0, y: 0, z: 0 };
+          const gt = grp.params.transform || {};
+          xf = { x: pv.x + (Number(gt.x) || 0), y: pv.y + (Number(gt.y) || 0), z: pv.z + (Number(gt.z) || 0) };
+        }
+        const pt = xf ? this._sceneProjectWorld(target, { x: Number(xf.x) || 0, y: Number(xf.y) || 0, z: Number(xf.z) || 0 }) : null;
+        if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+        center = { x: pt.x, y: pt.y };
+      }
       const cam = (target.params && target.params.camera) || {};
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const R = 60 * unit;         // move-arrow length (doc units → constant on-screen)
@@ -13235,7 +13382,7 @@
       if (!layer || !hit) return false;
       const giz = this.getSceneObjectGizmo(layer);
       if (!giz) return false;
-      const obj = this._sceneObjectById(layer, giz.objId);
+      const obj = this._sceneXformTargetById(layer, giz.objId);
       if (!obj) return false;
       const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
       const rect = this.canvas.getBoundingClientRect();
@@ -13318,7 +13465,7 @@
       if (!drag) return false;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (!layer || !layer.params) { this._sceneObjectGizmoDrag = null; return false; }
-      const obj = this._sceneObjectById(layer, drag.objectId);
+      const obj = this._sceneXformTargetById(layer, drag.objectId);
       if (!obj || !obj.transform) { this._sceneObjectGizmoDrag = null; return false; }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
@@ -13418,7 +13565,7 @@
           // fights the user; a stored 400°/-464° is otherwise indistinguishable
           // from 40° in a static plotter tool, so there is no reason to keep
           // an unbounded winding count once the gesture ends.
-          const obj = this._sceneObjectById(layer, drag.objectId);
+          const obj = this._sceneXformTargetById(layer, drag.objectId);
           if (obj?.transform) {
             const wrap360 = (deg) => { const v = deg % 360; return v < 0 ? v + 360 : v; };
             if (drag.axis === 'y') obj.transform.yaw = wrap360(obj.transform.yaw);
@@ -13426,6 +13573,7 @@
             else obj.transform.roll = wrap360(obj.transform.roll);
           }
         }
+        this._sceneTrimGroupTransform(layer, drag.objectId);
         // B3 — the release render is the gesture's ONLY full-quality compose
         // (drag frames are draft tiers). Deferred past the release paint and
         // cancelled by the next drag on this scene, so rapid nudges do not
@@ -13450,7 +13598,7 @@
       }
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
-      const obj = layer && this._sceneObjectById(layer, drag.objectId);
+      const obj = layer && this._sceneXformTargetById(layer, drag.objectId);
       if (obj && obj.transform) {
         Object.assign(obj.transform, drag.start);
         // If the object was uniform when grabbed, a per-axis drag added sx/sy/sz;
@@ -13461,6 +13609,7 @@
           delete obj.transform.sz;
         }
       }
+      if (layer) this._sceneTrimGroupTransform(layer, drag.objectId);
       if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) this.app.history.pop();
       if (layer) this.engine.generate(layer.id);
       this.updateCursor();
@@ -13529,6 +13678,488 @@
       ctx.restore();
     }
 
+    // ─── Ground gizmo (Scene3D floor: size + height) ────────────────────────────
+    // Shown while the ground is selected (scene selection {objectIds:['ground']}
+    // or the sceneGround3d leaf). Drawn UNCLIPPED so a floor reaching past the
+    // artboard stays grabbable: a dashed quad with corner (size, proportional)
+    // and edge-midpoint (size) squares, plus a CENTRE gizmo pinned inside the
+    // viewport with a Y arrow (floor height) and width/depth scale boxes, so every
+    // control stays reachable when the corners are off-screen. Drags write the
+    // ground bag (leaf params / params.ground) on the draft regen path — no engine
+    // rebake until release. Body-drag moves Y once the ground is already selected.
+
+    _sceneGroundLeaf(group) {
+      if (!group || !group.isGroup || !this.engine || !Array.isArray(this.engine.layers)) return null;
+      return this.engine.layers.find((l) => l && l.type === 'sceneGround3d' && l.params
+        && this._sceneGroupOfChild(l) === group) || null;
+    }
+
+    // { layer, leaf } for the selected ground, or null.
+    _sceneGroundTarget() {
+      const layer = this._sceneLightLayer();
+      if (!layer || layer.type !== 'scene3d') return null;
+      const sel = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      const leafSel = sel.length === 1 && sel[0] && sel[0].type === 'sceneGround3d' ? sel[0] : null;
+      const ss = this.getSceneSelection();
+      const ssGround = !!(ss && ss.layerId === layer.id && ss.mode === 'object'
+        && Array.isArray(ss.objectIds) && ss.objectIds.length === 1 && ss.objectIds[0] === 'ground');
+      if (!leafSel && !ssGround) return null;
+      // Cheap per-frame check (draw + hover run this): a group's floor is its leaf, a monolith's is params.ground.
+      if (layer.isGroup) {
+        const leaf = leafSel || this._sceneGroundLeaf(layer);
+        return leaf && leaf.params && leaf.params.enabled !== false && leaf.visible !== false ? { layer, leaf } : null;
+      }
+      if (!layer.params || (layer.params.ground && layer.params.ground.enabled === false)) return null;
+      return { layer, leaf: null };
+    }
+
+    _groundBag(target, create) {
+      if (target.leaf) return target.leaf.params;
+      const p = target.layer.params;
+      if (!p.ground && create) p.ground = { enabled: true };
+      return p.ground || null;
+    }
+
+    _groundState(target) {
+      const b = this._groundBag(target, false) || {};
+      const Pm = (window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params) || {};
+      const sMin = Number.isFinite(Pm.GROUND_SCALE_MIN) ? Pm.GROUND_SCALE_MIN : 0.25;
+      const sMax = Number.isFinite(Pm.GROUND_SCALE_MAX) ? Pm.GROUND_SCALE_MAX : 256;
+      const yMin = Number.isFinite(Pm.GROUND_Y_MIN) ? Pm.GROUND_Y_MIN : -200;
+      const yMax = Number.isFinite(Pm.GROUND_Y_MAX) ? Pm.GROUND_Y_MAX : 200;
+      const sc = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? clamp(Number(v), sMin, sMax) : 1);
+      const y = Number.isFinite(Number(b.y)) ? clamp(Number(b.y), yMin, yMax) : 0;
+      return { y, sx: sc(b.scaleX), sz: sc(b.scaleZ), lock: b.scaleLock !== false, sMin, sMax, yMin, yMax };
+    }
+
+    // Ground height (world mm) of a scene layer, 0 when the floor is at its default.
+    _sceneGroundY(layer) {
+      if (!layer) return 0;
+      const S3 = window.Vectura && window.Vectura.Scene3D;
+      const Params = S3 && S3.Params;
+      const source = layer._sceneAssembled || layer.params;
+      const norm = (Params && typeof Params.normalizeParams === 'function')
+        ? Params.normalizeParams(source) : source;
+      const y = norm && norm.ground ? Number(norm.ground.y) : 0;
+      return Number.isFinite(y) ? y : 0;
+    }
+
+    // World → doc point, or null when non-finite / behind the camera.
+    _groundProject(layer, w) {
+      const cam = (layer.params && layer.params.camera) || {};
+      const pt = this._sceneProjectWorld(layer, w);
+      if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+      const Scene = window.Vectura.Scene3D.Scene;
+      let bounds = {};
+      try { bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
+      const po = Scene.buildProjOpts(cam, bounds);
+      if (Number.isFinite(po.focal) && po.focal > 0) {
+        const r = this._rotateCam(w, cam);
+        if (po.focal + (Number(po.cameraDist) || 0) - r.z <= po.focal * 0.1) return null;
+      }
+      return pt;
+    }
+
+    // The doc point's pre-image on the horizontal plane y = gy ({x, z}), or null
+    // when the plane is edge-on. Newton on the shared projection, so it is exact
+    // for orthographic AND perspective, with or without a scene Transform.
+    _groundPlanePoint(layer, gy, doc, guess) {
+      let X = guess ? guess.x : 0;
+      let Z = guess ? guess.z : 0;
+      const P = (x, z) => this._sceneProjectWorld(layer, { x, y: gy, z });
+      for (let i = 0; i < 14; i += 1) {
+        const p = P(X, Z);
+        if (!p) return null;
+        const ex = doc.x - p.x; const ey = doc.y - p.y;
+        if (Math.hypot(ex, ey) < 1e-5) break;
+        const h = 1;
+        const a = P(X + h, Z); const b = P(X, Z + h);
+        if (!a || !b) return null;
+        const ax = a.x - p.x; const ay = a.y - p.y; const bx = b.x - p.x; const by = b.y - p.y;
+        const det = ax * by - bx * ay;
+        if (!Number.isFinite(det) || Math.abs(det) < 1e-9) return null;
+        X += ((ex * by - bx * ey) / det) * h;
+        Z += ((ax * ey - ex * ay) / det) * h;
+        if (!Number.isFinite(X) || !Number.isFinite(Z)) return null;
+      }
+      return { x: X, z: Z };
+    }
+
+    getSceneGroundGizmo() {
+      if (!this._sceneHelpersVisible()) return null;
+      const target = this._sceneGroundTarget();
+      if (!target) return null;
+      const layer = target.layer;
+      const st = this._groundState(target);
+      let bounds = {};
+      try { bounds = this.engine.getBounds() || {}; } catch (_e) { bounds = {}; }
+      const span = Math.max(Number(bounds.width) || 200, Number(bounds.height) || 200) * 0.75;
+      const Sx = span * st.sx; const Sz = span * st.sz;
+      const gy = st.y;
+      const cfg = (window.Vectura.UI_CONSTANTS && window.Vectura.UI_CONSTANTS.SCENE_GROUND_GIZMO) || {};
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const proj = (x, y, z) => this._groundProject(layer, { x, y, z });
+      const corners = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sgx, sgz]) => ({
+        kind: 'corner', sgx, sgz, pt: proj(sgx * Sx, gy, sgz * Sz), world: { x: sgx * Sx, z: sgz * Sz },
+      }));
+      const edges = [
+        { kind: 'edge', axis: 'x', sgx: 1, sgz: 0, w: { x: Sx, z: 0 } },
+        { kind: 'edge', axis: 'x', sgx: -1, sgz: 0, w: { x: -Sx, z: 0 } },
+        { kind: 'edge', axis: 'z', sgx: 0, sgz: 1, w: { x: 0, z: Sz } },
+        { kind: 'edge', axis: 'z', sgx: 0, sgz: -1, w: { x: 0, z: -Sz } },
+      ].map((e) => ({ ...e, pt: proj(e.w.x, gy, e.w.z), world: e.w }));
+      // Centre gizmo: the floor origin, pinned inside the viewport.
+      const c0 = proj(0, gy, 0);
+      const cw = this.canvas ? (this.canvas.clientWidth || 0) : 0;
+      const ch = this.canvas ? (this.canvas.clientHeight || 0) : 0;
+      const inset = (cfg.viewportInsetPx || 52);
+      let centre = c0;
+      let pinned = false;
+      if (cw > 0 && ch > 0) {
+        const sc = c0 ? this.worldToScreen(c0.x, c0.y) : { x: cw / 2, y: ch / 2 };
+        const cx = clamp(sc.x, inset, Math.max(inset, cw - inset));
+        const cy = clamp(sc.y, inset, Math.max(inset, ch - inset));
+        if (!c0 || cx !== sc.x || cy !== sc.y) {
+          centre = this.screenToWorld(cx, cy);
+          pinned = true;
+        }
+      }
+      if (!centre) return null;
+      const dirOf = (w, fb) => {
+        const a = proj(0, gy, 0); const b = proj(w.x, gy + w.y, w.z);
+        if (!a || !b) return { ...fb, perMm: 0 };
+        const dx = b.x - a.x; const dy = b.y - a.y; const l = Math.hypot(dx, dy);
+        return l > 1e-6 ? { x: dx / l, y: dy / l, perMm: l } : { ...fb, perMm: 0 };
+      };
+      const up = dirOf({ x: 0, y: 1, z: 0 }, { x: 0, y: -1 });
+      const dx = dirOf({ x: 1, y: 0, z: 0 }, { x: 1, y: 0 });
+      let dz = dirOf({ x: 0, y: 0, z: 1 }, { x: 0, y: 1 });
+      // Edge-on (pitch 0): depth has no screen extent; offer a perpendicular stub.
+      if (dz.perMm === 0) dz = { x: -dx.y, y: dx.x, perMm: 0 };
+      const arrowLen = (cfg.arrowPx || 68) * unit;
+      const boxLen = (cfg.boxPx || 48) * unit;
+      const at = (d, len) => ({ x: centre.x + d.x * len, y: centre.y + d.y * len });
+      return {
+        target, layer, st, Sx, Sz, gy, unit, corners, edges, centre, pinned, up, dx, dz,
+        arrow: { base: centre, tip: at(up, arrowLen) },
+        boxX: at(dx, boxLen), boxZ: at(dz, boxLen),
+        proj,
+      };
+    }
+
+    hitSceneGroundGizmo(sx, sy, _layer, pointerType) {
+      const giz = this.getSceneGroundGizmo();
+      if (!giz) return null;
+      const world = this.screenToWorld(sx, sy);
+      const tol = window.Vectura.hitTolerance('groundHandle', pointerType) * giz.unit;
+      const near = (p) => !!p && Math.hypot(world.x - p.x, world.y - p.y) <= tol;
+      if (near(giz.boxX)) return { kind: 'box', axis: 'x', giz };
+      if (near(giz.boxZ)) return { kind: 'box', axis: 'z', giz };
+      let best = null; let bestD = Infinity;
+      giz.corners.forEach((c) => {
+        if (!c.pt) return;
+        const d = Math.hypot(world.x - c.pt.x, world.y - c.pt.y);
+        if (d <= tol && d < bestD) { bestD = d; best = { kind: 'corner', sgx: c.sgx, sgz: c.sgz, giz }; }
+      });
+      if (best) return best;
+      giz.edges.forEach((e) => {
+        if (!e.pt) return;
+        const d = Math.hypot(world.x - e.pt.x, world.y - e.pt.y);
+        if (d <= tol && d < bestD) { bestD = d; best = { kind: 'edge', axis: e.axis, sgx: e.sgx, sgz: e.sgz, giz }; }
+      });
+      if (best) return best;
+      if (near(giz.arrow.tip)
+        || this._gizmoSegDist(world, giz.arrow.base, giz.arrow.tip) <= tol * 0.75) return { kind: 'y', giz };
+      return null;
+    }
+
+    _groundHitCursor(hit) {
+      if (!hit) return null;
+      if (hit.kind === 'y') return 'ns-resize';
+      const giz = hit.giz;
+      let v = null;
+      if (hit.kind === 'box') v = hit.axis === 'x' ? giz.dx : giz.dz;
+      else {
+        const p = hit.kind === 'corner'
+          ? giz.corners.find((c) => c.sgx === hit.sgx && c.sgz === hit.sgz)
+          : giz.edges.find((e) => e.sgx === hit.sgx && e.sgz === hit.sgz);
+        const c0 = giz.proj(0, giz.gy, 0);
+        if (p && p.pt && c0) v = { x: p.pt.x - c0.x, y: p.pt.y - c0.y };
+      }
+      if (!v) return 'move';
+      let a = Math.atan2(v.y, v.x) * 180 / Math.PI;
+      a = ((a % 180) + 180) % 180; // axis, not direction
+      if (a < 22.5 || a >= 157.5) return 'ew-resize';
+      if (a < 67.5) return 'nwse-resize';
+      if (a < 112.5) return 'ns-resize';
+      return 'nesw-resize';
+    }
+
+    // kind: 'corner' | 'edge' | 'box' | 'y' | 'body'. Returns true when armed.
+    beginSceneGroundGizmoDrag(hit, event = {}) {
+      const giz = (hit && hit.giz) || this.getSceneGroundGizmo();
+      if (!giz) return false;
+      const rect = this.canvas.getBoundingClientRect();
+      const grab = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      const kind = hit && hit.kind ? hit.kind : 'body';
+      const drag = {
+        layerId: giz.layer.id,
+        leafId: giz.target.leaf ? giz.target.leaf.id : null,
+        kind,
+        axis: hit && hit.axis ? hit.axis : null,
+        sgx: hit && hit.sgx ? hit.sgx : 0,
+        sgz: hit && hit.sgz ? hit.sgz : 0,
+        grab,
+        start: { y: giz.st.y, sx: giz.st.sx, sz: giz.st.sz },
+        lock: giz.st.lock,
+        hadY: Object.prototype.hasOwnProperty.call(this._groundBag(giz.target, false) || {}, 'y'),
+        Sx: giz.Sx, Sz: giz.Sz, gy: giz.gy,
+        upPerMm: giz.up.perMm,
+        upVec: { x: giz.up.x * giz.up.perMm, y: giz.up.y * giz.up.perMm },
+        boxDir: kind === 'box' ? (hit.axis === 'x' ? { x: giz.dx.x, y: giz.dx.y } : { x: giz.dz.x, y: giz.dz.y }) : null,
+        grabPlane: null,
+        handleVec: null,
+        historyPushed: false,
+        moved: false,
+      };
+      if (kind === 'corner' || kind === 'edge') {
+        const h0 = { x: drag.sgx * giz.Sx, z: drag.sgz * giz.Sz };
+        drag.h0 = h0;
+        drag.grabPlane = this._groundPlanePoint(giz.layer, giz.gy, grab, h0);
+        const hp = giz.proj(h0.x, giz.gy, h0.z); const c0 = giz.proj(0, giz.gy, 0);
+        if (hp && c0) drag.handleVec = { x: hp.x - c0.x, y: hp.y - c0.y };
+      }
+      this._sceneGroundGizmoDrag = drag;
+      this.setCanvasCursor(kind === 'body' || kind === 'y' ? 'ns-resize' : (this._groundHitCursor(hit) || 'move'), 'scene-ground');
+      return true;
+    }
+
+    beginSceneGroundBodyDrag(layer, event = {}) {
+      return this.beginSceneGroundGizmoDrag({ kind: 'body', giz: this.getSceneGroundGizmo() }, event);
+    }
+
+    _groundWrite(drag, patch) {
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) return null;
+      const target = { layer, leaf: drag.leafId ? this.engine.layers.find((l) => l.id === drag.leafId) : null };
+      if (drag.leafId && !target.leaf) return null;
+      const bag = this._groundBag(target, true);
+      if (!bag) return null;
+      if ('y' in patch) { if (patch.y) bag.y = patch.y; else delete bag.y; }
+      if ('sx' in patch) bag.scaleX = patch.sx;
+      if ('sz' in patch) bag.scaleZ = patch.sz;
+      return layer;
+    }
+
+    _applySceneGroundGizmoDrag(event = {}) {
+      const drag = this._sceneGroundGizmoDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer) { this._sceneGroundGizmoDrag = null; return false; }
+      const rect = this.canvas.getBoundingClientRect();
+      const cur = this.screenToWorld((event.clientX ?? 0) - rect.left, (event.clientY ?? 0) - rect.top);
+      const dxd = cur.x - drag.grab.x; const dyd = cur.y - drag.grab.y;
+      if (!drag.moved && Math.hypot(dxd, dyd) < 2 / (this.scale || 1)) return true;
+      const mods = this.getModifierState(event);
+      const cfg = (window.Vectura.UI_CONSTANTS && window.Vectura.UI_CONSTANTS.SCENE_GROUND_GIZMO) || {};
+      const Pm = (window.Vectura.Scene3D && window.Vectura.Scene3D.Params) || {};
+      const sMin = Number.isFinite(Pm.GROUND_SCALE_MIN) ? Pm.GROUND_SCALE_MIN : 0.25;
+      const sMax = Number.isFinite(Pm.GROUND_SCALE_MAX) ? Pm.GROUND_SCALE_MAX : 256;
+      const yMin = Number.isFinite(Pm.GROUND_Y_MIN) ? Pm.GROUND_Y_MIN : -200;
+      const yMax = Number.isFinite(Pm.GROUND_Y_MAX) ? Pm.GROUND_Y_MAX : 200;
+      let patch = null;
+      let tip = '';
+      if (drag.kind === 'y' || drag.kind === 'body') {
+        const u = drag.upVec;
+        const l2 = u.x * u.x + u.y * u.y;
+        // Doc units per world mm along world-up; top-down views (≈0) fall back to screen-vertical.
+        let dY = l2 > 1e-4 ? (dxd * u.x + dyd * u.y) / l2 : -dyd;
+        const fine = Boolean(mods.alt);
+        if (fine) dY *= 0.1;
+        let y = drag.start.y + dY;
+        y = fine ? Math.round(y * 10) / 10 : Math.round(y * 2) / 2;
+        if (!fine && Math.abs(y) < (cfg.zeroSnapMm || 0.75)) y = 0;
+        y = clamp(y, yMin, yMax);
+        patch = { y };
+        tip = `Y ${y}`;
+      } else {
+        const lockProp = drag.lock;
+        let rx = 1; let rz = 1; // ratios on scaleX / scaleZ
+        if (drag.kind === 'box') {
+          const dpx = (dxd * drag.boxDir.x + dyd * drag.boxDir.y) * (this.scale || 1);
+          const r = Math.pow(2, dpx / (cfg.boxOctavePx || 90));
+          const prop = lockProp !== Boolean(mods.shift);
+          if (prop) { rx = r; rz = r; } else if (drag.axis === 'x') rx = r; else rz = r;
+        } else {
+          let nx = null; let nz = null;
+          const gp = drag.grabPlane;
+          const here = gp ? this._groundPlanePoint(layer, drag.gy, cur, drag.h0) : null;
+          if (gp && here) {
+            // The handle follows the pointer on the floor plane.
+            const hx = drag.h0.x + (here.x - gp.x);
+            const hz = drag.h0.z + (here.z - gp.z);
+            nx = drag.sgx ? (hx * drag.sgx) / drag.Sx : 1;
+            nz = drag.sgz ? (hz * drag.sgz) / drag.Sz : 1;
+          } else if (drag.handleVec) {
+            // Edge-on plane: scale by the pointer's travel along the handle's screen direction.
+            const v = drag.handleVec; const l2 = v.x * v.x + v.y * v.y || 1;
+            const r = 1 + (dxd * v.x + dyd * v.y) / l2;
+            nx = drag.sgx ? r : 1; nz = drag.sgz ? r : 1;
+          }
+          if (nx == null) return true;
+          nx = Math.max(nx, 0.02); nz = Math.max(nz, 0.02);
+          if (drag.kind === 'corner') {
+            if (mods.shift) { rx = nx; rz = nz; } else { const r = (nx + nz) / 2; rx = r; rz = r; }
+          } else {
+            const prop = lockProp !== Boolean(mods.shift);
+            const r = drag.axis === 'x' ? nx : nz;
+            if (prop) { rx = r; rz = r; } else if (drag.axis === 'x') rx = r; else rz = r;
+          }
+        }
+        // One shared factor clamp keeps a proportional drag from pinning one axis only.
+        const fit = (s, r) => clamp(s * r, sMin, sMax);
+        let sx = fit(drag.start.sx, rx); let sz = fit(drag.start.sz, rz);
+        if (rx === rz) {
+          const f = clamp(rx, Math.max(sMin / drag.start.sx, sMin / drag.start.sz), Math.min(sMax / drag.start.sx, sMax / drag.start.sz));
+          sx = drag.start.sx * f; sz = drag.start.sz * f;
+        }
+        sx = Math.round(sx * 1000) / 1000; sz = Math.round(sz * 1000) / 1000;
+        patch = { sx, sz };
+        tip = `W ${sx.toFixed(2)}×  D ${sz.toFixed(2)}×`;
+      }
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+      if (!this._groundWrite(drag, patch)) return true;
+      this._scheduleSceneDragRegen(layer.id);
+      this.showDragTooltip(tip, event.clientX ?? 0, event.clientY ?? 0);
+      return true;
+    }
+
+    _clearSceneGroundGizmoRegen() {
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+    }
+
+    _endSceneGroundGizmoDrag() {
+      const drag = this._sceneGroundGizmoDrag;
+      this._sceneGroundGizmoDrag = null;
+      this._clearSceneGroundGizmoRegen();
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.updateFormula?.();
+        // Rebuild the panel so its sliders reflect the dragged values.
+        this.app?.ui?.buildControls?.(this.getSelectedLayer?.() || layer);
+      }
+      this.updateCursor();
+    }
+
+    _cancelSceneGroundGizmoDrag() {
+      const drag = this._sceneGroundGizmoDrag;
+      if (!drag) return false;
+      this._sceneGroundGizmoDrag = null;
+      this._clearSceneGroundGizmoRegen();
+      const layer = this._groundWrite(drag, { y: drag.hadY ? drag.start.y : 0, sx: drag.start.sx, sz: drag.start.sz });
+      if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+        this.app.history.pop();
+      }
+      if (layer && drag.moved) this.engine.generate(layer.id);
+      this.draw();
+      this.updateCursor();
+      return true;
+    }
+
+    drawSceneGroundGizmo() {
+      const giz = this.getSceneGroundGizmo();
+      if (!giz) return;
+      const ctx = this.ctx;
+      const unit = giz.unit;
+      const cfg = (window.Vectura.UI_CONSTANTS && window.Vectura.UI_CONSTANTS.SCENE_GROUND_GIZMO) || {};
+      const touch = this.lastPointerType === 'touch';
+      const grow = touch ? 1.5 : 1;
+      const stroke = getThemeToken('--render-selection-stroke', '#38bdf8');
+      const fillBg = getThemeToken('--render-selection-handle-fill', '#ffffff');
+      const colors = {
+        x: getThemeToken('--render-gizmo-x', '#fbbf24'),
+        y: getThemeToken('--render-gizmo-y', '#a78bfa'),
+        z: getThemeToken('--render-gizmo-z', '#22d3ee'),
+      };
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      // Floor outline (dashed), only when every corner is in front of the camera.
+      if (giz.corners.every((c) => c.pt)) {
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1.25 * unit;
+        ctx.setLineDash([6 * unit, 4 * unit]);
+        ctx.beginPath();
+        giz.corners.forEach((c, i) => (i ? ctx.lineTo(c.pt.x, c.pt.y) : ctx.moveTo(c.pt.x, c.pt.y)));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.globalAlpha = 1;
+      const ch = (cfg.cornerHalfPx || 5) * grow * unit;
+      const eh = (cfg.edgeHalfPx || 4) * grow * unit;
+      giz.corners.forEach((c) => {
+        if (!c.pt) return;
+        ctx.fillStyle = fillBg; ctx.strokeStyle = stroke; ctx.lineWidth = 1.5 * unit;
+        ctx.beginPath(); ctx.rect(c.pt.x - ch, c.pt.y - ch, ch * 2, ch * 2); ctx.fill(); ctx.stroke();
+      });
+      giz.edges.forEach((e) => {
+        if (!e.pt) return;
+        ctx.fillStyle = fillBg; ctx.strokeStyle = e.axis === 'x' ? colors.x : colors.z; ctx.lineWidth = 1.5 * unit;
+        ctx.beginPath();
+        ctx.moveTo(e.pt.x, e.pt.y - eh * 1.2); ctx.lineTo(e.pt.x + eh * 1.2, e.pt.y);
+        ctx.lineTo(e.pt.x, e.pt.y + eh * 1.2); ctx.lineTo(e.pt.x - eh * 1.2, e.pt.y);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+      // Centre gizmo: width/depth boxes and the Y arrow.
+      const c = giz.centre;
+      const boxes = [['x', giz.boxX], ['z', giz.boxZ]];
+      boxes.forEach(([key, p]) => {
+        ctx.strokeStyle = colors[key]; ctx.lineWidth = 1.6 * unit; ctx.globalAlpha = 0.85;
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        ctx.globalAlpha = 1;
+        const bs = 4.5 * grow * unit;
+        ctx.fillStyle = fillBg; ctx.lineWidth = 1.8 * unit;
+        ctx.beginPath(); ctx.rect(p.x - bs, p.y - bs, bs * 2, bs * 2); ctx.fill(); ctx.stroke();
+      });
+      const tip = giz.arrow.tip;
+      ctx.strokeStyle = colors.y; ctx.fillStyle = colors.y; ctx.lineWidth = 2.6 * unit;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+      const a = Math.atan2(tip.y - c.y, tip.x - c.x);
+      const ah = 11 * grow * unit;
+      ctx.beginPath();
+      ctx.moveTo(tip.x + Math.cos(a) * ah * 0.6, tip.y + Math.sin(a) * ah * 0.6);
+      ctx.lineTo(tip.x - Math.cos(a - 0.5) * ah * 0.6, tip.y - Math.sin(a - 0.5) * ah * 0.6);
+      ctx.lineTo(tip.x - Math.cos(a + 0.5) * ah * 0.6, tip.y - Math.sin(a + 0.5) * ah * 0.6);
+      ctx.closePath(); ctx.fill();
+      // Pivot + readout.
+      ctx.fillStyle = fillBg; ctx.strokeStyle = colors.y; ctx.lineWidth = 1.6 * unit;
+      ctx.beginPath(); ctx.arc(c.x, c.y, 4 * unit, 0, TAU); ctx.fill(); ctx.stroke();
+      const label = `Y ${Math.round(giz.gy * 10) / 10}`;
+      ctx.font = `${600} ${11 * unit}px system-ui, sans-serif`;
+      ctx.textBaseline = 'middle';
+      const lx = tip.x + (Math.cos(a) >= 0 ? 8 : -8) * unit;
+      ctx.textAlign = Math.cos(a) >= 0 ? 'left' : 'right';
+      ctx.lineWidth = 3 * unit; ctx.strokeStyle = getThemeToken('--render-gizmo-label-halo', 'rgba(17,24,39,0.85)');
+      ctx.strokeText(label, lx, tip.y + (Math.sin(a) > 0.5 ? 6 : 0) * unit);
+      ctx.fillStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      ctx.fillText(label, lx, tip.y + (Math.sin(a) > 0.5 ? 6 : 0) * unit);
+      ctx.restore();
+    }
+
     drawSceneLightOverlay() {
       const layer = this._sceneLightLayer();
       if (!layer) return;
@@ -13537,40 +14168,92 @@
       if (this.getSceneLightGizmo(layer)) return;
       const control = this.getSceneLightControl(layer);
       if (!control) return;
-      const { center, pos, unit } = control;
+      const { center, pos, unit, behind } = control;
       const accent = getThemeToken('--render-gizmo-x', '#fbbf24'); // amber sun
       const line = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
-      this.ctx.save();
-      this.ctx.lineCap = 'round';
-      this.ctx.lineJoin = 'round';
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // Depth cue (front vs behind the subject). IN FRONT: a solid, bright sun
+      // with a continuous ray to it and full rays. BEHIND: a hollow dashed ring,
+      // dimmed, with a dotted ray, short ticks and a "behind" tag, so a light
+      // that sits just behind the subject can't be mistaken for one in front.
       // Ray from the anchor toward the sun.
-      this.ctx.globalAlpha = 0.55;
-      this.ctx.strokeStyle = line;
-      this.ctx.lineWidth = 1 * unit;
-      this.ctx.setLineDash([3 * unit, 3 * unit]);
-      this.ctx.beginPath();
-      this.ctx.moveTo(center.x, center.y);
-      this.ctx.lineTo(pos.x, pos.y);
-      this.ctx.stroke();
-      this.ctx.setLineDash([]);
-      // Sun disc.
-      this.ctx.globalAlpha = 0.95;
-      this.ctx.fillStyle = accent;
-      this.ctx.beginPath();
-      this.ctx.arc(pos.x, pos.y, 4.2 * unit, 0, TAU);
-      this.ctx.fill();
-      // Sun rays.
-      this.ctx.strokeStyle = accent;
-      this.ctx.lineWidth = 1.1 * unit;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * TAU;
-        const rx = Math.cos(a); const ry = Math.sin(a);
-        this.ctx.beginPath();
-        this.ctx.moveTo(pos.x + rx * 6 * unit, pos.y + ry * 6 * unit);
-        this.ctx.lineTo(pos.x + rx * 9 * unit, pos.y + ry * 9 * unit);
-        this.ctx.stroke();
+      ctx.globalAlpha = behind ? 0.4 : 0.7;
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 1 * unit;
+      ctx.setLineDash(behind ? [1 * unit, 4 * unit] : []);
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      this._drawLightDepthGlyph(pos, unit, behind, accent, line);
+      ctx.restore();
+    }
+
+    // The shared front/behind light glyph (sun widget + selected-light gizmo).
+    // IN FRONT: solid disc + halo + full rays. BEHIND: hollow dashed ring on a
+    // paper backing, short ticks and a "behind" tag. Caller owns save/restore.
+    _drawLightDepthGlyph(pos, unit, behind, accent, line) {
+      const ctx = this.ctx;
+      if (behind) {
+        // Hollow ring, dashed, dimmed, on a paper-coloured backing so it still
+        // reads where it sits over the subject's ink.
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = getThemeToken('--render-canvas', '#121214');
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 7 * unit, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 0.95;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.7 * unit;
+        ctx.setLineDash([2.6 * unit, 2.4 * unit]);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 5.4 * unit, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Short ticks only.
+        ctx.lineWidth = 1 * unit;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU;
+          const rx = Math.cos(a); const ry = Math.sin(a);
+          ctx.beginPath();
+          ctx.moveTo(pos.x + rx * 8.5 * unit, pos.y + ry * 8.5 * unit);
+          ctx.lineTo(pos.x + rx * 10.5 * unit, pos.y + ry * 10.5 * unit);
+          ctx.stroke();
+        }
+        // Tag.
+        if (typeof ctx.fillText === 'function') {
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = accent;
+          ctx.font = `${9 * unit}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText('behind', pos.x, pos.y + 13 * unit);
+        }
+      } else {
+        // Solid sun with a contrasting halo, full rays.
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = accent;
+        ctx.strokeStyle = line;
+        ctx.lineWidth = 1.4 * unit;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 4.6 * unit, 0, TAU);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.3 * unit;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU;
+          const rx = Math.cos(a); const ry = Math.sin(a);
+          ctx.beginPath();
+          ctx.moveTo(pos.x + rx * 7 * unit, pos.y + ry * 7 * unit);
+          ctx.lineTo(pos.x + rx * 11 * unit, pos.y + ry * 11 * unit);
+          ctx.stroke();
+        }
       }
-      this.ctx.restore();
     }
 
     hitSceneLight(sx, sy, layer = null) {
@@ -13605,6 +14288,7 @@
           roll: (layer.params && layer.params.camera && layer.params.camera.roll) || 0,
         },
         startLight: { azimuth: light.azimuth, elevation: light.elevation },
+        zSign: Number.isFinite(control.z) ? control.z : 0,
         historyPushed: false,
         moved: false,
       };
@@ -13659,11 +14343,12 @@
 
     _sceneObjectPathCenter(layer, objectId) {
       const paths = this.getInteractionPaths(layer) || [];
+      const inkIds = this._sceneInkIds(layer, objectId);
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       let found = false;
       paths.forEach((path) => {
         const target = path && path.meta && path.meta.sceneTarget;
-        if (!target || target.objectId !== objectId || !Array.isArray(path)) return;
+        if (!target || !inkIds.has(target.objectId) || !Array.isArray(path)) return;
         for (let i = 0; i < path.length; i++) {
           const pt = path[i];
           if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
@@ -13731,8 +14416,14 @@
         const el = clamp(Math.atan2(ref, Math.max(len, 1e-3)) * 180 / Math.PI, 2, 88);
         next = { azimuth: Math.round(az * 10) / 10, elevation: Math.round(el * 10) / 10 };
       } else {
+        // The depth side is kept for the whole gesture (a back light stays behind).
+        // Dragging the handle out past the rim and back sends it round the limb
+        // to the other side, so front/back can still be chosen deliberately.
+        const outside = Math.hypot(dx, dy) > drag.baseR * 1.08;
+        if (outside && !drag.outside && drag.zSign) drag.zSign = -drag.zSign;
+        drag.outside = outside;
         next = this._lightFromHandleOffset(dx, dy, drag.cam, drag.baseR,
-          (this._sceneLight(layer) || drag.startLight || {}).elevation);
+          (this._sceneLight(layer) || drag.startLight || {}).elevation, drag.zSign);
       }
       this._writeSceneLight(layer, next);
       this._scheduleSceneDragRegen(layer.id);
@@ -13888,10 +14579,12 @@
       let coneTip = null;
       let baseR = null;
       let anchorCenter = null;
+      let depth = 0; // camera-space depth vs the scene centre: > 0 in front, < 0 behind
       if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         center = this._sceneProjectWorld(target, light.position || { x: 120, y: 200, z: 120 });
         if (!center) return null;
         if (light.type === 'spot') coneTip = this._sceneProjectWorld(target, light.target || { x: 0, y: 0, z: 0 });
+        depth = this._rotateCam(light.position || { x: 120, y: 200, z: 120 }, cam).z;
       } else if (light.type === 'directional') {
         const anchor = this._sceneLightAnchor(target);
         if (!anchor) return null;
@@ -13899,6 +14592,7 @@
         anchorCenter = { ...anchor.center };
         const off = this._lightHandleOffset(target, light, baseR);
         center = { x: anchor.center.x + off.dx, y: anchor.center.y + off.dy };
+        depth = off.dz;
       } else {
         return null; // ambient — nothing to translate
       }
@@ -13916,7 +14610,7 @@
       // Restore dot: a small handle offset up-right of the gizmo (checked after
       // the axes, so an overlapping axis still wins the drag).
       const restore = { x: center.x + R * 1.28, y: center.y - R * 1.28 };
-      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter };
+      return { lightId: light.id, lightType: light.type, center, coneTip, R, unit, axes, restore, baseR, anchorCenter, depth, behind: depth < -1e-4 };
     }
 
     hitSceneLightGizmo(sx, sy, layer) {
@@ -14063,7 +14757,7 @@
       return true;
     }
 
-    // Restore the selected light to its factory default (sun → az135/el45;
+    // Restore the selected light to its factory default (sun → az330/el40;
     // point/spot → position {120,200,120}, range 400, spot target/cone/penumbra).
     // Used by the on-canvas restore handle AND the panel "Reset light" button.
     restoreSceneLight(layer, lightId) {
@@ -14073,8 +14767,8 @@
       if (!light) return false;
       this._scenePushHistory();
       if (light.type === 'directional') {
-        light.azimuth = 135;
-        light.elevation = 45;
+        light.azimuth = 330;
+        light.elevation = 40;
       } else if (light.type === 'point' || light.type === 'spot' || light.type === 'area') {
         light.position = { x: 120, y: 200, z: 120 };
         if (light.type === 'area') {
@@ -14147,12 +14841,21 @@
         ctx.closePath();
         ctx.fill();
       });
-      // Center pivot.
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = stroke;
-      ctx.beginPath();
-      ctx.arc(giz.center.x, giz.center.y, 2.6 * unit, 0, TAU);
-      ctx.fill();
+      // Depth cue: the light's glyph at the gizmo centre (solid in front, hollow
+      // dashed + "behind" when behind the scene), and for a sun a ray from the
+      // scene anchor (dotted when behind).
+      if (giz.anchorCenter) {
+        ctx.globalAlpha = giz.behind ? 0.4 : 0.7;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1 * unit;
+        ctx.setLineDash(giz.behind ? [1 * unit, 4 * unit] : []);
+        ctx.beginPath();
+        ctx.moveTo(giz.anchorCenter.x, giz.anchorCenter.y);
+        ctx.lineTo(giz.center.x, giz.center.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      this._drawLightDepthGlyph(giz.center, unit, giz.behind, colors.x, stroke);
       // Restore handle: a small ringed dot with a curved arrow feel (a plain
       // circle keeps it cheap; the tooltip/cursor explains it).
       ctx.globalAlpha = 0.95;
@@ -14213,13 +14916,6 @@
       return !!(norm && norm.ground && norm.ground.enabled !== false);
     }
 
-    // The ground quad's world height. scene.js's buildGroundRecord hardcodes
-    // it at world y = 0 (see "The ground plane: a large world quad at y = 0")
-    // — there is no ground height/offset param today, so this always returns
-    // 0. Centralized here (rather than a literal 0 inline below) so the one
-    // call site that needs updating is obvious if a configurable ground
-    // height/offset is ever added.
-    _sceneGroundY(_layer) { return 0; }
 
     // The TRUE lowest world-space Y of one object's rendered geometry — its
     // full transform (per-axis scale, then yaw/pitch/roll, then translate)
@@ -14231,7 +14927,7 @@
     // detailScale 1 = full published fidelity (the live-drag preview throttle
     // does not apply to a discrete Drop click). Returns null on any failure
     // (missing Scene3D.Scene, malformed params) so callers can skip safely.
-    _sceneObjectWorldMinY(obj) {
+    _sceneObjectWorldMinY(obj, grp = null) {
       if (!obj) return null;
       const S3 = window.Vectura && window.Vectura.Scene3D;
       const Scene = S3 && S3.Scene;
@@ -14243,7 +14939,8 @@
       const t = obj.transform || {};
       let minY = Infinity;
       meshData.vertices.forEach((pt) => {
-        const w = Scene.applyObjectTransform(pt, t);
+        let w = Scene.applyObjectTransform(pt, t);
+        if (grp && w) w = grp.apply(w);
         if (w && Number.isFinite(w.y) && w.y < minY) minY = w.y;
       });
       return Number.isFinite(minY) ? minY : null;
@@ -14286,7 +14983,17 @@
         if (childLayer && childLayer.type === 'booleanGroup3d') {
           const operands = (this.engine.getLayerChildren ? this.engine.getLayerChildren(id) : [])
             .filter((c) => c && c.type === 'object3d' && c.params);
-          if (operands.length) units.push(operands.map((o) => o.params));
+          if (!operands.length) return;
+          const list = operands.map((o) => o.params);
+          // B4 — the group transform is applied after each operand's own, so the lowest point is measured through it.
+          const B = window.Vectura?.Scene3D?.Boolean;
+          const Sc = window.Vectura?.Scene3D?.Scene;
+          const gt = childLayer.params.transform;
+          if (gt && B && Sc && B.groupPivot && B.applyGroupToPoint) {
+            const pivot = B.groupPivot(list.map((o) => o.transform));
+            list.groupXf = { apply: (pt) => B.applyGroupToPoint(Sc, pt, gt, pivot) };
+          }
+          units.push(list);
           return;
         }
         const rec = this._sceneObjectById(layer, id);
@@ -14298,7 +15005,7 @@
       units.forEach((objs) => {
         let minY = Infinity;
         objs.forEach((obj) => {
-          const y = this._sceneObjectWorldMinY(obj);
+          const y = this._sceneObjectWorldMinY(obj, objs.groupXf || null);
           if (Number.isFinite(y) && y < minY) minY = y;
         });
         if (!Number.isFinite(minY)) return; // no readable geometry — skip this unit safely
@@ -14853,7 +15560,8 @@
       const paths = this.getInteractionPaths(layer);
       if (!paths.length) return;
       const edgeOrdinals = this._sceneEdgeOrdinals(paths);
-      const objSet = new Set(sel.objectIds);
+      const objSet = new Set();
+      sel.objectIds.forEach((oid) => this._sceneInkIds(layer, oid).forEach((x) => objSet.add(x)));
       const faceSet = new Set(sel.faceKeys);
       const edgeSet = new Set(sel.edgeKeys);
       const color = SETTINGS.selectionOutlineColor || '#ef4444';
@@ -18655,6 +19363,13 @@
             (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB' || hitGuide.type === 'wallpaperRotate') ? 'crosshair' :
             'move'
           );
+          return;
+        }
+      }
+      if (this.activeTool === 'select' && !this._sceneGroundGizmoDrag) {
+        const groundHover = this.hitSceneGroundGizmo(sx, sy, null, e && e.pointerType);
+        if (groundHover) {
+          this.setCanvasCursor(this._groundHitCursor(groundHover) || 'move', 'scene-ground');
           return;
         }
       }

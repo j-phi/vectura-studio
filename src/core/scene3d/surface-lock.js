@@ -45,8 +45,21 @@
   const AUX_CACHE_MAX = CFG.AUX_CACHE_ENTRIES || 16;
   const BAKE_VERSION = CFG.BAKE_VERSION || 1;
   const FLOOR_SLACK = CFG.PLOT_FLOOR_SLACK || 0.8;
+  const V2_FLOOR_SLACK = (CFG.V2 && CFG.V2.FLOOR_SLACK) || FLOOR_SLACK;
+  const CAP_RHO_STEPS = 8; // mirror of the laws baker's cap-word resolution (A21)
+  const RIM_FACING = CFG.CAP_RIM_FACING || 0.3; // A21: below this facing the stride demand is damped (rulings crowd at the rim)
+  const GUARD_FACING = CFG.CAP_GUARD_FACING || 0.5; // A21: the crowd guard acts below this facing
+  const GUARD_FRAC = CFG.CAP_GUARD_FRAC || 0.72; // A21: crowd guard distance, x the plot floor (the spacing bar is 0.65)
+  const STRIDE_SLACK = CFG.CAP_STRIDE_SLACK || 0.3; // A21: the stride cap's own floor slack; the crowd guard is the exact spacing bar
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
+  const V2_GUARD_PEN = Number.isFinite(CFG.V2 && CFG.V2.GUARD_PEN) ? CFG.V2.GUARD_PEN : 0;
+  const GLINT_SKIP_MARGIN = (CFG.GLINT && CFG.GLINT.SKIP_MARGIN) || 0.999999;
+  const GLINT_FAST_MARGIN = (CFG.GLINT && CFG.GLINT.FAST_MARGIN) || 0.99999;
+  const GLINT_FAST_EPS = (CFG.GLINT && CFG.GLINT.FAST_EPS) || 1e-9;
+  const CROWD_EXACT_BAND = (CFG.CROWD && CFG.CROWD.EXACT_BAND) || 1e-9;
+  const LIMB_KNEE_BAND = 1; // the knee acts over the whole threshold range, fading to 0 at the darkest
+  const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
   // Each is its own Scene3D namespace so Engine's sceneModuleFingerprint sees its functions.
@@ -58,7 +71,7 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
     bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
@@ -153,8 +166,15 @@
   };
   const bakeKey = (spec) => {
     const baker = bakerFor(spec);
-    return JSON.stringify([BAKE_VERSION, baker ? baker.id : null, spec.primitive, spec.mode, stable(spec.sizes),
-      stable(spec.scale), spec.mapper, spec.toneLaw, bakeStyle(spec.style), spec.penWidth, spec.scaleRef, stable(spec.seed)]);
+    const parts = [BAKE_VERSION, baker ? baker.id : null, spec.primitive, spec.mode, stable(spec.sizes),
+      stable(spec.scale), spec.mapper, spec.toneLaw, bakeStyle(spec.style), spec.penWidth, spec.scaleRef, stable(spec.seed)];
+    // A16: the tone model is part of the bake (the v2 bakers draw different marks), so a legacy and a v2 spec never share an
+    // entry. Appended only for v2, so every legacy key is byte-identical to the one an older build produced.
+    if (spec.toneModel === 'v2') parts.push('v2');
+    // A23: the Shading slider moves the darkest baked pitch, so it is part of the bake. Present only for a v2 spec off the default
+    // (toneDarknessOf), so every default key is byte-identical to the A22 build's.
+    if (spec.toneModel === 'v2' && spec.toneDarkness !== undefined) parts.push('dk' + spec.toneDarkness);
+    return JSON.stringify(parts);
   };
 
   const cache = new Map(); // key -> { ms, bytes } ; Map order = LRU order (oldest first)
@@ -178,7 +198,7 @@
     stats.cacheBytes = cacheBytes; stats.cacheEntries = cache.size;
   }
   const clearCache = () => {
-    cache.clear(); cacheBytes = 0; freshKeys.length = 0; toneMemo.clear(); auxCaches.forEach((m) => m.clear());
+    cache.clear(); cacheBytes = 0; freshKeys.length = 0; toneMemo.clear(); scaleMemo.clear(); auxCaches.forEach((m) => m.clear());
     stats.cacheBytes = 0; stats.cacheEntries = 0;
   };
 
@@ -245,17 +265,107 @@
   // The specs among `specs` that would bake (a baker exists) but are not cached. Read-only: no LRU touch, no stat.
   const missingBakes = (specs) => (specs || []).filter((spec) => spec && bakerFor(spec) && !cache.has(bakeKey(spec)));
 
+  // ── tone table (contract §5, A16) ──────────────────────────────────────────────────────────────────────────────────────
+  // The LUT is memoized per baker + tone shape and never depends on the light's position: the v2 model only changes it through
+  // `light.model` and "no lights" (tone off), so those two are the light's whole share of the LUT key. The specular scaleFn is a
+  // second, cheap memo keyed by the light itself, so a light move rebuilds a closure and never a LUT.
   const toneMemo = new Map();
+  const scaleMemo = new Map();
+  const lightsEmpty = (light) => !!light && Array.isArray(light.lights) && light.lights.length === 0;
+  const lightScaleKey = (light) => JSON.stringify([light.model, stable(light.lights), light.shininess, light.ks, light.s0, light.s1, light.shadowKey === undefined ? null : light.shadowKey]);
+
+  // The view-dependent glint multiplier (A16): scaleFn(n_w, p_w, e_w) = Regions.specularKeep(S, s0, s1), where S is the Blinn-Phong
+  // term Regions.shade computes (the unit test pins the two equal). Directional lights are inlined (one dot product and a pow per
+  // visible vertex per frame); any other type goes through Regions.shade. `light.shadowFnFor(n_w)` (optional) blocks the glint
+  // inside a cast shadow, exactly as shade does; it is asked only where the glint is not already negligible.
+  const buildScaleFn = (light) => {
+    const R = Scene3D.Regions;
+    if (!light || light.model !== 'v2' || !R || typeof R.specularKeep !== 'function' || typeof R.shade !== 'function') return null;
+    const D = R.SHADE_DEFAULTS || {};
+    const ks = num(light.ks, num(D.ks, 1));
+    if (!(ks > 0)) return null;
+    const s0 = num(light.s0, num(D.s0, 0.55)); const s1 = num(light.s1, num(D.s1, 0.9));
+    const sh = Math.max(1, num(light.shininess, typeof R.shininessForSize === 'function' ? R.shininessForSize(num(D.size, 1)) : 5));
+    const direct = (Array.isArray(light.lights) ? light.lights : []).filter((l) => l && l.type !== 'ambient');
+    if (!direct.length) return null;
+    const dirs = []; const others = [];
+    direct.forEach((l) => {
+      if (!l.type || l.type === 'directional') {
+        const t = R.towardLight(l);
+        const w = Math.min(1, Math.max(0, num(l.intensity, 1))) * ks;
+        // nhMin: below it w * nh^sh cannot exceed s0 (the glint is not drawn), so the pow is skipped; the margin keeps the
+        // boundary on the pow side, so the result is identical to evaluating it.
+        dirs.push({ l, x: t.x, y: t.y, z: t.z, w, nhMin: w > 0 ? Math.pow(s0 / w, 1 / sh) * GLINT_SKIP_MARGIN : Infinity, nhMinSq: w > 0 ? Math.pow(s0 / w, 2 / sh) * GLINT_FAST_MARGIN : Infinity });
+      } else others.push(l);
+    });
+    const shadowFnFor = typeof light.shadowFnFor === 'function' ? light.shadowFnFor : null;
+    const fast = others.length === 0;
+    return (n, p, e) => {
+      let nx = n.x; let ny = n.y; let nz = n.z;
+      if (fast) {
+        // Cheap reject (no sqrt, no division): the unit-vector test below returns 1 when every light is skipped. n and e are unit to
+        // ~1e-15, so a margin of GLINT_FAST_MARGIN decides the same way; anything not clearly skipped falls through to the exact code.
+        const rx = e.x; const ry = e.y; const rz = e.z;
+        let clear = true;
+        for (let i = 0; i < dirs.length; i++) {
+          const d = dirs[i];
+          if (nx * d.x + ny * d.y + nz * d.z < -GLINT_FAST_EPS) continue;
+          const hx = d.x + rx; const hy = d.y + ry; const hz = d.z + rz;
+          const nhr = nx * hx + ny * hy + nz * hz;
+          if (nhr <= 0 || nhr * nhr < d.nhMinSq * (hx * hx + hy * hy + hz * hz)) continue;
+          clear = false; break;
+        }
+        if (clear) { stats.glintFast += 1; return 1; }
+      }
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      let ex = e.x; let ey = e.y; let ez = e.z;
+      const el = Math.sqrt(ex * ex + ey * ey + ez * ez) || 1; ex /= el; ey /= el; ez /= el;
+      let S = 0; let blocked;
+      for (let i = 0; i < dirs.length; i++) {
+        const d = dirs[i];
+        if (nx * d.x + ny * d.y + nz * d.z <= 0) continue;
+        const hx = d.x + ex; const hy = d.y + ey; const hz = d.z + ez;
+        const hl = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1;
+        const nh = (nx * hx + ny * hy + nz * hz) / hl;
+        if (nh <= d.nhMin) continue; // includes nh <= 0 (nhMin >= 0)
+        const s = d.w * Math.pow(nh, sh);
+        if (s <= S || s <= s0) continue; // below s0 the keep is 1 whatever the shadow says
+        if (shadowFnFor) { if (blocked === undefined) blocked = shadowFnFor(n); if (blocked(p, d.l)) continue; }
+        S = s;
+      }
+      if (others.length) {
+        const r = R.shade(n, p, others, { model: 'v2', eye: e, shininess: sh, ks, shadowFn: shadowFnFor ? shadowFnFor(n) : null });
+        if (r.S > S) S = r.S;
+      }
+      return S <= s0 ? 1 : R.specularKeep(Math.min(1, S), s0, s1);
+    };
+  };
+
   const toneTable = (spec, toneCtx) => {
     const baker = bakerFor(spec);
     if (!baker) return null;
-    const key = JSON.stringify([baker.id, stable(toneCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper]);
+    const light = toneCtx && toneCtx.light ? toneCtx.light : null;
+    const keyCtx = light ? Object.assign({}, toneCtx, { light: { model: light.model, empty: lightsEmpty(light) } }) : toneCtx;
+    const keyParts = [baker.id, stable(keyCtx), stableStyle(spec.style), spec.penWidth, spec.toneLaw, spec.mapper];
+    if (spec.toneModel === 'v2' && spec.primitive === 'plane') keyParts.push('lone'); // faceted v2 plane: its own capped table (appended only then, old keys unchanged)
+    if (spec.toneDarkness !== undefined) keyParts.push('dk' + spec.toneDarkness); // A23: appended only off the default (old keys unchanged)
+    const key = JSON.stringify(keyParts);
     let t = toneMemo.get(key);
-    if (t) return t;
-    t = baker.toneLUT(spec, toneCtx);
-    if (toneMemo.size >= TONE_MEMO_MAX) toneMemo.delete(toneMemo.keys().next().value);
-    toneMemo.set(key, t);
-    return t;
+    if (!t) {
+      t = baker.toneLUT(spec, toneCtx);
+      if (toneMemo.size >= TONE_MEMO_MAX) toneMemo.delete(toneMemo.keys().next().value);
+      toneMemo.set(key, t);
+    }
+    // A16: v2 only, and only when the baker did not bring its own scaleFn; `noHighlight` (highlight treatment 'none') keeps the ink.
+    if (!t || !light || light.model !== 'v2' || t.scaleFn || (toneCtx && toneCtx.noHighlight)) return t;
+    const skey = key + '|' + lightScaleKey(light);
+    let t2 = scaleMemo.get(skey);
+    if (!t2) {
+      t2 = Object.assign({}, t, { scaleFn: buildScaleFn(light) });
+      if (scaleMemo.size >= TONE_MEMO_MAX * 2) scaleMemo.delete(scaleMemo.keys().next().value);
+      scaleMemo.set(skey, t2);
+    }
+    return t2;
   };
 
   // ── pose (contract §4) ──────────────────────────────────────────────────────────────────────────────────────────
@@ -328,6 +438,15 @@
   const mkPt = (x, y, z) => ({ x, y, z });
   const lineLength = (pts) => { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; };
 
+  // Per vertex: 1 where it is the last vertex of its run (cached per MarkSet).
+  const runLasts = new WeakMap();
+  const runLastOf = (ms) => {
+    let o = runLasts.get(ms); if (o) return o;
+    o = new Uint8Array(ms.vertexCount);
+    for (let r = 0; r < ms.runCount; r++) { const e = ms.runStart[r + 1] - 1; if (e >= ms.runStart[r]) o[e] = 1; }
+    runLasts.set(ms, o); return o;
+  };
+
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
   const prepass = (ms, F, view) => {
     const nv = ms.vertexCount; const pos = ms.positions; const nrm = decodedNormals(ms);
@@ -343,9 +462,17 @@
     const remap = meta.capToneRemap === true && !!lut;
     // capKey 'ruling' (contract A13): the cap is compared against each run's own capRank, not folded into the tone demand.
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank;
+    const capCont = capSep && meta.capContinuous === true;
     // A fixed-pitch law (contract §16 A10) reads its tone at the bake scale, so a zoom inside one octave never moves it.
     const toneScaleFree = meta.toneScaleFree === true && Number.isFinite(meta.scaleRef) && meta.scaleRef > 0;
-    const remapLuts = new Map();
+    // A17: tone model v2 equalises the ink per SCREEN area: a surface-pitch mark set puts 1/facing more ink into a foreshortened
+    // patch, so the tone demand is scaled by g(c) = 1 + strength * (2c / (1 + c) - 1) (the mean foreshortening of a mark of any
+    // direction in the tangent plane is (1 + c) / 2). Off (strength 0) unless the caller says view.toneModel === 'v2'.
+    const facingComp = view.toneModel === 'v2' && meta.noFacingComp !== true ? FACING_COMP : 0;
+    const runLast = capCont ? runLastOf(ms) : null;
+    const strideSep = capCont && Number.isFinite(meta.strideSepPen) && meta.strideSepPen > 0 ? meta.strideSepPen * num(view.penWidth, 0) : 0;
+    const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
+    const remapLuts = new Map(); let lastCapT = NaN; let lastRl = null;
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
@@ -376,14 +503,39 @@
         // Plot-floor cap, quantised to whole density steps (powers of `gain`): a PARTIAL level can leave two of its marks
         // one level-pitch apart, below the floor, so the cap only ever admits complete levels, each once its pitch is >= FLOOR_SLACK x floor (or a regular 1/gain^m
         // thinning of level 0 below the base pitch). The drawn subset then never falls under the floor.
-        const cr = p0 * sv * facing * minSep / (floorPitch * FLOOR_SLACK);
+        let fac = facing;
+        if (capCont) {
+          // A21: the true screen perpendicular gap between neighbouring rulings. The ruling's tangent t spans a parallelogram of area
+          // pitch x |t| x facing on the screen, so the perpendicular gap is pitch x facing / |P t|, with |P t| = sqrt(1 - (t . view)^2)
+          // (between facing, a ruling along the foreshortening, and 1, one across it).
+          // the tangent stays inside the run: a run's last vertex looks back (looking ahead read the NEXT run, so the two ends of a
+          // short run disagreed on the stride and the run was dropped)
+          const vn = v + 1 < nv && !runLast[v] ? v + 1 : v - 1;
+          const tx = pos[3 * vn] - px; const ty = pos[3 * vn + 1] - py; const tz = pos[3 * vn + 2] - pz;
+          const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+          if (tl > 1e-12) {
+            const ex = a00 * tx + a01 * ty + a02 * tz; const ey = a10 * tx + a11 * ty + a12 * tz; const ez = a20 * tx + a21 * ty + a22 * tz;
+            let dv;
+            if (persp) { const wl2 = Math.sqrt(cx * cx + cy * cy + (eyeZ - cz) * (eyeZ - cz)) || 1; dv = (-ex * cx - ey * cy + ez * (eyeZ - cz)) / (wl2 * tl); } else dv = ez / tl;
+            const pl = Math.sqrt(Math.max(1e-6, 1 - dv * dv));
+            fac = Math.min(1, facing / pl) * Math.min(1, facing / RIM_FACING);
+          }
+        }
+        // Tone model v2 octave cap: a ruling family's mean foreshortening is (1 + facing) / 2 (see A17), not the worst-case facing,
+        // so a limb patch is not dropped a whole level coarser than the centre at the same tone (M7).
+        if (!capCont && view.toneModel === 'v2') fac = (1 + facing) / 2;
+        const cr = strideSep > 0 ? p0 * sv * fac / strideSep
+          : p0 * sv * fac * (capCont ? 1 : minSep) / (floorPitch * (capCont ? STRIDE_SLACK : (view.toneModel === 'v2' ? V2_FLOOR_SLACK : FLOOR_SLACK)));
         const T0 = q === 1 ? cr : (q === 2 ? cr * cr : Math.pow(cr, q));
         let T = 0;
         if (T0 > 1e-6) { // largest power of `gain` <= T0, by stepping (a handful of multiplies; log/pow per vertex cost ~15 ms at 60k)
           T = 1;
           if (T0 >= 1) { while (T * gain <= T0) T *= gain; } else { while (T > T0) T /= gain; }
         }
-        capT = T;
+        // A21 (capContinuous): the cap is a STRIDE over the baked ruling order, not a key threshold. g = ceil(floor pitch / local pitch);
+        // a ruling i is drawn where i % g === 0, so neighbours at one place share g and the drawn set is exactly regular (min gap
+        // g x pitch >= FLOOR_SLACK x floor) whatever g is, with only the rounding up of g lost (the octave quantisation lost ~30 %).
+        capT = capCont ? cr : T;
       }
       SCAP[v] = hasCap ? capT : Infinity;
       // tone
@@ -412,15 +564,20 @@
         let dm = p0 * (toneScaleFree ? meta.scaleRef : sv) * l;
         if (remap && capT > 0) { // cap-aware tone remap (contract §5): squeeze [m, D] into [m, T] in log space so tone stays monotone inside a cap ring
           const mD = p0 * sv * lut[LUT_N]; const dD = p0 * sv * lut[0]; const tD = q === 1 ? capT : (q === 2 ? Math.sqrt(capT) : Math.pow(capT, 1 / q));
-          if (mD > 0 && tD > mD && tD < dD) {
+          if (!(mD > 0) && dD > 0 && tD > 0 && tD < dD) {
+            // A18: a paper-ended v2 LUT (lut[LUT_N] == 0) has no log-space floor to squeeze toward, so the whole range is scaled by
+            // tD / dD instead: the darkest tone lands on the cap, lighter tones keep their order, and paper stays paper.
+            dm *= tD / dD;
+          } else if (mD > 0 && tD > mD && tD < dD) {
             if (!persp) {
-              let rl = remapLuts.get(capT);
+              let rl = capT === lastCapT ? lastRl : remapLuts.get(capT); // lastCapT: capT is one of a few octave values, a run of equal keys skips the Map
               if (!rl) {
                 const kk = Math.log(tD / mD) / Math.log(dD / mD);
                 rl = new Float32Array(LUT_N + 1);
                 for (let j = 0; j <= LUT_N; j++) { const dj = p0 * sv * lut[j]; rl[j] = dj > 0 ? mD * Math.pow(dj / mD, kk) : 0; }
                 remapLuts.set(capT, rl);
               }
+              lastCapT = capT; lastRl = rl;
               dm = rl[k0] + (f - k0) * (rl[k0 + 1] - rl[k0]);
             } else if (dm > 0) {
               stats.toneRemapPow += 1;
@@ -438,11 +595,97 @@
           if (sc !== null && sc !== undefined) dm *= (sc > 0 ? (sc < 1 ? sc : 1) : 0);
         }
         te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
+        if (facingComp > 0) te *= 1 + facingComp * (2 * facing / (1 + facing) - 1);
+        // Faint tones must not leave stray rulings at the limb: a ruling of low rank draws for any tone > 0, and a foreshortened patch holds many of
+        // them in little screen area (M7). Tone model v2 takes a knee off the threshold, in proportion to the turned-away part of the surface
+        // (1 - facing; 0 face-on, so the disc centre is untouched) and to how light the tone is (0 at the darkest tone, so the dark end is untouched).
+        if (facingComp > 0 && limbKnee > 0 && te > 0 && te !== Infinity) {
+          const dDark = q === 1 ? p0 * sv * lut[0] : Math.pow(p0 * sv * lut[0], q);
+          if (dDark > 0 && te < LIMB_KNEE_BAND * dDark) te = Math.max(0, te - limbKnee * (1 - facing) * dDark * (1 - te / (LIMB_KNEE_BAND * dDark)));
+        }
       }
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
     }
     return undefined;
+  };
+
+  // A21: screen-space crowd guard of a capContinuous MarkSet. The stride cap trusts a LOCAL pitch estimate; where the surface turns
+  // away fast, rulings g apart land closer than the floor anyway. The guard is exact: a piece of a ruling is kept only where it
+  // stays >= guardD from every already-kept piece of a DIFFERENT ruling of the same family (runs are visited in bake order, so the
+  // result is deterministic and Level S == Level F). Grid of segments, cell = 2 x guardD.
+  // The functions below are module level on purpose (H4): closures made per frame get a fresh feedback vector, so the hot guard code
+  // re-warmed (and ran unoptimised) at the start of every pose.
+  const crowdKey = (ix, iy) => ix * 73856093 ^ iy * 19349663;
+  // true when the distance from (px, py) to the entry's segment is < guardD. The squared distance decides everywhere except
+  // within CROWD_EXACT_BAND of guardD, where Math.hypot (the original test) is evaluated, so the decision is unchanged.
+  const crowdCloser = (st, px, py, e) => {
+    const pad = st.pad;
+    if (px < e.x0 - pad || px > e.x1 + pad || py < e.y0 - pad || py > e.y1 + pad) return false; // beyond guardD from the segment's box
+    const dx = e.dx; const dy = e.dy; const l2 = e.l2;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - e.ax) * dx + (py - e.ay) * dy) / l2)) : 0;
+    const qx = px - e.ax - t * dx; const qy = py - e.ay - t * dy;
+    const d2 = qx * qx + qy * qy;
+    if (d2 < st.lo2) return true;
+    if (d2 > st.hi2) return false;
+    return Math.hypot(qx, qy) < st.guardD;
+  };
+  const crowdNear = (st, x, y, fam, ord) => {
+    const cell = st.cell; const grid = st.grid;
+    const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const list = grid.get(crowdKey(ix + a, iy + b)); if (!list) continue;
+      for (let k = 0; k < list.length; k++) {
+        const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
+        if (crowdCloser(st, x, y, e)) return true;
+      }
+    }
+    return false;
+  };
+  const crowdAdd = (st, ax, ay, bx, by, fam, ord) => {
+    const cell = st.cell; const grid = st.grid;
+    const dx = bx - ax; const dy = by - ay;
+    const e = { ax, ay, bx, by, fam, ord, dx, dy, l2: dx * dx + dy * dy, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
+    const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
+    const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = crowdKey(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
+  };
+  // Splits `subs` into the stretches that clear the guard (checked at the vertices), registers what is kept.
+  const crowdFilter = (st, subs, fam, ord) => {
+    const kept = [];
+    subs.forEach((line0) => {
+      const line = line0;
+      let cur = null;
+      const fs = line.f;
+      for (let i = 0; i < line.length; i++) {
+        // the guard only acts where the surface is turned away (the stride cap alone keeps the interior at its own pitch)
+        const rim = !fs || fs[i] < GUARD_FACING || (i > 0 && fs[i - 1] < GUARD_FACING);
+        const ok = !rim || !crowdNear(st, line[i].x, line[i].y, fam, ord);
+        if (ok) { if (!cur) cur = []; cur.push(line[i]); } else if (cur) { kept.push(cur); cur = null; }
+      }
+      if (cur) kept.push(cur);
+    });
+    const out2 = kept.filter((l) => l.length >= 2);
+    out2.forEach((l) => { for (let i = 1; i < l.length; i++) crowdAdd(st, l[i - 1].x, l[i - 1].y, l[i].x, l[i].y, fam, ord); });
+    return out2;
+  };
+  const makeCrowd = (guardD) => {
+    const st = {
+      guardD, cell: Math.max(1e-6, 2 * guardD), grid: new Map(), pad: guardD * (1 + CROWD_EXACT_BAND),
+      lo2: guardD * guardD * (1 - CROWD_EXACT_BAND) * (1 - CROWD_EXACT_BAND), hi2: guardD * guardD * (1 + CROWD_EXACT_BAND) * (1 + CROWD_EXACT_BAND),
+    };
+    return { filter: (subs, fam, ord) => crowdFilter(st, subs, fam, ord) };
+  };
+
+  // A21: visiting order of a capContinuous MarkSet: by (family, ruling ordinal, run), so the crowd guard packs the rulings side by side
+  // (the optimal greedy of a 1-D packing) and a ruling's cells stay consecutive. Cached per MarkSet.
+  const capOrders = new WeakMap();
+  const capOrderOf = (ms) => {
+    let o = capOrders.get(ms); if (o) return o;
+    const nr = ms.runCount; const cap = ms.runCapRank; const fam = ms.runFamily;
+    o = Int32Array.from({ length: nr }, (_, i) => i);
+    o.sort((a, b) => (fam[a] - fam[b]) || ((cap[a] & 4095) - (cap[b] & 4095)) || (a - b));
+    capOrders.set(ms, o); return o;
   };
 
   const frameSet = (ms, F, view, out, acc) => {
@@ -454,23 +697,57 @@
     const glyph = meta.glyph || null;
     const join = meta.joinTouching === true; // A11
     let tail = null; let tailRun = -2;
+    const flushTail = () => { // drop the pending last piece when it never grew to the minimum mark (join mode only)
+      if (tail && minMark > 0 && lineLength(tail) < minMark && out[out.length - 1] === tail) {
+        out.pop(); acc.runsOut -= 1; acc.verticesOut -= tail.length;
+      }
+      tail = null;
+    };
     const persp = F.persp;
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
+    const capCont = capSep && meta.capContinuous === true;
+    // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
+    const guardD = view.toneModel === 'v2' && Number.isFinite(meta.guardPen) && meta.guardPen > 0 ? meta.guardPen * num(view.penWidth, 0)
+      : (view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC);
+    const crowd = capCont && meta.capGuard === true && view.floorPitch > 0 ? makeCrowd(guardD) : null;
+    const fracStride = view.toneModel === 'v2';
+    // capCompensate (v2 dutyConst): the stride density c = local screen ruling gap / strideSep never DROPS a ruling; it scales the
+    // run's tone demand by min(1, c), so a foreshortened (crowded) patch draws proportionally shorter dashes on every ruling and the
+    // ink per screen area follows the tone alone. Stable: the keys are fixed per cell, so a small change of c moves dash ends only.
+    const comp = capCont && meta.capCompensate === true;
+    const capOk = comp ? () => true : capCont ? (vi, rr) => {
+      const c0 = SCAP[vi]; if (c0 === Infinity) return true;
+      const w = rcap[rr]; const c = c0 * ((w >> 12) / CAP_RHO_STEPS);
+      if (!(c > 1e-6)) return false;
+      if (c >= 1) return true;
+      const o = w & 4095;
+      // Fractional stride (v2, any integer level-0 count): the drawn ordinals are the regular Bresenham subset of density c, so the
+      // gap is floor or ceil of 1/c and a zone boundary never steps the stride 2x (an integer ceil(1/c) left a dense patch where
+      // 1/c crossed an integer). Legacy keeps the integer stride (byte-identical).
+      if (fracStride) return Math.floor((o + 1) * c + 1e-9) > Math.floor(o * c + 1e-9);
+      return o % Math.ceil(1 / c - 1e-9) === 0;
+    } : (vi, rr, ckv) => SCAP[vi] > ckv;
     const DOT = MS.FLAG.DOT; const CLOSED = MS.FLAG.CLOSED; const RS = MS.RANK_SCALE;
-    for (let r = 0; r < nr; r++) {
+    const order = crowd ? capOrderOf(ms) : null;
+    for (let ri = 0; ri < nr; ri++) {
+      const r = order ? order[ri] : ri;
       const v0 = rs[r]; const n = rs[r + 1] - v0; const flags = rf[r]; const L = rl[r];
       const rank = rr[r] / RS;
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
+      if (comp) {
+        const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
+        for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
+      }
       // vertex counters
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
-        else if (!(STE[i] > k) || (capSep && !(SCAP[i] > ck))) acc.culledTone += 1;
+        else if (!(STE[i] > k) || (capSep && !capOk(i, r, ck))) acc.culledTone += 1;
         else anyOk = true;
       }
       if (flags & DOT) {
@@ -505,7 +782,9 @@
         if (!t0ok && !t1ok) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (t0ok !== t1ok) { const u = e0 / (e0 - e1); if (t0ok) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
         // plot-floor cap on the ruling's rank (capKey 'ruling'): a second linear clip, intersected with the tone clip
-        if (capSep) {
+        if (capCont) {
+          if (!capOk(i, r, ck) || !capOk(j, r, ck)) { if (cur) { subs.push(cur); cur = null; } continue; }
+        } else if (capSep) {
           const g0 = SCAP[i] - ck; const g1 = SCAP[j] - ck;
           const q0 = g0 > 0; const q1 = g1 > 0;
           if (!q0 && !q1) { if (cur) { subs.push(cur); cur = null; } continue; }
@@ -521,16 +800,20 @@
         if (lo > hi) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (!cur) {
           cur = [];
+          if (crowd) cur.f = [];
           if (s === 0 && lo === 0) firstFromV0 = true;
           cur.push(lo === 0 ? mkPt(SX[i], SY[i], SZ[i]) : mkPt(SX[i] + lo * (SX[j] - SX[i]), SY[i] + lo * (SY[j] - SY[i]), SZ[i] + lo * (SZ[j] - SZ[i])));
+          if (crowd) cur.f.push(SC[i] + lo * (SC[j] - SC[i]));
         }
         cur.push(hi === 1 ? mkPt(SX[j], SY[j], SZ[j]) : mkPt(SX[i] + hi * (SX[j] - SX[i]), SY[i] + hi * (SY[j] - SY[i]), SZ[i] + hi * (SZ[j] - SZ[i])));
+        if (crowd) cur.f.push(SC[i] + hi * (SC[j] - SC[i]));
         if (hi < 1) { subs.push(cur); cur = null; }
       }
       if (cur) {
         if (closed && subs.length && firstFromV0) subs[0] = cur.concat(subs[0].slice(1)); // the loop's seam was inside a drawn stretch
         else subs.push(cur);
       }
+      if (crowd) { const kept = crowd.filter(subs, ms.runFamily[r], rcap[r] & 4095); subs.length = 0; kept.forEach((l) => subs.push(l)); }
       for (let s = 0; s < subs.length; s++) {
         const line = subs[s];
         if (line.length < 2) continue;
@@ -538,14 +821,19 @@
           && Math.abs(tail[tail.length - 1].y - line[0].y) < 1e-4 && Math.abs(tail[tail.length - 1].z - line[0].z) < 1e-4) {
           for (let q = 1; q < line.length; q++) tail.push(line[q]);
           acc.verticesOut += line.length - 1; tailRun = r;
-          if (subs.length > 1) tail = null;
+          if (subs.length > 1) { flushTail(); tail = null; }
           continue;
         }
-        if (minMark > 0 && lineLength(line) < minMark) continue;
+        // A20: under joinTouching the minimum-mark cull is deferred for the LAST piece of a run (a later run may still extend it),
+        // so a short piece next to a drawn neighbour is merged before it is judged. Any other piece is judged at once.
+        if (join) flushTail();
+        const last = join && s === subs.length - 1;
+        if (minMark > 0 && !last && lineLength(line) < minMark) continue;
         line.back = false; out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
-        if (join) { tail = (s === subs.length - 1) ? line : null; tailRun = r; }
+        if (join) { tail = last ? line : null; tailRun = r; }
       }
     }
+    if (join) flushTail();
   };
 
   const frameSetup = (pose) => {
@@ -569,11 +857,13 @@
     return (R && Number.isFinite(R.PLOT_FLOOR_PEN)) ? R.PLOT_FLOOR_PEN : FALLBACK_FLOOR_PEN;
   };
 
+  // Tone model v2 has its own plot floor (config V2.FLOOR_PEN; the owner's "go darker" decision); legacy keeps Regions.PLOT_FLOOR_PEN.
+  const v2FloorPenOf = () => { const v = CFG.V2 && CFG.V2.FLOOR_PEN; return Number.isFinite(v) && v > 1 ? v : 1.4; };
   const frame = (markSets, pose, view) => {
     const t0 = now();
     const sets = Array.isArray(markSets) ? markSets : [markSets];
     const v = Object.assign({}, view || {});
-    v.floorPitch = floorPenOf() * num(v.penWidth, 0);
+    v.floorPitch = (v.toneModel === 'v2' ? v2FloorPenOf() : floorPenOf()) * num(v.penWidth, 0);
     v.penWidth = num(v.penWidth, 0);
     const F = frameSetup(pose);
     let total = 0; sets.forEach((ms) => { if (ms) total = Math.max(total, ms.vertexCount || 0); });
@@ -595,6 +885,22 @@
     const t = p.styleTable || {};
     return (t.byObject && t.byObject[id]) || t.scene || { mapper: 'none', params: {} };
   };
+  // A16: the scene's tone model. Only a scene saying 'v2' is v2; a spec of a legacy scene carries no toneModel at all (so its bake
+  // key, its tone-table key and every baker path are those of an older build).
+  const toneModelOf = (p) => (p && p.tone && p.tone.model === 'v2' ? 'v2' : 'legacy');
+  // `ctx.specFor` may return a whole spec of its own (the compositor's); the model is the scene's whatever it says.
+  // A23: the Shading slider (p.tone.darkness) rides along a v2 spec only when it is off the default, so a default spec is unchanged.
+  const toneDarknessOf = (p) => {
+    if (toneModelOf(p) !== 'v2') return undefined;
+    const R = Scene3D.Regions;
+    if (!R || typeof R.darknessOf !== 'function') return undefined;
+    const s = R.darknessOf(p.tone.darkness);
+    return s === R.darknessDefault() ? undefined : s;
+  };
+  const withToneModel = (p, spec) => {
+    if (toneModelOf(p) === 'v2') { spec.toneModel = 'v2'; const dk = toneDarknessOf(p); if (dk !== undefined) spec.toneDarkness = dk; }
+    return spec;
+  };
   const specOfObject = (p, obj, bounds, seed) => {
     const st = objectStyleOf(p, obj.id);
     const sp = st.params || {};
@@ -606,14 +912,21 @@
       scale: { sx: num(tr.sx, s), sy: num(tr.sy, s), sz: num(tr.sz, s) },
       mapper: st.mapper, toneLaw: P && P.resolveToneLaw ? P.resolveToneLaw(sp) : sp.toneLaw,
       style: sp, penWidth: num(bounds && bounds.penWidth, 0), scaleRef: 1, seed: seed || null,
+      ...(toneModelOf(p) === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(toneDarknessOf(p) !== undefined ? { toneDarkness: toneDarknessOf(p) } : {}),
     };
+  };
+  const receiveMapAvailable = () => {
+    const Sh = Scene3D.SurfaceLockShadow; const SR = Scene3D.ShadowReceive;
+    return !!Sh && typeof Sh.receiveMap === 'function' && !!SR && typeof SR.buildDepthMap === 'function';
   };
   const exclusionCtx = (p, obj) => ({
     visibility: obj.visibility,
     emissiveCoreBlank: !!(obj.emissive && obj.emissive.enabled && obj.emissive.coreBlank),
     areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
-    // Conservative: the pose path builds its shadow-receive occluder from this flag, so any scene asking for it is pose until W3-C.
-    receiveShadow: !!(p.shadow && p.shadow.shadowReceiveOnObjects),
+    // The pose path builds its shadow-receive occluder from this flag. A16: lifted for a v2 scene when the light-space receive map
+    // exists (the tone memo then takes the shadow from it); a legacy scene keeps the exclusion, so its look is the pose look.
+    receiveShadow: Scene3D.Params.objectReceivesShadow(obj, !!(p.shadow && p.shadow.shadowReceiveOnObjects)) && !(toneModelOf(p) === 'v2' && receiveMapAvailable()),
   });
   const FRAMEABLE = Object.freeze([
     { id: 'hasObjects', test: (p) => Array.isArray(p.objects) && p.objects.length > 0 },
@@ -674,7 +987,7 @@
   };
 
   // ── sceneFrame (contract §6.2, §13) ─────────────────────────────────────────────────────────────────────────────
-  const auxCaches = [new Map(), new Map()]; // 0: mesh bakes, 1: ground hatch bakes
+  const auxCaches = [new Map(), new Map(), new Map()]; // 0: mesh bakes, 1: ground hatch bakes, 2: receive-caster world triangles
   const auxGet = (which, key, make) => {
     const m = auxCaches[which];
     if (m.has(key)) { const v = m.get(key); m.delete(key); m.set(key, v); return v; }
@@ -720,7 +1033,8 @@
     const focal = persp ? o.focal : 0; const camDist = persp ? num(o.cameraDist, 0) : 0;
     const span = Math.max(width, height) * 0.75;
     const hx = span * Math.max(0, num(g.scaleX, 1)); const hz = span * Math.max(0, num(g.scaleZ, 1));
-    let verts = [{ x: -hx, y: 0, z: hz }, { x: hx, y: 0, z: hz }, { x: hx, y: 0, z: -hz }, { x: -hx, y: 0, z: -hz }];
+    const gy = num(g.y, 0);
+    let verts = [{ x: -hx, y: gy, z: hz }, { x: hx, y: gy, z: hz }, { x: hx, y: gy, z: -hz }, { x: -hx, y: gy, z: -hz }];
     const clip = (vs, keep) => {
       const vals = vs.map((pt) => keep(G3.rotatePoint(pt, ang)));
       if (vals.every((d) => d >= 0)) return vs;
@@ -767,10 +1081,78 @@
       const mesh = auxGet(0, JSON.stringify([o.id, o.primitive, o.params, o.transform && [o.transform.scale, o.transform.sx, o.transform.sy, o.transform.sz]]), () => Vis.meshBake(o));
       const spec = specOfObject(p, o, Object.assign({}, bounds, { penWidth }), seedOf(o.id));
       if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, mesh));
-      specs.push(spec);
+      specs.push(withToneModel(p, spec));
     });
     return specs;
   };
+  // ── light model v2 wiring (A16) ─────────────────────────────────────────────────────────────────────────────────────────
+  // What a v2 scene adds around one object's frame: the light context for toneTable (so the glint is paper), a diffuse-only tone
+  // function built on Regions.shade (ambient + bounce, no eye, so it stays view independent and memoizable), and, when the scene
+  // asks for shadows on objects, a per-receiver light-space receive map over the OTHER objects (pose excludes the receiver's own
+  // geometry too). The map is fetched lazily on the first tone miss, so a pure camera orbit never touches it, and it is rebuilt
+  // only when the light or a caster's transform changes (casters[].key is the caster's transform key).
+  const hashStr = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); };
+  const worldTriangles = (o, mesh, pose) => {
+    const R = rotMatrix({ yaw: pose.obj.yaw, pitch: pose.obj.pitch, roll: pose.obj.roll });
+    const V = mesh.vertices; const T = mesh.triVerts; const tr = pose.obj;
+    const pt = (i) => ({
+      x: R[0] * V[3 * i] + R[1] * V[3 * i + 1] + R[2] * V[3 * i + 2] + tr.x,
+      y: R[3] * V[3 * i] + R[4] * V[3 * i + 1] + R[5] * V[3 * i + 2] + tr.y,
+      z: R[6] * V[3 * i] + R[7] * V[3 * i + 1] + R[8] * V[3 * i + 2] + tr.z,
+    });
+    const verts = new Map(); const at = (i) => { let q = verts.get(i); if (!q) { q = pt(i); verts.set(i, q); } return q; };
+    const out = [];
+    for (let k = 0; k + 2 < T.length; k += 3) out.push({ a: at(T[k]), b: at(T[k + 1]), c: at(T[k + 2]) });
+    return out;
+  };
+  // { key, get() } for the receiver `idx`, or null when the scene does not ask for shadows on objects (or nothing else can cast).
+  const receiveCtxFor = (p, objects, meshes, poses, idx) => {
+    if (!receiveMapAvailable() || !Scene3D.Params.objectReceivesShadow(objects[idx], !!(p.shadow && p.shadow.shadowReceiveOnObjects))) return null;
+    const casters = [];
+    objects.forEach((o, j) => {
+      // A Cast-Off object (shadow.enabled === false) shadows no other object either (Auto / On cast, as on the ground).
+      if (j === idx || !meshes[j] || !Scene3D.Params.objectCastsShadow(o)) return;
+      casters.push({ j, id: o.id, key: JSON.stringify([o.id, o.primitive, o.params, o.transform || null]) });
+    });
+    if (!casters.length) return null;
+    const key = hashStr(casters.map((c) => c.key).join('|'));
+    let map = null;
+    return {
+      key,
+      get: () => {
+        if (!map) {
+          map = Scene3D.SurfaceLockShadow.receiveMap({
+            lights: p.lights,
+            casters: casters.map((c) => ({ id: c.id, key: c.key, triangles: auxGet(2, c.key, () => worldTriangles(objects[c.j], meshes[c.j], poses[c.j])) })),
+          });
+        }
+        return map;
+      },
+    };
+  };
+  // toneCtx.light for a v2 scene (null for a legacy one): the model, the lights and the specular tunables (Regions.SHADE_DEFAULTS).
+  const lightCtxOf = (p, recv) => {
+    if (toneModelOf(p) !== 'v2') return null;
+    const R = Scene3D.Regions || {}; const D = R.SHADE_DEFAULTS || {};
+    const t = p.tone || {}; const spc = t.specular || {};
+    return {
+      model: 'v2', lights: p.lights || [],
+      shininess: typeof R.shininessForSize === 'function' ? R.shininessForSize(num(spc.size, num(D.size, 1))) : undefined,
+      ks: spc.enabled === false ? 0 : num(D.ks, 1), s0: D.s0, s1: D.s1,
+      shadowKey: recv ? recv.key : null,
+      shadowFnFor: recv ? (nw) => recv.get().shadowFnFor(nw) : undefined,
+    };
+  };
+  // The v2 diffuse tone function: Regions.shade's L (ambient + bounce + shadowed direct), then the style's tone shape.
+  const toneFnV2 = (p, spec, recv) => {
+    const R = Scene3D.Regions; const lights = p.lights || []; const t = p.tone || {};
+    const shape = typeof R.toneShapeOf === 'function' ? R.toneShapeOf(spec.style, null) : null;
+    return (nw, wp) => {
+      const L = R.shade(nw, wp, lights, { model: 'v2', eye: null, ambient: t.ambient, bounce: t.bounce, shadowFn: recv ? recv.get().shadowFnFor(nw) : null }).L;
+      return shape ? R.shapeTone(L, wp, shape) : L;
+    };
+  };
+
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -784,7 +1166,7 @@
 
     const lights = p.lights || [];
     const suns = lights.filter((l) => l && l.type === 'directional' && l.castShadows !== false);
-    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
+    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && p.ground.receiveShadows !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
 
     // Occlusion buffer: several objects, a non-convex one, or a cast shadow to clip (contract §7).
     let occ = null;
@@ -821,7 +1203,7 @@
       // Pose casts one footprint per casting sun; the ground hatch bake is light-free and shared.
       suns.forEach((sun, si) => {
         const dir = (si === 0 && ctx.lightDirWorld) || (L && L.lightWorldDir ? L.lightWorldDir(sun) : { x: 0, y: -1, z: 0 });
-        const res = Sh.frameShadow(hatch, casters, dir, camPose);
+        const res = Sh.frameShadow(hatch, casters, dir, camPose, { groundY: num(p.ground.y, 0) });
         if (res && res.runs && res.runs.length) {
           const out = [];
           res.runs.forEach((r) => clipLine(r.pts, GROUND_SEG, false).forEach((q) => out.push(q)));
@@ -844,12 +1226,22 @@
       if (!isMapperNoFill(st.mapper)) {
         const spec = specOfObject(p, o, bounds, seedOf(o.id));
         if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, meshes[i]));
+        withToneModel(p, spec);
         const ms = bake(spec);
         if (ms) {
+          const v2 = spec.toneModel === 'v2';
+          const recv = v2 ? receiveCtxFor(p, objects, meshes, poses, i) : null;
           const toneCtx = { tone: p.tone, penWidth, noHighlight: !!(spec.noHighlight) };
+          if (v2) toneCtx.light = lightCtxOf(p, recv);
           const tone = toneTable(spec, toneCtx);
-          const toneKey = typeof ctx.toneKeyFor === 'function' ? ctx.toneKeyFor(o.id, o) : null;
-          const lines = frame([ms], poses[i], { toneFn: ctx.toneFnFor(o.id), toneKey, tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off });
+          let toneFn = ctx.toneFnFor(o.id);
+          let toneKey = typeof ctx.toneKeyFor === 'function' ? ctx.toneKeyFor(o.id, o) : null;
+          if (v2 && toneFn) {
+            toneFn = toneFnV2(p, spec, recv);
+            // everything toneFnV2 reads beyond the hub's key: the model parameters and the casters that can shadow this receiver
+            if (toneKey !== null) toneKey += '|v2|' + num(p.tone && p.tone.ambient, '') + '|' + num(p.tone && p.tone.bounce, '') + '|' + (recv ? recv.key : '');
+          }
+          const lines = frame([ms], poses[i], { toneFn, toneKey, tone, penWidth, objectId: o.id, specOff: !!spec.seed && !!spec.seed.off, toneModel: v2 ? 'v2' : undefined });
           // A lone convex object never occludes its own marks (contract §7): the buffer exists for the shadow, so
           // its fills skip the per-vertex test.
           const clipFills = !!occ && (objects.length > 1 || !meshes[i].convex);
@@ -899,6 +1291,12 @@
     missingBakes,
     sceneBakeSpecs,
     toneTable,
+    exclusionCtx,
+    toneModelOf,
+    toneDarknessOf,
+    lightCtxOf,
+    toneFnV2,
+    receiveCtxFor,
     poseOf,
     frame,
     sceneFrame,

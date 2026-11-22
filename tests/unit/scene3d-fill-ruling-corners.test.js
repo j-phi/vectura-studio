@@ -134,6 +134,7 @@ describe('Scene3D.SurfaceFill — a contour ruling never turns sharper than 8 de
   const galleryScene = (primitive, camera, density, extraStyle = {}) => {
     const eng = new V.VectorEngine();
     const gid = eng.addLayer('scene3d');
+    eng.getLayerById(gid).params.tone = { ...eng.getLayerById(gid).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
     eng.layers = eng.layers.filter((l) => l.parentId !== gid);
     const g = eng.layers.find((l) => l.id === gid);
     g.isGroup = true;

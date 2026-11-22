@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 /*
  * W-15 (F-14, P2) — "Calibrate the faceted density range (plane 4 lines at
@@ -158,6 +159,7 @@ describe('Scene3D faceted density calibration — plane/box carrier grant (W-15/
   const scene = (density, primitive) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
+    pinLegacySun(engine, gid); // fixture tuned to the pre-v7 sun (az 135 / el 45), not the v7 front key
     const group = engine.getLayerById(gid);
     const obj = engine.getLayerDescendants(gid).filter((l) => l.type === 'object3d')[0];
     obj.params.style.params = { ...(obj.params.style.params || {}), markSpace: 'pose' }; // W3-E: pose-mode machinery under test; a fresh scene is born surface

@@ -43,7 +43,7 @@
   // ~15.1% on open. SCENE_MIGRATIONS[3] multiplies a pre-v4 buckyball's stored
   // radius by that same measured factor, so it renders BYTE-IDENTICALLY; new
   // buckyballs get the true radius.
-  const SCENE_VERSION = 6;
+  const SCENE_VERSION = 7;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -455,7 +455,10 @@
     projection: 'orthographic', yaw: -30, pitch: 20, roll: 0,
     cameraDistance: 620, focalLength: 520, zoom: 1,
   };
-  const DEFAULT_LIGHT = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  // The pre-v7 default sun (BEHIND the subject at the default camera). Only ever applied to
+  // payloads saved before v7; see migrateToneModelLegacy and normalizeParams.
+  const LEGACY_SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, castShadows: true };
+  const DEFAULT_LIGHT = { id: 'sun', type: 'directional', azimuth: 330, elevation: 40, castShadows: true };
   // Positional (point/spot) light defaults. `position` is a world-space point;
   // `range` is the LINEAR falloff distance in world mm (0 ⇒ no falloff). A spot
   // adds a `target` (cone axis = normalize(target − position)), a `coneAngle`
@@ -533,7 +536,16 @@
     thresholds: [0.33, 0.66], // ascending intensity cut points (length bands-1)
     ladder: [0.2, 0.5, 0.85], // coverage (0..1) per band, dark→light (length bands)
     specular: { enabled: true, size: 1 },
+    // Light model (light-plan §2.1). 'legacy' = Lambert only (no ambient, no
+    // specular channel; byte-identical to every pre-v7 document). 'v2' = ambient
+    // + bounce + specular glint. A NEW scene is born 'v2' (ALGO_DEFAULTS); a
+    // payload with no model normalizes to 'legacy' so it can never silently
+    // change look. ambient / bounce are inert under 'legacy'.
+    model: 'legacy',
+    ambient: 0.08,
+    bounce: 0.12,
   };
+  const TONE_MODELS = ['legacy', 'v2'];
 
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -1147,8 +1159,22 @@
   const normalizeObjectShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     const enabled = src.enabled === true ? true : (src.enabled === false ? false : null);
-    return { enabled };
+    // Per-object RECEIVE override: null (absent) follows the scene's "Shadows land on objects"; true receives even
+    // with the scene flag off; false never receives. Written only when non-null so a default file is byte-identical.
+    const out = { enabled };
+    if (src.receive === true) out.receive = true;
+    else if (src.receive === false) out.receive = false;
+    return out;
   };
+  // Cast: only an explicit Off drops the object's shadow (null / Auto / On cast) — onto the ground AND onto other objects.
+  const objectCastsShadow = (obj) => !(obj && obj.shadow && obj.shadow.enabled === false);
+  // Receive: a per-object true/false wins; null follows the scene flag (`sceneOn`).
+  const objectReceivesShadow = (obj, sceneOn) => {
+    const r = obj && obj.shadow ? obj.shadow.receive : null;
+    return r === true ? true : (r === false ? false : !!sceneOn);
+  };
+  // Does ANY object receive (so the receive machinery must run at all)? Scene flag on, or an object forced On.
+  const anyObjectReceivesShadow = (objects, sceneOn) => Array.isArray(objects) && objects.some((o) => objectReceivesShadow(o, sceneOn));
 
   // Per-object silhouette border (ctxbar Highlight flyout, ask #8). Default OFF
   // = zero extra ink, so a scene with no `border` block renders byte-identical.
@@ -1361,6 +1387,16 @@
     };
   };
 
+  // B4 — an OPTIONAL group transform on a boolean group (the combined shape). Same shape as an object's transform, but absent =
+  // identity: this returns null for a missing or identity bag, so only a real move/turn/stretch is ever written.
+  const normalizeGroupTransform = (transform) => {
+    if (!isObject(transform)) return null;
+    const t = normalizeTransform(transform);
+    const identity = t.x === 0 && t.y === 0 && t.z === 0 && t.yaw === 0 && t.pitch === 0 && t.roll === 0
+      && t.scale === 1 && t.sx === undefined;
+    return identity ? null : t;
+  };
+
   // Scene-tree Increment B — assemble ONE scene-group layer's render input by
   // COLLECTING its descendant object3d / booleanGroup3d layers back into exactly
   // today's normalized scene shape (objects[] / groups[] / styleTable), then
@@ -1443,22 +1479,37 @@
 
   // Ground plane size factors. scaleX = width, scaleZ = depth, both relative to
   // the default floor (1.5x the artboard's longer side). The plane has no
-  // thickness, so there is no Y factor. The wide upper bound lets the floor run
-  // far past the artboard so its edges leave the frame.
+  // thickness, so there is no Y scale factor; its height is the separate
+  // `y` offset (world mm, default 0, emitted only when nonzero). The wide upper
+  // bound lets the floor run far past the artboard so its edges leave the frame.
   const GROUND_SCALE_MIN = 0.25;
   const GROUND_SCALE_MAX = 256;
+  const GROUND_Y_MIN = -200;
+  const GROUND_Y_MAX = 200;
+  const GROUND_Y_STEP = 0.5;
+  const groundY = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? clamp(n, GROUND_Y_MIN, GROUND_Y_MAX) : 0;
+  };
   const groundScale = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? clamp(n, GROUND_SCALE_MIN, GROUND_SCALE_MAX) : 1;
   };
   const normalizeGround = (g) => {
     const src = isObject(g) ? g : {};
+    const y = groundY(src.y);
     return {
       enabled: isObject(g) ? g.enabled !== false : true,
       scaleX: groundScale(src.scaleX),
       scaleZ: groundScale(src.scaleZ),
+      ...(y ? { y } : {}),
+      // Absent = the ground receives shadows (every older file); written only when switched off.
+      ...(src.receiveShadows === false ? { receiveShadows: false } : {}),
     };
   };
+
+  // Spread helper: { transform } only when the group transform is non-identity (absent keeps the assembly byte-identical).
+  const groupTransformEntry = (t) => { const n = normalizeGroupTransform(t); return n ? { transform: n } : {}; };
 
   const collectSceneParams = (groupParams, collected) => {
     const gp = isObject(groupParams) ? groupParams : {};
@@ -1529,6 +1580,7 @@
           name: typeof bp.name === 'string' && bp.name ? bp.name : item.id,
           op: GROUP_OPS.includes(bp.op) ? bp.op : 'none',
           children: (Array.isArray(item.children) ? item.children : []).filter((c) => typeof c === 'string'),
+          ...groupTransformEntry(bp.transform),
         });
         // Same inherit-when-unstyled rule as an object3d child.
         if (declaresStyle(bp)) byObject[item.id] = normalizeStyle(bp.style);
@@ -1596,6 +1648,7 @@
         name: typeof group.name === 'string' && group.name ? group.name : `Group ${index + 1}`,
         op: GROUP_OPS.includes(group.op) ? group.op : 'none',
         children,
+        ...groupTransformEntry(group.transform),
       });
     });
     return out;
@@ -1610,8 +1663,12 @@
     };
   };
 
-  const normalizeLight = (light, index) => {
+  // `legacy` = the payload predates v7: a missing sun angle falls back to the pre-v7
+  // sun (az 135 / el 45), never the v7 front key, so an un-migrated old payload cannot
+  // change its light by being normalized.
+  const normalizeLight = (light, index, legacy = false) => {
     const src = isObject(light) ? light : {};
+    const dflt = legacy ? LEGACY_SUN : DEFAULT_LIGHT;
     // A-15: type field is kept verbatim for unknown (future) light types so new
     // kinds round-trip without a format migration. v1 renders 'directional' (the
     // sun), 'ambient' (a constant fill), and the positional 'point'/'spot'
@@ -1620,8 +1677,8 @@
     const out = {
       id: typeof src.id === 'string' && src.id ? src.id : (index === 0 ? 'sun' : `light-${index + 1}`),
       type,
-      azimuth: finite(src.azimuth, DEFAULT_LIGHT.azimuth),
-      elevation: finite(src.elevation, DEFAULT_LIGHT.elevation),
+      azimuth: finite(src.azimuth, dflt.azimuth),
+      elevation: finite(src.elevation, dflt.elevation),
       // Per-light weight. Directional defaults to 1 (a lone sun stays exactly
       // Phase-2); ambient defaults to a soft 0.25 fill. Total intensity is
       // clamped to [0,1] downstream, so this can push/fill without overflow.
@@ -1693,6 +1750,13 @@
         enabled: spec.enabled !== false,
         size: Math.max(0, finite(spec.size, DEFAULT_TONE.specular.size)),
       },
+      model: TONE_MODELS.includes(src.model) ? src.model : DEFAULT_TONE.model,
+      ambient: clamp(finite(src.ambient, DEFAULT_TONE.ambient), 0, 1),
+      bounce: clamp(finite(src.bounce, DEFAULT_TONE.bounce), 0, 1),
+      // A23: the Shading slider (0..100, v2 only; inert under 'legacy'). Kept only when the payload carries it: a missing key IS the
+      // default (SCENE3D_SURFACE_LOCK.SHADE.DEFAULT, the A22 look), so no SCENE_VERSION step or migration is needed.
+      ...(Number.isFinite(Number(src.darkness)) && src.darkness !== null && src.darkness !== ''
+        ? { darkness: clamp(Math.round(Number(src.darkness)), 0, 100) } : {}),
     };
   };
 
@@ -1735,11 +1799,12 @@
     // resurrect the sun on regen. Mirrors the objects contract above. A lightless
     // scene shades flat and casts no shadows: lightWorldDir/combinedIntensity and
     // the castShadows loop in scene3d.js all degrade gracefully on an empty list.
+    const preV7 = Number.isFinite(src.sceneVersion) && src.sceneVersion < 7;
     const hasLightsKey = Array.isArray(src.lights);
     const lights = (hasLightsKey ? src.lights : [])
       .filter(isObject)
-      .map((light, index) => normalizeLight(light, index));
-    out.lights = lights.length || hasLightsKey ? lights : [{ ...DEFAULT_LIGHT }];
+      .map((light, index) => normalizeLight(light, index, preV7));
+    out.lights = lights.length || hasLightsKey ? lights : [{ ...(preV7 ? LEGACY_SUN : DEFAULT_LIGHT) }];
     out.tone = normalizeTone(src.tone);
     out.shadow = normalizeShadow(src.shadow);
     out.ground = normalizeGround(src.ground);
@@ -2120,6 +2185,43 @@
   };
   SCENE_MIGRATIONS[5] = migrateMarkSpacePose;
 
+  // ── SCENE_MIGRATIONS[6] — tone.model 'legacy' (v6 → v7). ───────────────────
+  // The realistic light model (tone.model 'v2': ambient + bounce + specular)
+  // is the default for NEW scenes only. Every document and preset saved before
+  // v7 is stamped 'legacy' so it renders byte-identically. Only a SCENE payload
+  // is stamped (it carries a tone block, or the scene envelope that normalizes
+  // to one); object3d / booleanGroup3d leaves have none and pass through. A tone
+  // that already names a model is respected. Version-gated, idempotent.
+  const migrateToneModelLegacy = (params) => {
+    const src = isObject(params) ? params : {};
+    const sceneLike = isObject(src.tone) || Array.isArray(src.objects)
+      || Array.isArray(src.lights) || isObject(src.camera);
+    if (!sceneLike) {
+      // A standalone object3d LEAF has no tone block: object3d.js takes its tone
+      // and lights from the scene defaults at render time. migrateScene stamps
+      // sceneVersion 7 on it, so the version alone can no longer tell a saved leaf
+      // from a new one. Pin the saved leaf with toneModel 'legacy' (object3d.js
+      // reads it); a leaf that already names one is respected.
+      if (typeof src.primitive === 'string' && !TONE_MODELS.includes(src.toneModel)) {
+        return { ...src, toneModel: 'legacy' };
+      }
+      return src;
+    }
+    const tone = isObject(src.tone) ? src.tone : {};
+    if (TONE_MODELS.includes(tone.model)) return src;
+    // DEFAULT_LIGHT is the v7 front key (az 330 / el 40). A pre-v7 payload must keep the
+    // sun it was authored with: seed an absent lights key with the legacy sun and
+    // pin any light that omits its angles, so normalization never reaches the
+    // new default for a saved document.
+    const legacyLights = Array.isArray(src.lights)
+      ? src.lights.map((l) => (isObject(l) && (!Number.isFinite(l.azimuth) || !Number.isFinite(l.elevation))
+        ? { ...l, azimuth: Number.isFinite(l.azimuth) ? l.azimuth : LEGACY_SUN.azimuth, elevation: Number.isFinite(l.elevation) ? l.elevation : LEGACY_SUN.elevation }
+        : l))
+      : [{ ...LEGACY_SUN }];
+    return { ...src, lights: legacyLights, tone: { ...tone, model: 'legacy' } };
+  };
+  SCENE_MIGRATIONS[6] = migrateToneModelLegacy;
+
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).
   const migrateScene = (params) => {
@@ -2325,10 +2427,17 @@
     normalizeObjectLayerParams,
     collectSceneParams,
     normalizeGroups,
+    normalizeGroupTransform,
     normalizeParams,
     normalizeGround,
+    objectCastsShadow,
+    objectReceivesShadow,
+    anyObjectReceivesShadow,
     GROUND_SCALE_MIN,
     GROUND_SCALE_MAX,
+    GROUND_Y_MIN,
+    GROUND_Y_MAX,
+    GROUND_Y_STEP,
     migrateScene,
     sanitizeSceneParams,
     writeBackObjectLayerStyle,

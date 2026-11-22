@@ -108,6 +108,7 @@ describe('T4b — CI guard: sphere/hatch/mkDashRamp d=220 ink on the creation-de
   const buildFixture = () => {
     const engine = new Vectura.VectorEngine();
     const groupId = engine.addLayer('scene3d');
+    engine.getLayerById(groupId).params.tone = { ...engine.getLayerById(groupId).params.tone, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): this fixture is a legacy-look pin
     const group = engine.getLayerById(groupId);
     // Isolate the OBJECT's own ink, matching scene3d-capture.js's own
     // `q.ground = {enabled:false}; q.backdrop = {enabled:false}` isolation.
