@@ -116,7 +116,7 @@ describe('Scene3D.SurfaceFill — per-call TONE_ALGO dispatch (46-way matrix)', 
     p.ground = { enabled: false };
     p.camera = { projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
     p.styleTable = { scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity: 60 } }, byObject: {}, byFace: {} };
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...clone(defaults).tone, enabled: true, model: 'legacy', specular: { enabled: true, size: 1 } }; // light model v2 reaches pose fills (H2): legacy-look pin
     p.lights = [light || SUN];
 
     const calls = [];

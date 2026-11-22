@@ -51,6 +51,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { legacyScene3dParams } = require('../helpers/legacy-sun');
 
 // Exact mark-stat pins: tests/baselines/golden-values/scene3d-shadow-zone-fragmentation.json.
 const golden = goldenValues('scene3d-shadow-zone-fragmentation');
@@ -72,7 +73,7 @@ const BOUNDS = {
   penWidth: 0.3, truncate: 4, fastPreview: false, preview3dQuality: 'high',
 };
 const ballScene = (V2, radius, layers, extraShadow = {}) => {
-  const p = clone(V2.ALGO_DEFAULTS.scene3d);
+  const p = legacyScene3dParams(clone(V2.ALGO_DEFAULTS.scene3d)); // pre-v7 sun + legacy light model (legacy-sun.js)
   p.seed = 0;
   p.objects = [{
     id: 'obj-1',

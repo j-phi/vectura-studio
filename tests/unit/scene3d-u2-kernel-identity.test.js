@@ -28,6 +28,7 @@
 const fs = require('fs');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { pinLegacySun } = require('../helpers/legacy-sun');
 
 const hashPaths = (paths) => {
   let h1 = 0x811c9dc5 >>> 0; let n = 0; let pts = 0;
@@ -154,6 +155,7 @@ describe('U2 kernel perf — bit-identity', () => {
   test.each(GOLDENS)('scene golden — $prim / $mapper / $law is byte-identical to pre-U2', (g) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
+    pinLegacySun(engine, gid); // pre-v7 sun + legacy light model: this golden guards the pre-v7 look
     const group = engine.layers.find((l) => l.id === gid);
     const child = engine.getLayerDescendants(gid).filter((l) => l && l.type === 'object3d')[0];
     child.params.primitive = g.prim;

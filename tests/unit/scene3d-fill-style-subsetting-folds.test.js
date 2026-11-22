@@ -1,5 +1,6 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { legacyTone } = require('../helpers/legacy-sun');
 const crypto = require('crypto');
 
 /*
@@ -86,7 +87,7 @@ describe('Style sub-setting folds keep the look of a saved document', () => {
     p.ground = { enabled: false };
     p.camera = { projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
     p.styleTable = { scene: { penId: null, mapper, params: Object.assign({ fillAngle: 45, fillDensity: 45 }, params) }, byObject: {}, byFace: {} };
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...legacyTone(clone(defaults).tone), enabled: true }; // a saved document keeps the legacy light model (v2 is new-scene only)
     p.lights = [SUN];
     const out = algo.generate(p, null, null, BOUNDS) || [];
     const r3 = (n) => Math.round(n * 1000) / 1000;
@@ -206,7 +207,7 @@ describe('Style sub-setting folds keep the look of a saved document', () => {
       p.ground = { enabled: false };
       p.camera = { projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
       p.styleTable = { scene: { penId: null, mapper: 'stipple', params: { fillDensity: 45, dotShape: shape, dotSize: size, dotAngle: angle } }, byObject: {}, byFace: {} };
-      p.tone = { ...clone(defaults).tone, enabled: true };
+      p.tone = { ...legacyTone(clone(defaults).tone), enabled: true }; // a saved document keeps the legacy light model (v2 is new-scene only)
       p.lights = [SUN];
       const r3 = (n) => Math.round(n * 100) / 100;
       return (algo.generate(p, null, null, BOUNDS) || []).map((pth) => {

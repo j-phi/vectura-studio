@@ -28,4 +28,11 @@ const pinLegacySun = (engine, gid) => {
 const legacyLights = (lights) => (Array.isArray(lights) ? lights : []).map((l) => (
   l && (l.type === undefined || l.type === 'directional') ? { ...l, azimuth: LEGACY_SUN.azimuth, elevation: LEGACY_SUN.elevation } : l));
 
-module.exports = { LEGACY_SUN, pinLegacySun, legacyLights };
+// The legacy light model (no ambient/bounce/glint paper, specular size 1) on a tone block.
+const legacyTone = (tone) => ({ ...(tone || {}), model: 'legacy', specular: { ...((tone && tone.specular) || {}), size: 1 } });
+
+// For fixtures that spread a clone of ALGO_DEFAULTS.scene3d: the same params with the pre-v7 sun and
+// the legacy light model, i.e. the look every pre-v7 document keeps.
+const legacyScene3dParams = (params) => ({ ...params, tone: legacyTone(params.tone), lights: legacyLights(params.lights) });
+
+module.exports = { LEGACY_SUN, pinLegacySun, legacyLights, legacyTone, legacyScene3dParams };
