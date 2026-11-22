@@ -1005,6 +1005,8 @@
       outlineText: { label: 'Outline the text', tooltip: 'Convert text to outlines' },
       // 3D Scene Studio (Phase 1C) — scene-object / scene-face / scene-edge
       // contexts (kinds 'scene-object' | 'scene-face' | 'scene-edge').
+      // Disabled-control tooltip for a selected combined shape (boolean group).
+      sceneGroupNote: 'Set this on the shapes inside the combined shape',
       sceneDuplicate: { tooltip: 'Duplicate object' },
       sceneDelete: { tooltip: 'Delete object' },
       sceneDrop: { tooltip: 'Drop to ground (D)' },
