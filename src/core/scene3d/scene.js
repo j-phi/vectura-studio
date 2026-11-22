@@ -93,7 +93,8 @@
     const vertices = [
       v(-hx, 0, hz), v(hx, 0, hz), v(hx, 0, -hz), v(-hx, 0, -hz),
     ];
-    return { vertices, faces: [[0, 1, 2, 3]], faceIds: ['face:+Y'] };
+    // Back face shares the four vertices with reversed winding so the underside shades.
+    return { vertices, faces: [[0, 1, 2, 3], [3, 2, 1, 0]], faceIds: ['face:+Y', 'face:-Y'] };
   };
 
   const TOPOFORM_MODES = {
