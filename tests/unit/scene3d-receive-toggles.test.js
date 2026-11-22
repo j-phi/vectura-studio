@@ -84,6 +84,15 @@ describe('scene3d receive-shadow toggles', () => {
         const follow = run((o) => { o.box.params.shadow = { enabled: null, receive: null }; });
         expect(key(fillsOf(follow, boxId()))).toBe(key(fillsOf(on, boxId())));
       });
+
+      it('C3: ground.receiveShadows:false draws no cast shadow on the ground', () => {
+        const withG = run();
+        expect(shadowsOf(withG).length).toBeGreaterThan(0);
+        const noG = run((o) => { o.ground.params.receiveShadows = false; });
+        expect(shadowsOf(noG).length).toBe(0);
+        // the box still takes the sphere's shadow, only the floor stopped receiving
+        expect(key(fillsOf(noG, boxId()))).toBe(key(fillsOf(withG, boxId())));
+      });
     });
   });
 
@@ -93,12 +102,16 @@ describe('scene3d receive-shadow toggles', () => {
     base0.objects = [{ id: 'a', primitive: 'box', params: {}, transform: {} }];
     const n0 = P.normalizeParams(base0);
     expect(n0.objects[0].shadow).toEqual({ enabled: null });
+    expect('receiveShadows' in n0.ground).toBe(false);
     base0.objects[0].shadow = { enabled: null, receive: false };
+    base0.ground = { enabled: true, receiveShadows: false };
     const n1 = P.normalizeParams(base0);
     expect(n1.objects[0].shadow).toEqual({ enabled: null, receive: false });
-    base0.objects[0].shadow = { receive: true };
+    expect(n1.ground.receiveShadows).toBe(false);
+    base0.objects[0].shadow = { receive: true }; base0.ground = { enabled: true, receiveShadows: true };
     const n2 = P.normalizeParams(base0);
     expect(n2.objects[0].shadow).toEqual({ enabled: null, receive: true });
+    expect('receiveShadows' in n2.ground).toBe(false);
   });
 
   it('monolith -> tree expansion keeps obj.shadow.receive and ground.receiveShadows (and a default file stays key-free)', () => {
@@ -117,7 +130,9 @@ describe('scene3d receive-shadow toggles', () => {
     };
     const off = mk(false, false);
     expect(off.leaf.params.shadow.receive).toBe(false);
+    expect(off.ground.params.receiveShadows).toBe(false);
     const dflt = mk(undefined, undefined);
     expect('receive' in dflt.leaf.params.shadow).toBe(false);
+    expect('receiveShadows' in dflt.ground.params).toBe(false);
   });
 });

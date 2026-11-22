@@ -6301,7 +6301,9 @@
       // full frame does the clean class union. Both are y≥0-clipped so a caster
       // straddling the receiver still projects a correct footprint.
       G3.setSeedState(groupSeeds); // Scene Seed — shadows use the group's salt
-      if (Shadows && typeof Shadows.build === 'function' && Lighting) {
+      // Ground.receiveShadows === false (absent = receives): the ground takes no cast shadow at all.
+      const groundReceivesShadows = !(p.ground && p.ground.receiveShadows === false);
+      if (groundReceivesShadows && Shadows && typeof Shadows.build === 'function' && Lighting) {
         const shadowStyleOf = (objectId) => {
           const st = resolveStyle(objectId, null);
           return { penId: st && st.penId ? st.penId : null };

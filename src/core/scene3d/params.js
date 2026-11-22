@@ -1493,6 +1493,8 @@
       scaleX: groundScale(src.scaleX),
       scaleZ: groundScale(src.scaleZ),
       ...(y ? { y } : {}),
+      // Absent = the ground receives shadows (every older file); written only when switched off.
+      ...(src.receiveShadows === false ? { receiveShadows: false } : {}),
     };
   };
 

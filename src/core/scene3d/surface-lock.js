@@ -1166,7 +1166,7 @@
 
     const lights = p.lights || [];
     const suns = lights.filter((l) => l && l.type === 'directional' && l.castShadows !== false);
-    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
+    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && p.ground.receiveShadows !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
 
     // Occlusion buffer: several objects, a non-convex one, or a cast shadow to clip (contract §7).
     let occ = null;
