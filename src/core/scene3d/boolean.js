@@ -355,8 +355,34 @@
     return units;
   };
 
+  // B4b — the scene's objects as the UNCARVED fallback draws them: every leaf operand of a transformed top group carries
+  // the group transform composed on top of its own. Surface-locked marks (SurfaceLock poses, tone keys) read the object's
+  // transform by id, so they take this list, not the raw p.objects, or they lag the group transform on draft frames.
+  // Returns p.objects itself (same array) when no group carries a transform, so existing scenes are byte-identical.
+  const composedObjects = (p) => {
+    const objects = Array.isArray(p && p.objects) ? p.objects : [];
+    const groups = Array.isArray(p && p.groups) ? p.groups : [];
+    if (!groups.some((g) => groupTransformOf(g) && g.op && g.op !== 'none' && Array.isArray(g.children))) return objects;
+    const Scene = Vectura.Scene3D && Vectura.Scene3D.Scene;
+    if (!Scene) return objects;
+    const objIndex = new Map(objects.map((o) => [o.id, o]));
+    const groupIndex = new Map(groups.map((g) => [g.id, g]));
+    const nested = new Set();
+    groups.forEach((g) => (g.children || []).forEach((cid) => { if (groupIndex.has(cid)) nested.add(cid); }));
+    const composed = new Map();
+    groups.forEach((g) => {
+      const gt = groupTransformOf(g);
+      if (!gt || nested.has(g.id) || !g.op || g.op === 'none' || !Array.isArray(g.children)) return;
+      const leaves = leafOperandsOf(g, objIndex, groupIndex);
+      const pivot = groupPivot(leaves.map((o) => o.transform));
+      leaves.forEach((o) => { if (!composed.has(o.id)) composed.set(o.id, { ...o, transform: composeOperandTransform(Scene, o.transform, gt, pivot) }); });
+    });
+    return objects.map((o) => composed.get(o.id) || o);
+  };
+
   const api = {
     resolveAssembly,
+    composedObjects,
     groupPivot,
     applyGroupToPoint,
     FACETED,

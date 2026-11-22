@@ -1597,6 +1597,12 @@
     const SL = Vectura.Scene3D && Vectura.Scene3D.SurfaceLock;
     return SL && typeof SL.toneDarknessOf === 'function' ? SL.toneDarknessOf(p) : undefined;
   };
+  // B4b — objects as the uncarved boolean fallback draws them (group transform composed in); p.objects itself when no group
+  // carries a transform. Surface-lock poses / tone keys read an object's transform by id from this list.
+  const lockObjectsOf = (p) => {
+    const B = Vectura.Scene3D && Vectura.Scene3D.Boolean;
+    return (B && typeof B.composedObjects === 'function') ? B.composedObjects(p) : (p.objects || []);
+  };
   const buildSurfaceLockSpec = (p, bounds, record, obj, g, sp, faceIndex) => {
     const cp = obj ? curvedChartParams(obj) : null;
     const facetedSizes = (!cp && obj) ? facetedLockSizes(obj, faceIndex) : null;
@@ -1726,7 +1732,7 @@
       G3.setSeedState(groupSeeds);
       const sb = Object.assign({}, bounds, { penWidth: finite(bounds && bounds.penWidth, 0.3) });
       const resolveStyle = makeStyleResolver(p.styleTable);
-      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      const objById = new Map(lockObjectsOf(p).map((o) => [o.id, o]));
       const { seedFor, specFor } = levelSSpecHelpers(p, sb, groupSeeds, groupSeeded, resolveStyle, objById);
       return SL.sceneBakeSpecs(p, sb, { seedFor, specFor });
     } catch (err) {
@@ -1743,7 +1749,7 @@
     const out = [];
     const resolveStyle = makeStyleResolver(p.styleTable);
     const { edgeStyleFor, edgeStyleMeta } = makeEdgeStyleHelpers(p, sb);
-    const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+    const objById = new Map(lockObjectsOf(p).map((o) => [o.id, o]));
     const lights = p.lights || [];
     const light = lights[0] || {};
     const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function' ? Lighting.lightWorldDir(light) : null;
@@ -1976,7 +1982,7 @@
 
       // Correlate a scene record back to its source object (records don't carry
       // params/transform) so SurfaceFill can re-evaluate the object's chart.
-      const objById = new Map((p.objects || []).map((o) => [o.id, o]));
+      const objById = new Map(lockObjectsOf(p).map((o) => [o.id, o]));
       const surfaceLockSpec = (record, obj, g, sp) => buildSurfaceLockSpec(p, bounds, record, obj, g, sp);
       const light = (p.lights && p.lights[0]) || {};
       const lightDir = Lighting && typeof Lighting.lightWorldDir === 'function'
