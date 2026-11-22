@@ -1525,6 +1525,11 @@
         gl.params.enabled = true;
         // Receive toggle rides along (absent = receives; written only when switched off).
         if (group.params.ground && group.params.ground.receiveShadows === false) gl.params.receiveShadows = false;
+        // The floor's size and height ride along too (the normalized ground carries scaleX / scaleZ / y).
+        const mg = (src.ground && typeof src.ground === 'object') ? src.ground : {};
+        if (Number.isFinite(mg.scaleX)) gl.params.scaleX = mg.scaleX;
+        if (Number.isFinite(mg.scaleZ)) gl.params.scaleZ = mg.scaleZ;
+        if (Number.isFinite(mg.y) && mg.y !== 0) gl.params.y = mg.y;
         this.layers.splice(insertAt, 0, gl);
         insertAt += 1;
       }
