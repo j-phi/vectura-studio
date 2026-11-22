@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 /*
  * e2e — Receive shadows: with "Shadows land on objects" on, a sphere above a box shades the box. Switching the box's
- * "Receive shadows" row to Off (in the object panel) removes that shadow from the BOX's ink (back to the scene-flag-off
+ * "Takes shadow" row to Off (in the object panel) removes that shadow from the BOX's ink (back to the scene-flag-off
  * drawing), and Follow scene restores it.
  */
 const open = async (page) => {

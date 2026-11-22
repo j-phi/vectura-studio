@@ -2494,7 +2494,7 @@
       }));
 
       // Receive shadows (Follow scene / On / Off): shadows from OTHER objects landing on this one.
-      const recvCtl = labeledRow(host, 'Receive shadows');
+      const recvCtl = labeledRow(host, 'Takes shadow');
       setRowHelp(recvCtl, RECEIVE_OBJECT_HELP);
       comps.push(UI.SegCtrl(recvCtl, {
         options: receiveSegOptions(),
@@ -3170,7 +3170,7 @@
       ariaLabel: 'Ground enabled',
       onChange: (v) => { commit(() => { p.enabled = v === 'on'; }); },
     }));
-    const gRecvCtl = labeledRow(host, 'Receives shadows');
+    const gRecvCtl = labeledRow(host, 'Takes shadow');
     setRowHelp(gRecvCtl, RECEIVE_GROUND_HELP);
     comps.push(UI.SegCtrl(gRecvCtl, {
       options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
@@ -4992,7 +4992,7 @@
         if (!params.ground || typeof params.ground !== 'object') params.ground = { enabled: true };
         const gRecvHost = document.createElement('div');
         inspectorHost.appendChild(gRecvHost);
-        const gRecvCtl = labeledRow(gRecvHost, 'Receives shadows');
+        const gRecvCtl = labeledRow(gRecvHost, 'Takes shadow');
         setRowHelp(gRecvCtl, RECEIVE_GROUND_HELP);
         inspectorComps.push(UI.SegCtrl(gRecvCtl, {
           options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
@@ -5243,7 +5243,7 @@
       recvRow.className = 'vs3-row';
       const recvLbl = document.createElement('label');
       recvLbl.className = 'vs3-lbl';
-      recvLbl.textContent = 'Receive shadows';
+      recvLbl.textContent = 'Takes shadow';
       recvRow.appendChild(recvLbl);
       const recvHost = document.createElement('div');
       recvHost.className = 'vs3-ctl';

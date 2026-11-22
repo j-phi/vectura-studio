@@ -37,13 +37,13 @@ describe('Scene3D panel — receive shadows rows', () => {
     return { layer, container };
   };
 
-  test('monolith object inspector: Receive shadows sits with Cast shadow and writes obj.shadow.receive only when non-null', () => {
+  test('monolith object inspector: the Takes shadow row sits with Cast shadow and writes obj.shadow.receive only when non-null', () => {
     const { layer, container } = mountMonolith();
     fire(container.querySelector('.vs3-tree-row'), 'click');
     expect(seg(container, 'Object casts shadow')).toBeTruthy();
     expect(seg(container, 'Object receives shadows')).toBeTruthy();
     const labels = [...container.querySelectorAll('.vs3-inspector .vs3-lbl')].map((l) => l.textContent);
-    expect(labels.indexOf('Receive shadows')).toBe(labels.indexOf('Cast shadow') + 1);
+    expect(labels.indexOf('Takes shadow')).toBe(labels.indexOf('Cast shadow') + 1);
     const obj = layer.params.objects[0];
     expect(obj.shadow && 'receive' in obj.shadow).toBeFalsy();
     click(container, 'Object receives shadows', 'off');
@@ -58,6 +58,10 @@ describe('Scene3D panel — receive shadows rows', () => {
     const { layer, container } = mountMonolith();
     fire(container.querySelector('.vs3-tree-row[data-object-id="ground"]'), 'click');
     expect(seg(container, 'Ground receives shadows')).toBeTruthy();
+    // short visible label (the long one clipped in the narrow panel); the aria name keeps the full wording
+    const gLabels = [...container.querySelectorAll('.vs3-lbl')].map((l) => l.textContent);
+    expect(gLabels).toContain('Takes shadow');
+    expect(gLabels.some((t) => /^Receives? shadows?$/.test(t))).toBe(false);
     click(container, 'Ground receives shadows', 'off');
     expect(layer.params.ground.receiveShadows).toBe(false);
     click(container, 'Ground receives shadows', 'on');
@@ -74,7 +78,7 @@ describe('Scene3D panel — receive shadows rows', () => {
     document.body.appendChild(container);
     window.Vectura.UI.Scene3DPanel.build(ui, layer, container);
     const labels = [...container.querySelectorAll('.vs3-lbl')].map((l) => l.textContent);
-    expect(labels.indexOf('Receive shadows')).toBe(labels.indexOf('Cast shadow') + 1);
+    expect(labels.indexOf('Takes shadow')).toBe(labels.indexOf('Cast shadow') + 1);
     click(container, 'Object receives shadows', 'off');
     expect(layer.params.shadow.receive).toBe(false);
     click(container, 'Object receives shadows', 'inherit');
