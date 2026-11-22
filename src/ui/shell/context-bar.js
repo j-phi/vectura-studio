@@ -1150,6 +1150,34 @@
     && Array.isArray(sel.objectIds)
     && sel.objectIds.some((id) => id !== SCENE_GROUND_ID);
 
+  // A COMBINED SHAPE (booleanGroup3d) is selected. Its style / shadow / x-ray /
+  // primitive writes land on the GROUP id, which nothing reads (the carved
+  // mesh takes its look from the operands), so those controls are disabled
+  // rather than live-and-inert. True when every real (non-ground) selected id
+  // is a booleanGroup3d layer.
+  const sceneSelIsGroupOnly = (ctx) => {
+    const sel = sceneSel(ctx);
+    if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds)) return false;
+    const engine = ctx && ctx.renderer && ctx.renderer.engine;
+    if (!engine || typeof engine.getLayerById !== 'function') return false;
+    const ids = sel.objectIds.filter((id) => id !== SCENE_GROUND_ID);
+    return ids.length > 0 && ids.every((id) => {
+      const l = engine.getLayerById(id);
+      return Boolean(l) && l.type === 'booleanGroup3d';
+    });
+  };
+  const appendDisabledSceneField = (iconHtml, ariaLabel) => {
+    const note = (B().sceneGroupNote) || 'Set this on the shapes inside the combined shape';
+    const field = makeDropField('ctxbar-scene-field ctxbar-scene-disabled', '', `${ariaLabel} — ${note}`, iconHtml, null, ariaLabel);
+    field.setAttribute('aria-disabled', 'true');
+    field.classList.add('is-disabled');
+    field.style.opacity = '0.45';
+    field.style.cursor = 'not-allowed';
+    field.setAttribute('aria-haspopup', 'false');
+    field.removeAttribute('aria-expanded');
+    els.content.appendChild(field);
+  };
+
   const sceneObjectName = (ctx, layer, id) => {
     const objects = (layer && layer.params && layer.params.objects) || [];
     const o = objects.find((x) => x && x.id === id);
@@ -1341,11 +1369,17 @@
     if (!r || !layer || !sel) return;
     const ids = sel.objectIds;
     appendSceneReadouts(ctx);
-    appendScenePenChip(ctx);
-    appendSceneShapePicker(ctx);
-    // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
-    // between the pen chip and the one-shot verbs.
-    appendSceneFlyouts(ctx);
+    if (sceneSelIsGroupOnly(ctx)) {
+      ['sceneShape', 'sceneStyle', 'sceneShadow', 'sceneHighlight', 'sceneXray'].forEach((k) => {
+        appendDisabledSceneField(ic[k], (b[k] && b[k].label) || k);
+      });
+    } else {
+      appendScenePenChip(ctx);
+      appendSceneShapePicker(ctx);
+      // Persistent Style / Shadow / Highlight / X-ray dropdown pills (ask #8) —
+      // between the pen chip and the one-shot verbs.
+      appendSceneFlyouts(ctx);
+    }
     // Helpers visibility — a scene-wide VIEW toggle (SETTINGS.sceneHelpersVisible),
     // not a per-object param, so it renders for a ground-only selection too
     // (unlike the object-def verbs below). Simple icon toggle, not a flyout —
