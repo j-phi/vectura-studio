@@ -54,6 +54,10 @@
   const FALLBACK_FLOOR_PEN = CFG.FALLBACK_FLOOR_PEN || 2.2;
   const FRESH_MAX = CFG.FRESH_MAX || 256;
   const V2_GUARD_PEN = Number.isFinite(CFG.V2 && CFG.V2.GUARD_PEN) ? CFG.V2.GUARD_PEN : 0;
+  const GLINT_SKIP_MARGIN = (CFG.GLINT && CFG.GLINT.SKIP_MARGIN) || 0.999999;
+  const GLINT_FAST_MARGIN = (CFG.GLINT && CFG.GLINT.FAST_MARGIN) || 0.99999;
+  const GLINT_FAST_EPS = (CFG.GLINT && CFG.GLINT.FAST_EPS) || 1e-9;
+  const CROWD_EXACT_BAND = (CFG.CROWD && CFG.CROWD.EXACT_BAND) || 1e-9;
   const LIMB_KNEE_BAND = 1; // the knee acts over the whole threshold range, fading to 0 at the darkest
   const FACING_COMP = Number.isFinite(CFG.V2 && CFG.V2.FACING_COMP) ? CFG.V2.FACING_COMP : 1;
 
@@ -67,7 +71,7 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
     bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
@@ -288,12 +292,31 @@
     direct.forEach((l) => {
       if (!l.type || l.type === 'directional') {
         const t = R.towardLight(l);
-        dirs.push({ l, x: t.x, y: t.y, z: t.z, w: Math.min(1, Math.max(0, num(l.intensity, 1))) * ks });
+        const w = Math.min(1, Math.max(0, num(l.intensity, 1))) * ks;
+        // nhMin: below it w * nh^sh cannot exceed s0 (the glint is not drawn), so the pow is skipped; the margin keeps the
+        // boundary on the pow side, so the result is identical to evaluating it.
+        dirs.push({ l, x: t.x, y: t.y, z: t.z, w, nhMin: w > 0 ? Math.pow(s0 / w, 1 / sh) * GLINT_SKIP_MARGIN : Infinity, nhMinSq: w > 0 ? Math.pow(s0 / w, 2 / sh) * GLINT_FAST_MARGIN : Infinity });
       } else others.push(l);
     });
     const shadowFnFor = typeof light.shadowFnFor === 'function' ? light.shadowFnFor : null;
+    const fast = others.length === 0;
     return (n, p, e) => {
       let nx = n.x; let ny = n.y; let nz = n.z;
+      if (fast) {
+        // Cheap reject (no sqrt, no division): the unit-vector test below returns 1 when every light is skipped. n and e are unit to
+        // ~1e-15, so a margin of GLINT_FAST_MARGIN decides the same way; anything not clearly skipped falls through to the exact code.
+        const rx = e.x; const ry = e.y; const rz = e.z;
+        let clear = true;
+        for (let i = 0; i < dirs.length; i++) {
+          const d = dirs[i];
+          if (nx * d.x + ny * d.y + nz * d.z < -GLINT_FAST_EPS) continue;
+          const hx = d.x + rx; const hy = d.y + ry; const hz = d.z + rz;
+          const nhr = nx * hx + ny * hy + nz * hz;
+          if (nhr <= 0 || nhr * nhr < d.nhMinSq * (hx * hx + hy * hy + hz * hz)) continue;
+          clear = false; break;
+        }
+        if (clear) { stats.glintFast += 1; return 1; }
+      }
       const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
       let ex = e.x; let ey = e.y; let ez = e.z;
       const el = Math.sqrt(ex * ex + ey * ey + ez * ez) || 1; ex /= el; ey /= el; ez /= el;
@@ -304,7 +327,7 @@
         const hx = d.x + ex; const hy = d.y + ey; const hz = d.z + ez;
         const hl = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1;
         const nh = (nx * hx + ny * hy + nz * hz) / hl;
-        if (nh <= 0) continue;
+        if (nh <= d.nhMin) continue; // includes nh <= 0 (nhMin >= 0)
         const s = d.w * Math.pow(nh, sh);
         if (s <= S || s <= s0) continue; // below s0 the keep is 1 whatever the shadow says
         if (shadowFnFor) { if (blocked === undefined) blocked = shadowFnFor(n); if (blocked(p, d.l)) continue; }
@@ -448,7 +471,7 @@
     const runLast = capCont ? runLastOf(ms) : null;
     const strideSep = capCont && Number.isFinite(meta.strideSepPen) && meta.strideSepPen > 0 ? meta.strideSepPen * num(view.penWidth, 0) : 0;
     const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
-    const remapLuts = new Map();
+    const remapLuts = new Map(); let lastCapT = NaN; let lastRl = null;
     const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
@@ -546,13 +569,14 @@
             dm *= tD / dD;
           } else if (mD > 0 && tD > mD && tD < dD) {
             if (!persp) {
-              let rl = remapLuts.get(capT);
+              let rl = capT === lastCapT ? lastRl : remapLuts.get(capT); // lastCapT: capT is one of a few octave values, a run of equal keys skips the Map
               if (!rl) {
                 const kk = Math.log(tD / mD) / Math.log(dD / mD);
                 rl = new Float32Array(LUT_N + 1);
                 for (let j = 0; j <= LUT_N; j++) { const dj = p0 * sv * lut[j]; rl[j] = dj > 0 ? mD * Math.pow(dj / mD, kk) : 0; }
                 remapLuts.set(capT, rl);
               }
+              lastCapT = capT; lastRl = rl;
               dm = rl[k0] + (f - k0) * (rl[k0 + 1] - rl[k0]);
             } else if (dm > 0) {
               stats.toneRemapPow += 1;
@@ -589,52 +613,67 @@
   // away fast, rulings g apart land closer than the floor anyway. The guard is exact: a piece of a ruling is kept only where it
   // stays >= guardD from every already-kept piece of a DIFFERENT ruling of the same family (runs are visited in bake order, so the
   // result is deterministic and Level S == Level F). Grid of segments, cell = 2 x guardD.
-  const makeCrowd = (guardD) => {
-    const cell = Math.max(1e-6, 2 * guardD); const grid = new Map();
-    const keyOf = (ix, iy) => ix * 73856093 ^ iy * 19349663;
-    const segDist = (px, py, ax, ay, bx, by) => {
-      const dx = bx - ax; const dy = by - ay; const l2 = dx * dx + dy * dy;
-      const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
-      return Math.hypot(px - ax - t * dx, py - ay - t * dy);
-    };
-    const near = (x, y, fam, ord) => {
-      const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
-      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-        const list = grid.get(keyOf(ix + a, iy + b)); if (!list) continue;
-        for (let k = 0; k < list.length; k++) {
-          const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
-          if (segDist(x, y, e.ax, e.ay, e.bx, e.by) < guardD) return true;
-        }
+  // The functions below are module level on purpose (H4): closures made per frame get a fresh feedback vector, so the hot guard code
+  // re-warmed (and ran unoptimised) at the start of every pose.
+  const crowdKey = (ix, iy) => ix * 73856093 ^ iy * 19349663;
+  // true when the distance from (px, py) to the entry's segment is < guardD. The squared distance decides everywhere except
+  // within CROWD_EXACT_BAND of guardD, where Math.hypot (the original test) is evaluated, so the decision is unchanged.
+  const crowdCloser = (st, px, py, e) => {
+    const pad = st.pad;
+    if (px < e.x0 - pad || px > e.x1 + pad || py < e.y0 - pad || py > e.y1 + pad) return false; // beyond guardD from the segment's box
+    const dx = e.dx; const dy = e.dy; const l2 = e.l2;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - e.ax) * dx + (py - e.ay) * dy) / l2)) : 0;
+    const qx = px - e.ax - t * dx; const qy = py - e.ay - t * dy;
+    const d2 = qx * qx + qy * qy;
+    if (d2 < st.lo2) return true;
+    if (d2 > st.hi2) return false;
+    return Math.hypot(qx, qy) < st.guardD;
+  };
+  const crowdNear = (st, x, y, fam, ord) => {
+    const cell = st.cell; const grid = st.grid;
+    const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const list = grid.get(crowdKey(ix + a, iy + b)); if (!list) continue;
+      for (let k = 0; k < list.length; k++) {
+        const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
+        if (crowdCloser(st, x, y, e)) return true;
       }
-      return false;
+    }
+    return false;
+  };
+  const crowdAdd = (st, ax, ay, bx, by, fam, ord) => {
+    const cell = st.cell; const grid = st.grid;
+    const dx = bx - ax; const dy = by - ay;
+    const e = { ax, ay, bx, by, fam, ord, dx, dy, l2: dx * dx + dy * dy, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
+    const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
+    const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = crowdKey(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
+  };
+  // Splits `subs` into the stretches that clear the guard (checked at the vertices), registers what is kept.
+  const crowdFilter = (st, subs, fam, ord) => {
+    const kept = [];
+    subs.forEach((line0) => {
+      const line = line0;
+      let cur = null;
+      const fs = line.f;
+      for (let i = 0; i < line.length; i++) {
+        // the guard only acts where the surface is turned away (the stride cap alone keeps the interior at its own pitch)
+        const rim = !fs || fs[i] < GUARD_FACING || (i > 0 && fs[i - 1] < GUARD_FACING);
+        const ok = !rim || !crowdNear(st, line[i].x, line[i].y, fam, ord);
+        if (ok) { if (!cur) cur = []; cur.push(line[i]); } else if (cur) { kept.push(cur); cur = null; }
+      }
+      if (cur) kept.push(cur);
+    });
+    const out2 = kept.filter((l) => l.length >= 2);
+    out2.forEach((l) => { for (let i = 1; i < l.length; i++) crowdAdd(st, l[i - 1].x, l[i - 1].y, l[i].x, l[i].y, fam, ord); });
+    return out2;
+  };
+  const makeCrowd = (guardD) => {
+    const st = {
+      guardD, cell: Math.max(1e-6, 2 * guardD), grid: new Map(), pad: guardD * (1 + CROWD_EXACT_BAND),
+      lo2: guardD * guardD * (1 - CROWD_EXACT_BAND) * (1 - CROWD_EXACT_BAND), hi2: guardD * guardD * (1 + CROWD_EXACT_BAND) * (1 + CROWD_EXACT_BAND),
     };
-    const add = (ax, ay, bx, by, fam, ord) => {
-      const e = { ax, ay, bx, by, fam, ord };
-      const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
-      const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
-      for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = keyOf(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
-    };
-    // Splits `subs` into the stretches that clear the guard (checked at the vertices and segment midpoints), registers what is kept.
-    const filter = (subs, fam, ord) => {
-      const kept = [];
-      subs.forEach((line0) => {
-        const line = line0;
-        let cur = null;
-        const fs = line.f;
-        for (let i = 0; i < line.length; i++) {
-          // the guard only acts where the surface is turned away (the stride cap alone keeps the interior at its own pitch)
-          const rim = !fs || fs[i] < GUARD_FACING || (i > 0 && fs[i - 1] < GUARD_FACING);
-          let ok = !rim || !near(line[i].x, line[i].y, fam, ord);
-          if (false && ok && rim && i > 0) ok = !near(0.5 * (line[i].x + line[i - 1].x), 0.5 * (line[i].y + line[i - 1].y), fam, ord);
-          if (ok) { if (!cur) cur = []; cur.push(line[i]); } else if (cur) { kept.push(cur); cur = null; }
-        }
-        if (cur) kept.push(cur);
-      });
-      const out2 = kept.filter((l) => l.length >= 2);
-      out2.forEach((l) => { for (let i = 1; i < l.length; i++) add(l[i - 1].x, l[i - 1].y, l[i].x, l[i].y, fam, ord); });
-      return out2;
-    };
-    return { filter };
+    return { filter: (subs, fam, ord) => crowdFilter(st, subs, fam, ord) };
   };
 
   // A21: visiting order of a capContinuous MarkSet: by (family, ruling ordinal, run), so the crowd guard packs the rulings side by side
