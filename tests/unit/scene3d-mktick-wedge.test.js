@@ -1,4 +1,5 @@
 const { goldenValues } = require('../helpers/golden-values');
+const { legacyTone } = require('../helpers/legacy-sun');
 const fs = require('fs');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
@@ -143,7 +144,7 @@ const buildSceneParams = (Params, defaults, {
   p.ground = { enabled: false };
   p.backdrop = { enabled: false };
   p.camera = clone(Params.DEFAULT_CAMERA);
-  p.tone = { ...clone(defaults).tone, enabled: true };
+  p.tone = { ...legacyTone(clone(defaults).tone), enabled: true }; // legacy-look pin: light model v2 is new-scene only (legacy-sun.js)
   p.lights = [SUN];
   p.styleTable = {
     scene: {

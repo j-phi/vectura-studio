@@ -3151,11 +3151,12 @@
       refreshLightFacing();
       host.appendChild(facingEl);
       const onAnyEdit = () => {
-        if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); return; }
+        if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); document.removeEventListener('pointercancel', onAnyEdit, true); return; }
         refreshLightFacing();
       };
       document.addEventListener('input', onAnyEdit, true);
       document.addEventListener('pointerup', onAnyEdit, true);
+      document.addEventListener('pointercancel', onAnyEdit, true); // a cancelled touch drag can still have moved the light gizmo
       slider('Azimuth', { value: Number.isFinite(p.azimuth) ? p.azimuth : 330, min: 0, max: 360, step: 1, defaultValue: 330,
         ariaLabel: 'Light azimuth (degrees)', ...liveSlider((v) => { p.azimuth = Math.round(v); refreshLightFacing(); }) });
       slider('Elevation', { value: Number.isFinite(p.elevation) ? p.elevation : 40, min: 0, max: 90, step: 1, defaultValue: 40,
@@ -4926,11 +4927,12 @@
         refreshLightFacing();
         inspectorHost.appendChild(facingEl);
         const onAnyEdit = () => {
-          if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); return; }
+          if (!facingEl.isConnected) { document.removeEventListener('input', onAnyEdit, true); document.removeEventListener('pointerup', onAnyEdit, true); document.removeEventListener('pointercancel', onAnyEdit, true); return; }
           refreshLightFacing();
         };
         document.addEventListener('input', onAnyEdit, true);
         document.addEventListener('pointerup', onAnyEdit, true);
+        document.addEventListener('pointercancel', onAnyEdit, true); // a cancelled touch drag can still have moved the light gizmo
         sliderRow(inspectorHost, inspectorComps, 'Azimuth', {
           value: Number.isFinite(light.azimuth) ? light.azimuth : 330,
           min: 0, max: 360, step: 1, defaultValue: 330,

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { goldenValues } = require('../helpers/golden-values');
+const { legacyTone } = require('../helpers/legacy-sun');
 
 /*
  * Scene3D fill styles keep their look: every Fill Style id (old and current), every
@@ -86,7 +87,7 @@ describe('Scene3D fill styles keep their look (old ids, retired sub-control bags
     p.ground = { enabled: false };
     p.camera = { projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
     p.styleTable = { scene: { penId: null, mapper, params: Object.assign({ fillAngle: 45, fillDensity: 45 }, params) }, byObject: {}, byFace: {} };
-    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.tone = { ...legacyTone(clone(defaults).tone), enabled: true }; // legacy-look pin: light model v2 is new-scene only (legacy-sun.js)
     p.lights = [SUN];
     const out = algo.generate(p, null, null, BOUNDS) || [];
     const r3 = (n) => Math.round(n * 1000) / 1000;

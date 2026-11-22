@@ -147,7 +147,9 @@ const buildParams = (defaults, scene) => {
   const byObject = {};
   scene.objects.forEach((o) => { byObject[o.id] = clone(scene.style); });
   p.styleTable = { scene: clone(defaults.styleTable.scene), byObject, byFace: {} };
-  p.tone = { ...clone(defaults.tone), enabled: scene.tone !== false };
+  // Light model v2 is the NEW-scene default (sceneVersion 7); this corpus guards the legacy look every
+  // pre-v7 document keeps, so it pins the legacy model (as the H2 fixture pins did).
+  p.tone = { ...clone(defaults.tone), enabled: scene.tone !== false, model: 'legacy', specular: { enabled: true, size: 1 } };
   p.lights = [sun(scene.light)];
   p.shadow = { ...clone(defaults.shadow), ...(scene.shadow || {}) };
   return p;
