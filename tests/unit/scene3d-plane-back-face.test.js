@@ -41,6 +41,25 @@ describe('Scene3D — plane underside', () => {
     expect(fillLen(paths, obj.id)).toBeGreaterThan(0);
   });
 
+  // The back face shares the rim with the front face, but the rim is still the
+  // sheet's open BOUNDARY (as it was for the one-face plane), never a silhouette:
+  // the edge class rides on the path meta and drives the edge-class filters.
+  test('the rim of the two-sided plane stays a boundary edge (either side)', () => {
+    const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
+    const base = JSON.parse(JSON.stringify(V.ALGO_DEFAULTS.scene3d));
+    [-15, 20].forEach((pitch) => {
+      const p = JSON.parse(JSON.stringify(base));
+      p.objects = [{ id: 'o1', name: 'o1', primitive: 'plane', params: { sx: 60, sz: 60 }, transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' }];
+      p.groups = []; p.ground = { enabled: false }; p.backdrop = { enabled: false };
+      p.camera = { projection: 'orthographic', yaw: -25, pitch, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
+      p.styleTable = { scene: base.styleTable.scene, byObject: { o1: { penId: null, mapper: 'wireframe', params: {} } }, byFace: {} };
+      const edges = (V.AlgorithmRegistry.scene3d.generate(p, null, null, BOUNDS) || [])
+        .filter((q) => q.meta && q.meta.kind === 'sceneEdge');
+      expect(edges.length, `pitch ${pitch}`).toBeGreaterThan(0);
+      expect([...new Set(edges.map((q) => q.meta.sceneTarget.edgeClass))], `pitch ${pitch}`).toEqual(['boundary']);
+    });
+  });
+
   test('no duplicated segments in the plane output (either side)', () => {
     [-15, 20].forEach((pitch) => {
       const { obj, paths } = planeScene(pitch);
