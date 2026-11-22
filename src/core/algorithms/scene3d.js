@@ -3839,7 +3839,9 @@
             densityScale: monoDensityScale(monoDensityOf(styleParams), isToneV2(p)),
             ...(poseV2 ? { toneModel: 'v2', light: v2LightCtx() } : {}),
             // A lone face (a plane / one-face record) is lit evenly: the law caps its tone under the paper band and takes no glint keep.
-            ...(poseV2 && record && Array.isArray(record.faces) && record.faces.length === 1 ? { loneFace: true } : {}),
+            // A plane carries a back face too (two-sided, A2), so it is matched by primitive, not only by face count.
+            ...(poseV2 && record && (record.primitive === 'plane'
+              || (Array.isArray(record.faces) && record.faces.length === 1)) ? { loneFace: true } : {}),
             crossDelta: finite(styleParams.crossAngleDelta, 90),
             stripeAlign: styleParams.stripeAlign,
             chainMarks: styleParams.chainMarks,
