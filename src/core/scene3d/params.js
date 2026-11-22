@@ -1159,8 +1159,22 @@
   const normalizeObjectShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     const enabled = src.enabled === true ? true : (src.enabled === false ? false : null);
-    return { enabled };
+    // Per-object RECEIVE override: null (absent) follows the scene's "Shadows land on objects"; true receives even
+    // with the scene flag off; false never receives. Written only when non-null so a default file is byte-identical.
+    const out = { enabled };
+    if (src.receive === true) out.receive = true;
+    else if (src.receive === false) out.receive = false;
+    return out;
   };
+  // Cast: only an explicit Off drops the object's shadow (null / Auto / On cast) — onto the ground AND onto other objects.
+  const objectCastsShadow = (obj) => !(obj && obj.shadow && obj.shadow.enabled === false);
+  // Receive: a per-object true/false wins; null follows the scene flag (`sceneOn`).
+  const objectReceivesShadow = (obj, sceneOn) => {
+    const r = obj && obj.shadow ? obj.shadow.receive : null;
+    return r === true ? true : (r === false ? false : !!sceneOn);
+  };
+  // Does ANY object receive (so the receive machinery must run at all)? Scene flag on, or an object forced On.
+  const anyObjectReceivesShadow = (objects, sceneOn) => Array.isArray(objects) && objects.some((o) => objectReceivesShadow(o, sceneOn));
 
   // Per-object silhouette border (ctxbar Highlight flyout, ask #8). Default OFF
   // = zero extra ink, so a scene with no `border` block renders byte-identical.
@@ -1479,6 +1493,8 @@
       scaleX: groundScale(src.scaleX),
       scaleZ: groundScale(src.scaleZ),
       ...(y ? { y } : {}),
+      // Absent = the ground receives shadows (every older file); written only when switched off.
+      ...(src.receiveShadows === false ? { receiveShadows: false } : {}),
     };
   };
 
@@ -2398,6 +2414,9 @@
     normalizeGroups,
     normalizeParams,
     normalizeGround,
+    objectCastsShadow,
+    objectReceivesShadow,
+    anyObjectReceivesShadow,
     GROUND_SCALE_MIN,
     GROUND_SCALE_MAX,
     GROUND_Y_MIN,

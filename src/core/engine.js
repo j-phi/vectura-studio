@@ -1523,6 +1523,8 @@
         const gl = new Layer(gcid, 'sceneGround3d', 'Ground');
         gl.parentId = group.id;
         gl.params.enabled = true;
+        // Receive toggle rides along (absent = receives; written only when switched off).
+        if (group.params.ground && group.params.ground.receiveShadows === false) gl.params.receiveShadows = false;
         this.layers.splice(insertAt, 0, gl);
         insertAt += 1;
       }

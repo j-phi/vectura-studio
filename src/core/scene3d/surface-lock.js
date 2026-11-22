@@ -926,7 +926,7 @@
     areaLight: (p.lights || []).some((l) => l && l.type === 'area'),
     // The pose path builds its shadow-receive occluder from this flag. A16: lifted for a v2 scene when the light-space receive map
     // exists (the tone memo then takes the shadow from it); a legacy scene keeps the exclusion, so its look is the pose look.
-    receiveShadow: !!(p.shadow && p.shadow.shadowReceiveOnObjects) && !(toneModelOf(p) === 'v2' && receiveMapAvailable()),
+    receiveShadow: Scene3D.Params.objectReceivesShadow(obj, !!(p.shadow && p.shadow.shadowReceiveOnObjects)) && !(toneModelOf(p) === 'v2' && receiveMapAvailable()),
   });
   const FRAMEABLE = Object.freeze([
     { id: 'hasObjects', test: (p) => Array.isArray(p.objects) && p.objects.length > 0 },
@@ -1107,10 +1107,11 @@
   };
   // { key, get() } for the receiver `idx`, or null when the scene does not ask for shadows on objects (or nothing else can cast).
   const receiveCtxFor = (p, objects, meshes, poses, idx) => {
-    if (!(p.shadow && p.shadow.shadowReceiveOnObjects) || !receiveMapAvailable()) return null;
+    if (!receiveMapAvailable() || !Scene3D.Params.objectReceivesShadow(objects[idx], !!(p.shadow && p.shadow.shadowReceiveOnObjects))) return null;
     const casters = [];
     objects.forEach((o, j) => {
-      if (j === idx || !meshes[j]) return;
+      // A Cast-Off object (shadow.enabled === false) shadows no other object either (Auto / On cast, as on the ground).
+      if (j === idx || !meshes[j] || !Scene3D.Params.objectCastsShadow(o)) return;
       casters.push({ j, id: o.id, key: JSON.stringify([o.id, o.primitive, o.params, o.transform || null]) });
     });
     if (!casters.length) return null;
@@ -1165,7 +1166,7 @@
 
     const lights = p.lights || [];
     const suns = lights.filter((l) => l && l.type === 'directional' && l.castShadows !== false);
-    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
+    const shadowOn = !!(suns.length && p.ground && p.ground.enabled !== false && p.ground.receiveShadows !== false && Sh && suns.every((sun) => Sh.supports({ shadow: p.shadow, light: sun, lights, ground: p.ground, casters: objects })));
 
     // Occlusion buffer: several objects, a non-convex one, or a cast shadow to clip (contract §7).
     let occ = null;

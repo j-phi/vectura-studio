@@ -985,7 +985,7 @@
     const op = objParams || {};
     const byFace = gp.styleTable && gp.styleTable.byFace;
     return {
-      receiveShadow: !!(gp.shadow && gp.shadow.shadowReceiveOnObjects),
+      receiveShadow: (op.shadow && op.shadow.receive === true) || (!(op.shadow && op.shadow.receive === false) && !!(gp.shadow && gp.shadow.shadowReceiveOnObjects)),
       areaLight: (gp.lights || []).some((l) => l && l.type === 'area'),
       emissiveCoreBlank: !!(op.emissive && op.emissive.enabled && op.emissive.coreBlank),
       csgCarve: false,
@@ -1033,6 +1033,22 @@
     host.appendChild(row);
     return ctl;
   };
+
+  // Per-object / ground RECEIVE-shadow rows (objects plan C4). Help is one sentence, on the row's hover title.
+  const RECEIVE_OBJECT_HELP = 'Whether shadows from other objects land on this one. Follow scene uses the scene\'s "Shadows land on objects" setting; On or Off overrides it for this object.';
+  const RECEIVE_GROUND_HELP = 'Whether the ground takes the cast shadows of the objects above it; Off leaves the floor bare.';
+  const setRowHelp = (ctl, text) => { if (ctl && ctl.parentNode) ctl.parentNode.title = text; };
+  const receiveSegOptions = () => [{ value: 'inherit', label: 'Follow scene' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
+  const receiveValueOf = (obj) => (obj && obj.shadow && obj.shadow.receive === false ? 'off'
+    : (obj && obj.shadow && obj.shadow.receive === true ? 'on' : 'inherit'));
+  // key written only when non-null, so an untouched object stays byte-identical on disk
+  const writeObjectReceive = (obj, v) => {
+    if (!obj.shadow || typeof obj.shadow !== 'object') obj.shadow = { enabled: null };
+    if (v === 'on') obj.shadow.receive = true;
+    else if (v === 'off') obj.shadow.receive = false;
+    else delete obj.shadow.receive;
+  };
+  const writeGroundReceive = (g, v) => { if (v === 'off') g.receiveShadows = false; else delete g.receiveShadows; };
 
   // fs-m2 Job 1 — every Style-tab control commits through a full re-render
   // (CONTRACT C: a whole-style write always rebuilds the row list, since a
@@ -2476,6 +2492,16 @@
           });
         },
       }));
+
+      // Receive shadows (Follow scene / On / Off): shadows from OTHER objects landing on this one.
+      const recvCtl = labeledRow(host, 'Receive shadows');
+      setRowHelp(recvCtl, RECEIVE_OBJECT_HELP);
+      comps.push(UI.SegCtrl(recvCtl, {
+        options: receiveSegOptions(),
+        value: receiveValueOf(params),
+        ariaLabel: 'Object receives shadows',
+        onChange: (v) => { commit(() => { writeObjectReceive(params, v); }); },
+      }));
     };
 
     let renderStyle = () => {};
@@ -3143,6 +3169,14 @@
       value: p.enabled === false ? 'off' : 'on',
       ariaLabel: 'Ground enabled',
       onChange: (v) => { commit(() => { p.enabled = v === 'on'; }); },
+    }));
+    const gRecvCtl = labeledRow(host, 'Receives shadows');
+    setRowHelp(gRecvCtl, RECEIVE_GROUND_HELP);
+    comps.push(UI.SegCtrl(gRecvCtl, {
+      options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+      value: p.receiveShadows === false ? 'off' : 'on',
+      ariaLabel: 'Ground receives shadows',
+      onChange: (v) => { commit(() => { writeGroundReceive(p, v); }); },
     }));
     groundSizeControls(host, comps, p, { commit, liveSlider }, () => {
       const group = sceneGroupOf(ui, layer);
@@ -4956,6 +4990,16 @@
         note.textContent = 'Ground plane — style it from the Style tab (pen, hatch, wireframe).';
         inspectorHost.appendChild(note);
         if (!params.ground || typeof params.ground !== 'object') params.ground = { enabled: true };
+        const gRecvHost = document.createElement('div');
+        inspectorHost.appendChild(gRecvHost);
+        const gRecvCtl = labeledRow(gRecvHost, 'Receives shadows');
+        setRowHelp(gRecvCtl, RECEIVE_GROUND_HELP);
+        inspectorComps.push(UI.SegCtrl(gRecvCtl, {
+          options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+          value: params.ground.receiveShadows === false ? 'off' : 'on',
+          ariaLabel: 'Ground receives shadows',
+          onChange: (v) => { commit(() => { writeGroundReceive(params.ground, v); }); },
+        }));
         groundSizeControls(inspectorHost, inspectorComps, params.ground, { commit, liveSlider }, () => {
           const engine = ui.app && ui.app.engine;
           const Pm = P3();
@@ -5192,6 +5236,25 @@
             obj.shadow.enabled = v === 'on' ? true : (v === 'off' ? false : null);
           });
         },
+      }));
+
+      // Receive shadows (Follow scene / On / Off), beside Cast shadow.
+      const recvRow = document.createElement('div');
+      recvRow.className = 'vs3-row';
+      const recvLbl = document.createElement('label');
+      recvLbl.className = 'vs3-lbl';
+      recvLbl.textContent = 'Receive shadows';
+      recvRow.appendChild(recvLbl);
+      const recvHost = document.createElement('div');
+      recvHost.className = 'vs3-ctl';
+      recvRow.appendChild(recvHost);
+      recvRow.title = RECEIVE_OBJECT_HELP;
+      inspectorHost.appendChild(recvRow);
+      inspectorComps.push(UI.SegCtrl(recvHost, {
+        options: receiveSegOptions(),
+        value: receiveValueOf(obj),
+        ariaLabel: 'Object receives shadows',
+        onChange: (v) => { commit(() => { writeObjectReceive(obj, v); }); },
       }));
 
       // ── Emissive (Phase 7 — the sixth light type). An emissive object glows
