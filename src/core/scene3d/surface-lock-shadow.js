@@ -274,13 +274,13 @@
   };
 
   // Prepare one caster for a light direction d (unit, d.y < 0): footprint, contact set and throw length.
-  const prepareCaster = (c, d) => {
+  const prepareCaster = (c, d, gy = 0) => {
     if (!c) return null;
     const shape = c.shape || (c.points ? 'hull' : (c.center && Number.isFinite(c.radius) ? 'sphere' : null));
     if (shape === 'sphere') {
       const C = c.center; const r = finite(c.radius, 0);
       if (!C || !(r > 1e-9) || !Number.isFinite(C.x) || !Number.isFinite(C.y) || !Number.isFinite(C.z)) return null;
-      const t = C.y / d.y; // <= 0 for a caster above the ground
+      const t = (C.y - gy) / d.y; // <= 0 for a caster above the ground
       const cx = C.x - t * d.x; const cz = C.z - t * d.z; // footprint centre
       const hl = Math.hypot(d.x, d.z);
       const hx = hl > 1e-9 ? d.x / hl : 1; const hz = hl > 1e-9 ? d.z / hl : 0; // throw direction
@@ -295,8 +295,8 @@
       for (let i = 0; i < pts.length; i += 1) {
         const P = pts[i];
         if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y) || !Number.isFinite(P.z)) continue;
-        if (P.y < -1e-9) continue; // a vertex under the receiver is dropped (pose mode does the same)
-        const t = P.y / d.y;
+        if (P.y - gy < -1e-9) continue; // a vertex under the receiver is dropped (pose mode does the same)
+        const t = (P.y - gy) / d.y;
         proj.push({ x: P.x - t * d.x, y: 0, z: P.z - t * d.z });
         nad.push({ x: P.x, y: 0, z: P.z });
       }
@@ -417,7 +417,7 @@
   };
 
   // ── pose projection (contract §4, exactly Geometry3D.rotatePoint + projectPoint) ─────────────────
-  const makeProjector = (pose) => {
+  const makeProjector = (pose, gy = 0) => {
     const G3 = Vectura.Geometry3D;
     const cam = pose && pose.cam;
     if (!G3 || !cam || typeof G3.rotatePoint !== 'function' || typeof G3.projectPoint !== 'function') return null;
@@ -429,7 +429,7 @@
     };
     if (persp) { opts.focal = finite(cam.focal, 0); opts.cameraDist = finite(cam.dist != null ? cam.dist : cam.cameraDist, 0); }
     return (x, z) => {
-      const c = G3.rotatePoint({ x, y: 0, z }, ang);
+      const c = G3.rotatePoint({ x, y: gy, z }, ang);
       const p = G3.projectPoint(c, opts);
       if (!p || p.behind || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
       return p;
@@ -450,16 +450,17 @@
   // ── frame ────────────────────────────────────────────────────────────────────
   const EMPTY = () => ({ world: new Float64Array(0), runs: [] });
 
-  const frameShadow = (hatch, casters, lightDirWorld, pose) => {
+  const frameShadow = (hatch, casters, lightDirWorld, pose, opts) => {
+    const gy = finite(opts && opts.groundY, 0); // floor height: the receiving plane is y = gy (0 => byte-identical)
     sync();
     if (!hatch || !hatch.count || !Array.isArray(casters) || !casters.length) return EMPTY();
     const d = lightDirWorld ? normalize3(lightDirWorld) : null;
     if (!d || Math.abs(d.y) < TUNE.MIN_ABS_DY) return EMPTY();
     const prepared = [];
-    for (let i = 0; i < casters.length; i += 1) { const pc = prepareCaster(casters[i], d); if (pc) prepared.push(pc); }
+    for (let i = 0; i < casters.length; i += 1) { const pc = prepareCaster(casters[i], d, gy); if (pc) prepared.push(pc); }
     if (!prepared.length) return EMPTY();
 
-    const project = pose && pose.cam ? makeProjector(pose) : null;
+    const project = pose && pose.cam ? makeProjector(pose, gy) : null;
     // Thinning factor c in (0, 1]: 1 when no pose is given (the full baked set).
     // The baked set is hatch.subdiv x finer than the pose pitch, so the no-pose / top-down full set is every subdiv-th line.
     const sub = hatch.subdiv || 1;

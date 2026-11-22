@@ -128,6 +128,25 @@ describe('surface lock ground shadow', () => {
     ratios.forEach((r) => { expect(Math.abs(r.ratio - 1)).toBeLessThan(0.15); });
   });
 
+  it('U3: opts.groundY shifts the receiving plane: footprints are those of the caster measured above the floor', () => {
+    const h = bake();
+    const gy = 20;
+    const base = SH.frameShadow(h, [SPHERE], dir, poseFor(30));
+    const up = SH.frameShadow(h, [{ ...SPHERE, center: { x: 0, y: 25 + gy, z: 0 } }], dir, poseFor(30), { groundY: gy });
+    expect(up.world.length).toBe(base.world.length);
+    expect(up.world.length).toBeGreaterThan(0);
+    for (let i = 0; i < base.world.length; i += 1) expect(up.world[i]).toBeCloseTo(base.world[i], 6);
+    // hull caster: same invariance, and the projected points sit on the raised plane (a world translate in y)
+    const hb = SH.frameShadow(h, [boxHull(10, 20, 5, 15)], dir, poseFor(30));
+    const hu = SH.frameShadow(h, [boxHull(10, 20 + gy, 5, 15)], dir, poseFor(30), { groundY: gy });
+    expect(hu.world.length).toBe(hb.world.length);
+    for (let i = 0; i < hb.world.length; i += 1) expect(hu.world[i]).toBeCloseTo(hb.world[i], 6);
+    // projection: raised plane is projected at world y = gy, so screen y differs from the y = 0 plane
+    const lo = SH.frameShadow(h, [SPHERE], dir, poseFor(30), { groundY: 0 });
+    expect(JSON.stringify(lo.runs)).toBe(JSON.stringify(base.runs)); // groundY 0 byte-identical
+    expect(JSON.stringify(up.runs)).not.toBe(JSON.stringify(base.runs));
+  });
+
   it('F-S1: every projected run point carries the camera depth z (so a caller can occlusion-clip it)', () => {
     const h = bake();
     const pose = poseFor(40);

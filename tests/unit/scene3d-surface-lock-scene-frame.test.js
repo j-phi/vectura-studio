@@ -379,6 +379,47 @@ describe('surface lock Level S (sceneFrame wired into generateScene)', () => {
       expect(Math.abs(totalLen(S) / totalLen(F) - 1)).toBeLessThan(0.15);
     });
 
+    // U3: the locked path follows the floor height ground.y (the pose path already does).
+    const withGround = (gy, extra = {}) => {
+      const s = build('ladder', extra);
+      const g = s.eng.getLayerDescendants(s.gid).find((l) => l && l.type === 'sceneGround3d');
+      if (gy) g.params.y = gy;
+      s.setPose({ camYaw: -30, camPitch: 20 });
+      return s;
+    };
+    it('U3: a raised floor (ground.y = 20): the locked shadow and ground outline match the pose path within 0.15 mm', () => {
+      const s = withGround(20);
+      // rest the sphere on the raised floor (a sphere cutting through the floor is a pose-path-specific case, not this contract)
+      const o0 = s.objectsOf()[0]; o0.params.transform = { ...(o0.params.transform || {}), y: 45 };
+      const paths = s.composeFull();
+      const S = shadowsOf(paths); const F = withoutLevelS(() => shadowsOf(s.composeFull()));
+      expect(F.length).toBeGreaterThan(0);
+      expect(Math.abs(totalLen(S) / totalLen(F) - 1)).toBeLessThan(0.15);
+      const bb = (ps) => { const b = [Infinity, Infinity, -Infinity, -Infinity]; ps.forEach((p) => p.forEach((q) => { b[0] = Math.min(b[0], q.x); b[1] = Math.min(b[1], q.y); b[2] = Math.max(b[2], q.x); b[3] = Math.max(b[3], q.y); })); return b; };
+      const sb = bb(S); const fb = bb(F);
+      sb.forEach((v, i) => expect(Math.abs(v - fb[i])).toBeLessThan(1.5));
+      const GS = edgesOf(paths, 'ground'); const GF = withoutLevelS(() => edgesOf(s.composeFull(), 'ground'));
+      expect(Math.abs(totalLen(GS) - totalLen(GF))).toBeLessThan(0.15);
+      const gb = bb(GS); const gfb = bb(GF);
+      gb.forEach((v, i) => expect(Math.abs(v - gfb[i])).toBeLessThan(0.15));
+      // and it really moved vs the y = 0 floor
+      const base = withGround(0).composeFull();
+      expect(Math.abs(bb(edgesOf(base, 'ground'))[1] - gb[1])).toBeGreaterThan(1);
+    });
+    it('U3: ground.y = 0 (absent) is byte-identical to before; a Y drag rebakes nothing', () => {
+      const s = withGround(0);
+      const a = JSON.stringify(s.composeFull());
+      const g = s.eng.getLayerDescendants(s.gid).find((l) => l && l.type === 'sceneGround3d');
+      g.params.y = 20; s.composeFull(); // warm at the new height
+      SL.resetStats();
+      const hits0 = SL.stats.bakeMisses;
+      [5, 10, 15, 20, 25].forEach((y) => { g.params.y = y; s.composeFull(); });
+      expect(SL.stats.bakeMisses - hits0).toBe(0);
+      expect(SL.stats.bakeHits).toBeGreaterThan(0); // the object bakes are served from cache on every Y step
+      g.params.y = 0;
+      expect(JSON.stringify(s.composeFull())).toBe(a);
+    });
+
     it('an enlarged ground x3: the ground outline equals Level F within 0.15 mm (I3)', () => {
       const s = build('ladder');
       const g = s.eng.getLayerDescendants(s.gid).find((l) => l && l.type === 'sceneGround3d');

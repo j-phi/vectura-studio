@@ -1032,7 +1032,8 @@
     const focal = persp ? o.focal : 0; const camDist = persp ? num(o.cameraDist, 0) : 0;
     const span = Math.max(width, height) * 0.75;
     const hx = span * Math.max(0, num(g.scaleX, 1)); const hz = span * Math.max(0, num(g.scaleZ, 1));
-    let verts = [{ x: -hx, y: 0, z: hz }, { x: hx, y: 0, z: hz }, { x: hx, y: 0, z: -hz }, { x: -hx, y: 0, z: -hz }];
+    const gy = num(g.y, 0);
+    let verts = [{ x: -hx, y: gy, z: hz }, { x: hx, y: gy, z: hz }, { x: hx, y: gy, z: -hz }, { x: -hx, y: gy, z: -hz }];
     const clip = (vs, keep) => {
       const vals = vs.map((pt) => keep(G3.rotatePoint(pt, ang)));
       if (vals.every((d) => d >= 0)) return vs;
@@ -1200,7 +1201,7 @@
       // Pose casts one footprint per casting sun; the ground hatch bake is light-free and shared.
       suns.forEach((sun, si) => {
         const dir = (si === 0 && ctx.lightDirWorld) || (L && L.lightWorldDir ? L.lightWorldDir(sun) : { x: 0, y: -1, z: 0 });
-        const res = Sh.frameShadow(hatch, casters, dir, camPose);
+        const res = Sh.frameShadow(hatch, casters, dir, camPose, { groundY: num(p.ground.y, 0) });
         if (res && res.runs && res.runs.length) {
           const out = [];
           res.runs.forEach((r) => clipLine(r.pts, GROUND_SEG, false).forEach((q) => out.push(q)));
