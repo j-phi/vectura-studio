@@ -78,3 +78,32 @@ describe('BUG 3 — scene gizmo owner resolution', () => {
     expect(renderer._sceneRotationOwner(shape)).toBeNull();
   });
 });
+
+describe('U6 — gizmo for an operand with no ink of its own', () => {
+  let runtime; let V;
+  beforeAll(async () => { runtime = await loadVecturaRuntime({ includeRenderer: true }); V = runtime.window.Vectura; });
+  afterAll(() => runtime.cleanup());
+
+  test('a fully carved operand (no ink) still gets move/rotate/scale handles at its projected origin', () => {
+    const engine = new V.VectorEngine();
+    engine.layers = [];
+    engine.generate = () => {};
+    const gid = engine.addSceneTree();
+    const group = engine.getLayerById(gid);
+    const child = engine.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    child.params.transform = { ...(child.params.transform || {}), x: 10, y: 5, z: -8 };
+    const renderer = new V.Renderer('main-canvas', engine);
+    renderer.app = { pushHistory: () => {}, render: () => {}, history: [{}, {}] };
+    renderer._sceneHelpersVisible = () => true;
+    renderer.getSceneSelection = () => ({ mode: 'object', objectIds: [child.id] });
+    renderer.getInteractionPaths = () => []; // carved away: no ink for this operand
+    const giz = renderer.getSceneObjectGizmo(group);
+    expect(giz).toBeTruthy();
+    expect(giz.objId).toBe(child.id);
+    expect(Number.isFinite(giz.center.x) && Number.isFinite(giz.center.y)).toBe(true);
+    expect(giz.axes.map((a) => a.key)).toEqual(['x', 'y', 'z']);
+    giz.axes.forEach((a) => {
+      expect(a.tip).toBeTruthy(); expect(a.scaleBox).toBeTruthy(); expect(a.ring.length).toBeGreaterThan(8);
+    });
+  });
+});

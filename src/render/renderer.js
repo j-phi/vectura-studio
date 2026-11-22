@@ -13207,8 +13207,16 @@
       if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds) || sel.objectIds.length !== 1) return null;
       const objId = sel.objectIds[0];
       if (!objId || objId === 'ground') return null;
-      const center = this._sceneObjectPathCenter(target, objId);
-      if (!center) return null;
+      let center = this._sceneObjectPathCenter(target, objId);
+      if (!center) {
+        // A boolean operand that is fully carved away draws none of its own lines, so there is no
+        // ink to centre on: project its transform origin instead so it keeps a gizmo.
+        const objDef = this._sceneObjectById(target, objId);
+        const xf = objDef && objDef.transform;
+        const pt = xf ? this._sceneProjectWorld(target, { x: Number(xf.x) || 0, y: Number(xf.y) || 0, z: Number(xf.z) || 0 }) : null;
+        if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+        center = { x: pt.x, y: pt.y };
+      }
       const cam = (target.params && target.params.camera) || {};
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const R = 60 * unit;         // move-arrow length (doc units → constant on-screen)
