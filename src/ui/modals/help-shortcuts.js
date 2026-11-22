@@ -159,6 +159,13 @@
         <p>The Scene's own <strong>Transform</strong> (Pos X/Y, Scale X/Y, Rotation) moves, scales and turns the whole
         finished drawing about the centre of the page, like any other layer. A single object, light or the ground is
         placed from the Scene panel or the canvas handles, so its Transform rows are hidden.</p>
+        <p><strong>The ground.</strong> Select the ground (click it, or its row in the layer list) and it shows handles
+        on the canvas: drag a <em>corner</em> to resize it in proportion (hold Shift to resize each side alone), an
+        <em>edge</em> diamond to change its width or depth, and the purple <em>Y arrow</em> to raise or lower the floor
+        (Alt drags finely, and it snaps to 0). The centre gizmo stays inside the view, so the controls remain within reach
+        when the floor's corners are off screen. Once the ground is selected, dragging its body also moves its height.
+        Esc cancels a drag, and each drag is one undo step. Objects stay where they are; press D (Drop to ground) to
+        rest them on the new floor.</p>
         <p><strong>Shadow look</strong> is the Fill Style row in the Shadow section. It picks the texture drawn inside cast
         shadows. It offers the sub-controls of each family that look different on a flat footprint.</p>
         <p><strong>Artistic controls</strong> are all off until you move them:</p>

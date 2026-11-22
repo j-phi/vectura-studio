@@ -1842,7 +1842,8 @@
       const penOverride = (typeof bag.shadowPenId === 'string' && bag.shadowPenId) ? bag.shadowPenId : null;
       const casterPen = ids.length ? ((resolveStyle(ids[0], null) || {}).penId || null) : null;
       // Picking polygon: the projected footprint (one caster) or the hull of all footprints.
-      const proj = (ring) => ring.map((q) => SceneM.projectWorldPoint({ x: q.x, y: 0, z: q.z }, p.camera, sb))
+      const gy = finite((p.ground || {}).y, 0);
+      const proj = (ring) => ring.map((q) => SceneM.projectWorldPoint({ x: q.x, y: gy, z: q.z }, p.camera, sb))
         .filter((q) => q && Number.isFinite(q.x)).map((q) => ({ x: q.x, y: q.y }));
       const fps = ((info && info.footprints) || []).map(proj).filter((r) => r.length >= 3);
       let pick = fps.length === 1 ? fps[0] : null;
@@ -1851,7 +1852,7 @@
         const all = []; fps.forEach((r) => r.forEach((q) => all.push(q)));
         pick = Sh && typeof Sh.convexHull === 'function' ? Sh.convexHull(all) : all;
       }
-      const gz = SceneM.projectWorldPoint({ x: 0, y: 0, z: 0 }, p.camera, sb);
+      const gz = SceneM.projectWorldPoint({ x: 0, y: gy, z: 0 }, p.camera, sb);
       const meta = {
         algorithm: 'scene3d',
         kind: 'sceneFill',

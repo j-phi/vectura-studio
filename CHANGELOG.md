@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: 3D Scene ground height (Y) and on-canvas ground handles (owner request "add a Y slider for ground and be sure that the user can intuitively and easily resize and move it when it's selected")
+- The floor has a **height** (`ground.y`, world mm, -200 to 200, default 0). Objects stay where they are; the floor, its edge ink and every shadow cast onto it move (directional and point/spot lights both cross the floor at its height). 0 is the old plane byte for byte: the key is only written when nonzero, so no SCENE_VERSION step and no change to existing files.
+- Select the ground (canvas or tree) and it shows handles, drawn above the paper edge so a floor larger than the artboard stays reachable: corner squares resize it proportionally (Shift = each axis alone), edge diamonds resize width or depth (proportional while the lock is on, Shift inverts), a **Y arrow** raises and lowers it along the view's up direction (Alt = fine, snaps to 0), and a centre gizmo with the arrow and width/depth boxes pins inside the view so it is reachable when the corners are off-screen. Once the ground is selected, dragging its body also moves Y. Escape cancels, one undo step per drag, touch uses a bigger reach. Drags use the draft regen path (no surface-lock rebake until release).
+- **Drop to ground** (D) rests objects on the raised or lowered floor. A raised floor does not hide object parts below it (they still draw, and cast no shadow).
+
 ### Fixed: 3D object panel Scale X/Y/Z, uniform Scale keeps per-axis shape (owner request "all objects must have rotation, scale and move tools")
 - The tree object panel now has Scale X/Y/Z rows (same range and labels as the scene inspector), so every primitive has Move X/Y/Z, Yaw/Pitch/Roll and per-axis Scale there.
 - Dragging the uniform Scale slider used to delete `transform.sx/sy/sz`, silently wiping a per-axis shape set with the canvas gizmo. It now multiplies the per-axis factors by the same ratio (a 1:2:1 object stays 1:2:1) in both the tree panel and the scene inspector; a uniform object stays uniform. Sibling Scale rows refresh after a commit.

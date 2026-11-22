@@ -203,6 +203,27 @@ describe('Scene3D panel — buildControls dispatch', () => {
     });
   });
 
+  test('sceneGround3d leaf panel: a Height (Y) slider writes leaf params.y and mirrors the ground to the canvas selection', () => {
+    const gid = app.engine.addLayer('scene3d');
+    const leaf = app.engine.getLayerChildren(gid).find((l) => l.type === 'sceneGround3d');
+    expect(leaf).toBeTruthy();
+    const setSel = vi.fn();
+    const r = app.renderer;
+    const orig = r.setSceneSelection;
+    r.setSceneSelection = (sel, opts) => { setSel(sel, opts); return orig && orig.call(r, sel, opts); };
+    app.engine.activeLayerId = leaf.id;
+    app.ui.buildControls();
+    r.setSceneSelection = orig;
+    const host = controlsHost();
+    const y = host.querySelector('input.ctrl-slider[aria-label="Ground height"]');
+    expect(y).toBeTruthy();
+    expect(setSel.mock.calls.some(([sel]) => sel && sel.objectIds && sel.objectIds[0] === 'ground')).toBe(true);
+    y.value = '-30';
+    y.dispatchEvent(new window.Event('input', { bubbles: true }));
+    y.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(leaf.params.y).toBe(-30);
+  });
+
   test('(c) selecting an object3d CHILD routes the Inspector to that layer and edits re-render', () => {
     const gid = app.engine.addLayer('scene3d');
     const child = app.engine.getLayerChildren(gid).find((l) => l.type === 'object3d');
@@ -1111,6 +1132,24 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(layer.params.ground.enabled).not.toBe(false);
     fire(ground.querySelector('.vs3-tree-vis'), 'click');
     expect(layer.params.ground.enabled).toBe(false);
+  });
+
+  test('monolith ground inspector: a Height (Y) slider sits outside the linked size block and writes ground.y (key removed at 0)', () => {
+    const { container, layer } = mount();
+    fire(container.querySelector('.vs3-tree-ground'), 'click');
+    const y = container.querySelector('input.ctrl-slider[aria-label="Ground height"]');
+    expect(y).toBeTruthy();
+    expect(y.closest('.vs3-linked')).toBeNull();
+    expect(container.querySelectorAll('.vs3-linked input.ctrl-slider').length).toBe(2);
+    y.value = '25';
+    fire(y, 'input');
+    fire(y, 'change');
+    expect(layer.params.ground.y).toBe(25);
+    const y2 = container.querySelector('input.ctrl-slider[aria-label="Ground height"]');
+    y2.value = '0';
+    fire(y2, 'input');
+    fire(y2, 'change');
+    expect('y' in layer.params.ground).toBe(false);
   });
 
   test('curved-primitive inspector exposes dimension controls (torus: Diameter + Thickness) that write linked params', () => {
