@@ -50,7 +50,7 @@
     JIT_FRAC: 0.2,          // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch (keeps the 0.8 bar)
     CAP_ORD_MAX: 4095,      // A21: ruling ordinal range of the cap word (low 12 bits)
     CAP_RHO_STEPS: 8,       // A21: local pitch ratio resolution of the cap word (high 4 bits, 1/8 steps, 15/8 max)
-    V2_DUTY_SEP: 1.08,       // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
+    V2_DUTY_SEP: 1.0,        // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
     V2_DUTY_GUARD_PEN: 1.05, // tone model v2 dutyConst: crowd guard, in pens (ink width + a hair: lines may touch, never overlap)
     V2_DASH_GROUP_MM: 12,    // tone model v2 dutyConst: cells keyed in groups this long (screen mm)
     V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
