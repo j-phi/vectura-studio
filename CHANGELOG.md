@@ -6,7 +6,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-### Scene3D light realism (v1.5.28)
+### Scene3D light realism (v1.5.29)
 
 One release: a realistic light model whose fills lock to the surface, a Shading control, a movable ground, per-object shadow receiving and combined-shape transforms. Saved scenes and presets keep the legacy model byte for byte, and every new key is written only when it is off its default.
 

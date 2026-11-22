@@ -757,7 +757,7 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### 1.5.28 - Scene3D light realism
+### 1.5.29 - Scene3D light realism
 - **Realistic light for new 3D Scenes.** Ambient and bounce light, no flat lit floor, a small bare-paper glint and a front key light. Surface-locked and pose fills share one model, so dragging matches the export. A darker, even shadow (Duty Cycle included). Saved scenes keep their old look.
 - **Shading slider.** The scene Tone section's **Shading** (0-100, default 50) sets how dark the shading gets; Density still sets how many lines are drawn. The light panel also tells you whether the key light is in front of or behind the subject.
 - **Movable ground.** A ground **Height (Y)** slider plus on-canvas handles (corners, edges, a Y arrow, body drag); shadows follow the floor and Drop to ground rests objects on it.
