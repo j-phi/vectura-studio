@@ -71,7 +71,7 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, prepassProjected: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
     bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
@@ -447,8 +447,58 @@
     runLasts.set(ms, o); return o;
   };
 
+  // U1a back-face block skip (orthographic only). Runs are grouped, in bake order, into blocks of about BLOCK_VERTS vertices; each
+  // block keeps the cone of its vertex normals (unit axis m, half-angle a >= every angle(n, m)). Orthographic facing is n . v with
+  // v the one view direction in object space, so when angle(v, m) - a > 90 deg + margin every vertex of the block has facing < 0:
+  // every run in it would be culled whole (frameSet counts it culledFacing and draws nothing), so the prepass skips its vertices.
+  // Exact, never approximate: the margin is the slack for float rounding. `blockSkip` is the test hook (tests move marginRad to
+  // prove an over-eager skip changes the output; enabled=false is the pre-U1a path).
+  const BLOCK_VERTS = 8;
+  const blockSkip = { enabled: true, marginRad: 1e-6 };
+  const blockCones = new WeakMap();
+  const blockConesOf = (ms) => {
+    let c = blockCones.get(ms);
+    if (c && c.nv === ms.vertexCount && c.nr === ms.runCount) return c;
+    const nr = ms.runCount; const rs = ms.runStart; const nrm = decodedNormals(ms);
+    const runBlock = new Int32Array(nr); const bRun0 = []; const bV0 = []; const bV1 = []; const ax = []; const ay = []; const az = []; const half = [];
+    let r = 0;
+    while (r < nr) {
+      const b = bV0.length; const v0 = rs[r]; let r1 = r; let v1 = v0;
+      while (r1 < nr && (r1 === r || v1 - v0 < BLOCK_VERTS)) { runBlock[r1] = b; v1 = rs[r1 + 1]; r1 += 1; }
+      let sx = 0; let sy = 0; let sz = 0;
+      for (let v = v0; v < v1; v++) { sx += nrm[3 * v]; sy += nrm[3 * v + 1]; sz += nrm[3 * v + 2]; }
+      const sl = Math.sqrt(sx * sx + sy * sy + sz * sz);
+      let mx = 0; let my = 0; let mz = 0; let h = Math.PI; // a zero sum (normals cancel) keeps the block whole: half-angle pi never skips
+      if (sl > 1e-9) {
+        mx = sx / sl; my = sy / sl; mz = sz / sl; let mn = 1;
+        for (let v = v0; v < v1; v++) { const d = mx * nrm[3 * v] + my * nrm[3 * v + 1] + mz * nrm[3 * v + 2]; if (d < mn) mn = d; }
+        h = Math.acos(Math.max(-1, Math.min(1, mn))) + 1e-6;
+      }
+      bRun0.push(r); bV0.push(v0); bV1.push(v1); ax.push(mx); ay.push(my); az.push(mz); half.push(h);
+      r = r1;
+    }
+    c = { nv: ms.vertexCount, nr, runBlock, count: bV0.length, v0: Int32Array.from(bV0), v1: Int32Array.from(bV1),
+      ax: Float64Array.from(ax), ay: Float64Array.from(ay), az: Float64Array.from(az), half: Float64Array.from(half), cosHalf: Float64Array.from(half, Math.cos), sinHalf: Float64Array.from(half, Math.sin), skip: new Uint8Array(bV0.length) };
+    blockCones.set(ms, c);
+    return c;
+  };
+  // Marks the blocks that are wholly back-facing for this frame; returns the cone record (skip flags in .skip) or null.
+  const markBackBlocks = (ms, F) => {
+    if (F.persp || !blockSkip.enabled || !(ms.runCount > 0)) return null;
+    const c = blockConesOf(ms); const A = F.A; const lim = Math.PI / 2 + blockSkip.marginRad;
+    const vx = A[6]; const vy = A[7]; const vz = A[8]; const skip = c.skip;
+    // angle(v, m) - half > lim  <=>  v . m < cos(half + lim) (cosine is decreasing on [0, pi]); cos(half + lim) comes from the per-block
+    // cos/sin of the half-angle, so a frame costs no trigonometry per block.
+    const cl = Math.cos(lim); const sl = Math.sin(lim); const hc = c.cosHalf; const hs = c.sinHalf; const hh = c.half;
+    for (let b = 0; b < c.count; b++) {
+      const d = vx * c.ax[b] + vy * c.ay[b] + vz * c.az[b];
+      skip[b] = (hh[b] + lim < Math.PI && d < hc[b] * cl - hs[b] * sl) ? 1 : 0;
+    }
+    return c;
+  };
+
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
-  const prepass = (ms, F, view) => {
+  const prepass = (ms, F, view, blocks) => {
     const nv = ms.vertexCount; const pos = ms.positions; const nrm = decodedNormals(ms);
     const meta = ms.meta || {};
     const p0 = meta.p0; const gain = meta.gain || 2;
@@ -477,7 +527,12 @@
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
     const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
-    for (let v = 0; v < nv; v++) {
+    const nbk = blocks ? blocks.count : 1; let projected = 0;
+    for (let bi = 0; bi < nbk; bi++) {
+    let vs = 0; let ve = nv;
+    if (blocks) { if (blocks.skip[bi]) continue; vs = blocks.v0[bi]; ve = blocks.v1[bi]; } // a wholly back-facing block (U1a): its runs are culled whole by frameSet and never read these slots
+    projected += ve - vs;
+    for (let v = vs; v < ve; v++) {
       const px = pos[3 * v]; const py = pos[3 * v + 1]; const pz = pos[3 * v + 2];
       const nx = nrm[3 * v]; const ny = nrm[3 * v + 1]; const nz = nrm[3 * v + 2];
       const cx = a00 * px + a01 * py + a02 * pz + tx;
@@ -607,6 +662,8 @@
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
     }
+    }
+    stats.prepassProjected += projected;
     return undefined;
   };
 
@@ -616,39 +673,59 @@
   // result is deterministic and Level S == Level F). Grid of segments, cell = 2 x guardD.
   // The functions below are module level on purpose (H4): closures made per frame get a fresh feedback vector, so the hot guard code
   // re-warmed (and ran unoptimised) at the start of every pose.
-  const crowdKey = (ix, iy) => ix * 73856093 ^ iy * 19349663;
-  // true when the distance from (px, py) to the entry's segment is < guardD. The squared distance decides everywhere except
+  // U1b: the guard's segment store is typed arrays shared by every frame (no per-segment object, no Map of arrays). A segment is a
+  // row of SEGF (ax, ay, dx, dy, l2, x0, x1, y0, y1) and SEGI (fam, ord); the grid is a fixed hash table of list heads (CROWD_HASH
+  // cells) chained through CELL_SEG / CELL_NEXT. The hash is the original cell hash masked to the table, so two cells may share a
+  // head: that only adds candidates, and every candidate is still rejected by crowdCloser's box and distance test, so the answer
+  // (any kept segment of another ruling within guardD) is the same as with an exact-keyed map. crowdNear is order independent.
+  const CROWD_HASH = 1 << 15; const CROWD_MASK = CROWD_HASH - 1; const SEGW = 9;
+  let SEGF = new Float64Array(SEGW * 1024); let SEGI = new Int32Array(2 * 1024); let nSeg = 0;
+  let CELL_SEG = new Int32Array(4096); let CELL_NEXT = new Int32Array(4096); let nCell = 0;
+  const CELL_HEAD = new Int32Array(CROWD_HASH);
+  const crowdKey = (ix, iy) => (ix * 73856093 ^ iy * 19349663) & CROWD_MASK;
+  const growCrowd = () => {
+    if ((nSeg + 1) * SEGW > SEGF.length) { const f = new Float64Array(SEGF.length * 2); f.set(SEGF); SEGF = f; const i = new Int32Array(SEGI.length * 2); i.set(SEGI); SEGI = i; }
+    if (nCell + 1 > CELL_SEG.length) { const a = new Int32Array(CELL_SEG.length * 2); a.set(CELL_SEG); CELL_SEG = a; const n = new Int32Array(CELL_NEXT.length * 2); n.set(CELL_NEXT); CELL_NEXT = n; }
+  };
+  // true when the distance from (px, py) to segment e is < guardD. The squared distance decides everywhere except
   // within CROWD_EXACT_BAND of guardD, where Math.hypot (the original test) is evaluated, so the decision is unchanged.
   const crowdCloser = (st, px, py, e) => {
-    const pad = st.pad;
-    if (px < e.x0 - pad || px > e.x1 + pad || py < e.y0 - pad || py > e.y1 + pad) return false; // beyond guardD from the segment's box
-    const dx = e.dx; const dy = e.dy; const l2 = e.l2;
-    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - e.ax) * dx + (py - e.ay) * dy) / l2)) : 0;
-    const qx = px - e.ax - t * dx; const qy = py - e.ay - t * dy;
+    const pad = st.pad; const o = e * SEGW; const F = SEGF;
+    if (px < F[o + 5] - pad || px > F[o + 6] + pad || py < F[o + 7] - pad || py > F[o + 8] + pad) return false; // beyond guardD from the segment's box
+    const dx = F[o + 2]; const dy = F[o + 3]; const l2 = F[o + 4];
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - F[o]) * dx + (py - F[o + 1]) * dy) / l2)) : 0;
+    const qx = px - F[o] - t * dx; const qy = py - F[o + 1] - t * dy;
     const d2 = qx * qx + qy * qy;
     if (d2 < st.lo2) return true;
     if (d2 > st.hi2) return false;
     return Math.hypot(qx, qy) < st.guardD;
   };
   const crowdNear = (st, x, y, fam, ord) => {
-    const cell = st.cell; const grid = st.grid;
+    const cell = st.cell;
     const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-      const list = grid.get(crowdKey(ix + a, iy + b)); if (!list) continue;
-      for (let k = 0; k < list.length; k++) {
-        const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
+      for (let c = CELL_HEAD[crowdKey(ix + a, iy + b)] - 1; c >= 0; c = CELL_NEXT[c]) {
+        const e = CELL_SEG[c]; if (SEGI[2 * e] !== fam || SEGI[2 * e + 1] === ord) continue;
         if (crowdCloser(st, x, y, e)) return true;
       }
     }
     return false;
   };
   const crowdAdd = (st, ax, ay, bx, by, fam, ord) => {
-    const cell = st.cell; const grid = st.grid;
+    const cell = st.cell;
     const dx = bx - ax; const dy = by - ay;
-    const e = { ax, ay, bx, by, fam, ord, dx, dy, l2: dx * dx + dy * dy, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
+    growCrowd();
+    const e = nSeg++; const o = e * SEGW;
+    SEGF[o] = ax; SEGF[o + 1] = ay; SEGF[o + 2] = dx; SEGF[o + 3] = dy; SEGF[o + 4] = dx * dx + dy * dy;
+    SEGF[o + 5] = Math.min(ax, bx); SEGF[o + 6] = Math.max(ax, bx); SEGF[o + 7] = Math.min(ay, by); SEGF[o + 8] = Math.max(ay, by);
+    SEGI[2 * e] = fam; SEGI[2 * e + 1] = ord;
     const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
     const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
-    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = crowdKey(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) {
+      growCrowd();
+      const k = crowdKey(i, j); const c = nCell++;
+      CELL_SEG[c] = e; CELL_NEXT[c] = CELL_HEAD[k] - 1; CELL_HEAD[k] = c + 1; // heads hold index + 1 (0 = empty)
+    }
   };
   // Splits `subs` into the stretches that clear the guard (checked at the vertices), registers what is kept.
   const crowdFilter = (st, subs, fam, ord) => {
@@ -670,8 +747,9 @@
     return out2;
   };
   const makeCrowd = (guardD) => {
+    CELL_HEAD.fill(0); nSeg = 0; nCell = 0; // one guard at a time: a frameSet is synchronous and builds its guard from scratch
     const st = {
-      guardD, cell: Math.max(1e-6, 2 * guardD), grid: new Map(), pad: guardD * (1 + CROWD_EXACT_BAND),
+      guardD, cell: Math.max(1e-6, 2 * guardD), pad: guardD * (1 + CROWD_EXACT_BAND),
       lo2: guardD * guardD * (1 - CROWD_EXACT_BAND) * (1 - CROWD_EXACT_BAND), hi2: guardD * guardD * (1 + CROWD_EXACT_BAND) * (1 + CROWD_EXACT_BAND),
     };
     return { filter: (subs, fam, ord) => crowdFilter(st, subs, fam, ord) };
@@ -690,7 +768,8 @@
 
   const frameSet = (ms, F, view, out, acc) => {
     const MS = Scene3D.SurfaceLockMarkSet;
-    prepass(ms, F, view);
+    const blocks = markBackBlocks(ms, F);
+    prepass(ms, F, view, blocks);
     const meta = ms.meta || {};
     const gain = meta.gain || 2;
     const minMark = num(meta.minMarkMM, 0);
@@ -737,13 +816,12 @@
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
-      if (comp) {
-        const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
-        for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
-      }
-      // vertex counters
+      if (blocks && blocks.skip[blocks.runBlock[r]]) { acc.culledFacing += n; continue; }
+      // capCompensate scaling of the tone demand and the vertex counters share one pass (each vertex is independent)
+      const rq = comp ? (rcap[r] >> 12) / CAP_RHO_STEPS : 1;
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
+        if (comp) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const cq = c0 * rq; if (cq < 1) STE[i] *= cq; } }
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
@@ -1279,6 +1357,7 @@
     EXCLUSIONS,
     FRAMEABLE,
     stats,
+    blockSkip,
     resetStats,
     effectiveMarkSpace,
     explainMarkSpace,

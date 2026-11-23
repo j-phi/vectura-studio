@@ -12,10 +12,7 @@ const POSES = 30;
 const CASES = [
   { name: 'single sphere, default scene', budget: 8, opts: { kind: 'sphere' } },
   { name: 'two objects (sphere + box), shadows on objects', budget: 16, opts: { kind: 'two' }, receive: true },
-  // Duty Cycle sphere (budget 12 ms) is deliberately NOT gated yet: it measures 61-78 ms against a 60 ms gate (12 x 5) on the
-  // shared machine, so the case would flake. Owner decision 2026-11-22: merge the H4 speed-up now, leave Duty Cycle ungated,
-  // and take it up in a dedicated follow-up pass (plans.md, "Duty Cycle per-pose speed"). Add the case back here when it
-  // has real margin; do not add it with a looser budget.
+  { name: 'Duty Cycle sphere', budget: 12, opts: { kind: 'sphere', style: { toneLaw: 'dutyConst' } } },
 ];
 
 describe('surface lock Level S per-pose frame budget (H4)', () => {
