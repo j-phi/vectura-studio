@@ -10,6 +10,7 @@ const {
 const {
   REL_PATH, ROOT_DIR, BOUNDS, SUN, clone, CELLS, CRUMB_MARK_LAWS, B7_CELLS, buildSceneParams, loadHeadSource, patchOne, HOOK_NEEDLE, HOOK_REPL, buildHookedSource, renderCellHooked, buildBcSource, buildScene3dSource, SCENE3D_REL, md5, plain, pathsMd5, siteKey, WIN_L, WIN_R, STRIP_L, STRIP_R,
 } = require('./scene3d-mktick-spacing-tone-shared');
+const { withV2Hooks, withV2Capture, bareAreaInked, meanDensIn } = require('./scene3d-mktick-v2-tone');
 
 const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
 // T2-8b-5b: the rim-strip mutants render only torus/hatch + cone/hatch (both rigs, d=50).
@@ -36,16 +37,19 @@ const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
 // their assertions need; no live Window/App/runtime survives into the next variant.
 // `cells` narrows a kind to the cells its caller actually reads (R-29: a
 // mutant rendered on all 12 cells but asserted on one is dead cost).
-const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', 'noflag'], cells = {} } = {}) => {
+const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', 'noflag'], cells = {}, toneModel = 'legacy' } = {}) => {
+    const isV2 = toneModel === 'v2';
+    const wrapSrc = (src) => (isV2 ? withV2Hooks(src) : src); // v2 only: capture hooks for the inked-domain metrics
     for (const kind of KINDS) {
       const runtime = await loadScene3dAuditRuntime({ scriptOverrides: kind === 'noflag'
-        ? { [REL_PATH]: buildBcSource(null), [SCENE3D_REL]: buildScene3dSource(kind) }
-        : { [REL_PATH]: buildBcSource(kind === 'ship' ? null : kind) } });
+        ? { [REL_PATH]: wrapSrc(buildBcSource(null)), [SCENE3D_REL]: buildScene3dSource(kind) }
+        : { [REL_PATH]: wrapSrc(buildBcSource(kind === 'ship' ? null : kind)) } });
       R[kind] = {};
       const render = (d, rig, primitive, mapper) => {
         const recs = [];
         runtime.window.__T28B_REC__ = (rec) => recs.push(rec);
-        const r = renderCellHooked(runtime, { primitive, mapper, rig, fillDensity: d });
+        const cap = isV2 ? withV2Capture(runtime, () => renderCellHooked(runtime, { primitive, mapper, rig, fillDensity: d, toneModel })) : null;
+        const r = cap ? cap.out : renderCellHooked(runtime, { primitive, mapper, rig, fillDensity: d, toneModel });
         delete runtime.window.__T28B_REC__;
         // Copy the final traced geometry, then release the live runtime at the
         // end of this mutant's cell set before the next one is constructed.
@@ -60,7 +64,34 @@ const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', '
         const fill = bareRaster ? holeComponents(bareRaster, recs, { T: 0.5, hiI: 2 / 3, w: BOUNDS.penWidth }) : null;
         const keepRaster = d === 50 && ['ship', 'off', 'dense', 'noext', 'cfat', 'noapex'].includes(kind) && primitive === 'cone' && mapper === 'hatch';
         const raster = keepRaster ? bareRaster : null;
+        // v2 only: the inked-domain bare area (nearest sample v2Dens >= the paper floor), the target tone in the cone wedge windows,
+        // and whether every apex tick is the tail of a tapering continuation chain (apexStray = the number that are not).
+        let v2x = null;
+        if (cap && d === 50 && primitive === 'cone' && mapper === 'hatch' && bareRaster) {
+          v2x = {
+            bareInked: bareAreaInked(bareRaster, 0.5, cap.samples, { densMin: cap.floor }),
+            bareInkedWL: bareAreaInked(bareRaster, 0.5, cap.samples, { densMin: cap.floor, win: WIN_L }),
+            densWL: meanDensIn(cap.samples, WIN_L), densSL: meanDensIn(cap.samples, STRIP_L), densWR: meanDensIn(cap.samples, WIN_R), densSR: meanDensIn(cap.samples, STRIP_R),
+          };
+        }
+        const chainMap = new Map();
+        recs.filter((x) => x.tag && x.tag.startsWith('cont|')).forEach((x) => {
+          const t = x.tag.split('|'); const ck = `${x.li}|${t[1]}|${t[2]}|${t[3]}`;
+          if (!chainMap.has(ck)) chainMap.set(ck, []);
+          chainMap.get(ck).push({ j: Number(t[4]), apex: x.apex === true, len: pathLen(x.pts) });
+        });
+        const apexStray = recs.filter((x) => x.apex).filter((x) => {
+          const t = x.tag && x.tag.startsWith('cont|') ? x.tag.split('|') : null;
+          if (!t) return true;
+          const pcs = chainMap.get(`${x.li}|${t[1]}|${t[2]}|${t[3]}`) || [];
+          const lenByJ = new Map(); pcs.filter((q) => !q.apex).forEach((q) => lenByJ.set(q.j, Math.max(lenByJ.get(q.j) || 0, q.len)));
+          const js = [...lenByJ.keys()].sort((a, b) => a - b);
+          const jx = Number(t[4]);
+          const contiguous = js.length >= 2 && js.every((j, i) => j === i + 1) && jx > js[js.length - 1];
+          return !(contiguous && pathLen(x.pts) <= lenByJ.get(js[js.length - 1]) + 0.05);
+        }).length;
         R[kind][key(d, rig, primitive, mapper)] = {
+          v2: v2x, apexStray, inkCut: cap ? cap.inkCut : null,
           sites: siteKey(r), tip: c.tipContact, mark: c.markContact,
           o2: r.rowPitch != null ? over2RP(fills, r.rowPitch).count : 0,
           sub: subMinCount(fills.filter((f) => !apexSet.has(`${f[0].x.toFixed(4)},${f[0].y.toFixed(4)}`)), BOUNDS.penWidth),
@@ -106,7 +137,7 @@ const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', '
           const nonMk = laws.filter((law) => !/^mk/.test(law)).slice(0, 6);
           let crumbs = 0;
           V.Scene3D.Params.MAPPERS.forEach((mapper) => CRUMB_MARK_LAWS.concat(nonMk).forEach((law) => {
-            const params = buildSceneParams(V.Scene3D.Params, V.ALGO_DEFAULTS.scene3d, { mapper, fillDensity: 50, primitive: 'cone', rig: 'create', law });
+            const params = buildSceneParams(V.Scene3D.Params, V.ALGO_DEFAULTS.scene3d, { mapper, fillDensity: 50, primitive: 'cone', rig: 'create', law, toneModel });
             const paths = V.AlgorithmRegistry.scene3d.generate(params, null, null, BOUNDS);
             crumbs += paths.filter((path) => path.meta && path.meta.kind === 'sceneFill' && pathLen(path) < 2 * BOUNDS.penWidth - 1e-9).length;
           }));
