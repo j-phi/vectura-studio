@@ -61,6 +61,7 @@
     RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core, a third of it, must clear it)
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
+    AMP_SHARE: 0.4, AMP_MM_MIN: 0.34, AMP_MM_MAX: 0.6, AMP_LAMBDA_AMP: 12, AMP_LAMBDA_MIN_MM: 3.2, AMP_STEPS: 10, // WD-D1 ampSpacing wave
     MAX_VERTS: 200000,      // contract §2 budget
     HATCH_D_MAX: 100,
     GOLDEN: 0.6180339887498949,
@@ -73,6 +74,8 @@
   // Wave D1 (light realism): mark laws baked as fractions of marks along the locked rulings. v2 scenes ONLY (`spec.toneModel === 'v2'`,
   // contract A20): a legacy / saved scene keeps its exact pose output, so no SCENE_VERSION migration is needed.
   const MARK_LAW_IDS = ['mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount'];
+  // WD-D1 (contract A27): Amplitude Spacing is the ladder's pitch law (tone = ruling spacing) drawn on wave-displaced rulings. v2 only.
+  const AMP_LAW_IDS = ['ampSpacing'];
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(LAW_IDS.slice()),
@@ -82,6 +85,12 @@
     v2Only: true,
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(MARK_LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(AMP_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   })]);
@@ -199,9 +208,12 @@
     };
   };
 
+  // The ladder spec underneath ampSpacing: the plain Default ladder at the user's own Density (the wave is drawn on its rulings).
+  const ampLadderSpec = (spec) => Object.assign({}, spec, { toneLaw: 'ladder' });
   const toneLUT = (spec, toneCtx) => {
     sync();
     const law = spec && spec.toneLaw;
+    if (AMP_LAW_IDS.indexOf(law) !== -1) return ladder().toneLUT(ampLadderSpec(spec), toneCtx);
     const T = toneParams(spec, (MARK_LAW_IDS.indexOf(law) !== -1 || law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx));
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
@@ -668,11 +680,55 @@
     return ms;
   };
 
+  // ---- WD-D1 ampSpacing: the ladder's rulings, each displaced sideways (in the tangent plane) by a sine of its arc length ----------------
+  // Every ruling takes the same phase at the same arc length, so neighbours stay parallel: the spacing (the tone) is the ladder's, and the
+  // wave only gives the line its character. The amplitude is the pose law's: a share of the ruling pitch, bounded in mm (WV6_AMP_*).
+  const bakeAmp = (spec) => {
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const L = ladder();
+    const ls = ampLadderSpec(spec);
+    if (!L || !L.supports(ls)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec');
+    const lad = L.bake(ls);
+    const SM = MS();
+    const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const out = [0, 0, 0]; const tmp = { count: 0 };
+    const p0 = finite(lad.meta.p0, 1);
+    const amp = clamp(K.AMP_SHARE * p0 * scaleRef, K.AMP_MM_MIN, K.AMP_MM_MAX) / scaleRef;
+    const lam0 = Math.max(K.AMP_LAMBDA_AMP * amp * scaleRef, K.AMP_LAMBDA_MIN_MM) / scaleRef;
+    const steps = Math.max(4, Math.round(K.AMP_STEPS));
+    for (let r = 0; r < lad.runCount; r++) {
+      const flags = lad.runFlags[r];
+      if (flags & SM.FLAG.DOT) { copyRun(B, lad, r, keyOfRun(lad, r), lad.runFamily[r], tmp); continue; }
+      const closed = (flags & SM.FLAG.CLOSED) !== 0;
+      const R = readRun(lad, r, out);
+      if (!(R.total > 1e-9)) continue;
+      // A closed run takes a whole number of waves so the seam closes; an open run keeps the nominal wavelength.
+      const lam = closed ? R.total / Math.max(1, Math.round(R.total / lam0)) : lam0;
+      const nSeg = Math.max(2, Math.ceil(R.total / (lam / steps)));
+      B.beginRun(lad.runLevel[r], SM.rankOf(lad, r), lad.runFamily[r], flags);
+      const nEmit = closed ? nSeg : nSeg + 1;
+      for (let i = 0; i < nEmit; i++) {
+        const x = R.total * i / nSeg;
+        const F = frameAt(R, x);
+        const d = amp * Math.sin(2 * Math.PI * x / lam);
+        B.vertex(F.P[0] + F.s[0] * d, F.P[1] + F.s[1] * d, F.P[2] + F.s[2] * d, F.P[3], F.P[4], F.P[5]);
+      }
+      tmp.count += nEmit;
+      B.endRun();
+      if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+    }
+    const ms = B.finish();
+    ms.bakerId = 'laws';
+    ms.meta = Object.assign({}, lad.meta, { lawId: 'ampSpacing', ampMM: amp * scaleRef, ampLambdaMM: lam0 * scaleRef });
+    return ms;
+  };
+
   // ---- the bake ----------------------------------------------------------------------------------------------
   const bake = (spec) => {
     sync();
     const law = spec && spec.toneLaw;
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
+    if (AMP_LAW_IDS.indexOf(law) !== -1) return bakeAmp(spec);
     if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
     const T = toneParams(spec, (law === 'dutyConst' || law === 'endShorten') && bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;

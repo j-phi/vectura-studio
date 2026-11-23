@@ -186,6 +186,12 @@
       DUTY_PERIOD_FLOOR: 2.0,  // dutyConst mark period, x plot floor
       DUTY_PITCH_FLOOR: 1.05,  // dutyConst ruling pitch, x plot floor
       END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+      AMP_SHARE: 0.4,  // WD-D1 ampSpacing: wave amplitude as a share of the baked ruling pitch (pose WV6 aMax)
+      AMP_MM_MIN: 0.34,  // WD-D1 ampSpacing: amplitude floor (screen mm; pose WV6_AMP_MIN_MM)
+      AMP_MM_MAX: 0.6,  // WD-D1 ampSpacing: amplitude cap (screen mm; the pose WV6_AMP_MAX_MM is 0.8: a lock wave this size keeps the ruling arc length within ~7 % of the ladder's, so the tone stays the ladder's)
+      AMP_LAMBDA_AMP: 12,  // WD-D1 ampSpacing: wavelength, x the amplitude (a fixed visual shape; never under AMP_LAMBDA_MIN_MM)
+      AMP_LAMBDA_MIN_MM: 3.2,  // WD-D1 ampSpacing: wavelength floor (screen mm)
+      AMP_STEPS: 10,  // WD-D1 ampSpacing: polyline samples per wavelength
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
       V2_DUTY_SEP: 1.0,  // tone model v2 dutyConst: screen ruling spacing (x the nominal ruling pitch) at which the cell fraction is the target; <= 1.04 keeps the even-fill bars (p90/p10 < 1.45) with margin, 1.08 straddled the cap word's 1/8 steps (A22a)
