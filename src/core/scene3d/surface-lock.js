@@ -670,39 +670,59 @@
   // result is deterministic and Level S == Level F). Grid of segments, cell = 2 x guardD.
   // The functions below are module level on purpose (H4): closures made per frame get a fresh feedback vector, so the hot guard code
   // re-warmed (and ran unoptimised) at the start of every pose.
-  const crowdKey = (ix, iy) => ix * 73856093 ^ iy * 19349663;
-  // true when the distance from (px, py) to the entry's segment is < guardD. The squared distance decides everywhere except
+  // U1b: the guard's segment store is typed arrays shared by every frame (no per-segment object, no Map of arrays). A segment is a
+  // row of SEGF (ax, ay, dx, dy, l2, x0, x1, y0, y1) and SEGI (fam, ord); the grid is a fixed hash table of list heads (CROWD_HASH
+  // cells) chained through CELL_SEG / CELL_NEXT. The hash is the original cell hash masked to the table, so two cells may share a
+  // head: that only adds candidates, and every candidate is still rejected by crowdCloser's box and distance test, so the answer
+  // (any kept segment of another ruling within guardD) is the same as with an exact-keyed map. crowdNear is order independent.
+  const CROWD_HASH = 1 << 15; const CROWD_MASK = CROWD_HASH - 1; const SEGW = 9;
+  let SEGF = new Float64Array(SEGW * 1024); let SEGI = new Int32Array(2 * 1024); let nSeg = 0;
+  let CELL_SEG = new Int32Array(4096); let CELL_NEXT = new Int32Array(4096); let nCell = 0;
+  const CELL_HEAD = new Int32Array(CROWD_HASH);
+  const crowdKey = (ix, iy) => (ix * 73856093 ^ iy * 19349663) & CROWD_MASK;
+  const growCrowd = () => {
+    if ((nSeg + 1) * SEGW > SEGF.length) { const f = new Float64Array(SEGF.length * 2); f.set(SEGF); SEGF = f; const i = new Int32Array(SEGI.length * 2); i.set(SEGI); SEGI = i; }
+    if (nCell + 1 > CELL_SEG.length) { const a = new Int32Array(CELL_SEG.length * 2); a.set(CELL_SEG); CELL_SEG = a; const n = new Int32Array(CELL_NEXT.length * 2); n.set(CELL_NEXT); CELL_NEXT = n; }
+  };
+  // true when the distance from (px, py) to segment e is < guardD. The squared distance decides everywhere except
   // within CROWD_EXACT_BAND of guardD, where Math.hypot (the original test) is evaluated, so the decision is unchanged.
   const crowdCloser = (st, px, py, e) => {
-    const pad = st.pad;
-    if (px < e.x0 - pad || px > e.x1 + pad || py < e.y0 - pad || py > e.y1 + pad) return false; // beyond guardD from the segment's box
-    const dx = e.dx; const dy = e.dy; const l2 = e.l2;
-    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - e.ax) * dx + (py - e.ay) * dy) / l2)) : 0;
-    const qx = px - e.ax - t * dx; const qy = py - e.ay - t * dy;
+    const pad = st.pad; const o = e * SEGW; const F = SEGF;
+    if (px < F[o + 5] - pad || px > F[o + 6] + pad || py < F[o + 7] - pad || py > F[o + 8] + pad) return false; // beyond guardD from the segment's box
+    const dx = F[o + 2]; const dy = F[o + 3]; const l2 = F[o + 4];
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - F[o]) * dx + (py - F[o + 1]) * dy) / l2)) : 0;
+    const qx = px - F[o] - t * dx; const qy = py - F[o + 1] - t * dy;
     const d2 = qx * qx + qy * qy;
     if (d2 < st.lo2) return true;
     if (d2 > st.hi2) return false;
     return Math.hypot(qx, qy) < st.guardD;
   };
   const crowdNear = (st, x, y, fam, ord) => {
-    const cell = st.cell; const grid = st.grid;
+    const cell = st.cell;
     const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-      const list = grid.get(crowdKey(ix + a, iy + b)); if (!list) continue;
-      for (let k = 0; k < list.length; k++) {
-        const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
+      for (let c = CELL_HEAD[crowdKey(ix + a, iy + b)] - 1; c >= 0; c = CELL_NEXT[c]) {
+        const e = CELL_SEG[c]; if (SEGI[2 * e] !== fam || SEGI[2 * e + 1] === ord) continue;
         if (crowdCloser(st, x, y, e)) return true;
       }
     }
     return false;
   };
   const crowdAdd = (st, ax, ay, bx, by, fam, ord) => {
-    const cell = st.cell; const grid = st.grid;
+    const cell = st.cell;
     const dx = bx - ax; const dy = by - ay;
-    const e = { ax, ay, bx, by, fam, ord, dx, dy, l2: dx * dx + dy * dy, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
+    growCrowd();
+    const e = nSeg++; const o = e * SEGW;
+    SEGF[o] = ax; SEGF[o + 1] = ay; SEGF[o + 2] = dx; SEGF[o + 3] = dy; SEGF[o + 4] = dx * dx + dy * dy;
+    SEGF[o + 5] = Math.min(ax, bx); SEGF[o + 6] = Math.max(ax, bx); SEGF[o + 7] = Math.min(ay, by); SEGF[o + 8] = Math.max(ay, by);
+    SEGI[2 * e] = fam; SEGI[2 * e + 1] = ord;
     const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
     const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
-    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = crowdKey(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) {
+      growCrowd();
+      const k = crowdKey(i, j); const c = nCell++;
+      CELL_SEG[c] = e; CELL_NEXT[c] = CELL_HEAD[k] - 1; CELL_HEAD[k] = c + 1; // heads hold index + 1 (0 = empty)
+    }
   };
   // Splits `subs` into the stretches that clear the guard (checked at the vertices), registers what is kept.
   const crowdFilter = (st, subs, fam, ord) => {
@@ -724,8 +744,9 @@
     return out2;
   };
   const makeCrowd = (guardD) => {
+    CELL_HEAD.fill(0); nSeg = 0; nCell = 0; // one guard at a time: a frameSet is synchronous and builds its guard from scratch
     const st = {
-      guardD, cell: Math.max(1e-6, 2 * guardD), grid: new Map(), pad: guardD * (1 + CROWD_EXACT_BAND),
+      guardD, cell: Math.max(1e-6, 2 * guardD), pad: guardD * (1 + CROWD_EXACT_BAND),
       lo2: guardD * guardD * (1 - CROWD_EXACT_BAND) * (1 - CROWD_EXACT_BAND), hi2: guardD * guardD * (1 + CROWD_EXACT_BAND) * (1 + CROWD_EXACT_BAND),
     };
     return { filter: (subs, fam, ord) => crowdFilter(st, subs, fam, ord) };
