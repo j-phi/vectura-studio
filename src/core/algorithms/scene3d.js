@@ -1471,6 +1471,126 @@
     return out;
   };
 
+  // U7 — front-region boundary of a CURVED CSG carve, from a robust polygon union of the front faces' projected
+  // polygons (coords snapped to 1e-6 first, so the sweep never sees near-coincident T-junction vertices). The edge-count
+  // boundary above treats every BSP T-junction as a boundary edge and the even-odd scanline then shreds the region. Returns
+  // [[p0,p1],…] ring edges (outer + holes), or null on ANY failure/empty result so the caller keeps today's boundary.
+  const csgFrontUnionBoundary = (record, faceIndices) => {
+    const FB = Vectura.FillBoolean;
+    if (!FB || typeof FB.union !== 'function' || typeof FB.ringToMultiPolygon !== 'function') return null;
+    try {
+      if (typeof FB.consumeLastOpError === 'function') FB.consumeLastOpError();
+      const snap = (v) => Math.round(v * 1e6) / 1e6;
+      const geoms = [];
+      faceIndices.forEach((fi) => {
+        const idx = record.faceIndexArrays[fi];
+        if (!Array.isArray(idx) || idx.length < 3) return;
+        const ring = [];
+        for (let i = 0; i < idx.length; i += 1) {
+          const pt = record.projected[idx[i]];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+          ring.push({ x: snap(pt.x), y: snap(pt.y) });
+        }
+        const mp = FB.ringToMultiPolygon(ring);
+        if (mp.length) geoms.push(mp);
+      });
+      if (!geoms.length) return null;
+      const merged = FB.union(...geoms);
+      if (typeof FB.consumeLastOpError === 'function' && FB.consumeLastOpError()) return null;
+      if (!Array.isArray(merged) || !merged.length) return null;
+      const out = [];
+      merged.forEach((poly) => (poly || []).forEach((ring) => {
+        // Drop sub-visible slivers/specks (T-junction residue): they break a hatch line into sub-mm fragments and appear or
+        // vanish with float noise, so they would make the fill depend on where the object sits on the page.
+        if (Math.abs(FB.ringArea(ring)) < 4) return;
+        for (let i = 0; i + 1 < ring.length; i += 1) {
+          out.push([{ x: ring[i][0], y: ring[i][1] }, { x: ring[i + 1][0], y: ring[i + 1][1] }]);
+        }
+      }));
+      return out.length ? out : null;
+    } catch (err) {
+      return null;
+    }
+  };
+
+  // U7 — a flat-fallback fill line of a non-convex CSG carve carries ONE depth (the group's nearZ, i.e. its farthest
+  // centroid), so the carve's own near faces hid it entirely under self-occlusion. This returns the carve's front-surface
+  // depth at a screen point (largest plane depth over the front faces covering it — the visible surface, bore walls
+  // included) so the line is clipped as if it lay ON that surface. null when no face has a usable plane.
+  const csgSurfaceDepthFn = (record, faceIndices) => {
+    const cells = new Map();
+    const CELL = 8;
+    const planes = [];
+    faceIndices.forEach((fi) => {
+      const face = record.faces[fi];
+      if (!face || !Array.isArray(face.polygon)) return;
+      const plane = Vectura.Scene3D.HLR.fitSupportPlane(face.polygon);
+      if (!plane) return;
+      let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+      face.polygon.forEach((q) => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+      if (![x0, y0, x1, y1].every(Number.isFinite)) return;
+      const entry = { poly: face.polygon, plane, x0, y0, x1, y1 };
+      const k = planes.push(entry) - 1;
+      for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx += 1) {
+        for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy += 1) {
+          const key = `${cx}_${cy}`;
+          const arr = cells.get(key);
+          if (arr) arr.push(k); else cells.set(key, [k]);
+        }
+      }
+    });
+    if (!planes.length) return null;
+    const inPoly = (x, y, poly) => {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i]; const b = poly[j];
+        if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+      return inside;
+    };
+    return (x, y) => {
+      const arr = cells.get(`${Math.floor(x / CELL)}_${Math.floor(y / CELL)}`);
+      let best = -Infinity;
+      if (arr) {
+        for (let i = 0; i < arr.length; i += 1) {
+          const e = planes[arr[i]];
+          if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1 || !inPoly(x, y, e.poly)) continue;
+          const d = e.plane.A * x + e.plane.B * y + e.plane.C;
+          if (d > best) best = d;
+        }
+      }
+      return best === -Infinity ? null : best;
+    };
+  };
+
+  // Bridge hairline cracks in a carve's scanline hatch: consecutive 2-point lines whose end/start are closer than `tol`
+  // become one line. A crack between two union output polygons appears or vanishes with float noise (so the fill would
+  // depend on where the object sits on the page); anything under a pen width is not a visible gap anyway.
+  const mergeHairlineGaps = (lines, tol) => {
+    const out = [];
+    lines.forEach((ln) => {
+      const prev = out[out.length - 1];
+      if (prev && prev.length === 2 && ln.length === 2
+        && Math.hypot(ln[0].x - prev[1].x, ln[0].y - prev[1].y) < tol) {
+        out[out.length - 1] = [prev[0], ln[1]];
+      } else out.push(ln);
+    });
+    return out;
+  };
+
+  // Resample a polyline so consecutive samples are at most `step` apart (depth varies along a line over a carve).
+  const densifyLine = (line, step) => {
+    const out = [];
+    for (let i = 0; i < line.length; i += 1) {
+      const b = line[i];
+      if (i === 0) { out.push(b); continue; }
+      const a = line[i - 1];
+      const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step)));
+      for (let k = 1; k <= n; k += 1) out.push({ x: a.x + (b.x - a.x) * (k / n), y: a.y + (b.y - a.y) * (k / n) });
+    }
+    return out;
+  };
+
   // Scanline hatch across the region bounded by `segments` (an arbitrary set of
   // 2D edges forming one or more closed loops), even-odd rule so holes stay
   // empty. Returns [[p0,p1],…]. Continuous across the whole surface, unlike
@@ -5279,7 +5399,9 @@
             g.faces.push(idx);
           });
           groups.forEach((g) => {
-            const boundary = frontRegionBoundary(record, g.faces);
+            // U7: a curved carve's boundary comes from a polygon union (faceted CSG, every other primitive: unchanged).
+            const boundary = (record.primitive === 'csg' && !record.csgFaceted && csgFrontUnionBoundary(record, g.faces))
+              || frontRegionBoundary(record, g.faces);
             if (!boundary.length) return;
             const sp = g.style.params || {};
             const angleDeg = finite(sp.fillAngle, 45);
@@ -5596,6 +5718,9 @@
                   : [];
               }
             }
+            if (lines && lines.length && record.primitive === 'csg' && !record.csgFaceted && !lockedFill && !chartParams) {
+              lines = mergeHairlineGaps(lines, 0.35);
+            }
             // Nearest front-face depth for the group: hatch draws over farther
             // objects and is hidden behind nearer ones; a CONVEX object never
             // occludes its own fill (selfObject) — a non-convex one (F7:
@@ -5691,10 +5816,26 @@
                 emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
               }
             });
+            // U7: a curved carve's flat-fallback lines ride the visible surface (per-sample depth), not one flat nearZ.
+            const csgDepthAt = (!lockedFill && record.primitive === 'csg' && !record.csgFaceted && !record.convex)
+              ? csgSurfaceDepthFn(record, g.faces) : null;
             lines.forEach((line) => {
               if (line.back === true) return;
               const isHL = line.highlight === true;
-              const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
+              const pts = (csgDepthAt && line.length && !Number.isFinite(line[0].z))
+                ? (() => {
+                  // A sample exactly ON a face seam / the outline can miss every face by float noise: borrow the nearest
+                  // sampled neighbour's depth instead of the farthest-depth fallback (which would hide it and make the
+                  // run ends depend on where the object sits on the page).
+                  const dense = densifyLine(line, 1);
+                  const zs = dense.map((pt) => csgDepthAt(pt.x, pt.y));
+                  let last = null;
+                  for (let i = 0; i < zs.length; i += 1) { if (zs[i] === null) zs[i] = last; else last = zs[i]; }
+                  last = null;
+                  for (let i = zs.length - 1; i >= 0; i -= 1) { if (zs[i] === null) zs[i] = last; else last = zs[i]; }
+                  return dense.map((pt, i) => ({ x: pt.x, y: pt.y, z: zs[i] === null ? nearZ : zs[i] }));
+                })()
+                : line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
               if (isHL) {
                 emitRuns(clip.runs, hlMeta, hiddenTreatment, null, hlTreat);
