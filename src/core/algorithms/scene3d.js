@@ -1475,12 +1475,17 @@
   // polygons (coords snapped to 1e-6 first, so the sweep never sees near-coincident T-junction vertices). The edge-count
   // boundary above treats every BSP T-junction as a boundary edge and the even-odd scanline then shreds the region. Returns
   // [[p0,p1],…] ring edges (outer + holes), or null on ANY failure/empty result so the caller keeps today's boundary.
-  const csgFrontUnionBoundary = (record, faceIndices) => {
+  const csgFrontUnionBoundary = (record, faceIndices, areaOut, snapUnit, snapOrigin) => {
     const FB = Vectura.FillBoolean;
     if (!FB || typeof FB.union !== 'function' || typeof FB.ringToMultiPolygon !== 'function') return null;
     try {
       if (typeof FB.consumeLastOpError === 'function') FB.consumeLastOpError();
-      const snap = (v) => Math.round(v * 1e6) / 1e6;
+      // U7b: an optional coarser snap (retry of a failed sweep); absent = the historic 1e-6 grid, byte-identical.
+      // The coarse grid is anchored at `snapOrigin` (a point of the object itself) so a rigid screen translation of the
+      // object leaves the snapped geometry unchanged: the fill must translate with its group.
+      const snapAt = (v, o) => Math.round((v - o) / snapUnit) * snapUnit + o;
+      const ox = snapOrigin ? snapOrigin.x : 0; const oy = snapOrigin ? snapOrigin.y : 0;
+      const snap = Number.isFinite(snapUnit) ? null : (v) => Math.round(v * 1e6) / 1e6;
       const geoms = [];
       faceIndices.forEach((fi) => {
         const idx = record.faceIndexArrays[fi];
@@ -1489,8 +1494,11 @@
         for (let i = 0; i < idx.length; i += 1) {
           const pt = record.projected[idx[i]];
           if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
-          ring.push({ x: snap(pt.x), y: snap(pt.y) });
+          const sx = snap ? snap(pt.x) : snapAt(pt.x, ox); const sy = snap ? snap(pt.y) : snapAt(pt.y, oy);
+          if (Number.isFinite(snapUnit) && ring.length && ring[ring.length - 1].x === sx && ring[ring.length - 1].y === sy) continue;
+          ring.push({ x: sx, y: sy });
         }
+        if (Number.isFinite(snapUnit) && ring.length < 3) return;
         const mp = FB.ringToMultiPolygon(ring);
         if (mp.length) geoms.push(mp);
       });
@@ -1499,10 +1507,11 @@
       if (typeof FB.consumeLastOpError === 'function' && FB.consumeLastOpError()) return null;
       if (!Array.isArray(merged) || !merged.length) return null;
       const out = [];
-      merged.forEach((poly) => (poly || []).forEach((ring) => {
+      merged.forEach((poly) => (poly || []).forEach((ring, ri) => {
         // Drop sub-visible slivers/specks (T-junction residue): they break a hatch line into sub-mm fragments and appear or
         // vanish with float noise, so they would make the fill depend on where the object sits on the page.
         if (Math.abs(FB.ringArea(ring)) < 4) return;
+        if (areaOut) areaOut.area = (areaOut.area || 0) + (ri === 0 ? 1 : -1) * Math.abs(FB.ringArea(ring)); // U7b: net region area (outer - holes)
         for (let i = 0; i + 1 < ring.length; i += 1) {
           out.push([{ x: ring[i][0], y: ring[i][1] }, { x: ring[i + 1][0], y: ring[i + 1][1] }]);
         }
@@ -1599,7 +1608,7 @@
   // `minSpacing` (optional, default 1 — the historic hard floor) lets a
   // density-driven caller ask for sub-1mm spacing. Every existing call site
   // omits it, so behavior is byte-identical unless a caller opts in.
-  const hatchSegments = (segments, angleDeg, spacing, minSpacing) => {
+  const hatchSegments = (segments, angleDeg, spacing, minSpacing, phase0) => {
     if (!segments.length) return [];
     const ang = finite(angleDeg, 45) * Math.PI / 180;
     const dirX = Math.cos(ang); const dirY = Math.sin(ang);
@@ -1613,6 +1622,8 @@
       });
     });
     if (!Number.isFinite(pMin)) return [];
+    // U7b: an optional group-wide phase origin so per-tone-cluster hatches share one lattice origin (absent = today).
+    if (Number.isFinite(phase0) && phase0 < pMin) pMin = phase0;
     const sp = Math.max(Math.max(0, finite(minSpacing, 1)), spacing);
     const count = Math.min(3000, Math.floor((pMax - pMin) / sp));
     const out = [];
@@ -5415,6 +5426,83 @@
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
           });
+          // U7b — per-face tone on a CURVED CSG carve: each front face reads its OWN light (threshold band of its own
+          // normal), faces of one band share a region (polygon union) hatched at that band's spacing on one group-wide
+          // lattice origin. Returns merged lines, or null for ANY doubt (a union fails, area lost, > 8 clusters) so the
+          // caller keeps today's single region byte-identically.
+          const CSG_SNAPS = [1e-3, 1e-2];
+          const csgToneClusterLines = (rec, g, sp, angleDeg, boundary) => {
+            const byBand = new Map();
+            g.faces.forEach((fi) => {
+              const face = rec.faces[fi];
+              if (!face || !face.normalWorld) return;
+              const I = intensityFn(face.normalWorld, faceWorldCentroid(face));
+              const b = Regions.band(I, p.tone);
+              if (!byBand.has(b)) byBand.set(b, []);
+              byBand.get(b).push(fi);
+            });
+            if (!byBand.size || byBand.size > 8) return null;
+            // Reference area: the plain sum of the front faces' projected polygon areas (the whole-group union can fail on
+            // a dense BSP mesh, and any overlap between faces only lowers the union below this sum, which the guard catches).
+            let single = 0;
+            g.faces.forEach((fi) => {
+              const idx = rec.faceIndexArrays[fi];
+              if (!Array.isArray(idx) || idx.length < 3) return;
+              let a2 = 0;
+              for (let i = 0; i < idx.length; i += 1) {
+                const P0 = rec.projected[idx[i]]; const P1 = rec.projected[idx[(i + 1) % idx.length]];
+                a2 += P0.x * P1.y - P1.x * P0.y;
+              }
+              single += Math.abs(a2) / 2;
+            });
+            if (!(single > 0)) return null;
+            const f0 = rec.faceIndexArrays[g.faces[0]];
+            const snapOrigin = f0 && rec.projected[f0[0]] ? { x: rec.projected[f0[0]].x, y: rec.projected[f0[0]].y } : { x: 0, y: 0 };
+            const order = Array.from(byBand.keys()).sort((a, b) => a - b);
+            const parts = [];
+            let sum = 0;
+            for (let i = 0; i < order.length; i += 1) {
+              const meta = {};
+              let bnd = null;
+              for (let k = 0; k < CSG_SNAPS.length && !bnd; k += 1) {
+                meta.area = 0;
+                bnd = csgFrontUnionBoundary(rec, byBand.get(order[i]), meta, CSG_SNAPS[k], snapOrigin);
+              }
+              if (!bnd) return null;
+              sum += meta.area || 0;
+              parts.push({ band: order[i], bnd });
+            }
+            if (sum < 0.95 * single) return null;
+            const projMin = (ang) => {
+              const r = ang * Math.PI / 180;
+              let m = Infinity;
+              boundary.forEach(([a, b]) => [a, b].forEach((pt) => { m = Math.min(m, pt.x * -Math.sin(r) + pt.y * Math.cos(r)); }));
+              return m;
+            };
+            const delta = clamp(finite(sp.crossAngleDelta, 90), 10, 170);
+            const ratio = clamp(finite(sp.crossDensityRatio, 1), 0.25, 2);
+            const cross = g.style.mapper === 'crosshatch';
+            const ph0 = projMin(angleDeg);
+            const phB = cross ? projMin(angleDeg + delta) : 0;
+            const phT = cross && sp.tripleHatch === true ? projMin(angleDeg + 45) : 0;
+            const out = [];
+            parts.forEach(({ band, bnd }) => {
+              const spc = Math.max(penWidth, hatchSpacing(sp.fillDensity) / coverageGain(band));
+              let ls = hatchSegments(bnd, angleDeg, spc, hatchFloorFor(sp.fillDensity), ph0);
+              if (cross) {
+                hatchSegments(bnd, angleDeg + delta, spc * ratio, undefined, phB).forEach((l) => ls.push(l));
+                if (sp.tripleHatch === true && band === 0) {
+                  hatchSegments(bnd, angleDeg + 45, spc * ratio, undefined, phT).forEach((l) => ls.push(l));
+                }
+              }
+              if (ls.length) ls = mergeHairlineGaps(ls, 0.35);
+              ls.forEach((l) => out.push(l));
+            });
+            const stats = (Vectura.scene3dStats = Vectura.scene3dStats || {});
+            stats.csgToneClusters = parts.length;
+            stats.csgToneGroups = (stats.csgToneGroups || 0) + 1;
+            return out;
+          };
           groups.forEach((g) => {
             // U7: a curved carve's boundary comes from a polygon union (faceted CSG, every other primitive: unchanged).
             const boundary = (record.primitive === 'csg' && !record.csgFaceted && csgFrontUnionBoundary(record, g.faces))
@@ -5459,6 +5547,7 @@
             // band left blank = the highlight). Falls back to the flat
             // silhouette fill on draft frames or an unsupported primitive.
             let lines = null;
+            let csgToneDone = false;
             // spiralMode 'flatClip' opts out of the wrapped surface helix and
             // fills the projected silhouette with the SAME clipped Archimedean
             // spiral the faceted path uses; 'surfaceHelix' (default curved) wraps
@@ -5711,6 +5800,14 @@
                 // header. Family B below (× crossDensityRatio) keeps the old
                 // floor of 1 unconditionally: an existing document at density
                 // 100 with ratio 0.25 already relied on being clamped to 1mm.
+                // U7b: each tone cluster of a curved carve hatches by its own light (null = today's single region).
+                const toneClusterLines = (!draft && toneOn && record.primitive === 'csg' && !record.csgFaceted && !lockedFill
+                  && !chartParams && (g.style.mapper === 'hatch' || g.style.mapper === 'crosshatch'))
+                  ? csgToneClusterLines(record, g, sp, angleDeg, boundary) : null;
+                if (toneClusterLines) {
+                  lines = toneClusterLines;
+                  csgToneDone = true;
+                } else {
                 lines = hatchSegments(boundary, angleDeg, spacing, hatchFloorFor(sp.fillDensity));
                 if (g.style.mapper === 'crosshatch') {
                   // Independent family-B (Phase 1.3): +crossAngleDelta, ×ratio.
@@ -5720,6 +5817,7 @@
                   if (sp.tripleHatch === true && darkBand) {
                     hatchSegments(boundary, angleDeg + 45, spacing * ratio).forEach((l) => lines.push(l));
                   }
+                }
                 }
               } else {
                 const loops = (linkSegments ? linkSegments(boundary) : [])
@@ -5735,7 +5833,7 @@
                   : [];
               }
             }
-            if (lines && lines.length && record.primitive === 'csg' && !record.csgFaceted && !lockedFill && !chartParams) {
+            if (lines && lines.length && record.primitive === 'csg' && !record.csgFaceted && !lockedFill && !chartParams && !csgToneDone) {
               lines = mergeHairlineGaps(lines, 0.35);
             }
             // Nearest front-face depth for the group: hatch draws over farther
