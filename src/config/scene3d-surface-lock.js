@@ -14,7 +14,7 @@
 
   Vectura.SCENE3D_SURFACE_LOCK = Object.freeze({
     // Bumped whenever a baker's output for the same bake key changes. Part of every bake key.
-    BAKE_VERSION: 4,
+    BAKE_VERSION: 6,
     // Contract §6 — a vertex whose facing cosine c = n·view is below this is culled (crossing interpolated).
     NZ_CULL: 0.08,
     // Contract §5 — the tone look-up table has TONE_LUT_SIZE + 1 entries for I = k / TONE_LUT_SIZE.
@@ -188,6 +188,8 @@
       END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
+      V2_DUTY_SEP: 1.0,  // tone model v2 dutyConst: screen ruling spacing (x the nominal ruling pitch) at which the cell fraction is the target; <= 1.04 keeps the even-fill bars (p90/p10 < 1.45) with margin, 1.08 straddled the cap word's 1/8 steps (A22a)
+      V2_SCRIB_KEY: 0.92,  // tone model v2 mkScribble: scales the tone key of each wave level (< 1 draws more at one tone); retuned with V2_DUTY_SEP 1.0 so Scribble follows the dutyConst v2 target within 0.07 (max 0.049)
       V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
       END_RETRACT: 0.84,  // endShorten: fraction of a ruling spent at full light
       MERGE_PERIOD_FLOOR: 1.8,  // mergeLadder mark period, x plot floor
