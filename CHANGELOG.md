@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Touch: Shading row target fix (v1.5.30)
+
+#### Fixed
+- **Touch targets in the Scene3D Tone section.** On touch layouts the new Shading row (label, slider, value and info button on one line) squeezed its slider to about 30 px and its info button's hit area reached into Threshold 1 (measured 43 px tall). Slider rows with an info button now use the same two-line touch layout as switch rows: label and (i) on top, full-width slider below. Desktop is unchanged. Caught by the nightly `targets-scene3d-petal` touch audit after v1.5.29.
+
 ### Scene3D light realism (v1.5.29)
 
 One release: a realistic light model whose fills lock to the surface, a Shading control, a movable ground, per-object shadow receiving and combined-shape transforms. Saved scenes and presets keep the legacy model byte for byte, and every new key is written only when it is off its default.
