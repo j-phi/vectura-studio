@@ -4840,6 +4840,44 @@
         // which is exactly why the two drew the same segments (§5.7). The
         // structural edge pass (further down) is now the sole reader.
         const classified = Edges.classifyEdges(record, {});
+        // E2 — "cut-surface" faces of a CURVED carve: a face with a shallow-dihedral (smooth, sub-crease-angle) neighbour.
+        // The flat box planes have none. Drives (a) which creases draw as the carve RIM and (b) the per-source-face fill
+        // regions (flat planes vs the curved cut). Null for every non-CSG / faceted-CSG record (byte-identical there).
+        const csgCurvedFaces = (() => {
+          if (record.primitive !== 'csg' || record.csgFaceted) return null;
+          const cosCrease = Math.cos(Edges.DEFAULT_CREASE_ANGLE * Math.PI / 180);
+          const curved = new Set();
+          record.edges.forEach((e) => {
+            if (!e.faces || e.faces.length !== 2) return;
+            const n0 = record.faces[e.faces[0]] && record.faces[e.faces[0]].normalWorld;
+            const n1 = record.faces[e.faces[1]] && record.faces[e.faces[1]].normalWorld;
+            if (!n0 || !n1) return;
+            const l0 = Math.hypot(n0.x, n0.y, n0.z); const l1 = Math.hypot(n1.x, n1.y, n1.z);
+            if (!(l0 > 0.5) || !(l1 > 0.5)) return;
+            const d = (n0.x * n1.x + n0.y * n1.y + n0.z * n1.z) / (l0 * l1);
+            if (d < 0.99999 && d >= cosCrease) { curved.add(e.faces[0]); curved.add(e.faces[1]); }
+          });
+          return curved;
+        })();
+        // E2 — sliver triangles the BSP leaves (zero-thickness fins) have no trustworthy normal, so a "silhouette" between one
+        // and its neighbour is noise, not form. Their edges never draw and they never join a fill region.
+        const csgThinFaces = (() => {
+          if (!csgCurvedFaces) return null;
+          let maxAbs = 1;
+          record.world.forEach((q) => { maxAbs = Math.max(maxAbs, Math.abs(q.x), Math.abs(q.y), Math.abs(q.z)); });
+          const tol = maxAbs * 2.4e-4;
+          const thin = new Set();
+          record.faceIndexArrays.forEach((idx, fi) => {
+            if (!Array.isArray(idx) || idx.length !== 3) return;
+            const a = record.world[idx[0]]; const b = record.world[idx[1]]; const c = record.world[idx[2]];
+            const ux = b.x - a.x; const uy = b.y - a.y; const uz = b.z - a.z;
+            const vx = c.x - a.x; const vy = c.y - a.y; const vz = c.z - a.z;
+            const ar = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+            const L = Math.max(Math.hypot(ux, uy, uz), Math.hypot(vx, vy, vz), Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z));
+            if (L >= 4 * tol && ar / L < tol) thin.add(fi);
+          });
+          return thin.size ? thin : null;
+        })();
         // ── W-32 Rank 4 — refine the outline onto the TRUE silhouette ──────
         // (W-32r4-plan.md §3.2/§3.3). `silRefine(entry, aScr, bScr)` returns a
         // polyline replacing a straight silhouette/boundary chord, or null to
@@ -5411,6 +5449,7 @@
             // plane and is unaffected — byte-identical for every existing
             // torus/sphere/box/CSG fixture that doesn't hit this knife-edge.
             if (!HLR.fitSupportPlane(face.polygon)) return;
+            if (csgThinFaces && csgThinFaces.has(idx)) return;
             const st = styleOf(face);
             if (!SURFACE_FILL.has(st.mapper)) return;
             const sp = st.params || {};
@@ -5426,6 +5465,58 @@
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
           });
+          // E2 — a curved carve's fill splits per SOURCE FACE: every flat box plane is its own region hatched in that
+          // plane's own orientation (the way a plain box hatches), and the smooth cut surface is one more region.
+          if (csgCurvedFaces && groups.size) {
+            const faceArea = (fi) => {
+              const idx = record.faceIndexArrays[fi];
+              let a2 = 0;
+              for (let i = 0; i < idx.length; i += 1) {
+                const P0 = record.projected[idx[i]]; const P1 = record.projected[idx[(i + 1) % idx.length]];
+                a2 += P0.x * P1.y - P1.x * P0.y;
+              }
+              return Math.abs(a2) / 2;
+            };
+            const split = new Map();
+            groups.forEach((g, gkey) => {
+              const parts = new Map();
+              g.faces.forEach((fi) => {
+                const f = record.faces[fi];
+                const n = f.normalWorld;
+                let ck = 'c';
+                if (!csgCurvedFaces.has(fi) && n && Math.hypot(n.x, n.y, n.z) > 0.5) {
+                  const c = faceWorldCentroid(f);
+                  ck = `p${Math.round(n.x * 100)},${Math.round(n.y * 100)},${Math.round(n.z * 100)}:${Math.round((n.x * c.x + n.y * c.y + n.z * c.z) * 2)}`;
+                }
+                if (!parts.has(ck)) parts.set(ck, []);
+                parts.get(ck).push(fi);
+              });
+              parts.forEach((faces, ck) => {
+                const sub = { style: g.style, faces };
+                if (ck !== 'c') {
+                  let rep = faces[0]; let best = -1;
+                  faces.forEach((fi) => { const a = faceArea(fi); if (a > best) { best = a; rep = fi; } });
+                  const sp = g.style.params || {};
+                  const angleRef = styleWrapFlat(sp, 'hatch') ? 'screen'
+                    : (sp.angleRef === 'worldUp' ? 'worldUp' : (sp.angleRef === 'light' ? 'light' : 'face'));
+                  const rf = record.faces[rep];
+                  const scaf = (angleRef === 'screen' || !(best > 0)) ? null : faceUVScaffold(rf, rf.normalWorld);
+                  if (scaf) {
+                    const base = finite(sp.fillAngle, 45) + ((angleRef === 'worldUp' || angleRef === 'light') ? refAngleInUV(angleRef, scaf) : 0);
+                    const r = base * Math.PI / 180;
+                    const p0 = scaf.toScreen({ x: 0, y: 0 });
+                    const p1 = scaf.toScreen({ x: Math.cos(r) * 10, y: Math.sin(r) * 10 });
+                    if (p0 && p1 && Number.isFinite(p0.x) && Number.isFinite(p1.x) && Math.hypot(p1.x - p0.x, p1.y - p0.y) > 1e-4) {
+                      sub.angleOverride = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+                    }
+                  }
+                }
+                split.set(`${gkey}|${ck}`, sub);
+              });
+            });
+            groups.clear();
+            split.forEach((v, kk) => groups.set(kk, v));
+          }
           // U7b — per-face tone on a CURVED CSG carve: each front face reads its OWN light (threshold band of its own
           // normal), faces of one band share a region (polygon union) hatched at that band's spacing on one group-wide
           // lattice origin. Returns merged lines, or null for ANY doubt (a union fails, area lost, > 8 clusters) so the
@@ -5509,7 +5600,7 @@
               || frontRegionBoundary(record, g.faces);
             if (!boundary.length) return;
             const sp = g.style.params || {};
-            const angleDeg = finite(sp.fillAngle, 45);
+            const angleDeg = Number.isFinite(g.angleOverride) ? g.angleOverride : finite(sp.fillAngle, 45);
             // Curved surface (v1): sample intensity from the GROUP's mean world
             // normal — one spacing for the whole continuous region, deterministic.
             let spacing = hatchSpacing(sp.fillDensity);
@@ -6407,10 +6498,18 @@
         // ── Edges: silhouette / crease / boundary (+ every edge of a
         // wireframe-mapped face); hidden runs drop (solid) or dash (x-ray).
         // `classified` was computed once above (shared with the face-outline pass).
+        // E2 — a CURVED carve (box minus sphere/cylinder) draws only its RIM as a crease (the loop where a flat face meets
+        // the smooth cut surface), like a plain primitive draws only its real outline. A "cut-surface" face is one with a
+        // shallow-dihedral (smooth, sub-crease-angle) neighbour; a rim edge is a crease with exactly one such side.
+        const csgRim = csgCurvedFaces
+          ? (entry) => entry.faceIndices.length === 2
+            && (csgCurvedFaces.has(entry.faceIndices[0]) !== csgCurvedFaces.has(entry.faceIndices[1]))
+          : null;
         classified.forEach((entry) => {
           const adjacentFaces = entry.faceIndices.map((idx) => record.faces[idx]).filter(Boolean);
           const wireframeFace = adjacentFaces.find((face) => styleOf(face).mapper === 'wireframe');
           const wireframeDemand = Boolean(wireframeFace);
+          if (csgThinFaces && entry.faceIndices.some((fi) => csgThinFaces.has(fi))) return;
           const structural = entry.cls !== 'interior';
           if (!structural && !wireframeDemand) return;
           // CSG seam suppression: a boolean RESULT is a closed manifold, so every
@@ -6466,7 +6565,9 @@
           // would otherwise bury it (legacy). On ordinary primitives 'none' drops
           // every crease (outline only).
           const creaseSuppressed = entry.cls === 'crease' && !wireframeDemand
-            && (record.primitive === 'csg' ? bordersSurfaceFill : true);
+            && (record.primitive === 'csg'
+              ? (csgRim ? !csgRim(entry) : bordersSurfaceFill)
+              : true);
           // A suppressed crease over a surface-filled face survives as HIDDEN-ONLY
           // (its visible portion drops, its occluded portion reads through the
           // shown fill) ONLY when the x-ray see-through FILL is active. This is a

@@ -143,8 +143,9 @@ describe('curved CSG carve per-face tone (U7b)', () => {
     'boxbox hatch -35/30': '3eaea579aa20',
     'boxbox crosshatch -35/30': '09073974b65e',
     'boxbox default -35/30': '3eaea579aa20',
-    'sphere toneoff -35/30': '408d3dc0e7b2',
-    'sphere default -35/30 OLD': '9eede1d01efb',
+    // E2 re-pin: a curved carve now splits per source face + a repaired crack-free mesh (intended look change).
+    'sphere toneoff -35/30': '535388b432e1',
+    'sphere default -35/30 OLD': '49c1d8c80f23',
   };
   [[30, 20], [-35, 30]].forEach(([yaw, pitch]) => {
     [['hatch', 'hatch'], ['crosshatch', 'crosshatch'], ['default', undefined]].forEach(([nm, mapper]) => {
