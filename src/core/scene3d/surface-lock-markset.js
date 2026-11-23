@@ -6,7 +6,7 @@
  * nested by level and ranked inside each level, with an object-space unit normal per vertex.
  *
  *   createBuilder(meta) -> builder
- *     builder.beginRun(level, rank, family, flags, capRank?)   rank in [0, 1); capRank (optional, [0, 1)) keys the plot-floor cap (contract §2, A13)
+ *     builder.beginRun(level, rank, family, flags, capRank?, pen?, weight?)   rank in [0, 1); capRank (optional, [0, 1)) keys the plot-floor cap (contract §2, A13)
  *     builder.vertex(x, y, z, nx, ny, nz)            normal need not be unit (it is normalised)
  *     builder.endRun()                               runs with < 1 vertex are dropped; non-dot runs need >= 2
  *     builder.finish() -> MarkSet
@@ -29,6 +29,9 @@
   const LAYOUT_VERSION = 1;
   // runFlags bits.
   const FLAG = Object.freeze({ CLOSED: 1, DOT: 2, BACK: 4 });
+  // D0 (contract A26): optional per-run channels. runPen (Uint8): 0 = the object's pen, k = meta.penIds[k - 1]. runWeight (Uint8):
+  // 0 = default width, else the line-weight scale in 1/WEIGHT_UNIT steps (64 = x1). Absent on every legacy MarkSet.
+  const WEIGHT_UNIT = 64;
   const RANK_SCALE = 65536; // rank r is stored as round(r * 65536) clamped to 65535
 
   const signNZ = (v) => (v < 0 ? -1 : 1);
@@ -70,17 +73,20 @@
     let pos = new Float32Array(3 * 1024); let nrm = new Int16Array(2 * 1024); let nv = 0;
     let start = new Uint32Array(256); let level = new Uint8Array(256); let rank = new Uint16Array(256);
     let family = new Uint8Array(256); let flags = new Uint8Array(256); let nr = 0;
+    let runPen = null; let runWeight = null; // allocated on the first run that carries a pen / weight (contract A26)
     let capRank = null; // allocated on the first run that carries a capRank; absent otherwise (contract A13)
     let open = null;
     const levelCounts = new Uint32Array(MAX_LEVELS);
     const b = {
-      beginRun(lv, r, fam, fl, cap) {
+      beginRun(lv, r, fam, fl, cap, pen, weight) {
         if (open) throw new Error('SurfaceLockMarkSet: beginRun inside an open run');
         const L = lv | 0;
         if (L < 0 || L >= MAX_LEVELS) throw new Error(`SurfaceLockMarkSet: level ${lv} outside 0..${MAX_LEVELS - 1}`);
         const rr = Number(r);
         if (!(rr >= 0 && rr < 1)) throw new Error(`SurfaceLockMarkSet: rank ${r} outside [0, 1)`);
-        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null };
+        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null, pen: 0, weight: 0 };
+        if (pen) open.pen = Math.max(0, Math.min(255, pen | 0));
+        if (weight) open.weight = Math.max(0, Math.min(255, Math.round(Number(weight)) || 0));
         if (cap !== undefined && cap !== null) {
           const cc = Number(cap);
           if (!(cc >= 0 && cc < 1)) throw new Error(`SurfaceLockMarkSet: capRank ${cap} outside [0, 1)`);
@@ -103,6 +109,10 @@
         family = grow(family, nr + 1); flags = grow(flags, nr + 1);
         if (open.cap !== null && !capRank) capRank = new Uint16Array(Math.max(256, level.length));
         if (capRank) { capRank = grow(capRank, nr + 1); capRank[nr] = open.cap === null ? 0 : open.cap; }
+        if (open.pen && !runPen) runPen = new Uint8Array(Math.max(256, level.length));
+        if (runPen) { runPen = grow(runPen, nr + 1); runPen[nr] = open.pen; }
+        if (open.weight && !runWeight) runWeight = new Uint8Array(Math.max(256, level.length));
+        if (runWeight) { runWeight = grow(runWeight, nr + 1); runWeight[nr] = open.weight; }
         start[nr] = open.v0; level[nr] = open.level; rank[nr] = open.rank; family[nr] = open.family; flags[nr] = open.flags;
         levelCounts[open.level] += 1;
         nr += 1; start[nr] = nv; open = null;
@@ -132,6 +142,8 @@
         };
         // A run that lacks a capRank while its siblings carry one reads 0 (never capped): only laws that stamp every run use it.
         if (capRank) out.runCapRank = capRank.slice(0, nr);
+        if (runPen) out.runPen = runPen.slice(0, nr);
+        if (runWeight) out.runWeight = runWeight.slice(0, nr);
         return out;
       },
     };
@@ -149,6 +161,8 @@
     if (ms.runStart.length !== nr + 1) bad.push('runStart length');
     ['runLevel', 'runRank', 'runFamily', 'runFlags'].forEach((k) => { if (ms[k].length !== nr) bad.push(`${k} length`); });
     if (ms.runCapRank && ms.runCapRank.length !== nr) bad.push('runCapRank length');
+    if (ms.runPen && ms.runPen.length !== nr) bad.push('runPen length');
+    if (ms.runWeight && ms.runWeight.length !== nr) bad.push('runWeight length');
     if (ms.runStart[0] !== 0 && nr) bad.push('runStart[0]');
     if (ms.runStart[nr] !== nv) bad.push('runStart[last]');
     for (let r = 0; r < nr; r++) {
@@ -161,11 +175,11 @@
   };
 
   const ARRAYS = ['positions', 'normals', 'runStart', 'runLevel', 'runRank', 'runFamily', 'runFlags'];
-  const OPTIONAL = ['runCapRank'];
+  const OPTIONAL = ['runCapRank', 'runPen', 'runWeight'];
   const byteSize = (ms) => ARRAYS.concat(OPTIONAL).reduce((s, k) => s + (ms && ms[k] ? ms[k].byteLength : 0), 0);
   const transferList = (ms) => ARRAYS.concat(OPTIONAL.filter((k) => ms[k])).map((k) => ms[k].buffer);
 
   Scene3D.SurfaceLockMarkSet = {
-    LAYOUT_VERSION, FLAG, RANK_SCALE, createBuilder, octEncode, octDecode, validate, byteSize, transferList, rankOf,
+    LAYOUT_VERSION, FLAG, RANK_SCALE, WEIGHT_UNIT, createBuilder, octEncode, octDecode, validate, byteSize, transferList, rankOf,
   };
 })();

@@ -844,6 +844,12 @@
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
     const capCont = capSep && meta.capContinuous === true;
+    // D0 (contract A26): optional per-run pen / weight channels. A line carries penId / weightScale only when its run sets them; a MarkSet
+    // without the channels takes none of these branches (frame output byte-identical).
+    const rpen = ms.runPen || null; const rwt = ms.runWeight || null; const penIds = Array.isArray(meta.penIds) ? meta.penIds : null;
+    const WU = Scene3D.SurfaceLockMarkSet.WEIGHT_UNIT;
+    const penOf = (r) => (rpen && rpen[r] > 0 && penIds && penIds[rpen[r] - 1] ? penIds[rpen[r] - 1] : null);
+    const wtOf = (r) => (rwt && rwt[r] > 0 && rwt[r] !== WU ? rwt[r] / WU : 0);
     // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
     const guardD = view.toneModel === 'v2' && Number.isFinite(meta.guardPen) && meta.guardPen > 0 ? meta.guardPen * num(view.penWidth, 0)
       : (view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC);
@@ -904,7 +910,9 @@
           const a = (s % segs) * 2 * Math.PI / segs;
           ring.push(mkPt(SX[v0] + gr * Math.cos(a), SY[v0] + gr * Math.sin(a), SZ[v0]));
         }
-        ring.back = false; out.push(ring); acc.runsOut += 1; acc.verticesOut += ring.length;
+        ring.back = false;
+        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) ring.penId = pid; if (ws) ring.weightScale = ws; }
+        out.push(ring); acc.runsOut += 1; acc.verticesOut += ring.length;
         continue;
       }
       let nEff = n; const closed = (flags & CLOSED) !== 0;
@@ -963,7 +971,7 @@
       for (let s = 0; s < subs.length; s++) {
         const line = subs[s];
         if (line.length < 2) continue;
-        if (join && s === 0 && tail && tailRun === r - 1 && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
+        if (join && s === 0 && tail && tailRun === r - 1 && (!(rpen || rwt) || (tail.penId === penOf(r) || (tail.penId === undefined && !penOf(r))) && (tail.weightScale || 0) === wtOf(r)) && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
           && Math.abs(tail[tail.length - 1].y - line[0].y) < 1e-4 && Math.abs(tail[tail.length - 1].z - line[0].z) < 1e-4) {
           for (let q = 1; q < line.length; q++) tail.push(line[q]);
           acc.verticesOut += line.length - 1; tailRun = r;
@@ -975,7 +983,9 @@
         if (join) flushTail();
         const last = join && s === subs.length - 1;
         if (minMark > 0 && !last && lineLength(line) < minMark) continue;
-        line.back = false; out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
+        line.back = false;
+        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) line.penId = pid; if (ws) line.weightScale = ws; }
+        out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
         if (join) { tail = last ? line : null; tailRun = r; }
       }
     }
