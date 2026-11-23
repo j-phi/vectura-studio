@@ -51,6 +51,7 @@
     CAP_ORD_MAX: 4095,      // A21: ruling ordinal range of the cap word (low 12 bits)
     CAP_RHO_STEPS: 8,       // A21: local pitch ratio resolution of the cap word (high 4 bits, 1/8 steps, 15/8 max)
     V2_DUTY_SEP: 1.0,        // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
+    V2_SCRIB_KEY: 0.92,      // tone model v2 mkScribble: scales the tone key of each wave level (< 1 draws more at one tone)
     V2_DUTY_GUARD_PEN: 1.05, // tone model v2 dutyConst: crowd guard, in pens (ink width + a hair: lines may touch, never overlap)
     V2_DASH_GROUP_MM: 12,    // tone model v2 dutyConst: cells keyed in groups this long (screen mm)
     V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
@@ -637,7 +638,7 @@
             pts.push(offsetPt(F.P, F.s, (k % 2 ? -1 : 1) * amp * j / SCRIB_LEVELS * (x < 0 || x > R.total ? 0 : 1)));
           }
           // drop the zero-amplitude clamped end points that duplicate the ruling's ends
-          emitP(pts, rho * (cum + u * inc), fam, 0, capRank);
+          emitP(pts, rho * (cum + u * inc) * (T.v2 ? K.V2_SCRIB_KEY : 1), fam, 0, capRank);
           cum += inc;
         }
       } else { // bundleCount
