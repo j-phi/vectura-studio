@@ -13135,7 +13135,11 @@
       const rot = this._rotateCam({ x: -d.x, y: -d.y, z: -d.z }, cam); // toward-sun, camera space
       // dz is the camera-space depth of the toward-sun vector: > 0 the sun is on
       // the viewer's side of the scene (in front), < 0 it is behind it.
-      return { dx: rot.x * baseR, dy: -rot.y * baseR, dz: rot.z };
+      // The Scene group's Transform turns (and scales) the drawn ink, so the sun handle follows it too.
+      const L = this._sceneXfLinear(layer);
+      const v = { x: rot.x * baseR, y: -rot.y * baseR };
+      const o = L ? L.fwd(v) : v;
+      return { dx: o.x, dy: o.y, dz: rot.z };
     }
 
     // Inverse of _lightHandleOffset: a screen handle offset → {azimuth,elevation}.
@@ -14402,6 +14406,11 @@
         drag.historyPushed = true;
       }
       drag.moved = true;
+      {
+        // Undo the Scene Transform's linear part so the solves below see camera-space offsets.
+        const Lx = this._sceneXfLinear(layer);
+        if (Lx) { const u = Lx.inv({ x: dx, y: dy }); dx = u.x; dy = u.y; }
+      }
       if (drag.mode === 'shadow') {
         // Screen shadow delta → ground direction (camera-yaw math, matching
         // _applySceneGroundDrag). Sun azimuth is opposite the shadow; elevation
