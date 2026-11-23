@@ -61,6 +61,7 @@
     RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core, a third of it, must clear it)
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
+    WEIGHT_TOP: 1.9, WEIGHT_STEP: 0.1, WEIGHT_PAPER_BAND: 0.04, // WD-D3 weightModulated: width at the dark end (x the pen), width quantum, tone range that rolls off to paper
     AMP_SHARE: 0.4, AMP_MM_MIN: 0.34, AMP_MM_MAX: 0.6, AMP_LAMBDA_AMP: 12, AMP_LAMBDA_MIN_MM: 3.2, AMP_STEPS: 10, // WD-D1 ampSpacing wave
     PEN_MM_0: 0.26, PEN_MM_1: 0.52, PEN_MM_2: 0.93, // WD-D2 the three nibs' MEASURED widths (surface-fill PEN_MM, private there)
     PEN_DEEP_AREA: 0.93, PEN_LIGHT_AREA: 0.005, PEN_BLEND: 0.18, // WD-D2 pen laws: dark / light ink area, tier handoff window
@@ -83,6 +84,8 @@
   // WD-D2 (contract A28): the three-pen laws whose tone is the pen mix. Pen assignment is baked as runPen; the mix follows the tone through
   // each run's tone band (MarkSet.runBand). v2 only; hatch only (the crossing family of penCross / penReserve is the law's own).
   const PEN_LAW_IDS = ['penInterleave', 'penReserve', 'penCross'];
+  // WD-D3 (contract A29): weightModulated = one even grid (the ladder's level-0 rulings at the sparse-end pitch) with the tone carried by line width.
+  const WEIGHT_LAW_IDS = ['weightModulated'];
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(LAW_IDS.slice()),
@@ -104,6 +107,12 @@
     v2Only: true,
     mappers: Object.freeze(['hatch']),
     laws: Object.freeze(PEN_LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(WEIGHT_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   })]);
@@ -228,6 +237,7 @@
     const law = spec && spec.toneLaw;
     if (AMP_LAW_IDS.indexOf(law) !== -1) return ladder().toneLUT(ampLadderSpec(spec), toneCtx);
     if (PEN_LAW_IDS.indexOf(law) !== -1) return penLUT(spec, toneCtx);
+    if (WEIGHT_LAW_IDS.indexOf(law) !== -1) return weightLUT(spec, toneCtx);
     const T = toneParams(spec, (MARK_LAW_IDS.indexOf(law) !== -1 || law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx));
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
@@ -898,6 +908,66 @@
     return ms;
   };
 
+  // ---- WD-D3 weightModulated (contract A29) -------------------------------------------------------------------------------------------
+  // The pose law holds the GEOMETRY constant (one even pitch, the sparse end) and carries the tone as line width: w(I) = top + (1 - top) * ease(I),
+  // 1 pen in the light up to `top` in the shadow. Written for the lock: the plain v2 ladder of the spec supplies the grid (its level-0 rulings, at
+  // the sparse-end pitch p0); the LUT is flat (a screen-mm pitch, so the grid keeps its spacing at any zoom) and rolls off to paper over the lightest
+  // WEIGHT_PAPER_BAND of the tone by thinning rulings (a spatially even subset). The width is quantised into WEIGHT_STEP steps; each ruling is baked
+  // once per step with that width (runWeight) and the tone band in which w(I) rounds to the step (runBand), so the frame draws, at every vertex, the
+  // width the light asks for: the width follows the light while dragging with no rebake. Bands tile [0, 1], so tone OFF (I = 1) draws the lightest.
+  const weightTop = () => clamp(K.WEIGHT_TOP, 1, 6);
+  const weightAt = (I) => { const top = weightTop(); const u = clamp(finite(I, 0), 0, 1); return top + (1 - top) * (u * u * u * (u * (6 * u - 15) + 10)); };
+  const weightP0 = (spec) => { const lad = ladder().bake(ampLadderSpec(spec)); return finite(lad.meta.p0, 1); };
+  const weightLUT = (spec, toneCtx) => {
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const lut = new Float32Array(size + 1);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const flat = 1.001 / (weightP0(spec) * scaleRef);
+    const band = Math.max(1e-3, K.WEIGHT_PAPER_BAND);
+    const off = toneIsOff(toneCtx);
+    for (let k = 0; k <= size; k++) { const u = clamp((1 - k / size) / band, 0, 1); lut[k] = off ? flat : flat * u * u * (3 - 2 * u); }
+    return { lut, scaleFn: null };
+  };
+  const bakeWeight = (spec) => {
+    const L = ladder(); const SM = MS();
+    const ls = ampLadderSpec(spec);
+    if (!L || !L.supports(ls)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec');
+    const lad = L.bake(ls);
+    const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const out = [0, 0, 0]; const tmp = { count: 0 };
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const step = clamp(K.WEIGHT_STEP, 0.02, 1); const top = weightTop();
+    const nb = Math.max(1, Math.round((top - 1) / step) + 1);
+    const bandOf = (I) => clamp(Math.round((weightAt(I) - 1) / step), 0, nb - 1);
+    // the I interval [lo, hi] of each band (w decreases with I: band 0 is the lightest)
+    const lo = new Array(nb).fill(Infinity); const hi = new Array(nb).fill(-Infinity);
+    for (let k = 0; k <= size; k++) { const b = bandOf(k / size); lo[b] = Math.min(lo[b], (k - 0.5) / size); hi[b] = Math.max(hi[b], (k + 0.5) / size); }
+    for (let r = 0; r < lad.runCount; r++) {
+      if (lad.runLevel[r] !== 0) continue;
+      const flags = lad.runFlags[r];
+      if (flags & SM.FLAG.DOT) continue;
+      const rank = SM.rankOf(lad, r);
+      const n = lad.runStart[r + 1] - lad.runStart[r]; if (n < 2) continue;
+      for (let b = 0; b < nb; b++) {
+        if (!(hi[b] >= lo[b])) continue;
+        const w = Math.min(255, Math.round((1 + b * step) * SM.WEIGHT_UNIT));
+        B.beginRun(0, rank, lad.runFamily[r], flags, undefined, 0, w, Math.max(0, lo[b]), Math.min(1, hi[b]));
+        const v0 = lad.runStart[r];
+        for (let i = 0; i < n; i++) {
+          SM.octDecode(lad.normals, 2 * (v0 + i), out);
+          B.vertex(lad.positions[3 * (v0 + i)], lad.positions[3 * (v0 + i) + 1], lad.positions[3 * (v0 + i) + 2], out[0], out[1], out[2]);
+        }
+        tmp.count += n;
+        B.endRun();
+      }
+      if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+    }
+    const ms = B.finish();
+    ms.bakerId = 'laws';
+    ms.meta = Object.assign({}, lad.meta, { lawId: 'weightModulated', weightTop: top, weightP0: lad.meta.p0 });
+    return ms;
+  };
+
   // ---- the bake ----------------------------------------------------------------------------------------------
   const bake = (spec) => {
     sync();
@@ -905,6 +975,7 @@
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
     if (AMP_LAW_IDS.indexOf(law) !== -1) return bakeAmp(spec);
     if (PEN_LAW_IDS.indexOf(law) !== -1) return bakePen(spec);
+    if (WEIGHT_LAW_IDS.indexOf(law) !== -1) return bakeWeight(spec);
     if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
     const T = toneParams(spec, (law === 'dutyConst' || law === 'endShorten') && bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;

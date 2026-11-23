@@ -107,7 +107,8 @@ const buildTorusLaw = (V, toneLaw) => {
   const obj = engine.getLayerDescendants(groupId).filter((l) => l && l.type === 'object3d')[0];
   obj.params.primitive = 'torus';
   obj.params.style = obj.params.style || { penId: null, mapper: 'hatch', params: {} };
-  obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw };
+  // markSpace 'pose': this suite witnesses the POSE ribbon path (PenFill rings); a fresh v2 scene would bake weightModulated onto the surface (WD-D3, A29)
+  obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw, markSpace: 'pose' };
   return { engine, group };
 };
 

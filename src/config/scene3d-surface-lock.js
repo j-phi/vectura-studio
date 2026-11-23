@@ -208,6 +208,9 @@
       PEN_RES_FINE_FRAC: 0.08,  // WD-D2 penReserve: the fine crossing family's share of the grid
       PRES_PERIOD: 1 / 12,  // WD-D2 penReserve: transverse reserves per ruling, as a share of its length (surface-fill PRES_PERIOD)
       PRES_DUTY: 0.3,  // WD-D2 penReserve: the white share of each reserve period (the pose duty runs 0.3 darkest .. 0.6; surface-fill PRES_DUTY_MAX)
+      WEIGHT_TOP: 1.9,  // WD-D3 weightModulated: line width at the dark end, x the document pen (the pose ribbon reaches ~1.7; the lock rulings foreshorten so the ink sits ~0.7x of the pose: +12 %)
+      WEIGHT_STEP: 0.1,  // WD-D3 weightModulated: width quantum (each ruling is baked once per step, with a tone band)
+      WEIGHT_PAPER_BAND: 0.04,  // WD-D3 weightModulated: the lightest share of the tone range that thins to paper (the pose law is paper above L 0.9)
       AMP_STEPS: 10,  // WD-D1 ampSpacing: polyline samples per wavelength
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
