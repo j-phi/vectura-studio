@@ -12984,6 +12984,13 @@
         const l = this.engine.layers.find((x) => x.id === ss.layerId);
         if (l && l.type === 'scene3d' && l.visible !== false && !this.isLayerLocked?.(l.id)) return l;
       }
+      // Two or more object / combined-shape CHILD layers selected together (layers panel) arm the transform gizmo on
+      // their shared scene GROUP.
+      if (sel.length >= 2) {
+        const group = this._sceneGroupOfChild(sel[0]);
+        if (group && group.containerRole === 'scene' && group.visible !== false && !this.isLayerLocked?.(group.id)
+          && sel.every((l) => l && (l.type === 'object3d' || l.type === 'booleanGroup3d') && this._sceneChildLayerFor(group, l.id) === l)) return group;
+      }
       return null;
     }
 
@@ -13253,16 +13260,9 @@
       return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
     }
 
-    getSceneObjectGizmo(layer) {
-      if (!this._sceneHelpersVisible()) return null;
-      const target = layer || this._sceneLightLayer();
-      if (!target || target.type !== 'scene3d') return null;
-      const selLayers = this.getSelectedLayers ? this.getSelectedLayers() : [];
-      if (selLayers.length === 1 && selLayers[0] && selLayers[0].type === 'sceneGround3d') return null;
-      const sel = this.getSceneSelection();
-      if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds) || sel.objectIds.length !== 1) return null;
-      const objId = sel.objectIds[0];
-      if (!objId || objId === 'ground') return null;
+    // Doc-space anchor of one object for the gizmo: the centre of its ink, else (a boolean operand fully carved away, or an
+    // empty combined shape) its projected transform origin. Null when it has neither.
+    _sceneGizmoAnchor3(target, objId) {
       let center = this._sceneObjectPathCenter(target, objId);
       if (!center) {
         // A boolean operand that is fully carved away draws none of its own lines, so there is no
@@ -13272,16 +13272,69 @@
         const grp = !objDef ? this._sceneBooleanGroupLayer(target, objId) : null;
         if (grp) {
           // A combined shape with no ink: anchor on its pivot (operand centroid) plus its own move.
-          const B = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Boolean;
-          const ops = (this.engine.getLayerChildren ? this.engine.getLayerChildren(grp.id) : [])
-            .filter((c) => c && c.type === 'object3d' && c.params).map((c) => c.params.transform);
-          const pv = B && B.groupPivot ? B.groupPivot(ops) : { x: 0, y: 0, z: 0 };
+          const base = this._sceneGroupBase(target, objId);
           const gt = grp.params.transform || {};
-          xf = { x: pv.x + (Number(gt.x) || 0), y: pv.y + (Number(gt.y) || 0), z: pv.z + (Number(gt.z) || 0) };
+          xf = { x: base.x + (Number(gt.x) || 0), y: base.y + (Number(gt.y) || 0), z: base.z + (Number(gt.z) || 0) };
         }
         const pt = xf ? this._sceneProjectWorld(target, { x: Number(xf.x) || 0, y: Number(xf.y) || 0, z: Number(xf.z) || 0 }) : null;
         if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
         center = { x: pt.x, y: pt.y };
+      }
+      return center;
+    }
+
+    // World position a boolean group's own move is relative to (its operands' pivot); zero for a plain object.
+    _sceneGroupBase(layer, id) {
+      const grp = this._sceneBooleanGroupLayer(layer, id);
+      if (!grp) return { x: 0, y: 0, z: 0 };
+      const B = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Boolean;
+      const ops = (this.engine.getLayerChildren ? this.engine.getLayerChildren(grp.id) : [])
+        .filter((c) => c && c.type === 'object3d' && c.params).map((c) => c.params.transform);
+      const pv = B && B.groupPivot ? B.groupPivot(ops) : null;
+      return pv ? { x: Number(pv.x) || 0, y: Number(pv.y) || 0, z: Number(pv.z) || 0 } : { x: 0, y: 0, z: 0 };
+    }
+
+    // The ids a multi-object gizmo drives, or null when the selection is not a multi-selection (the single-object
+    // path then runs unchanged). Sources: the scene selection (Shift+Click / marquee) with 2+ objects, else 2+ object /
+    // combined-shape child layers selected in the layers panel. The ground is never a member.
+    _sceneMultiGizmoIds(target, sel) {
+      let raw = null;
+      const ids = sel && sel.mode === 'object' && sel.layerId === target.id && Array.isArray(sel.objectIds) ? sel.objectIds : null;
+      if (ids && ids.length >= 2) raw = ids;
+      else if (!sel || (ids && ids.length === 1)) {
+        const layers = this.getSelectedLayers ? this.getSelectedLayers() : [];
+        if (layers.length < 2 || !target.isGroup) return null;
+        if (!layers.every((l) => l && this._sceneChildLayerFor(target, l.id) === l)) return null;
+        raw = layers.map((l) => l.id);
+      } else return null;
+      return raw.filter((id) => id && id !== 'ground' && this._sceneXformTargetById(target, id));
+    }
+
+    getSceneObjectGizmo(layer) {
+      if (!this._sceneHelpersVisible()) return null;
+      const target = layer || this._sceneLightLayer();
+      if (!target || target.type !== 'scene3d') return null;
+      const selLayers = this.getSelectedLayers ? this.getSelectedLayers() : [];
+      if (selLayers.length === 1 && selLayers[0] && selLayers[0].type === 'sceneGround3d') return null;
+      const sel = this.getSceneSelection();
+      const multiIds = this._sceneMultiGizmoIds(target, sel);
+      let objId;
+      let center;
+      if (multiIds) {
+        // Two or more objects: one gizmo on the centroid of their anchors.
+        const anchors = multiIds.map((id) => this._sceneGizmoAnchor3(target, id)).filter(Boolean);
+        if (multiIds.length < 2 || anchors.length < 2) return null;
+        objId = multiIds[0];
+        center = {
+          x: anchors.reduce((a, p) => a + p.x, 0) / anchors.length,
+          y: anchors.reduce((a, p) => a + p.y, 0) / anchors.length,
+        };
+      } else {
+        if (!sel || sel.mode !== 'object' || !Array.isArray(sel.objectIds) || sel.objectIds.length !== 1) return null;
+        objId = sel.objectIds[0];
+        if (!objId || objId === 'ground') return null;
+        center = this._sceneGizmoAnchor3(target, objId);
+        if (!center) return null;
       }
       const cam = (target.params && target.params.camera) || {};
       const unit = 1 / Math.max(this.scale || 1, 0.001);
@@ -13327,7 +13380,7 @@
           basis: { p0: project(ax.perp[0]), p1: project(ax.perp[1]) },
         };
       });
-      return { objId, center, R, ringR, unit, axes };
+      return multiIds ? { objId, objIds: multiIds, center, R, ringR, unit, axes } : { objId, center, R, ringR, unit, axes };
     }
 
     // Reconstructs the ring-local parameter angle (radians) for a world-space
@@ -13389,6 +13442,35 @@
       const obj = this._sceneXformTargetById(layer, giz.objId);
       if (!obj) return false;
       const t = obj.transform || (obj.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
+      // Multi-selection: snapshot every member (start transform + the world base its position is relative to).
+      let members = null;
+      let pivot = null;
+      if (giz.objIds) {
+        members = giz.objIds.map((id) => {
+          const o = this._sceneXformTargetById(layer, id);
+          if (!o) return null;
+          const mt = o.transform || (o.transform = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 });
+          return {
+            id,
+            base: this._sceneGroupBase(layer, id),
+            start: {
+              x: Number(mt.x) || 0, y: Number(mt.y) || 0, z: Number(mt.z) || 0,
+              yaw: Number(mt.yaw) || 0, pitch: Number(mt.pitch) || 0, roll: Number(mt.roll) || 0,
+              scale: Number(mt.scale) || 1,
+              sx: Number.isFinite(mt.sx) ? mt.sx : (Number(mt.scale) || 1),
+              sy: Number.isFinite(mt.sy) ? mt.sy : (Number(mt.scale) || 1),
+              sz: Number.isFinite(mt.sz) ? mt.sz : (Number(mt.scale) || 1),
+            },
+            startHadAxis: Number.isFinite(mt.sx) || Number.isFinite(mt.sy) || Number.isFinite(mt.sz),
+          };
+        }).filter(Boolean);
+        members.forEach((m) => { m.pos = { x: m.base.x + m.start.x, y: m.base.y + m.start.y, z: m.base.z + m.start.z }; });
+        pivot = {
+          x: members.reduce((a, m) => a + m.pos.x, 0) / members.length,
+          y: members.reduce((a, m) => a + m.pos.y, 0) / members.length,
+          z: members.reduce((a, m) => a + m.pos.z, 0) / members.length,
+        };
+      }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
       // For a rotate grab, use the GRABBED ring's own local parameterization
@@ -13433,6 +13515,7 @@
         startHadAxis: Number.isFinite(t.sx) || Number.isFinite(t.sy) || Number.isFinite(t.sz),
         historyPushed: false,
         moved: false,
+        ...(members ? { members, pivot } : {}),
       };
       this.setCanvasCursor(hit.type === 'rotate' ? 'grabbing' : 'move');
       return true;
@@ -13482,6 +13565,12 @@
         drag.historyPushed = true;
       }
       drag.moved = true;
+      if (drag.members) {
+        const first = this._applySceneMultiGizmoDrag(layer, drag, e, world, dx, dy);
+        this._scheduleSceneDragRegen(layer.id);
+        this.showDragTooltip(`${drag.members.length} objects · ${this._gizmoTooltip(drag.type, first)}`, e.clientX ?? 0, e.clientY ?? 0);
+        return true;
+      }
       const t = obj.transform;
       const s = drag.start;
       const round2 = (val) => Math.round(val * 100) / 100;
@@ -13550,6 +13639,73 @@
       return true;
     }
 
+    // Multi-object gizmo frame: every member's transform is recomputed from its START snapshot (so the gesture is
+    // exactly reversible by Escape). Move adds one delta; rotate orbits the member's position about the pivot (the mean
+    // of the members' world positions) and adds the angle to its matching Euler field (the single-object gizmo's
+    // approximation); scale scales the offset from the pivot and the member's own scale, per axis or uniformly (Alt).
+    // Returns the first member's transform for the readout.
+    _applySceneMultiGizmoDrag(layer, drag, e, world, dx, dy) {
+      const round2 = (val) => Math.round(val * 100) / 100;
+      const cs = (val) => Math.round(clamp(val, 0.1, 5) * 1000) / 1000;
+      const modifiers = this.getModifierState(e);
+      const targets = drag.members.map((m) => ({ m, t: (this._sceneXformTargetById(layer, m.id) || {}).transform })).filter((x) => x.t);
+      const setPos = (m, t, p) => { t.x = round2(p.x - m.base.x); t.y = round2(p.y - m.base.y); t.z = round2(p.z - m.base.z); };
+      if (drag.type === 'move') {
+        const Lx = this._sceneXfLinear(layer);
+        if (Lx) { const v = Lx.inv({ x: dx, y: dy }); dx = v.x; dy = v.y; }
+        const cy = Math.cos(drag.camYaw); const sy = Math.sin(drag.camYaw);
+        const d = { x: 0, y: 0, z: 0 };
+        if (drag.axis === 'x') d.x = dx * cy + dy * sy;
+        else if (drag.axis === 'z') d.z = -dx * sy + dy * cy;
+        else d.y = -dy;
+        targets.forEach(({ m, t }) => { t.x = round2(m.start.x + d.x); t.y = round2(m.start.y + d.y); t.z = round2(m.start.z + d.z); });
+      } else if (drag.type === 'rotate') {
+        const ang = drag.ringBasis
+          ? this._sceneGizmoRingAngle(drag.ringBasis, drag.ringR, world, drag.center)
+          : Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
+        let step = (ang - drag.lastRingAngle) * 180 / Math.PI;
+        while (step > 180) step -= 360;
+        while (step <= -180) step += 360;
+        drag.accumDeg += step;
+        drag.lastRingAngle = ang;
+        let dDeg = drag.accumDeg;
+        if (modifiers.shift) dDeg = Math.round(dDeg / 15) * 15;
+        const th = dDeg * Math.PI / 180;
+        const c = Math.cos(th); const s = Math.sin(th);
+        const field = drag.axis === 'y' ? 'yaw' : (drag.axis === 'x' ? 'pitch' : 'roll');
+        targets.forEach(({ m, t }) => {
+          const o = { x: m.pos.x - drag.pivot.x, y: m.pos.y - drag.pivot.y, z: m.pos.z - drag.pivot.z };
+          // Same axis conventions as the engine's rotator (yaw about Y, pitch about X, roll about Z).
+          if (drag.axis === 'y') [o.x, o.z] = [o.x * c + o.z * s, -o.x * s + o.z * c];
+          else if (drag.axis === 'x') [o.y, o.z] = [o.y * c - o.z * s, o.y * s + o.z * c];
+          else [o.x, o.y] = [o.x * c - o.y * s, o.x * s + o.y * c];
+          setPos(m, t, { x: drag.pivot.x + o.x, y: drag.pivot.y + o.y, z: drag.pivot.z + o.z });
+          t[field] = Math.round((m.start[field] + dDeg) * 10) / 10;
+        });
+      } else {
+        const dist = Math.max(1e-3, Math.hypot(world.x - drag.center.x, world.y - drag.center.y));
+        const ratio = clamp(dist / drag.startDist, 0.1, 5);
+        const uniform = Boolean(modifiers.alt);
+        targets.forEach(({ m, t }) => {
+          const s = m.start;
+          const o = { x: m.pos.x - drag.pivot.x, y: m.pos.y - drag.pivot.y, z: m.pos.z - drag.pivot.z };
+          const wasNonUniform = !(s.sx === s.scale && s.sy === s.scale && s.sz === s.scale);
+          if (uniform) {
+            o.x *= ratio; o.y *= ratio; o.z *= ratio;
+            t.scale = cs(s.scale * ratio);
+            if (wasNonUniform) { t.sx = cs(s.sx * ratio); t.sy = cs(s.sy * ratio); t.sz = cs(s.sz * ratio); }
+          } else {
+            o[drag.axis] *= ratio;
+            t.sx = drag.axis === 'x' ? cs(s.sx * ratio) : cs(s.sx);
+            t.sy = drag.axis === 'y' ? cs(s.sy * ratio) : cs(s.sy);
+            t.sz = drag.axis === 'z' ? cs(s.sz * ratio) : cs(s.sz);
+          }
+          setPos(m, t, { x: drag.pivot.x + o.x, y: drag.pivot.y + o.y, z: drag.pivot.z + o.z });
+        });
+      }
+      return targets.length ? targets[0].t : {};
+    }
+
     _endSceneObjectGizmoDrag() {
       const drag = this._sceneObjectGizmoDrag;
       this._sceneObjectGizmoDrag = null;
@@ -13569,22 +13725,29 @@
           // fights the user; a stored 400°/-464° is otherwise indistinguishable
           // from 40° in a static plotter tool, so there is no reason to keep
           // an unbounded winding count once the gesture ends.
-          const obj = this._sceneXformTargetById(layer, drag.objectId);
-          if (obj?.transform) {
-            const wrap360 = (deg) => { const v = deg % 360; return v < 0 ? v + 360 : v; };
-            if (drag.axis === 'y') obj.transform.yaw = wrap360(obj.transform.yaw);
-            else if (drag.axis === 'x') obj.transform.pitch = wrap360(obj.transform.pitch);
-            else obj.transform.roll = wrap360(obj.transform.roll);
-          }
+          const ids = drag.members ? drag.members.map((m) => m.id) : [drag.objectId];
+          ids.forEach((id) => {
+            const obj = this._sceneXformTargetById(layer, id);
+            if (obj?.transform) {
+              const wrap360 = (deg) => { const v = deg % 360; return v < 0 ? v + 360 : v; };
+              if (drag.axis === 'y') obj.transform.yaw = wrap360(obj.transform.yaw);
+              else if (drag.axis === 'x') obj.transform.pitch = wrap360(obj.transform.pitch);
+              else obj.transform.roll = wrap360(obj.transform.roll);
+            }
+          });
         }
-        this._sceneTrimGroupTransform(layer, drag.objectId);
+        (drag.members ? drag.members.map((m) => m.id) : [drag.objectId]).forEach((id) => this._sceneTrimGroupTransform(layer, id));
         // B3 — the release render is the gesture's ONLY full-quality compose
         // (drag frames are draft tiers). Deferred past the release paint and
         // cancelled by the next drag on this scene, so rapid nudges do not
         // stack seconds of settle freezes.
+        // A multi-object drag keeps its selection: rebuilding the panel mirrors its single focused object back onto the canvas
+        // (scene3d-panel mirrorChildToCanvas), which would collapse the selection to one object, so it is restored after.
+        const keepSel = drag.members && this.sceneSelection ? { ...this.sceneSelection } : null;
         this._scheduleSceneSettleRegen(layer.id, (settled) => {
           this.app?.ui?.updateFormula?.();
           this.app?.ui?.buildControls?.(settled);
+          if (keepSel) this.setSceneSelection(keepSel, { silent: true });
         });
       }
       this.updateCursor();
@@ -13602,18 +13765,22 @@
       }
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
-      const obj = layer && this._sceneXformTargetById(layer, drag.objectId);
-      if (obj && obj.transform) {
-        Object.assign(obj.transform, drag.start);
-        // If the object was uniform when grabbed, a per-axis drag added sx/sy/sz;
-        // strip them so Escape restores the exact pre-drag (scale-only) shape.
-        if (!drag.startHadAxis) {
-          delete obj.transform.sx;
-          delete obj.transform.sy;
-          delete obj.transform.sz;
+      const restore = (id, start, hadAxis) => {
+        const obj = layer && this._sceneXformTargetById(layer, id);
+        if (obj && obj.transform) {
+          Object.assign(obj.transform, start);
+          // If the object was uniform when grabbed, a per-axis drag added sx/sy/sz;
+          // strip them so Escape restores the exact pre-drag (scale-only) shape.
+          if (!hadAxis) {
+            delete obj.transform.sx;
+            delete obj.transform.sy;
+            delete obj.transform.sz;
+          }
         }
-      }
-      if (layer) this._sceneTrimGroupTransform(layer, drag.objectId);
+        if (layer) this._sceneTrimGroupTransform(layer, id);
+      };
+      if (drag.members) drag.members.forEach((m) => restore(m.id, m.start, m.startHadAxis));
+      else restore(drag.objectId, drag.start, drag.startHadAxis);
       if (drag.moved && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) this.app.history.pop();
       if (layer) this.engine.generate(layer.id);
       this.updateCursor();
