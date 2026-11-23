@@ -229,10 +229,9 @@ describe('[tone model v2] Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope
     test('MUTATION nohook (join/segment bend check removed) trips it (15.5 deg on sphere/contour)', () => {
       expect(extBend('nohook')).toBeGreaterThan(8.5);
     });
-    // v2 (U8). KNOWN v2 DEFECT, reported to the owner (NOT widened around): under tone model v2 one continuation tick on the TEST rig
-    // torus/contour (cont|1|7|8.7018|3, 4 vertices, 1.07 mm, at ~582.2,497.9, ends 'IS' = other-row ink + surface edge) ends in a 40.1 deg
-    // hook at its last 0.28 mm (legacy worst on that cell: 9.2). Every other cell stays <= 8.3. `test.fails` pins the 12-cell bar at its
-    // legacy value 10 so it flips RED the day the hook is fixed (then promote it to a plain `test`).
+    // v2 (U9, fixed). Under tone model v2 one continuation tick on the TEST rig torus/contour (cont|1|7|8.7018|3) ended in a 40.1 deg
+    // hook at its last 0.28 mm: its two arms leave the hub in opposite LOCAL directions, but the arm running into the limb turned 40 deg
+    // in screen space. `walkPoly` now (v2, continuation ticks only: `mkJoinCut`) drops the foreshortened arm when the hub bend exceeds 9 deg.
     const CONT_CELLS = ALL.filter(([rig, p, m]) => !(rig === 'test' && p === 'torus' && m === 'contour'));
     const contWorst = (kind, cells) => Math.max(...cells.map(([rig, p, m]) => R[kind][key(50, rig, p, m)].contBend));
     test('continuation + apex runs: no internal bend > 10 deg on the 11 cells without the known v2 hook (measured 8.3)', () => {
@@ -243,7 +242,7 @@ describe('[tone model v2] Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope
     test('MUTATION kinked (every walked mark point jittered sideways in chart space) exceeds 10 deg on the 11 cells', () => {
       expect(contWorst('kinked', CONT_CELLS)).toBeGreaterThan(10);
     });
-    test.fails('KNOWN v2 DEFECT: continuation + apex runs: no internal bend > 10 deg on ALL 12 cells (test torus/contour measures 40.1)', () => {
+    test('continuation + apex runs: no internal bend > 10 deg on ALL 12 cells (U9: was 40.1 on test torus/contour)', () => {
       expect(contWorst('ship', ALL)).toBeLessThanOrEqual(10);
     });
   });
