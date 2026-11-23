@@ -649,7 +649,7 @@
       setSparse: (v) => { sparse = v; },
       emittedCount: () => famIdx,
       cutCount: () => cutSegs,
-      lat, ok, minX, minY, maxX, maxY, W, H: Hh, R, SEED_STRIDE,
+      lat, ok, minX, minY, maxX, maxY, W, H: Hh, R, SEED_STRIDE, draft: !!SD,
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
       stripeAlign: clamp(finite(o.stripeAlign, 0), 0, STRIPE_ALIGN_MAX),
@@ -813,7 +813,11 @@
     // read of any accessor and never for the other laws. `inv` is a pure
     // function of the chart (no RNG, no cache), so building later yields the
     // same values; `C.fieldBuilds` counts the builds (0 or 1) for the tests.
-    const N = 132;
+    // DRAFT: the depth raster is the single dearest term of etfKang's law tier
+    // (one `inv` + shade per cell), and the draft's 48-cell Kang grid cannot
+    // resolve a 132 raster anyway, so the law tier rasters at 66. Settled = 132.
+    const N = C.draft ? 66 : 132;
+    C.fieldCells = (N + 1) * (N + 1);
     const dx = C.W / N; const dy = C.H / N;
     let Z = null; let Ii = null; let M = null;
     C.fieldBuilds = 0;
@@ -922,7 +926,14 @@
    * curvature is stated by the direction of the ink and not by its density.
    */
   const lawEtf = (C) => {
-    const NG = 96;
+    // DRAFT ('law' drag tier only, `C.draft`): the direction grid is 48 and Kang
+    // runs 2 passes instead of 96 / 4. The field is a smooth screen-space
+    // gradient, so a coarser grid + fewer smoothing passes keeps the flow's
+    // look while a drag keeps its tone. The settled compose and every export
+    // (no substrateDraft) keep 96 / 4 byte-for-byte.
+    const NG = C.draft ? 48 : 96;
+    const PASSES = C.draft ? 2 : 4;
+    C.etfWork = NG * NG * PASSES;     // grid cells x passes (test-visible)
     const dx = C.W / NG; const dy = C.H / NG;
     let TX = new Float32Array((NG + 1) * (NG + 1));
     let TY = new Float32Array((NG + 1) * (NG + 1));
@@ -969,7 +980,7 @@
     // of this law's seed signal on non-simply-connected silhouettes; the cone
     // has its own instance of the same root cause (a 46.9 degree cross-axis
     // direction jump down its visible ridge, bar 15 degrees).
-    for (let it = 0; it < 4; it++) {
+    for (let it = 0; it < PASSES; it++) {
       const NX = new Float32Array(TX.length);
       const NY = new Float32Array(TY.length);
       for (let j = 2; j < NG - 1; j++) {
@@ -3371,6 +3382,7 @@
     // about its SEED SET, and the seed set is not recoverable from the emitted
     // ink — the ink is what survived the silhouette cut.
     if (C.voronoiDiag) diag.voronoi = C.voronoiDiag;
+    if (C.etfWork !== undefined) { diag.etfWork = C.etfWork; diag.fieldCells = C.fieldCells; }
     globalScope.__MONO_DIAG = diag;
     // A measuring harness must be able to ask THIS substrate whether a screen
     // point is on the visible surface — a harness that reimplements `inv` is
