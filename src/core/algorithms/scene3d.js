@@ -2080,6 +2080,15 @@
           });
         });
       });
+      // U4: a RAISED floor (finite non-zero ground.y) hides scene geometry below it. Only when the camera sees its top
+      // side; ground ink/shadows carry objectId 'ground' and are coplanar (inside the depth bias), so they are not clipped.
+      // ground.y absent/0: no occluder, byte-identical to before.
+      if (scene.ground && Number.isFinite((p.ground || {}).y) && p.ground.y !== 0) {
+        scene.ground.faces.forEach((face) => {
+          if (!face.front || !(face.normalWorld && face.normalWorld.y > 0)) return;
+          occluderFaces.push({ id: face.key, objectId: 'ground', polygon: face.polygon, onlyOwnObject: false });
+        });
+      }
       // P5 (draft-only coarser HLR sampling): `bounds.fastPreview` is a
       // `generate()` argument, set once by its caller and never reassigned
       // before this point (verified — the only other `bounds` identifier in

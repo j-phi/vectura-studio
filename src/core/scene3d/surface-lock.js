@@ -1299,6 +1299,65 @@
     };
   };
 
+  // U4: a raised floor (finite non-zero ground.y) hides what lies below it. The occluder buffer is object-space triangles
+  // (and a floor spanning the screen would swamp its grid), so the floor is a synthetic depth plane instead: the projected
+  // floor ring plus the plane through three of its vertices (the pose path's HLR occluder is the same plane and polygon).
+  // Built once per frame from the 4-6 ring vertices; null when the floor is flat, off, edge-on or seen from below.
+  const groundCover = (ground, camera, bounds, ring) => {
+    const gy = Number(ground && ground.y);
+    if (!ring || !Number.isFinite(gy) || gy === 0 || ring.length < 4) return null;
+    const G3 = Vectura.Geometry3D; const c = camera || {};
+    const up = G3.rotatePoint({ x: 0, y: 1, z: 0 }, { yaw: num(c.yaw, 0), pitch: num(c.pitch, 0), roll: num(c.roll, 0) });
+    if (!(up.z > 1e-9)) return null; // the plate is double-sided in pose; it occludes only from above
+    const poly = ring.slice(0, ring.length - 1);
+    let best = null; let area = 1e-9;
+    for (let j = 1; j + 1 < poly.length; j += 1) {
+      const a = poly[0]; const b = poly[j]; const d = poly[j + 1];
+      const ar = Math.abs((b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x));
+      if (ar > area) { area = ar; best = [a, b, d]; }
+    }
+    if (!best) return null;
+    const [a, b, d] = best;
+    const e1x = b.x - a.x; const e1y = b.y - a.y; const e2x = d.x - a.x; const e2y = d.y - a.y;
+    const det = e1x * e2y - e1y * e2x;
+    const dz1 = b.z - a.z; const dz2 = d.z - a.z;
+    const zx = (dz1 * e2y - dz2 * e1y) / det; const zy = (dz2 * e1x - dz1 * e2x) / det;
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    poly.forEach((q) => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+    const inside = (x, y) => {
+      let hit = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+        const p = poly[i]; const q = poly[j];
+        if ((p.y > y) !== (q.y > y) && x < ((q.x - p.x) * (y - p.y)) / (q.y - p.y) + p.x) hit = !hit;
+      }
+      return hit;
+    };
+    const BIAS = 0.05;
+    const hidden = (pt) => pt.x >= x0 && pt.x <= x1 && pt.y >= y0 && pt.y <= y1
+      && a.z + zx * (pt.x - a.x) + zy * (pt.y - a.y) > pt.z + BIAS && inside(pt.x, pt.y);
+    // Splits a polyline at the plane: a crossing is bisected on the segment; returns the runs that stay visible.
+    const clip = (pts) => {
+      const flags = pts.map(hidden);
+      if (!flags.some(Boolean)) return [pts];
+      const lerp = (p, q, t) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t, z: p.z + (q.z - p.z) * t });
+      const edge = (p, q, pHid) => { // the boundary point between a visible and a hidden vertex
+        let lo = 0; let hi = 1;
+        for (let k = 0; k < 14; k += 1) { const m = (lo + hi) / 2; if (hidden(lerp(p, q, m)) === pHid) lo = m; else hi = m; }
+        return lerp(p, q, pHid ? hi : lo);
+      };
+      const out = []; let cur = null;
+      for (let i = 0; i < pts.length; i += 1) {
+        if (!flags[i]) {
+          if (!cur) { cur = []; if (i > 0 && flags[i - 1]) cur.push(edge(pts[i - 1], pts[i], true)); }
+          cur.push(pts[i]);
+        } else if (cur) { cur.push(edge(pts[i - 1], pts[i], false)); out.push(cur); cur = null; }
+      }
+      if (cur) out.push(cur);
+      return out.filter((r) => r.length > 1);
+    };
+    return { hidden, clip };
+  };
+
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -1336,6 +1395,19 @@
     const cam = p.camera || {};
     const groundOn = !!(p.ground && p.ground.enabled !== false);
     const deferredGround = []; const deferredShadow = [];
+    const groundRingPts = groundOn ? groundRing(p.ground, cam, bounds) : null;
+    const cover = groundOn ? groundCover(p.ground, cam, bounds, groundRingPts) : null;
+    // Object marks and edges only: the ground's own ink and its shadow lie ON the plane and are never tested against it.
+    const underFloor = (runs) => {
+      if (!cover) return runs;
+      const out = [];
+      runs.forEach((r) => {
+        const parts = cover.clip(r.pts);
+        if (parts.length === 1 && parts[0] === r.pts) out.push(r);
+        else parts.forEach((pts) => out.push({ ...r, pts, closed: false }));
+      });
+      return out;
+    };
     if (shadowOn) {
       const seed = seedOf('ground');
       const persp = camPose.cam.persp;
@@ -1358,7 +1430,7 @@
       });
     }
     if (groundOn && typeof ctx.emitGround === 'function') {
-      const ring = groundRing(p.ground, cam, bounds);
+      const ring = groundRingPts;
       if (ring) {
         const out = clipLine(ring, GROUND_SEG, false);
         if (out.length) deferredGround.push(() => ctx.emitGround(out));
@@ -1402,13 +1474,15 @@
               clipLine(line, seg, closed).forEach((q) => runs.push(q));
             });
           }
-          if (runs.length) ctx.emitFill(o.id, runs);
+          const shown = underFloor(runs);
+          if (shown.length) ctx.emitFill(o.id, shown);
         } else complete = false; // no baker (or a throwing one): the caller renders this scene in pose mode
       }
       if (Vis && typeof Vis.outline === 'function') {
         const ol = Vis.outline(meshes[i], poses[i], occ) || {};
         ['silhouette', 'crease', 'boundary'].forEach((cls) => {
-          if (ol[cls] && ol[cls].length) ctx.emitEdge(o.id, cls, ol[cls]);
+          const shown = ol[cls] && ol[cls].length ? underFloor(ol[cls]) : null;
+          if (shown && shown.length) ctx.emitEdge(o.id, cls, shown);
         });
       }
     });
