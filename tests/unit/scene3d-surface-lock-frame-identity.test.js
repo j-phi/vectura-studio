@@ -27,15 +27,16 @@ describe('SurfaceLock sceneFrame byte-identity witness (U1)', () => {
   beforeAll(async () => { rt = await loadSurfaceLockRuntime(); V = rt.V; SL = V.Scene3D.SurfaceLock; }, 120000);
   afterAll(() => rt && rt.cleanup());
 
-  const run = (opts, receive) => {
+  const run = (opts, receive, setup) => {
     const s = buildSurfaceLockScene(V, { ...opts, markSpace: 'surface', mapper: 'hatch' });
     if (receive) s.group.params.shadow = Object.assign({}, s.group.params.shadow, { shadowReceiveOnObjects: true });
     s.composeFull();
+    if (setup) setup();
     const h = crypto.createHash('sha256'); const ids = new Map();
     SL.resetStats();
     for (let i = 0; i < POSES; i++) { s.setPose({ camYaw: -30 + i * 5, camPitch: 20 }); hashPaths(h, s.composePreview(), ids); }
     const counters = {}; COUNTERS.forEach((k) => { counters[k] = SL.stats[k]; });
-    return { sha: h.digest('hex'), counters };
+    return { sha: h.digest('hex'), counters, projected: SL.stats.prepassProjected };
   };
 
   const CASES = {
@@ -49,7 +50,31 @@ describe('SurfaceLock sceneFrame byte-identity witness (U1)', () => {
       const got = CASES[name]();
       if (process.env.PIN_PRINT) console.log(`PIN ${name} ${JSON.stringify(got)}`); // eslint-disable-line no-console
       expect(PINS[name]).toBeTruthy();
-      expect(got).toEqual(PINS[name]);
+      expect({ sha: got.sha, counters: got.counters }).toEqual(PINS[name]);
     }, 120000);
   });
+
+  // U1a: the prepass projects only the blocks that can face the camera. Orthographic Duty Cycle sphere: about half the surface is
+  // back-facing, so at most 60 % of the vertices the frame visits are projected (without the skip it is every one: 1.0).
+  it('Duty Cycle sphere (orthographic): the prepass projects at most 60% of the vertices the frame visits', () => {
+    const got = CASES.dutyCycleSphere();
+    expect(got.counters.verticesIn).toBeGreaterThan(0);
+    expect(got.projected).toBeGreaterThan(0);
+    expect(got.projected).toBeLessThanOrEqual(0.6 * got.counters.verticesIn);
+  }, 120000);
+
+  // Mutation proof: a skip that is over-eager (a margin that also skips blocks that still face the camera) changes the witness hash,
+  // and the exact margin does not. Guards the "exact, never approximate" claim of the block skip.
+  it('an over-eager block skip changes the output hash (mutation proof); disabling it reproduces the pin', () => {
+    const was = { ...SL.blockSkip };
+    try {
+      SL.blockSkip.marginRad = -0.6; // skips blocks whose normals still turn up to 0.6 rad toward the camera
+      const bad = run({ kind: 'sphere', style: { toneLaw: 'dutyConst' } });
+      expect(bad.sha).not.toBe(PINS.dutyCycleSphere.sha);
+      SL.blockSkip.marginRad = was.marginRad; SL.blockSkip.enabled = false;
+      const off = run({ kind: 'sphere', style: { toneLaw: 'dutyConst' } });
+      expect(off.sha).toBe(PINS.dutyCycleSphere.sha);
+      expect(off.projected).toBe(off.counters.verticesIn);
+    } finally { Object.assign(SL.blockSkip, was); }
+  }, 120000);
 });

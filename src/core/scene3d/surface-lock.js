@@ -71,7 +71,7 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, prepassProjected: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
     bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
@@ -447,8 +447,55 @@
     runLasts.set(ms, o); return o;
   };
 
+  // U1a back-face block skip (orthographic only). Runs are grouped, in bake order, into blocks of about BLOCK_VERTS vertices; each
+  // block keeps the cone of its vertex normals (unit axis m, half-angle a >= every angle(n, m)). Orthographic facing is n . v with
+  // v the one view direction in object space, so when angle(v, m) - a > 90 deg + margin every vertex of the block has facing < 0:
+  // every run in it would be culled whole (frameSet counts it culledFacing and draws nothing), so the prepass skips its vertices.
+  // Exact, never approximate: the margin is the slack for float rounding. `blockSkip` is the test hook (tests move marginRad to
+  // prove an over-eager skip changes the output; enabled=false is the pre-U1a path).
+  const BLOCK_VERTS = 8;
+  const blockSkip = { enabled: true, marginRad: 1e-6 };
+  const blockCones = new WeakMap();
+  const blockConesOf = (ms) => {
+    let c = blockCones.get(ms);
+    if (c && c.nv === ms.vertexCount && c.nr === ms.runCount) return c;
+    const nr = ms.runCount; const rs = ms.runStart; const nrm = decodedNormals(ms);
+    const runBlock = new Int32Array(nr); const bRun0 = []; const bV0 = []; const bV1 = []; const ax = []; const ay = []; const az = []; const half = [];
+    let r = 0;
+    while (r < nr) {
+      const b = bV0.length; const v0 = rs[r]; let r1 = r; let v1 = v0;
+      while (r1 < nr && (r1 === r || v1 - v0 < BLOCK_VERTS)) { runBlock[r1] = b; v1 = rs[r1 + 1]; r1 += 1; }
+      let sx = 0; let sy = 0; let sz = 0;
+      for (let v = v0; v < v1; v++) { sx += nrm[3 * v]; sy += nrm[3 * v + 1]; sz += nrm[3 * v + 2]; }
+      const sl = Math.sqrt(sx * sx + sy * sy + sz * sz);
+      let mx = 0; let my = 0; let mz = 0; let h = Math.PI; // a zero sum (normals cancel) keeps the block whole: half-angle pi never skips
+      if (sl > 1e-9) {
+        mx = sx / sl; my = sy / sl; mz = sz / sl; let mn = 1;
+        for (let v = v0; v < v1; v++) { const d = mx * nrm[3 * v] + my * nrm[3 * v + 1] + mz * nrm[3 * v + 2]; if (d < mn) mn = d; }
+        h = Math.acos(Math.max(-1, Math.min(1, mn))) + 1e-6;
+      }
+      bRun0.push(r); bV0.push(v0); bV1.push(v1); ax.push(mx); ay.push(my); az.push(mz); half.push(h);
+      r = r1;
+    }
+    c = { nv: ms.vertexCount, nr, runBlock, count: bV0.length, v0: Int32Array.from(bV0), v1: Int32Array.from(bV1),
+      ax: Float64Array.from(ax), ay: Float64Array.from(ay), az: Float64Array.from(az), half: Float64Array.from(half), skip: new Uint8Array(bV0.length) };
+    blockCones.set(ms, c);
+    return c;
+  };
+  // Marks the blocks that are wholly back-facing for this frame; returns the cone record (skip flags in .skip) or null.
+  const markBackBlocks = (ms, F) => {
+    if (F.persp || !blockSkip.enabled || !(ms.runCount > 0)) return null;
+    const c = blockConesOf(ms); const A = F.A; const lim = Math.PI / 2 + blockSkip.marginRad;
+    const vx = A[6]; const vy = A[7]; const vz = A[8]; const skip = c.skip;
+    for (let b = 0; b < c.count; b++) {
+      const d = vx * c.ax[b] + vy * c.ay[b] + vz * c.az[b];
+      skip[b] = (c.half[b] < Math.PI && Math.acos(Math.max(-1, Math.min(1, d))) - c.half[b] > lim) ? 1 : 0;
+    }
+    return c;
+  };
+
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
-  const prepass = (ms, F, view) => {
+  const prepass = (ms, F, view, blocks) => {
     const nv = ms.vertexCount; const pos = ms.positions; const nrm = decodedNormals(ms);
     const meta = ms.meta || {};
     const p0 = meta.p0; const gain = meta.gain || 2;
@@ -477,7 +524,12 @@
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
     const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
-    for (let v = 0; v < nv; v++) {
+    const nbk = blocks ? blocks.count : 1; let projected = 0;
+    for (let bi = 0; bi < nbk; bi++) {
+    let vs = 0; let ve = nv;
+    if (blocks) { if (blocks.skip[bi]) continue; vs = blocks.v0[bi]; ve = blocks.v1[bi]; } // a wholly back-facing block (U1a): its runs are culled whole by frameSet and never read these slots
+    projected += ve - vs;
+    for (let v = vs; v < ve; v++) {
       const px = pos[3 * v]; const py = pos[3 * v + 1]; const pz = pos[3 * v + 2];
       const nx = nrm[3 * v]; const ny = nrm[3 * v + 1]; const nz = nrm[3 * v + 2];
       const cx = a00 * px + a01 * py + a02 * pz + tx;
@@ -607,6 +659,8 @@
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
     }
+    }
+    stats.prepassProjected += projected;
     return undefined;
   };
 
@@ -690,7 +744,8 @@
 
   const frameSet = (ms, F, view, out, acc) => {
     const MS = Scene3D.SurfaceLockMarkSet;
-    prepass(ms, F, view);
+    const blocks = markBackBlocks(ms, F);
+    prepass(ms, F, view, blocks);
     const meta = ms.meta || {};
     const gain = meta.gain || 2;
     const minMark = num(meta.minMarkMM, 0);
@@ -737,6 +792,7 @@
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
+      if (blocks && blocks.skip[blocks.runBlock[r]]) { acc.culledFacing += n; continue; }
       if (comp) {
         const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
         for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
@@ -1279,6 +1335,7 @@
     EXCLUSIONS,
     FRAMEABLE,
     stats,
+    blockSkip,
     resetStats,
     effectiveMarkSpace,
     explainMarkSpace,
