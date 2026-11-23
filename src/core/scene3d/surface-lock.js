@@ -1080,6 +1080,7 @@
       mapper: st.mapper, toneLaw: P && P.resolveToneLaw ? P.resolveToneLaw(sp) : sp.toneLaw,
       style: sp, penWidth: num(bounds && bounds.penWidth, 0), scaleRef: 1, seed: seed || null,
       ...(toneModelOf(p) === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(bounds && bounds.dragPreview === true ? { dragPreview: true } : {}),
       ...(toneDarknessOf(p) !== undefined ? { toneDarkness: toneDarknessOf(p) } : {}),
     };
   };

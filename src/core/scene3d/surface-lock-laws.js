@@ -86,6 +86,8 @@
   const PEN_LAW_IDS = ['penInterleave', 'penReserve', 'penCross'];
   // WD-D3 (contract A29): weightModulated = one even grid (the ladder's level-0 rulings at the sparse-end pitch) with the tone carried by line width.
   const WEIGHT_LAW_IDS = ['weightModulated'];
+  // dragPreviewOnly rows (owner decision, contract A28 / A29): the bake draws the light-following fill WHILE A 3D DRAG / ORBIT IS IN PROGRESS
+  // only (`spec.dragPreview === true`, set from `bounds.dragPreview`); settled and export output is the pose compose, byte for byte.
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(LAW_IDS.slice()),
@@ -105,12 +107,14 @@
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   }), Object.freeze({
     v2Only: true,
+    dragPreviewOnly: true,
     mappers: Object.freeze(['hatch']),
     laws: Object.freeze(PEN_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   }), Object.freeze({
     v2Only: true,
+    dragPreviewOnly: true,
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(WEIGHT_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
@@ -272,6 +276,7 @@
     const style = spec.style || {};
     return FIT.some((row) => row.laws.indexOf(spec.toneLaw) !== -1
       && (!row.v2Only || bakeIsV2(spec))
+      && (!row.dragPreviewOnly || spec.dragPreview === true)
       && row.mappers.indexOf(spec.mapper) !== -1
       && row.primitives.indexOf(prim) !== -1
       && !Object.keys(row.refuse).some((k) => row.refuse[k].indexOf(style[k]) !== -1));

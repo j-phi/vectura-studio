@@ -1746,6 +1746,7 @@
       scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
       seed: G3.snapshotSeedState(),
       ...(p.tone && p.tone.model === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(bounds && bounds.dragPreview === true ? { dragPreview: true } : {}),
       ...(shadeDarkOf(p) !== undefined ? { toneDarkness: shadeDarkOf(p) } : {}),
     };
   };

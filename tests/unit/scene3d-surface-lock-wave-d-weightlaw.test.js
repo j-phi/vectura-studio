@@ -1,6 +1,12 @@
 const { loadSurfaceLockRuntime, dragEqualsExport } = require('../helpers/surface-lock-scene');
 const LR = require('../helpers/light-realism');
+const crypto = require('crypto');
+const { signature } = require('../helpers/surface-lock-scene');
+// object ids are random per scene: normalised before hashing
+const shaOf = (paths) => crypto.createHash('sha1').update(signature(paths, 9).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, 'ID')).digest('hex');
 
+// Owner decision (contract A29): the surface bake is DRAG-PREVIEW ONLY (FIT row `dragPreviewOnly`, spec.dragPreview from bounds.dragPreview).
+// While a 3D drag / orbit is in progress the frame comes from the bake; settled and export output is the POSE compose, byte for byte.
 // Wave D (WD-D3): weightModulated is baked once onto the surface for v2 scenes (SurfaceLockLaws, FIT row `v2Only`, contract A29).
 // One even grid at the sparse-end pitch; tone = line weight. Each ruling is baked once per weight step with a tone band (runBand) and the
 // step's width (runWeight), so the width follows the light through frame() while dragging with no rebake. Legacy keeps the pose output.
@@ -11,7 +17,7 @@ const specOf = (o = {}) => ({
   objectId: 'o1', primitive: 'sphere', mode: 'sphere', sizes: { sx: 14, sy: 14, sz: 14 }, detail: 24,
   scale: { sx: 1, sy: 1, sz: 1 }, mapper: 'hatch', toneLaw: LAW,
   style: { fillAngle: 45, fillDensity: 50, densityScale: 1, markSpace: 'surface' }, penWidth: PEN, scaleRef: 1,
-  seed: { salt: 0, phase: 0, off: 0 }, toneModel: 'v2', ...o,
+  seed: { salt: 0, phase: 0, off: 0 }, toneModel: 'v2', dragPreview: true, ...o,
 });
 
 // Ink as a length at the document pen: a lock line is length x weightScale; the pose compose draws a pen-width RIBBON (a closed outline), whose
@@ -51,15 +57,33 @@ describe('surface lock wave D (WD-D3): v2 weightModulated', () => {
     V = rt.V; SL = V.Scene3D.SurfaceLock; Z = V.Scene3D.SurfaceLockLaws; MS = V.Scene3D.SurfaceLockMarkSet;
     const sS = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
     SL.clearCache(); SL.resetStats();
-    surfPaths = sS.composeFull();
+    surfPaths = sS.composePreview(); // a drag frame: the baked fill
     surf = weighted(sS, surfPaths);
     const sP = LR.buildCase(V, { law: LAW, markSpace: 'pose' });
     pose = weighted(sP, sP.composeFull());
   }, 120000);
   afterAll(() => rt && rt.cleanup());
 
-  it('RED: v2 effectiveMarkSpace is surface; legacy, crosshatch and tripleHatch stay pose', () => {
+  it('RED: settled / export output equals the pose compose byte for byte (sha); the baked frame exists only while dragging', () => {
+    const sS = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
+    const sP = LR.buildCase(V, { law: LAW, markSpace: 'pose' });
+    SL.clearCache(); SL.resetStats();
+    const settled = sS.composeFull();
+    expect(SL.stats.bakes, 'no surface bake when settled').toBe(0);
+    expect(shaOf(settled)).toBe(shaOf(sP.composeFull()));
+    sS.setPose({ camYaw: 50, camPitch: 25 }); sP.setPose({ camYaw: 50, camPitch: 25 });
+    const drag = sS.composePreview();
+    expect(SL.stats.bakes, 'the drag frame is baked').toBeGreaterThan(0);
+    expect(shaOf(drag)).not.toBe(shaOf(sP.composeFull()));
+    expect(shaOf(sS.composeFull()), 'release swaps back to pose').toBe(shaOf(sP.composeFull()));
+  });
+
+  it('RED: v2 effectiveMarkSpace is surface for a drag spec; settled (no dragPreview), legacy, crosshatch-less and tripleHatch stay pose', () => {
     const spec = specOf();
+    const settledSpec = specOf({ dragPreview: undefined });
+    const ctx0 = (sp) => ({ spec: sp, mapper: sp.mapper, visibility: 'hidden', emissiveCoreBlank: false, csgCarve: false, receiveShadow: false, areaLight: false });
+    expect(SL.effectiveMarkSpace(settledSpec.style, ctx0(settledSpec))).toBe('pose');
+    expect(Z.supports(settledSpec)).toBe(false);
     const ctx = (sp) => ({ spec: sp, mapper: sp.mapper, visibility: 'hidden', emissiveCoreBlank: false, csgCarve: false, receiveShadow: false, areaLight: false });
     expect(SL.effectiveMarkSpace(spec.style, ctx(spec))).toBe('surface');
     expect(SL.explainMarkSpace(spec.style, ctx(spec))).toEqual({ mode: 'surface', reason: 'surface' });
@@ -104,16 +128,16 @@ describe('surface lock wave D (WD-D3): v2 weightModulated', () => {
     expect(tot(surf) / tot(pose)).toBeLessThan(1.33);
   });
 
-  it('through the engine: baked by the surface lock, drag == export (widths included), repeated orbit = 0 bake misses / 0 tone evals; legacy untouched', () => {
+  it('through the engine: drag frames are baked (width channel present), repeated orbit = 0 bake misses / 0 tone evals; legacy untouched', () => {
     const s = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
     SL.clearCache(); SL.resetStats();
-    s.composeFull();
+    s.setPose({ camYaw: 50, camPitch: 25 });
+    const drag = s.composePreview();
     expect(SL.stats.bakes, 'baked by the surface lock').toBeGreaterThan(0);
     expect(SL.stats.bakeErrors).toBe(0);
-    dragEqualsExport(s, [{ camYaw: -30, camPitch: 20 }, { camYaw: 80, camPitch: 30, objYaw: 40 }]).forEach((d) => expect(d.equal, JSON.stringify(d.pose)).toBe(true));
-    const wSig = (paths) => s.fills(paths).map((p) => `${p.meta.weightScale}`).join(',');
-    s.setPose({ camYaw: 50, camPitch: 25 });
-    expect(wSig(s.composePreview())).toBe(wSig(s.composeFull()));
+    const fills = s.fills(drag);
+    expect(fills.length).toBeGreaterThan(20);
+    expect(new Set(fills.map((p) => p.meta.weightScale)).size, 'weight channel').toBeGreaterThan(2);
     const yaws = [-60, -40, -20, 0, 20, 40, 60];
     LR.orbitCounters(s, yaws);
     const c = LR.orbitCounters(s, yaws, { warm: false });
@@ -121,7 +145,7 @@ describe('surface lock wave D (WD-D3): v2 weightModulated', () => {
     expect(c.toneEvals).toBe(0);
     const g = LR.buildCase(V, { law: LAW, markSpace: 'surface', tone: { model: 'legacy' } });
     SL.clearCache(); SL.resetStats();
-    g.composeFull();
+    g.composePreview();
     expect(SL.stats.bakes).toBe(0);
   });
 
