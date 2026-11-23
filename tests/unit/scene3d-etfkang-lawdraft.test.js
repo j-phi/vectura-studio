@@ -30,11 +30,12 @@ describe('etfKang law-tier draft', () => {
   }, 300000);
   afterAll(() => runtime && runtime.cleanup && runtime.cleanup());
 
-  const makeScene = () => {
+  const makeScene = (v2 = false) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
-    pinLegacySun(engine, gid);
+    if (!v2) pinLegacySun(engine, gid); // the pinned settled hash is the legacy-sun scene; the tone test uses the app default (v7 key, v2 model)
     const group = engine.layers.find((l) => l.id === gid);
+    if (v2) group.params.tone = { ...(group.params.tone || {}), model: 'v2' };
     const child = engine.getLayerDescendants(gid).find((l) => l && l.type === 'object3d');
     child.params.primitive = 'sphere';
     child.params.style = { penId: null, mapper: 'hatch', params: { fillCurves: true, toneLaw: 'etfKang' } };
@@ -46,8 +47,8 @@ describe('etfKang law-tier draft', () => {
     s.engine.computeAllDisplayGeometry();
     return { ...s, diag: runtime.window.__MONO_DIAG };
   };
-  const draft = () => {
-    const s = makeScene();
+  const draft = (v2 = false) => {
+    const s = makeScene(v2);
     s.engine.computeAllDisplayGeometry();
     s.group._sceneLastFullMs = 5000; // slow settled compose => 'law' tier
     runtime.window.__MONO_DIAG = null;
@@ -72,7 +73,8 @@ describe('etfKang law-tier draft', () => {
   test('draft output stays tone-monotone: darker regions carry more ink', () => {
     runtime.window.__MONO_TRACE = true;
     try {
-      const d = draft();
+      // v2 tone model (the app default): the legacy model's density is not monotone in ink.
+      const d = draft(true);
       const C = runtime.window.__MONO_CTX;
       expect(C).toBeTruthy();
       const pts = (d.group.scenePaths || []).filter(Array.isArray);
