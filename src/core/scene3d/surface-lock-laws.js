@@ -63,6 +63,7 @@
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
     WEIGHT_TOP: 1.9, WEIGHT_STEP: 0.1, WEIGHT_PAPER_BAND: 0.04, // WD-D3 weightModulated: width at the dark end (x the pen), width quantum, tone range that rolls off to paper
     AMP_SHARE: 0.4, AMP_MM_MIN: 0.34, AMP_MM_MAX: 0.6, AMP_LAMBDA_AMP: 12, AMP_LAMBDA_MIN_MM: 3.2, AMP_STEPS: 10, // WD-D1 ampSpacing wave
+    TAPER_SOFT: 0.09, TAPER_FLOOR: 0.42, TAPER_MM: 3.5, TAPER_CMIN: 0.15, TAPER_CMAX: 0.85, TAPER_STEP: 0.3, TAPER_GAIN: 1.25, // WD-D4a taperedEnds: surface-fill's TAPER_SOFT / TAPER_FLOOR / TAPER_MM and whiteBand's WB_CMIN / WB_CMAX (private there)
     PEN_MM_0: 0.26, PEN_MM_1: 0.52, PEN_MM_2: 0.93, // WD-D2 the three nibs' MEASURED widths (surface-fill PEN_MM, private there)
     PEN_DEEP_AREA: 0.93, PEN_LIGHT_AREA: 0.005, PEN_BLEND: 0.18, // WD-D2 pen laws: dark / light ink area, tier handoff window
     PEN_INTER_PITCH_PEN: 2.2, PEN_INTER_NEED: 1.2, PEN_RES_PITCH_PEN: 3.0, PEN_RES_U_BIAS: 0.07, PEN_CROSS_PAPER_I: 0.93, PEN_CROSS_PITCH_MM: 2.5, PEN_CROSS_FULL_I: 0.8, PEN_CROSS_B_FRAC: 0.35, // WD-D2 full grid pitch (x the broad nib; Interleave: its own plot floor), Cross medium family pitch (mm), tone below which Cross is full, broad family share of the medium grid
@@ -86,6 +87,8 @@
   const PEN_LAW_IDS = ['penInterleave', 'penReserve', 'penCross'];
   // WD-D3 (contract A29): weightModulated = one even grid (the ladder's level-0 rulings at the sparse-end pitch) with the tone carried by line width.
   const WEIGHT_LAW_IDS = ['weightModulated'];
+  // WD-D4a (contract A30): taperedEnds = the same width bake with the pose law's width curve (soft-clamped grey), drag preview only. No end taper while dragging.
+  const TAPER_LAW_IDS = ['taperedEnds'];
   // dragPreviewOnly rows (owner decision, contract A28 / A29): the bake draws the light-following fill WHILE A 3D DRAG / ORBIT IS IN PROGRESS
   // only (`spec.dragPreview === true`, set from `bounds.dragPreview`); settled and export output is the pose compose, byte for byte.
   const FIT = Object.freeze([Object.freeze({
@@ -117,6 +120,13 @@
     dragPreviewOnly: true,
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(WEIGHT_LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    dragPreviewOnly: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(TAPER_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   })]);
@@ -241,7 +251,7 @@
     const law = spec && spec.toneLaw;
     if (AMP_LAW_IDS.indexOf(law) !== -1) return ladder().toneLUT(ampLadderSpec(spec), toneCtx);
     if (PEN_LAW_IDS.indexOf(law) !== -1) return penLUT(spec, toneCtx);
-    if (WEIGHT_LAW_IDS.indexOf(law) !== -1) return weightLUT(spec, toneCtx);
+    if (WEIGHT_LAW_IDS.indexOf(law) !== -1 || TAPER_LAW_IDS.indexOf(law) !== -1) return weightLUT(spec, toneCtx);
     const T = toneParams(spec, (MARK_LAW_IDS.indexOf(law) !== -1 || law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx));
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
@@ -922,7 +932,22 @@
   // width the light asks for: the width follows the light while dragging with no rebake. Bands tile [0, 1], so tone OFF (I = 1) draws the lightest.
   const weightTop = () => clamp(K.WEIGHT_TOP, 1, 6);
   const weightAt = (I) => { const top = weightTop(); const u = clamp(finite(I, 0), 0, 1); return top + (1 - top) * (u * u * u * (u * (6 * u - 15) + 10)); };
-  const weightP0 = (spec) => { const lad = ladder().bake(ampLadderSpec(spec)); return finite(lad.meta.p0, 1); };
+  // the grid the width law bakes: weightModulated = the ladder's level-0 rulings (the sparse-end pitch p0 of the user's Density); taperedEnds = the
+  // ladder rulings up to the coarsest level whose pitch is at or under the POSE law's even pitch (6 x ink / (1 - CMIN): whiteBand's reserved width
+  // for the heaviest legal pen) or, where the weight byte holds less than that pen, the pitch at which its widest width lays the dark end's full ink area. The ladder's level-0 pitch is capped at LIT_MAX_PITCH_PEN pens (~3.6 mm at the 0.3 pen), coarser than that.
+  const isTaper = (spec) => TAPER_LAW_IDS.indexOf(spec && spec.toneLaw) !== -1;
+  const taperLevel = (spec, lad) => {
+    const T = toneParams(spec, true);
+    const sr = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const pPose = Math.min(6, 255 / MS().WEIGHT_UNIT) * T.INK / (1 - K.TAPER_CMIN); // the pose's heaviest legal pen (6), or the most the weight byte holds
+    const need = Math.ceil(Math.log2(Math.max(1e-6, finite(lad.meta.p0, 1) * sr / pPose)) - 1e-9);
+    return clamp(need, 0, Math.max(0, finite(lad.levels, 1) - 1));
+  };
+  const weightGrid = (spec, lad) => {
+    const L = isTaper(spec) ? taperLevel(spec, lad) : 0;
+    return { level: L, p0: finite(lad.meta.p0, 1) / Math.pow(2, L) };
+  };
+  const weightP0 = (spec) => weightGrid(spec, ladder().bake(ampLadderSpec(spec))).p0;
   const weightLUT = (spec, toneCtx) => {
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
@@ -933,6 +958,18 @@
     for (let k = 0; k <= size; k++) { const u = clamp((1 - k / size) / band, 0, 1); lut[k] = off ? flat : flat * u * u * (3 - 2 * u); }
     return { lut, scaleFn: null };
   };
+  // taperedEnds' width curve (surface-fill taperArea at end-distance infinity): the grey is soft-clamped (log-sum-exp, TAPER_SOFT) into
+  // [TAPER_CMIN, TAPER_CMAX], the ink area is 1 - c, and the width lays it on the nominal pitch: w = area x pitch / ink.
+  const taperWidthFn = (spec, p0) => {
+    const st = spec.style || {};
+    const soft = Number.isFinite(st.taperSoftness) ? clamp(st.taperSoftness, 0.001, 0.5) : K.TAPER_SOFT;
+    const kk = Math.max(1e-4, soft);
+    const lo = K.TAPER_CMIN; const hi = K.TAPER_CMAX;
+    const softClamp = (v) => { const smax = lo + kk * Math.log(1 + Math.exp((v - lo) / kk)); return hi - kk * Math.log(1 + Math.exp((hi - smax) / kk)); };
+    const T = toneParams(spec, true);
+    const pitch = p0 * (finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1);
+    return (I) => clamp(1 - softClamp(clamp(finite(I, 0), 0, 1)), 0.01, 1 - lo) * pitch / T.INK * Math.max(0.1, K.TAPER_GAIN);
+  };
   const bakeWeight = (spec) => {
     const L = ladder(); const SM = MS();
     const ls = ampLadderSpec(spec);
@@ -941,14 +978,25 @@
     const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
     const out = [0, 0, 0]; const tmp = { count: 0 };
     const size = cfg().TONE_LUT_SIZE || 256;
-    const step = clamp(K.WEIGHT_STEP, 0.02, 1); const top = weightTop();
+    const taper = TAPER_LAW_IDS.indexOf(spec.toneLaw) !== -1;
+    // taperedEnds spans 1 pen .. the byte's 4 pens (3x weightModulated's range) over up to two ruling levels: a coarser quantum keeps the baked vertices in budget
+    const step = clamp(taper ? K.TAPER_STEP : K.WEIGHT_STEP, 0.02, 1);
+    // taperedEnds: the pose width at end-distance infinity = the ink area the soft-clamped grey asks for, laid on the nominal screen pitch (the grid's
+    // sparse-end pitch p0 x scaleRef) at the document pen's ink width; clamped to [1 pen, what the weight byte holds].
+    const wMax = 255 / SM.WEIGHT_UNIT;
+    const grid = weightGrid(spec, lad);
+    const taperW = taper ? taperWidthFn(spec, grid.p0) : null;
+    // (a dark end the byte cannot hold is scaled down as a whole, not clipped: a clipped ramp would plateau and the tone would stop growing before the darkest bin)
+    const wScale = taper ? Math.min(1, wMax / Math.max(1e-6, taperW(0))) : 1;
+    const wAt = taper ? (I) => clamp(taperW(I) * wScale, 1, wMax) : weightAt;
+    const top = taper ? wAt(0) : weightTop();
     const nb = Math.max(1, Math.round((top - 1) / step) + 1);
-    const bandOf = (I) => clamp(Math.round((weightAt(I) - 1) / step), 0, nb - 1);
+    const bandOf = (I) => clamp(Math.round((wAt(I) - 1) / step), 0, nb - 1);
     // the I interval [lo, hi] of each band (w decreases with I: band 0 is the lightest)
     const lo = new Array(nb).fill(Infinity); const hi = new Array(nb).fill(-Infinity);
     for (let k = 0; k <= size; k++) { const b = bandOf(k / size); lo[b] = Math.min(lo[b], (k - 0.5) / size); hi[b] = Math.max(hi[b], (k + 0.5) / size); }
     for (let r = 0; r < lad.runCount; r++) {
-      if (lad.runLevel[r] !== 0) continue;
+      if (lad.runLevel[r] > grid.level) continue;
       const flags = lad.runFlags[r];
       if (flags & SM.FLAG.DOT) continue;
       const rank = SM.rankOf(lad, r);
@@ -956,7 +1004,7 @@
       for (let b = 0; b < nb; b++) {
         if (!(hi[b] >= lo[b])) continue;
         const w = Math.min(255, Math.round((1 + b * step) * SM.WEIGHT_UNIT));
-        B.beginRun(0, rank, lad.runFamily[r], flags, undefined, 0, w, Math.max(0, lo[b]), Math.min(1, hi[b]));
+        B.beginRun(lad.runLevel[r], rank, lad.runFamily[r], flags, undefined, 0, w, Math.max(0, lo[b]), Math.min(1, hi[b]));
         const v0 = lad.runStart[r];
         for (let i = 0; i < n; i++) {
           SM.octDecode(lad.normals, 2 * (v0 + i), out);
@@ -969,7 +1017,7 @@
     }
     const ms = B.finish();
     ms.bakerId = 'laws';
-    ms.meta = Object.assign({}, lad.meta, { lawId: 'weightModulated', weightTop: top, weightP0: lad.meta.p0 });
+    ms.meta = Object.assign({}, lad.meta, { lawId: taper ? 'taperedEnds' : 'weightModulated', weightTop: top, weightP0: lad.meta.p0, weightLevel: grid.level });
     return ms;
   };
 
@@ -980,7 +1028,7 @@
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
     if (AMP_LAW_IDS.indexOf(law) !== -1) return bakeAmp(spec);
     if (PEN_LAW_IDS.indexOf(law) !== -1) return bakePen(spec);
-    if (WEIGHT_LAW_IDS.indexOf(law) !== -1) return bakeWeight(spec);
+    if (WEIGHT_LAW_IDS.indexOf(law) !== -1 || TAPER_LAW_IDS.indexOf(law) !== -1) return bakeWeight(spec);
     if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
     const T = toneParams(spec, (law === 'dutyConst' || law === 'endShorten') && bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
