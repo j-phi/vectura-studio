@@ -13741,13 +13741,9 @@
         // (drag frames are draft tiers). Deferred past the release paint and
         // cancelled by the next drag on this scene, so rapid nudges do not
         // stack seconds of settle freezes.
-        // A multi-object drag keeps its selection: rebuilding the panel mirrors its single focused object back onto the canvas
-        // (scene3d-panel mirrorChildToCanvas), which would collapse the selection to one object, so it is restored after.
-        const keepSel = drag.members && this.sceneSelection ? { ...this.sceneSelection } : null;
         this._scheduleSceneSettleRegen(layer.id, (settled) => {
           this.app?.ui?.updateFormula?.();
           this.app?.ui?.buildControls?.(settled);
-          if (keepSel) this.setSceneSelection(keepSel, { silent: true });
         });
       }
       this.updateCursor();

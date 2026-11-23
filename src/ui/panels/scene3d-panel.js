@@ -1014,6 +1014,10 @@
     const group = sceneGroupOf(ui, layer);
     if (!r || !group || typeof r.setSceneSelection !== 'function') return;
     try {
+      // Focusing one object of an existing multi-object selection must not collapse that selection.
+      const cur = objectId && typeof r.getSceneSelection === 'function' ? r.getSceneSelection() : null;
+      if (cur && cur.layerId === group.id && cur.mode === 'object' && Array.isArray(cur.objectIds)
+        && cur.objectIds.length >= 2 && cur.objectIds.includes(objectId)) return;
       if (objectId) r.setSceneSelection({ layerId: group.id, mode: 'object', objectIds: [objectId], faceKeys: [], edgeKeys: [] }, { silent: true });
       else r.setSceneSelection(null, { silent: true });
     } catch (_) { /* non-DOM */ }
