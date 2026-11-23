@@ -478,7 +478,7 @@
       r = r1;
     }
     c = { nv: ms.vertexCount, nr, runBlock, count: bV0.length, v0: Int32Array.from(bV0), v1: Int32Array.from(bV1),
-      ax: Float64Array.from(ax), ay: Float64Array.from(ay), az: Float64Array.from(az), half: Float64Array.from(half), skip: new Uint8Array(bV0.length) };
+      ax: Float64Array.from(ax), ay: Float64Array.from(ay), az: Float64Array.from(az), half: Float64Array.from(half), cosHalf: Float64Array.from(half, Math.cos), sinHalf: Float64Array.from(half, Math.sin), skip: new Uint8Array(bV0.length) };
     blockCones.set(ms, c);
     return c;
   };
@@ -487,9 +487,12 @@
     if (F.persp || !blockSkip.enabled || !(ms.runCount > 0)) return null;
     const c = blockConesOf(ms); const A = F.A; const lim = Math.PI / 2 + blockSkip.marginRad;
     const vx = A[6]; const vy = A[7]; const vz = A[8]; const skip = c.skip;
+    // angle(v, m) - half > lim  <=>  v . m < cos(half + lim) (cosine is decreasing on [0, pi]); cos(half + lim) comes from the per-block
+    // cos/sin of the half-angle, so a frame costs no trigonometry per block.
+    const cl = Math.cos(lim); const sl = Math.sin(lim); const hc = c.cosHalf; const hs = c.sinHalf; const hh = c.half;
     for (let b = 0; b < c.count; b++) {
       const d = vx * c.ax[b] + vy * c.ay[b] + vz * c.az[b];
-      skip[b] = (c.half[b] < Math.PI && Math.acos(Math.max(-1, Math.min(1, d))) - c.half[b] > lim) ? 1 : 0;
+      skip[b] = (hh[b] + lim < Math.PI && d < hc[b] * cl - hs[b] * sl) ? 1 : 0;
     }
     return c;
   };
@@ -814,13 +817,11 @@
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
       if (blocks && blocks.skip[blocks.runBlock[r]]) { acc.culledFacing += n; continue; }
-      if (comp) {
-        const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
-        for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
-      }
-      // vertex counters
+      // capCompensate scaling of the tone demand and the vertex counters share one pass (each vertex is independent)
+      const rq = comp ? (rcap[r] >> 12) / CAP_RHO_STEPS : 1;
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
+        if (comp) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const cq = c0 * rq; if (cq < 1) STE[i] *= cq; } }
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
