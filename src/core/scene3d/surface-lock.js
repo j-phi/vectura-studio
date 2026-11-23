@@ -419,10 +419,10 @@
   const memoFor = (ms, key) => {
     let m = toneMemoI.get(ms);
     if (!m || m.key !== key || m.I.length !== ms.vertexCount) {
-      m = { key, I: new Float64Array(ms.vertexCount).fill(NaN) };
+      m = { key, I: new Float64Array(ms.vertexCount).fill(NaN), seen: new Uint8Array(ms.vertexCount), bound: null };
       toneMemoI.set(ms, m);
     }
-    return m.I;
+    return m;
   };
 
   // Per-vertex scratch, grown on demand and shared (a frame is synchronous; the worker has its own copy).
@@ -460,7 +460,7 @@
     let c = blockCones.get(ms);
     if (c && c.nv === ms.vertexCount && c.nr === ms.runCount) return c;
     const nr = ms.runCount; const rs = ms.runStart; const nrm = decodedNormals(ms);
-    const runBlock = new Int32Array(nr); const bRun0 = []; const bV0 = []; const bV1 = []; const ax = []; const ay = []; const az = []; const half = [];
+    const runBlock = new Int32Array(nr); const bRun0 = []; const bRun1 = []; const bV0 = []; const bV1 = []; const ax = []; const ay = []; const az = []; const half = [];
     let r = 0;
     while (r < nr) {
       const b = bV0.length; const v0 = rs[r]; let r1 = r; let v1 = v0;
@@ -474,10 +474,10 @@
         for (let v = v0; v < v1; v++) { const d = mx * nrm[3 * v] + my * nrm[3 * v + 1] + mz * nrm[3 * v + 2]; if (d < mn) mn = d; }
         h = Math.acos(Math.max(-1, Math.min(1, mn))) + 1e-6;
       }
-      bRun0.push(r); bV0.push(v0); bV1.push(v1); ax.push(mx); ay.push(my); az.push(mz); half.push(h);
+      bRun0.push(r); bRun1.push(r1); bV0.push(v0); bV1.push(v1); ax.push(mx); ay.push(my); az.push(mz); half.push(h);
       r = r1;
     }
-    c = { nv: ms.vertexCount, nr, runBlock, count: bV0.length, v0: Int32Array.from(bV0), v1: Int32Array.from(bV1),
+    c = { nv: ms.vertexCount, nr, runBlock, count: bV0.length, r0: Int32Array.from(bRun0), r1: Int32Array.from(bRun1), v0: Int32Array.from(bV0), v1: Int32Array.from(bV1),
       ax: Float64Array.from(ax), ay: Float64Array.from(ay), az: Float64Array.from(az), half: Float64Array.from(half), cosHalf: Float64Array.from(half, Math.cos), sinHalf: Float64Array.from(half, Math.sin), skip: new Uint8Array(bV0.length) };
     blockCones.set(ms, c);
     return c;
@@ -495,6 +495,44 @@
       skip[b] = (hh[b] + lim < Math.PI && d < hc[b] * cl - hs[b] * sl) ? 1 : 0;
     }
     return c;
+  };
+
+
+  // U1d static tone bound (orthographic only). A vertex's tone demand is te = (p0 * sv * lut(I))^q times factors that can only LOWER it
+  // (the specular scaleFn is clamped to <= 1, the cap remap squeezes toward the cap, the v2 facing compensation 1 + fc * (2c/(1+c) - 1)
+  // is <= 1 for c <= 1, the limb knee and capComp subtract / scale down). So teMax(v) = (p0 * sv * lut(I))^q bounds it from above for
+  // EVERY pose, and a run whose teMax never beats its key k can never draw: frameSet counts its vertices exactly as the full path
+  // would (facing / grazing / tone, from the facing cosine alone) and the prepass never projects it. The bound depends on I (memoised
+  // per toneKey), the scale and the LUT only, so it is built once per (toneKey, scale) and survives every rotation. `toneBound` is the
+  // test hook (enabled=false is the pre-U1d path; slack > 1 / < 1 over- or under-shoots, which the mutation proof uses).
+  const toneBound = { enabled: true, slack: 1 + 1e-6 };
+  const buildToneBound = (ms, F, view, m, ssv, p0, gain, q, lut, toneFn, MS) => {
+    const nv = ms.vertexCount; const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank;
+    const pos = ms.positions; const nrm = decodedNormals(ms); const I = m.I;
+    const { objR, ox, oy, oz } = F;
+    const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
+    const dead = new Uint8Array(nr); let nDead = 0;
+    const RS = MS.RANK_SCALE;
+    for (let r = 0; r < nr; r++) {
+      let ub = 0;
+      for (let v = rs[r]; v < rs[r + 1]; v++) {
+        let Iv = I[v];
+        if (Iv !== Iv) {
+          const px = pos[3 * v]; const py = pos[3 * v + 1]; const pz = pos[3 * v + 2]; const nx = nrm[3 * v]; const ny = nrm[3 * v + 1]; const nz = nrm[3 * v + 2];
+          pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
+          nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
+          Iv = toneFn(nW, pW); Iv = Iv > 0 ? (Iv < 1 ? Iv : 1) : 0; I[v] = Iv; // the same fill the prepass makes; it counts toneEvals at the first facing visit (m.seen)
+        }
+        const f = Iv * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
+        const dm = p0 * ssv * (lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]));
+        const te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
+        if (!(te <= ub)) ub = te; // NaN propagates: an unbounded run is never dead
+      }
+      const L = rl[r]; const rank = rr[r] / RS;
+      const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
+      if (ub * toneBound.slack <= k) { dead[r] = 1; nDead += 1; }
+    }
+    return { dead, nDead };
   };
 
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
@@ -523,14 +561,31 @@
     const strideSep = capCont && Number.isFinite(meta.strideSepPen) && meta.strideSepPen > 0 ? meta.strideSepPen * num(view.penWidth, 0) : 0;
     const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
     const remapLuts = new Map(); let lastCapT = NaN; let lastRl = null;
-    const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
+    const memoM = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
+    const memoI = memoM ? memoM.I : null; const memoSeen = memoM ? memoM.seen : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
     const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
+    let boundInfo = null;
+    if (memoM && lut && !persp && toneBound.enabled && Number.isFinite(p0) && p0 > 0) {
+      const ssv = toneScaleFree ? meta.scaleRef : scale;
+      let ok = true; const lN = lut[LUT_N]; for (let j = 0; j <= LUT_N; j++) { if (!(lut[j] >= lN) || !(lut[j] >= 0)) { ok = false; break; } } // lut >= its last entry >= 0: the cap remap can only lower dm
+      if (ok) {
+        const b = memoM.bound;
+        if (b && b.lut === lut && b.ssv === ssv && b.p0 === p0 && b.gain === gain && b.slack === toneBound.slack) boundInfo = b;
+        else {
+          boundInfo = buildToneBound(ms, F, view, memoM, ssv, p0, gain, q, lut, toneFn, Scene3D.SurfaceLockMarkSet);
+          boundInfo.lut = lut; boundInfo.ssv = ssv; boundInfo.p0 = p0; boundInfo.gain = gain; boundInfo.slack = toneBound.slack; memoM.bound = boundInfo;
+        }
+      }
+    }
+    const deadRun = boundInfo ? boundInfo.dead : null; const rsP = ms.runStart;
     const nbk = blocks ? blocks.count : 1; let projected = 0;
     for (let bi = 0; bi < nbk; bi++) {
-    let vs = 0; let ve = nv;
-    if (blocks) { if (blocks.skip[bi]) continue; vs = blocks.v0[bi]; ve = blocks.v1[bi]; } // a wholly back-facing block (U1a): its runs are culled whole by frameSet and never read these slots
+    let vs = 0; let ve = nv; let rg = 0; let rgEnd = 1;
+    if (blocks) { if (blocks.skip[bi]) continue; rg = blocks.r0[bi]; rgEnd = blocks.r1[bi]; } // a wholly back-facing block (U1a): its runs are culled whole by frameSet and never read these slots
+    for (; rg < rgEnd; rg++) {
+    if (blocks) { if (deadRun && deadRun[rg]) continue; vs = rsP[rg]; ve = rsP[rg + 1]; } // a statically tone-dead run (U1d): frameSet counts it from the facing cosine alone
     projected += ve - vs;
     for (let v = vs; v < ve; v++) {
       const px = pos[3 * v]; const py = pos[3 * v + 1]; const pz = pos[3 * v + 2];
@@ -611,8 +666,9 @@
             I = toneFn(nW, pW);
             I = I > 0 ? (I < 1 ? I : 1) : 0;
             stats.toneEvals += 1;
-            if (memoI) memoI[v] = I;
+            if (memoI) { memoI[v] = I; memoSeen[v] = 1; }
           }
+          if (memoSeen && memoSeen[v] === 0) { memoSeen[v] = 1; stats.toneEvals += 1; } // filled by the static bound before its first facing visit: counted here, as the miss would have
         }
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
@@ -663,8 +719,9 @@
       STE[v] = te;
     }
     }
+    }
     stats.prepassProjected += projected;
-    return undefined;
+    return boundInfo ? { dead: boundInfo.dead, seen: memoSeen, nrm } : null;
   };
 
   // A21: screen-space crowd guard of a capContinuous MarkSet. The stride cap trusts a LOCAL pitch estimate; where the surface turns
@@ -769,7 +826,8 @@
   const frameSet = (ms, F, view, out, acc) => {
     const MS = Scene3D.SurfaceLockMarkSet;
     const blocks = markBackBlocks(ms, F);
-    prepass(ms, F, view, blocks);
+    const pre = prepass(ms, F, view, blocks);
+    const deadRun = pre ? pre.dead : null;
     const meta = ms.meta || {};
     const gain = meta.gain || 2;
     const minMark = num(meta.minMarkMM, 0);
@@ -817,6 +875,16 @@
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
       if (blocks && blocks.skip[blocks.runBlock[r]]) { acc.culledFacing += n; continue; }
+      if (deadRun && deadRun[r]) { // statically tone-dead (U1d): nothing can draw, count the vertices as the full path would
+        const nrm = pre.nrm; const seen = pre.seen; const A = F.A; const a20 = A[6]; const a21 = A[7]; const a22 = A[8];
+        for (let i = v0; i < v0 + n; i++) {
+          const c = a20 * nrm[3 * i] + a21 * nrm[3 * i + 1] + a22 * nrm[3 * i + 2];
+          if (c <= 0) { acc.culledFacing += 1; continue; }
+          if (seen[i] === 0) { seen[i] = 1; stats.toneEvals += 1; }
+          if (c < NZ_CULL) acc.culledGrazing += 1; else acc.culledTone += 1;
+        }
+        continue;
+      }
       // capCompensate scaling of the tone demand and the vertex counters share one pass (each vertex is independent)
       const rq = comp ? (rcap[r] >> 12) / CAP_RHO_STEPS : 1;
       let anyOk = false;
@@ -1358,6 +1426,7 @@
     FRAMEABLE,
     stats,
     blockSkip,
+    toneBound,
     resetStats,
     effectiveMarkSpace,
     explainMarkSpace,

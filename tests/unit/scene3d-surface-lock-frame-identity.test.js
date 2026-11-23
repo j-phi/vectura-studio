@@ -6,7 +6,10 @@ const { loadSurfaceLockRuntime, buildSurfaceLockScene } = require('../helpers/su
 // (back-face block skip, typed-array crowd guard). Any speed-up of sceneFrame must leave them unchanged. Timing counters
 // (ms*) and cache-size counters are excluded; counters added by later work (prepassProjected) are not part of the pin.
 const COUNTERS = ['sceneFrames', 'frames', 'sceneFallbacks', 'bakeMisses', 'toneEvals', 'verticesIn', 'verticesOut', 'runsIn', 'runsOut',
-  'culledFacing', 'culledGrazing', 'culledTone', 'culledOccluded', 'toneRemapPow', 'glintFast'];
+  'culledFacing', 'culledGrazing', 'culledTone', 'culledOccluded', 'toneRemapPow'];
+// glintFast (the count of specular-keep calls that returned early) is a WORK counter, not an identity one: U1d skips the specular call for
+// vertices of statically tone-dead runs, so it drops by design (Duty Cycle sphere 504962 -> 324452) while the hash and all counters above
+// stay equal. It is therefore no longer pinned; scene3d-surface-lock-tone-bound.test.js proves the skip cannot change the output.
 const POSES = 30;
 
 // Object ids are random uuids per scene build: they are replaced by their order of first appearance so the hash is stable.
@@ -19,9 +22,9 @@ const hashPaths = (h, paths, ids) => {
 const PINS = {
   // Re-pinned after U5 (V2_DUTY_SEP 1.0, V2_SCRIB_KEY 0.92 -- an intended Duty Cycle v2 look change; bake v6). Evidence: with the two
   // constants set back to 1.08 / 1.0 the previous pin (sha 39735090...) reproduced exactly, so U5 is the only cause of the change.
-  dutyCycleSphere: {"sha":"2e7f5e70a59540091e6a5c79ce99cf4dcbc6b4b294627f467f17084a3db4addd","counters":{"sceneFrames":29,"frames":29,"sceneFallbacks":0,"bakeMisses":0,"toneEvals":14458,"verticesIn":1114528,"verticesOut":100418,"runsIn":557264,"runsOut":15852,"culledFacing":552076,"culledGrazing":43313,"culledTone":318510,"culledOccluded":62,"toneRemapPow":0,"glintFast":504962}},
-  defaultSphere: {"sha":"e2eadcb05c81ae93720d2b681707c881da6be824a4017a8e53fbcf0afaded82b","counters":{"sceneFrames":29,"frames":29,"sceneFallbacks":0,"bakeMisses":0,"toneEvals":21639,"verticesIn":1698936,"verticesOut":124066,"runsIn":27028,"runsOut":2879,"culledFacing":845741,"culledGrazing":65732,"culledTone":666545,"culledOccluded":62,"toneRemapPow":0,"glintFast":696251}},
-  twoObjects: {"sha":"967294a47b8fde0911f6665be61acab8c080a55ccb75e2e346393077af0cb457","counters":{"sceneFrames":29,"frames":58,"sceneFallbacks":0,"bakeMisses":0,"toneEvals":36023,"verticesIn":2950344,"verticesOut":227869,"runsIn":68962,"runsOut":6372,"culledFacing":1478637,"culledGrazing":72924,"culledTone":1174363,"culledOccluded":47112,"toneRemapPow":0,"glintFast":1314763}},
+  dutyCycleSphere: {"sha":"2e7f5e70a59540091e6a5c79ce99cf4dcbc6b4b294627f467f17084a3db4addd","counters":{"sceneFrames":29,"frames":29,"sceneFallbacks":0,"bakeMisses":0,"toneEvals":14458,"verticesIn":1114528,"verticesOut":100418,"runsIn":557264,"runsOut":15852,"culledFacing":552076,"culledGrazing":43313,"culledTone":318510,"culledOccluded":62,"toneRemapPow":0}},
+  defaultSphere: {"sha":"e2eadcb05c81ae93720d2b681707c881da6be824a4017a8e53fbcf0afaded82b","counters":{"sceneFrames":29,"frames":29,"sceneFallbacks":0,"bakeMisses":0,"toneEvals":21639,"verticesIn":1698936,"verticesOut":124066,"runsIn":27028,"runsOut":2879,"culledFacing":845741,"culledGrazing":65732,"culledTone":666545,"culledOccluded":62,"toneRemapPow":0}},
+  twoObjects: {"sha":"967294a47b8fde0911f6665be61acab8c080a55ccb75e2e346393077af0cb457","counters":{"sceneFrames":29,"frames":58,"sceneFallbacks":0,"bakeMisses":0,"toneEvals":36023,"verticesIn":2950344,"verticesOut":227869,"runsIn":68962,"runsOut":6372,"culledFacing":1478637,"culledGrazing":72924,"culledTone":1174363,"culledOccluded":47112,"toneRemapPow":0}},
 };
 
 describe('SurfaceLock sceneFrame byte-identity witness (U1)', () => {
