@@ -426,12 +426,12 @@
   };
 
   // Per-vertex scratch, grown on demand and shared (a frame is synchronous; the worker has its own copy).
-  let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX; let SCAP = SX;
+  let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX; let SCAP = SX; let STI = SX; // STI: the tone I per vertex (WD-D2 run tone bands)
   const ensureScratch = (n) => {
     if (SX.length >= n) return;
     const m = Math.max(n, 1024, SX.length * 2);
     SX = new Float64Array(m); SY = new Float64Array(m); SZ = new Float64Array(m);
-    SC = new Float64Array(m); STE = new Float64Array(m); SNR = new Float64Array(m); SCAP = new Float64Array(m);
+    SC = new Float64Array(m); STE = new Float64Array(m); SNR = new Float64Array(m); SCAP = new Float64Array(m); STI = new Float64Array(m);
   };
 
   const nW = { x: 0, y: 0, z: 0 }; const pW = { x: 0, y: 0, z: 0 }; const eW = { x: 0, y: 0, z: 0 };
@@ -650,6 +650,7 @@
       SCAP[v] = hasCap ? capT : Infinity;
       // tone
       let te = Infinity;
+      STI[v] = 1;
       if (lut) {
         let I = 1;
         if (toneFn) {
@@ -670,6 +671,7 @@
           }
           if (memoSeen && memoSeen[v] === 0) { memoSeen[v] = 1; stats.toneEvals += 1; } // filled by the static bound before its first facing visit: counted here, as the miss would have
         }
+        STI[v] = I;
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
         let dm = p0 * (toneScaleFree ? meta.scaleRef : sv) * l;
@@ -846,6 +848,7 @@
     const capCont = capSep && meta.capContinuous === true;
     // D0 (contract A26): optional per-run pen / weight channels. A line carries penId / weightScale only when its run sets them; a MarkSet
     // without the channels takes none of these branches (frame output byte-identical).
+    const rband = ms.runBand || null; const penTiers = meta.penTiers === true; // WD-D2 (contract A28): a run draws only where its tone band holds; runPen k is the nib tier k - 1
     const rpen = ms.runPen || null; const rwt = ms.runWeight || null; const penIds = Array.isArray(meta.penIds) ? meta.penIds : null;
     const WU = Scene3D.SurfaceLockMarkSet.WEIGHT_UNIT;
     const penOf = (r) => (rpen && rpen[r] > 0 && penIds && penIds[rpen[r] - 1] ? penIds[rpen[r] - 1] : null);
@@ -892,6 +895,7 @@
         continue;
       }
       // capCompensate scaling of the tone demand and the vertex counters share one pass (each vertex is independent)
+      const bLo = rband ? rband[2 * r] / 255 : -1; const bHi = rband ? rband[2 * r + 1] / 255 : 2;
       const rq = comp ? (rcap[r] >> 12) / CAP_RHO_STEPS : 1;
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
@@ -899,7 +903,7 @@
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
-        else if (!(STE[i] > k) || (capSep && !capOk(i, r, ck))) acc.culledTone += 1;
+        else if (!(STE[i] > k) || (capSep && !capOk(i, r, ck)) || (rband && !(STI[i] >= bLo && STI[i] <= bHi))) acc.culledTone += 1;
         else anyOk = true;
       }
       if (flags & DOT) {
@@ -911,7 +915,7 @@
           ring.push(mkPt(SX[v0] + gr * Math.cos(a), SY[v0] + gr * Math.sin(a), SZ[v0]));
         }
         ring.back = false;
-        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) ring.penId = pid; if (ws) ring.weightScale = ws; }
+        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) ring.penId = pid; if (ws) ring.weightScale = ws; if (penTiers && rpen && rpen[r] > 0) ring.penTier = rpen[r] - 1; }
         out.push(ring); acc.runsOut += 1; acc.verticesOut += ring.length;
         continue;
       }
@@ -935,6 +939,13 @@
         const t0ok = e0 > 0; const t1ok = e1 > 0;
         if (!t0ok && !t1ok) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (t0ok !== t1ok) { const u = e0 / (e0 - e1); if (t0ok) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+        // WD-D2 tone band: a second linear clip, on the tone I itself (this run draws only where bLo <= I <= bHi)
+        if (rband) {
+          const l0 = STI[i] - bLo; const l1 = STI[j] - bLo; const h0 = bHi - STI[i]; const h1 = bHi - STI[j];
+          if ((l0 < 0 && l1 < 0) || (h0 < 0 && h1 < 0)) { if (cur) { subs.push(cur); cur = null; } continue; }
+          if (l0 < 0 !== l1 < 0) { const u = l0 / (l0 - l1); if (l0 >= 0) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+          if (h0 < 0 !== h1 < 0) { const u = h0 / (h0 - h1); if (h0 >= 0) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+        }
         // plot-floor cap on the ruling's rank (capKey 'ruling'): a second linear clip, intersected with the tone clip
         if (capCont) {
           if (!capOk(i, r, ck) || !capOk(j, r, ck)) { if (cur) { subs.push(cur); cur = null; } continue; }
@@ -971,7 +982,7 @@
       for (let s = 0; s < subs.length; s++) {
         const line = subs[s];
         if (line.length < 2) continue;
-        if (join && s === 0 && tail && tailRun === r - 1 && (!(rpen || rwt) || (tail.penId === penOf(r) || (tail.penId === undefined && !penOf(r))) && (tail.weightScale || 0) === wtOf(r)) && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
+        if (join && s === 0 && tail && tailRun === r - 1 && (!(rpen || rwt) || (tail.penId === penOf(r) || (tail.penId === undefined && !penOf(r))) && (tail.weightScale || 0) === wtOf(r) && tail.penTier === (penTiers && rpen && rpen[r] > 0 ? rpen[r] - 1 : undefined)) && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
           && Math.abs(tail[tail.length - 1].y - line[0].y) < 1e-4 && Math.abs(tail[tail.length - 1].z - line[0].z) < 1e-4) {
           for (let q = 1; q < line.length; q++) tail.push(line[q]);
           acc.verticesOut += line.length - 1; tailRun = r;
@@ -984,7 +995,7 @@
         const last = join && s === subs.length - 1;
         if (minMark > 0 && !last && lineLength(line) < minMark) continue;
         line.back = false;
-        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) line.penId = pid; if (ws) line.weightScale = ws; }
+        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) line.penId = pid; if (ws) line.weightScale = ws; if (penTiers && rpen && rpen[r] > 0) line.penTier = rpen[r] - 1; }
         out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
         if (join) { tail = last ? line : null; tailRun = r; }
       }
@@ -1475,13 +1486,17 @@
           const clipFills = !!occ && (objects.length > 1 || !meshes[i].convex);
           const seg = clipFills ? occ.segFor(meshes[i]) : null;
           const runs = [];
+          // WD-D2: a frame line may carry its pen (penTier / penId) and width (weightScale); the run keeps them for the emit
+          const penOf = (line) => (line.penTier !== undefined || line.penId !== undefined || line.weightScale !== undefined
+            ? { penTier: line.penTier, penId: line.penId, weightScale: line.weightScale } : null);
           if (!clipFills) {
-            for (let k = 0; k < lines.length; k++) runs.push({ pts: lines[k], visible: true });
+            for (let k = 0; k < lines.length; k++) { const x = penOf(lines[k]); runs.push(x ? { pts: lines[k], visible: true, pen: x } : { pts: lines[k], visible: true }); }
           } else {
             lines.forEach((line) => {
               const a = line[0]; const b = line[line.length - 1];
               const closed = line.length > 3 && Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9;
-              clipLine(line, seg, closed).forEach((q) => runs.push(q));
+              const x = penOf(line);
+              clipLine(line, seg, closed).forEach((q) => runs.push(x ? Object.assign({}, q, { pen: x }) : q));
             });
           }
           const shown = underFloor(runs);

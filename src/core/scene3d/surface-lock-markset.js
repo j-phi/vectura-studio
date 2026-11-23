@@ -73,18 +73,24 @@
     let pos = new Float32Array(3 * 1024); let nrm = new Int16Array(2 * 1024); let nv = 0;
     let start = new Uint32Array(256); let level = new Uint8Array(256); let rank = new Uint16Array(256);
     let family = new Uint8Array(256); let flags = new Uint8Array(256); let nr = 0;
+    let runBand = null; // WD-D2 (contract A28): optional per-run tone band (2 x Uint8: lo, hi in 1/255 of the tone I), allocated on the first run that has one
     let runPen = null; let runWeight = null; // allocated on the first run that carries a pen / weight (contract A26)
     let capRank = null; // allocated on the first run that carries a capRank; absent otherwise (contract A13)
     let open = null;
     const levelCounts = new Uint32Array(MAX_LEVELS);
     const b = {
-      beginRun(lv, r, fam, fl, cap, pen, weight) {
+      beginRun(lv, r, fam, fl, cap, pen, weight, bandLo, bandHi) {
         if (open) throw new Error('SurfaceLockMarkSet: beginRun inside an open run');
         const L = lv | 0;
         if (L < 0 || L >= MAX_LEVELS) throw new Error(`SurfaceLockMarkSet: level ${lv} outside 0..${MAX_LEVELS - 1}`);
         const rr = Number(r);
         if (!(rr >= 0 && rr < 1)) throw new Error(`SurfaceLockMarkSet: rank ${r} outside [0, 1)`);
-        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null, pen: 0, weight: 0 };
+        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null, pen: 0, weight: 0, band: null };
+        if (bandLo !== undefined || bandHi !== undefined) {
+          const lo = Math.max(0, Math.min(255, Math.round(255 * (Number.isFinite(bandLo) ? bandLo : 0))));
+          const hi = Math.max(0, Math.min(255, Math.round(255 * (Number.isFinite(bandHi) ? bandHi : 1))));
+          if (lo > 0 || hi < 255) open.band = [lo, hi];
+        }
         if (pen) open.pen = Math.max(0, Math.min(255, pen | 0));
         if (weight) open.weight = Math.max(0, Math.min(255, Math.round(Number(weight)) || 0));
         if (cap !== undefined && cap !== null) {
@@ -111,6 +117,8 @@
         if (capRank) { capRank = grow(capRank, nr + 1); capRank[nr] = open.cap === null ? 0 : open.cap; }
         if (open.pen && !runPen) runPen = new Uint8Array(Math.max(256, level.length));
         if (runPen) { runPen = grow(runPen, nr + 1); runPen[nr] = open.pen; }
+        if (open.band && !runBand) { runBand = new Uint8Array(2 * Math.max(256, level.length)); for (let q = 0; q < nr; q++) runBand[2 * q + 1] = 255; }
+        if (runBand) { runBand = grow(runBand, 2 * (nr + 1)); runBand[2 * nr] = open.band ? open.band[0] : 0; runBand[2 * nr + 1] = open.band ? open.band[1] : 255; }
         if (open.weight && !runWeight) runWeight = new Uint8Array(Math.max(256, level.length));
         if (runWeight) { runWeight = grow(runWeight, nr + 1); runWeight[nr] = open.weight; }
         start[nr] = open.v0; level[nr] = open.level; rank[nr] = open.rank; family[nr] = open.family; flags[nr] = open.flags;
@@ -144,6 +152,7 @@
         if (capRank) out.runCapRank = capRank.slice(0, nr);
         if (runPen) out.runPen = runPen.slice(0, nr);
         if (runWeight) out.runWeight = runWeight.slice(0, nr);
+        if (runBand) out.runBand = runBand.slice(0, 2 * nr);
         return out;
       },
     };
@@ -163,6 +172,7 @@
     if (ms.runCapRank && ms.runCapRank.length !== nr) bad.push('runCapRank length');
     if (ms.runPen && ms.runPen.length !== nr) bad.push('runPen length');
     if (ms.runWeight && ms.runWeight.length !== nr) bad.push('runWeight length');
+    if (ms.runBand && ms.runBand.length !== 2 * nr) bad.push('runBand length');
     if (ms.runStart[0] !== 0 && nr) bad.push('runStart[0]');
     if (ms.runStart[nr] !== nv) bad.push('runStart[last]');
     for (let r = 0; r < nr; r++) {
@@ -175,7 +185,7 @@
   };
 
   const ARRAYS = ['positions', 'normals', 'runStart', 'runLevel', 'runRank', 'runFamily', 'runFlags'];
-  const OPTIONAL = ['runCapRank', 'runPen', 'runWeight'];
+  const OPTIONAL = ['runCapRank', 'runPen', 'runWeight', 'runBand'];
   const byteSize = (ms) => ARRAYS.concat(OPTIONAL).reduce((s, k) => s + (ms && ms[k] ? ms[k].byteLength : 0), 0);
   const transferList = (ms) => ARRAYS.concat(OPTIONAL.filter((k) => ms[k])).map((k) => ms[k].buffer);
 
