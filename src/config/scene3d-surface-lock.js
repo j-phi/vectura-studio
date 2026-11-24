@@ -211,6 +211,22 @@
       WEIGHT_TOP: 1.9,  // WD-D3 weightModulated: line width at the dark end, x the document pen (the pose ribbon reaches ~1.7; the lock rulings foreshorten so the ink sits ~0.7x of the pose: +12 %)
       WEIGHT_STEP: 0.1,  // WD-D3 weightModulated: width quantum (each ruling is baked once per step, with a tone band)
       WEIGHT_PAPER_BAND: 0.04,  // WD-D3 weightModulated: the lightest share of the tone range that thins to paper (the pose law is paper above L 0.9)
+      MAZE_PAPER_DENS: 0.03,  // D5-maze mazeFill (A32): relative density at and below which the pose maze draws nothing
+      MAZE_PITCH_X: 0.6,  // D5-maze: pose cell = max(floor, this x pitchOfDens) x MAZE_CELL_X
+      MAZE_CELL_X: 1.05,  // D5-maze: see MAZE_PITCH_X
+      MAZE_V2_PITCH_X: 2,  // D5-maze: the v2 sparse end runs to this x the legacy lit pitch (pose V2_PITCH_X)
+      MAZE_OFF_DENS: 0.5,  // D5-maze: tone OFF draws the uniform maze of this relative density
+      MAZE_LEVEL_MAX: 5,  // D5-maze: finest division level
+      MAZE_THIN: 0.6,  // D5-maze: chambers thinner / wider than this ratio drop the wall across their short side (poles, torus inner equator)
+      MAZE_STEP_MM: 1.2,  // D5-maze: longest polyline segment of a wall (screen mm)
+      MAZE_FLOOR_PEN: 0.7,  // D5-maze: the frame's plot-floor cap (meta.floorPitchPen), in pens: a maze wall may sit this close before the cap bites
+      MAZE_KNEE_N: 4,  // D5-maze: the pose cell is max(floor, 0.6 x pitch); the lock takes the smooth maximum (p^n + floor^n)^(1/n), so the dark end keeps grading
+      MAZE_FINE: 1.1,  // D5-maze: the finest baked cell is the floor cell / this (lock walls are shorter per cell than the pose's: the pose ink at the dark end)
+      MAZE_INK_X: 1,  // D5-maze: LUT calibration x (1 / pose cell)
+      MAZE_MAX_VERTS: 150000,  // D5-maze: the finest level is lowered until the vertex estimate fits
+      MAZE_SURVEY: 25,  // D5-maze: chart survey grid
+      MAZE_RANK_JITTER: 0.3,  // D5-maze: random share of a chamber's rank
+      MAZE_ROOT_MAX: 6000,  // D5-maze: most root chambers
       AMP_STEPS: 10,  // WD-D1 ampSpacing: polyline samples per wavelength
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage

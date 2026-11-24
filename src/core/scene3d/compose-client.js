@@ -36,7 +36,7 @@
     'src/core/scene3d/surface-fill-mono.js', 'src/core/scene3d/surface-fill.js',
     'src/core/scene3d/surface-lock-markset.js', 'src/core/scene3d/surface-lock-chart.js',
     'src/core/scene3d/surface-lock-mezzo.js', 'src/core/scene3d/surface-lock-ladder.js',
-    'src/core/scene3d/surface-lock-laws.js', 'src/core/scene3d/surface-lock-faceted.js',
+    'src/core/scene3d/surface-lock-laws.js', 'src/core/scene3d/surface-lock-faceted.js', 'src/core/scene3d/surface-lock-webs.js',
     'src/core/scene3d/surface-lock-visibility.js', 'src/core/scene3d/surface-lock-shadow.js',
     'src/core/scene3d/surface-lock.js', 'src/core/algorithms/spiralizer.js',
     'src/core/algorithms/polyhedron.js', 'src/core/algorithms/topoform.js', 'src/core/algorithms/scene3d.js',

@@ -63,7 +63,7 @@
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
   // Each is its own Scene3D namespace so Engine's sceneModuleFingerprint sees its functions.
-  const BAKER_KEYS = Object.freeze(['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws', 'SurfaceLockFaceted']);
+  const BAKER_KEYS = Object.freeze(['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws', 'SurfaceLockFaceted', 'SurfaceLockWebs']);
 
   const now = () => ((globalScope.performance && typeof globalScope.performance.now === 'function') ? globalScope.performance.now() : Date.now());
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : (Number.isFinite(Number(v)) && v !== null && v !== '' && v !== undefined ? Number(v) : d));

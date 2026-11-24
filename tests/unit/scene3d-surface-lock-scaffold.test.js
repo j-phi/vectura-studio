@@ -12,13 +12,13 @@ const ROOT = path.resolve(__dirname, '../..');
 const MODULES = [
   'src/core/scene3d/surface-lock-markset.js', 'src/core/scene3d/surface-lock-chart.js',
   'src/core/scene3d/surface-lock-mezzo.js', 'src/core/scene3d/surface-lock-ladder.js',
-  'src/core/scene3d/surface-lock-laws.js', 'src/core/scene3d/surface-lock-faceted.js',
+  'src/core/scene3d/surface-lock-laws.js', 'src/core/scene3d/surface-lock-faceted.js', 'src/core/scene3d/surface-lock-webs.js',
   'src/core/scene3d/surface-lock-visibility.js', 'src/core/scene3d/surface-lock-shadow.js',
   'src/core/scene3d/surface-lock.js',
 ];
 const CONFIG = 'src/config/scene3d-surface-lock.js';
 const NAMESPACES = ['SurfaceLockMarkSet', 'SurfaceLockChart', 'SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws',
-  'SurfaceLockFaceted', 'SurfaceLockVisibility', 'SurfaceLockShadow', 'SurfaceLock'];
+  'SurfaceLockFaceted', 'SurfaceLockWebs', 'SurfaceLockVisibility', 'SurfaceLockShadow', 'SurfaceLock'];
 
 describe('surface lock scaffold', () => {
   let rt; let V;
@@ -44,7 +44,7 @@ describe('surface lock scaffold', () => {
     const SL = V.Scene3D.SurfaceLock;
     ['effectiveMarkSpace', 'bakerFor', 'bakeKey', 'bake', 'poseOf', 'frame', 'frameable', 'sceneFrame', 'resetStats', 'clearCache']
       .forEach((fn) => expect(typeof SL[fn], fn).toBe('function'));
-    expect(SL.BAKER_KEYS).toEqual(['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws', 'SurfaceLockFaceted']);
+    expect(SL.BAKER_KEYS).toEqual(['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws', 'SurfaceLockFaceted', 'SurfaceLockWebs']);
     SL.BAKER_KEYS.forEach((k) => {
       const b = V.Scene3D[k];
       expect(typeof b.id, k).toBe('string');
