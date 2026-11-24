@@ -507,17 +507,29 @@
     return value;
   };
 
-  function buildJobFor(geometry, settings, profile, controller) {
+  function jobContextFor(geometry, settings, profile, controller) {
     const s = clone(settings);
     s.profileOverrides = {};
-    return PJ().buildJob(geometry.groups, {
+    return {
       settings: s,
       profile,
       docSize: geometry.docSize,
       firmware: controller ? controller.fw : null,
       originOffset: jobOriginOffset(controller, profile, controller ? controller.fw : null),
-    });
+    };
   }
+  function buildJobFor(geometry, settings, profile, controller) {
+    return PJ().buildJob(geometry.groups, jobContextFor(geometry, settings, profile, controller));
+  }
+
+  // Documents with more points than this are optimized in time slices (measured: ~160k points cost
+  // ~70 ms in one block). Override through Modals.SendToPlotter.jobOptions in tests.
+  const ASYNC_POINT_THRESHOLD = 15000;
+  const jobOptions = () => (Modals.SendToPlotter && Modals.SendToPlotter.jobOptions) || {};
+  const defaultYield = (cb) => {
+    if (typeof G.requestIdleCallback === 'function') G.requestIdleCallback(() => cb(), { timeout: 40 });
+    else setTimeout(cb, 0);
+  };
 
   const travelCache = new WeakMap();
   const travelOf = (job) => {
@@ -1041,36 +1053,76 @@
     // ---- geometry + job ----
     refreshGeometry() {
       try {
-        this.s.geometry = readGeometry(this.ui);
+        const geo = readGeometry(this.ui);
+        geo.pointCount = geo.groups.reduce((n, gr) => n + gr.polylines.reduce((m, pl) => m + pl.length, 0), 0);
+        this.s.geometry = geo;
+        this.s.geomVersion = (this.s.geomVersion || 0) + 1;
         this.s.jobError = this.s.geometry.error;
       } catch (err) {
-        this.s.geometry = { groups: [], docSize: { width: 0, height: 0 } };
+        this.s.geometry = { groups: [], docSize: { width: 0, height: 0 }, pointCount: 0 };
+        this.s.geomVersion = (this.s.geomVersion || 0) + 1;
         this.s.jobError = `Could not read the document: ${err.message}`;
       }
       this.recompute();
       if (this.setupPens) this.renderPens();
     }
 
+    // Everything the built job depends on; Start only plots a job whose key matches the current one.
+    jobKey() {
+      const c = liveController();
+      const profile = this.profile();
+      return JSON.stringify([this.s.geomVersion || 0, this.settings(), profile, jobOriginOffset(c, profile, c ? c.fw : null), c ? c.fw : null]);
+    }
+
+    jobReady() { return !this.s.building && !!this.s.job && this.s.jobKey === this.jobKey(); }
+
     scheduleRecompute() {
       if (this.destroyed) return;
       clearTimeout(this.timers.recompute);
+      this.s.jobSeq = (this.s.jobSeq || 0) + 1; // a computation still in flight is now stale: it must not land
+      this.s.jobKey = null;
       this.s.building = true;
       this.timers.recompute = setTimeout(() => this.recompute(), 120);
     }
 
     recompute() {
       clearTimeout(this.timers.recompute);
-      this.s.building = false;
       const g = this.s.geometry;
-      if (!g) return;
-      try {
-        this.s.job = buildJobFor(g, this.settings(), this.profile(), liveController());
-        if (!this.s.jobError || /^Could not build/.test(this.s.jobError)) this.s.jobError = null;
-      } catch (err) {
-        this.s.job = null;
-        this.s.jobError = `Could not build the plot: ${err.message}`;
+      if (!g) { this.s.building = false; return; }
+      const seq = (this.s.jobSeq = (this.s.jobSeq || 0) + 1);
+      const key = this.jobKey();
+      const land = (job, err) => {
+        if (seq !== this.s.jobSeq || this.destroyed) return;
+        this.s.building = false;
+        if (err) {
+          this.s.job = null;
+          this.s.jobKey = null;
+          this.s.jobError = `Could not build the plot: ${err.message}`;
+        } else {
+          this.s.job = job;
+          this.s.jobKey = key;
+          if (!this.s.jobError || /^Could not build/.test(this.s.jobError)) this.s.jobError = null;
+        }
+        this.renderStats(); this.renderPlot(); this.previews.forEach((p) => p.invalidate());
+      };
+      const opts = jobOptions();
+      const threshold = isNum(opts.asyncPointThreshold) ? opts.asyncPointThreshold : ASYNC_POINT_THRESHOLD;
+      let ctx;
+      try { ctx = jobContextFor(g, this.settings(), this.profile(), liveController()); } catch (err) { land(null, err); return; }
+      if ((g.pointCount || 0) <= threshold || typeof PJ().buildJobAsync !== 'function') {
+        let job = null; let error = null;
+        try { job = PJ().buildJob(g.groups, ctx); } catch (err) { error = err; }
+        this.s.building = false;
+        land(job, error);
+        return;
       }
-      if (!this.destroyed) { this.renderStats(); this.renderPlot(); this.previews.forEach((p) => p.invalidate()); }
+      this.s.building = true; // stats show "Preparing…" and Start stays disabled until this lands
+      this.renderStats(); this.renderPlot();
+      PJ().buildJobAsync(g.groups, ctx, {
+        isCancelled: () => seq !== this.s.jobSeq || this.destroyed,
+        sliceMs: isNum(opts.sliceMs) ? opts.sliceMs : 8,
+        yieldFn: typeof opts.yieldFn === 'function' ? opts.yieldFn : defaultYield,
+      }).then((job) => { if (job) land(job, null); }, (err) => land(null, err));
     }
 
     view() {
@@ -1111,6 +1163,7 @@
       const out = [];
       const sim = session.kind === 'sim';
       if (!c) { out.push('Connect to a plotter first (Connect tab).'); return out; }
+      if (this.s.building || (this.s.job && this.s.jobKey !== this.jobKey())) out.push('Preparing the plot…');
       if (c.state !== 'idle') out.push(`The plotter is ${STATE_LABEL[c.state] ? STATE_LABEL[c.state].toLowerCase() : c.state}.`);
       const job = this.s.job;
       if (!job || !job.pens || !job.pens.length) out.push('There is nothing to plot. Add geometry or enable a pen.');
@@ -1547,7 +1600,7 @@
       this.oobEl.textContent = '';
       this.oobEl.className = 'stp-oob';
       if (this.s.jobError) el.appendChild(h('div', { class: 'stp-note is-error', text: this.s.jobError }));
-      if (this.s.building) el.appendChild(h('p', { class: 'stp-hint', text: 'Updating…' }));
+      if (this.s.building) el.appendChild(h('p', { class: 'stp-hint', text: 'Preparing…' }));
       if (!job || !job.stats) { if (!this.s.jobError) el.appendChild(h('p', { class: 'stp-hint', text: 'No plot yet.' })); return; }
       const st = job.stats;
       if (alt) el.appendChild(h('p', { class: 'stp-hint', text: `Showing the ${alt.label}. Clear it on the Plot tab to see your artwork again.` }));
@@ -1640,7 +1693,7 @@
       const idle = state === 'idle';
       if (this.auxBtns) {
         const auxOk = !!c && idle && (c.originSet || sim || session.useMachineZero) && (sim || (this.calibration().axisChecked && this.calibration().penHeightChecked));
-        this.auxBtns.frame.disabled = !auxOk || !(this.s.job && this.s.job.bbox);
+        this.auxBtns.frame.disabled = !auxOk || !(this.s.job && this.s.job.bbox) || !this.jobReady();
         this.auxBtns.scale.disabled = !auxOk;
         this.swatchBtns.plot.disabled = !auxOk;
       }
@@ -1803,8 +1856,12 @@
       let job;
       let gcode;
       try {
-        // Rebuild against the live origin so the bounds check matches what the controller will test.
-        job = buildJobFor(this.s.geometry, settings, profile, c);
+        // Only a job built from the current settings, origin and document may be plotted: never a stale one.
+        if (!this.jobReady()) {
+          if (!this.s.building) this.scheduleRecompute();
+          throw new Error('The plot is still being prepared. Try again in a moment.');
+        }
+        job = this.s.job;
         if (!job.bounds.ok) throw new Error(this.overflowMessage(job.bounds));
         if (!job.pens.length) throw new Error('There is nothing to plot.');
         gcode = PJ().toGcode(job, profile, { airPlot: settings.airPlot });
@@ -1847,6 +1904,7 @@
       const c = liveController();
       const job0 = this.s.job;
       if (!c || !job0 || !job0.bbox) return null;
+      if (!this.jobReady()) { this.s.plotMsg = 'The plot is still being prepared. Try again in a moment.'; this.renderPlot(); return null; }
       const profile = this.profile();
       try {
         const frame = PJ().frameJob(job0.bbox, profile, this.auxProfileArgs());
@@ -1930,6 +1988,7 @@
     Store,
     getSession: () => session,
     getPanel: () => activePanel,
+    jobOptions: null,
     paperSpace: { toPaper, fromPaper, paperAreaRect, assumedOriginOffset },
     connectSession,
     disconnectSession,

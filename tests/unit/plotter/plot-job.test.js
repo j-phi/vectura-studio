@@ -478,3 +478,31 @@ describe('PlotJob performance', () => {
     expect(job.pens[0].paths.length).toBeGreaterThan(1000);
   });
 });
+
+describe('PlotJob.buildJobAsync (sliced build)', () => {
+  const wiggly = (n, seed) => Array.from({ length: n }, (_, i) => Array.from({ length: 30 }, (__, k) => pt(((i * 7 + k * 3 + seed) % 97) + Math.sin(k) , ((i * 13 + k * 2) % 47) + Math.cos(k + i))));
+  const groups = [group(wiggly(900, 1), 'a'), group(wiggly(700, 5), 'b')];
+  const ctx = { settings: {}, profile: a3, docSize: { width: 120, height: 80 } };
+  const manual = () => { const q = []; return { q, yieldFn: (cb) => q.push(cb) }; };
+  const flush = async (m) => { for (let i = 0; i < 100000 && m.q.length; i += 1) { m.q.shift()(); await Promise.resolve(); } };
+
+  test('yields several times and returns exactly what buildJob returns', async () => {
+    const m = manual();
+    const p = J.buildJobAsync(groups, ctx, { yieldFn: m.yieldFn, sliceMs: 0 });
+    let slices = 0;
+    while (m.q.length) { m.q.shift()(); slices += 1; await Promise.resolve(); }
+    const job = await p;
+    expect(slices).toBeGreaterThan(5);
+    expect(job).toEqual(J.buildJob(groups, ctx));
+  });
+
+  test('a cancelled build resolves null and never returns a job', async () => {
+    const m = manual();
+    let cancelled = false;
+    const p = J.buildJobAsync(groups, ctx, { yieldFn: m.yieldFn, sliceMs: 0, isCancelled: () => cancelled });
+    m.q.shift()(); m.q.shift()();
+    cancelled = true;
+    await flush(m);
+    expect(await p).toBeNull();
+  });
+});

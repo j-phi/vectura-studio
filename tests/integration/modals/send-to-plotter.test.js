@@ -252,4 +252,107 @@ describe('Send to Plotter panel', () => {
       await STP.disconnectSession();
     });
   });
+
+  describe('dense documents (responsiveness)', () => {
+    let panel;
+    const manualYield = () => {
+      const queue = [];
+      return { queue, yieldFn: (cb) => queue.push(cb), pumpAll: () => { let n = 0; while (queue.length && n < 100000) { queue.shift()(); n += 1; } return n; } };
+    };
+
+    beforeAll(async () => {
+      for (let k = 0; k < 4; k += 1) app.engine.addLayer('flowfield');
+      for (let k = 0; k < 3; k += 1) app.engine.addLayer('spiral');
+      if (!STP.getPanel()) click('#btn-send-to-plotter');
+      panel = STP.getPanel();
+      await STP.disconnectSession();
+      STP.simOptions = { bannerDelayMs: 10, speed: 4000 };
+    });
+    afterEach(() => { STP.jobOptions = null; });
+
+    test('a >=100k-point document is optimized in slices; the longest block stays short and the result equals buildJob', async () => {
+      const m = manualYield();
+      STP.jobOptions = { asyncPointThreshold: 0, yieldFn: m.yieldFn, sliceMs: 8 };
+      panel.refreshGeometry();
+      const g = panel.s.geometry;
+      expect(g.pointCount).toBeGreaterThanOrEqual(100000);
+      expect(panel.s.building).toBe(true);
+      expect(document.getElementById('stp-stats') || document.body).toBeTruthy();
+      // drive the slices, timing each block
+      let longest = 0; let blocks = 0;
+      const t00 = Date.now();
+      while (panel.s.building && Date.now() - t00 < 50000) {
+        while (m.queue.length) {
+          const t0 = performance.now();
+          m.queue.shift()();
+          longest = Math.max(longest, performance.now() - t0);
+          blocks += 1;
+        }
+        await new Promise((r) => setTimeout(r, 10)); // lets a debounced recompute (earlier tests) enqueue
+      }
+      expect(panel.s.building).toBe(false);
+      expect(blocks).toBeGreaterThan(5);
+      expect(longest).toBeLessThan(100);
+      const PJ = window.Vectura.PlotJob;
+      const settings = JSON.parse(JSON.stringify(panel.settings())); settings.profileOverrides = {};
+      let t0 = performance.now();
+      const ref = PJ.buildJob(g.groups, { settings, profile: panel.profile(), docSize: g.docSize, firmware: null, originOffset: panel.s.job.originOffset });
+      const tBuild = performance.now() - t0;
+      t0 = performance.now();
+      const gc = PJ.toGcode(ref, panel.profile(), {});
+      const tGcode = performance.now() - t0;
+      console.log('DENSE', JSON.stringify({ points: g.pointCount, buildJobMs: Math.round(tBuild), toGcodeMs: Math.round(tGcode), slices: blocks, longestSliceMs: Math.round(longest), gcodeLines: gc.lines.length }));
+      expect(panel.s.job.stats.pathCount).toBe(ref.stats.pathCount);
+      expect(panel.s.job.stats.drawLength).toBeCloseTo(ref.stats.drawLength, 6);
+      expect(panel.s.job.bbox).toEqual(ref.bbox);
+    }, 60000);
+
+    test('a settings change mid-compute cancels the stale job; Start never plots it', async () => {
+      const m = manualYield();
+      STP.jobOptions = { asyncPointThreshold: 0, yieldFn: m.yieldFn, sliceMs: 2 };
+      await STP.connectSession('sim', panel.profile());
+      await waitFor(() => STP.getSession().controller?.state === 'idle');
+      const c = STP.getSession().controller;
+      await c.setOrigin();
+      const settle = async () => {
+        const t00 = Date.now();
+        while ((panel.s.building || !panel.jobReady()) && Date.now() - t00 < 20000) { m.pumpAll(); await new Promise((r) => setTimeout(r, 10)); }
+      };
+      await settle(); // finish whatever the connect/origin refresh started
+      expect(panel.jobReady()).toBe(true);
+      panel.saveSettings({ placement: { offsetX: 0 } });
+      panel.recompute(); // computation A, in flight on the old settings
+      expect(panel.s.building).toBe(true);
+      m.queue.shift()(); m.queue.shift()?.call(); // A makes progress, not finished
+      panel.saveSettings({ placement: { offsetX: 7 } }); // settings change mid-compute
+      expect(panel.s.building).toBe(true);
+      const staleJob = panel.s.job;
+      m.pumpAll(); // A's remaining slices run and are discarded
+      expect(panel.s.job).toBe(staleJob);
+      expect(panel.s.building).toBe(true);
+      click('[data-tab="plot"]');
+      expect(document.getElementById('stp-start').disabled).toBe(true);
+      expect(document.getElementById('stp-start-why').textContent).toMatch(/Preparing/);
+      expect(panel.startPlot()).toBeNull(); // refused: not ready
+      expect(STP.getSession().run).toBeNull();
+      await waitFor(() => m.queue.length, 5000); // debounce fired, computation B started
+      await settle();
+      expect(panel.jobReady()).toBe(true);
+      expect(panel.s.job.placement.offsetX).toBeCloseTo(7, 6);
+      await waitFor(() => !document.getElementById('stp-start').disabled);
+      STP.jobOptions = { asyncPointThreshold: 1e9 };
+      panel.saveSettings({ airPlot: true });
+      panel.recompute();
+      await waitFor(() => panel.jobReady());
+      const started = panel.startPlot();
+      expect(started).toBeTruthy();
+      expect(STP.getSession().run.job.placement.offsetX).toBeCloseTo(7, 6);
+      expect(STP.getSession().run.job.airPlot).toBe(true);
+      await waitFor(() => c.state === 'running', 20000);
+      await c.stop();
+      await waitFor(() => c.state === 'idle', 30000).catch((e) => { throw new Error(`${e.message} state=${c.state} err=${JSON.stringify(STP.getSession().lastError)}`); });
+      panel.saveSettings({ airPlot: false, placement: { offsetX: 0 } });
+      await STP.disconnectSession();
+    }, 90000);
+  });
 });

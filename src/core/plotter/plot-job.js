@@ -79,6 +79,9 @@
     };
   };
 
+  // Runs a generator to completion (the synchronous form of every sliced step below).
+  const drive = (it) => { for (;;) { const r = it.next(); if (r.done) return r.value; } };
+
   // ---- Polyline helpers ----
   const cleanPolyline = (poly) => {
     const out = [];
@@ -149,7 +152,7 @@
   };
 
   // Greedy nearest-neighbour ordering with reversal, grid-indexed on path endpoints.
-  const nearestNeighbourSort = (paths, start) => {
+  function* nearestNeighbourSortSteps(paths, start) {
     const n = paths.length;
     if (n < 2) return paths.slice();
     let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
@@ -185,6 +188,7 @@
     const out = [];
     let cur = { x: start.x, y: start.y };
     for (let step = 0; step < n; step++) {
+      if (step % 1500 === 1499) yield step;
       const c0 = cellOf(cur.x, cur.y);
       let best = -1; let bestD = Infinity;
       const scan = (cx, cy) => {
@@ -223,7 +227,7 @@
       cur = oriented[oriented.length - 1];
     }
     return out;
-  };
+  }
 
   const mergePaths = (paths, tol) => {
     if (!paths.length) return paths;
@@ -258,27 +262,36 @@
   const ORDER_MODES = ['optimized', 'document', 'reverse', 'random'];
 
   // Optimize one pen's polylines (document mm). Deterministic.
-  const optimizePolylines = (polylines, optimize, order, seed) => {
+  function* optimizeSteps(polylines, optimize, order, seed) {
     const opt = optimize || {};
     const on = opt.enabled !== false;
     let paths = [];
     for (let i = 0; i < polylines.length; i++) {
       const c = cleanPolyline(polylines[i]);
       if (c.length >= 2) paths.push(c);
+      if (i % 2000 === 1999) yield i;
     }
     if (on) {
       const simp = nonNeg(opt.simplify, 0);
-      if (simp > 0) paths = paths.map((p) => rdp(p, simp)).filter((p) => p.length >= 2);
+      if (simp > 0) {
+        const simplified = [];
+        for (let i = 0; i < paths.length; i++) {
+          simplified.push(rdp(paths[i], simp));
+          if (i % 400 === 399) yield i;
+        }
+        paths = simplified.filter((p) => p.length >= 2);
+      }
       const minLen = nonNeg(opt.minLength, 0);
       if (minLen > 0) paths = paths.filter((p) => polyLength(p) >= minLen);
       if (opt.dedupe !== false) {
         const seen = new Set();
-        paths = paths.filter((p) => {
-          const k = pathKey(p);
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
+        const uniq = [];
+        for (let i = 0; i < paths.length; i++) {
+          const k = pathKey(paths[i]);
+          if (!seen.has(k)) { seen.add(k); uniq.push(paths[i]); }
+          if (i % 1000 === 999) yield i;
+        }
+        paths = uniq;
       }
     }
     const mode = ORDER_MODES.includes(order) ? order : 'optimized';
@@ -287,11 +300,13 @@
     } else if (mode === 'random') {
       paths = shuffle(paths, seed);
     } else {
-      if (mode === 'optimized' && on && opt.sort !== false) paths = nearestNeighbourSort(paths, { x: 0, y: 0 });
+      if (mode === 'optimized' && on && opt.sort !== false) paths = yield* nearestNeighbourSortSteps(paths, { x: 0, y: 0 });
+      yield 'merge';
       if (on && opt.merge !== false) paths = mergePaths(paths, nonNeg(opt.mergeTol, 0.1));
     }
     return paths;
-  };
+  }
+  const optimizePolylines = (polylines, optimize, order, seed) => drive(optimizeSteps(polylines, optimize, order, seed));
 
   // ---- Placement ----
   // Rotation is clockwise about the document centre, re-anchored to the top-left.
@@ -530,7 +545,8 @@
   };
 
   // ---- buildJob ----
-  const buildJob = (penGroups, ctx) => {
+  // Generator form: yields after each pen's optimize/place stage so a caller can slice the work.
+  function* buildJobSteps(penGroups, ctx) {
     const S = safety();
     const c = ctx || {};
     const settings = resolveSettings(c.settings);
@@ -566,11 +582,17 @@
     const regSize = regCfg && typeof regCfg === 'object' ? regCfg.size : 10;
 
     // First pass: optimize + place + passes. The mark needs the combined bbox.
-    const staged = groups.map((g, gi) => {
+    const stagedAll = [];
+    for (let gi = 0; gi < groups.length; gi++) {
+      const g = groups[gi];
       const penCfg = (settings.pens && settings.pens[g.penId]) || {};
       const order = ORDER_MODES.includes(penCfg.order) ? penCfg.order : 'optimized';
-      const optimized = optimizePolylines(g.polylines, settings.optimize, order, (seed ^ Math.imul(gi + 1, 0x9e3779b1)) >>> 0);
-      let paths = optimized.map((p) => p.map((pt) => place.apply(pt)));
+      const optimized = yield* optimizeSteps(g.polylines, settings.optimize, order, (seed ^ Math.imul(gi + 1, 0x9e3779b1)) >>> 0);
+      let paths = [];
+      for (let i = 0; i < optimized.length; i++) {
+        paths.push(optimized[i].map((pt) => place.apply(pt)));
+        if (i % 400 === 399) yield i;
+      }
       const passes = Math.max(1, Math.min(10, Math.round(num(penCfg.passes, 1))));
       if (passes > 1 && paths.length) {
         const rep = [];
@@ -579,8 +601,10 @@
         });
         paths = rep;
       }
-      return { g, penCfg, paths, passes };
-    }).filter((s) => s.paths.length);
+      stagedAll.push({ g, penCfg, paths, passes });
+      yield gi;
+    }
+    const staged = stagedAll.filter((s) => s.paths.length);
 
     let markBox = null;
     if (regOn && staged.length) {
@@ -620,6 +644,38 @@
     });
     if (settings.airPlot) return airPlot(job);
     return job;
+  }
+
+  const buildJob = (penGroups, ctx) => drive(buildJobSteps(penGroups, ctx));
+
+  /**
+   * Same result as buildJob, computed in slices so the main thread stays responsive.
+   * opts: { isCancelled(): boolean, sliceMs = 8, yieldFn(cb) }. Resolves to the job, or to null when
+   * cancelled (a cancelled computation never returns a job). yieldFn defaults to setTimeout 0.
+   */
+  const buildJobAsync = (penGroups, ctx, opts) => {
+    const o = opts || {};
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const sliceMs = isNum(o.sliceMs) ? o.sliceMs : 8;
+    const yieldFn = typeof o.yieldFn === 'function' ? o.yieldFn : (cb) => setTimeout(cb, 0);
+    const cancelled = () => !!(o.isCancelled && o.isCancelled());
+    return new Promise((resolve, reject) => {
+      let it;
+      try { it = buildJobSteps(penGroups, ctx); } catch (e) { reject(e); return; }
+      const pump = () => {
+        if (cancelled()) { resolve(null); return; }
+        const t0 = now();
+        try {
+          for (;;) {
+            const r = it.next();
+            if (r.done) { resolve(cancelled() ? null : r.value); return; }
+            if (now() - t0 >= sliceMs) break;
+          }
+        } catch (e) { reject(e); return; }
+        yieldFn(pump);
+      };
+      pump();
+    });
   };
 
   // ---- airPlot ----
@@ -850,6 +906,7 @@
 
   const api = {
     buildJob,
+    buildJobAsync,
     toGcode,
     frameJob,
     testSwatchJob,
