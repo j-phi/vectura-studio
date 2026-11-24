@@ -1674,25 +1674,14 @@
           down
             ? btn('Raise pen', () => this.penCheck(false, c, prof), '', { id: 'stp-pc-raise' })
             : btn('Re-check pen height', () => this.penCheck(true, c, prof), '', { id: 'stp-pc-check' }),
-          btn('Continue', () => this.guard(() => c.continuePenChange()), 'is-primary', { id: 'stp-pc-continue', disabled: down, title: down ? 'Raise the pen first' : null })));
+          btn('Continue', () => { this.s.pcDown = false; return this.guard(() => c.continuePenChange()); }, 'is-primary', { id: 'stp-pc-continue', title: down ? 'The pen is raised first' : null })));
     },
 
-    // Lowers/raises the pen at the pen-change position for a touch test. The line goes through the
-    // controller's safety filter (classifyCommand) using the profile's own clamped heights.
+    // Lowers/raises the pen at the pen-change position for a touch test, through the controller's
+    // public penDown()/penUp() (profile heights, clamped, synced with G4 P0).
     async penCheck(lower, c, prof) {
       try {
-        const MT = Vectura.PlotterMachineTools;
-        if (MT && typeof MT.penCheck === 'function') {
-          await MT.penCheck(this.ctx, lower);
-        } else {
-          const pen = prof.pen;
-          let line;
-          if (!lower) line = c._penUpLine();
-          else if (pen.mechanism === 'z') line = `G1 Z${Number(PS().clampZ(pen.down, prof, c.fw).toFixed(3))} F${Math.round(PS().clampFeedZ(pen.zFeed, prof, c.fw))}`;
-          else line = pen.servoDown;
-          await c._cmd(line);
-          if (c.pen) c.pen = { state: lower ? 'down' : 'up', z: c.pen.z };
-        }
+        if (lower) await c.penDown(); else await c.penUp();
         this.s.pcDown = lower;
         this.s.plotMsg = null;
       } catch (err) { this.s.plotMsg = err.message; }

@@ -520,7 +520,14 @@
       return { minX: -this.wco.x, maxX: L.area.width - this.wco.x, minY: -this.wco.y, maxY: L.area.height - this.wco.y };
     }
 
-    _requireManual(what) {
+    // True while a job is parked at a pen change (buffer drained, Idle, waiting for the user).
+    _inPenChange() {
+      return this.state === 'penChange' && !!this._job && !!this._job.penWait && !this._job.penWait.continuing && !this._job.finished;
+    }
+
+    // penChangeOk: pen height and repositioning moves are allowed while parked at a pen change.
+    _requireManual(what, penChangeOk) {
+      if (penChangeOk && this._inPenChange()) return;
       if (this.state === 'alarm') throw new PlotterError('alarm', 'The plotter is in alarm. Unlock it before ' + what + '.');
       if (!MANUAL_STATES.includes(this.state)) {
         throw new PlotterError('busy', 'Cannot ' + what + ' while the plotter is ' + this.state + '.');
@@ -546,10 +553,13 @@
 
     async _raiseIfNeeded() { if (this.penMustRaise) await this._penUpRaw(); }
 
-    async penUp() { this._requireManual('raising the pen'); await this._penUpRaw(); return this.pen; }
+    // Enter 'jogging' unless parked at a pen change (the job state must not be left).
+    _enterJogging() { if (!this._inPenChange()) this._setState('jogging'); }
+
+    async penUp() { this._requireManual('raising the pen', true); await this._penUpRaw(); return this.pen; }
 
     async penDown() {
-      this._requireManual('lowering the pen');
+      this._requireManual('lowering the pen', true);
       const pen = this.profile.pen;
       if (pen.mechanism === 'z') {
         await this._cmd('G1 Z' + fmt(PS().clampZ(pen.down, this.profile, this.fw)) + ' F' + fmt(this._zFeed()));
@@ -563,7 +573,7 @@
     }
 
     async setPenHeight(z) {
-      this._requireManual('setting the pen height');
+      this._requireManual('setting the pen height', true);
       if (this.profile.pen.mechanism !== 'z') throw new PlotterError('unsupported', 'This plotter has no Z-axis pen.');
       if (!Number.isFinite(z)) throw new PlotterError('invalid', 'Pen height must be a number.');
       const clamped = PS().clampZ(z, this.profile, this.fw);
@@ -595,7 +605,7 @@
       }
       await this._penUpRaw(); // pen up before any travel, always
       const f = PS().clampFeedXY(feed || this.profile.motion.travelFeed, this.profile, this.fw);
-      this._setState('jogging');
+      this._enterJogging();
       try {
         await this._cmd('G1 X' + fmt(x) + ' Y' + fmt(y) + ' F' + fmt(f));
         await this._sync();
@@ -605,14 +615,14 @@
     }
 
     async goTo(x, y, feed) {
-      this._requireManual('moving');
+      this._requireManual('moving', true);
       if (!Number.isFinite(x) || !Number.isFinite(y)) throw new PlotterError('invalid', 'Target must be numbers.');
       await this._refreshStatus().catch(() => null);
       await this._moveTo(x, y, feed);
     }
 
     async goToOrigin() {
-      this._requireManual('moving');
+      this._requireManual('moving', true);
       if (!this.originSet) throw new PlotterError('origin-not-set', 'Set the origin first.');
       await this._refreshStatus().catch(() => null);
       await this._moveTo(0, 0);
@@ -641,7 +651,7 @@
     }
 
     async jog(dx, dy, feed) {
-      this._requireManual('jogging');
+      this._requireManual('jogging', true);
       if (!Number.isFinite(dx) || !Number.isFinite(dy)) throw new PlotterError('invalid', 'Jog distances must be numbers.');
       await this._raiseIfNeeded();
       const st = await this._refreshStatus();
@@ -650,7 +660,7 @@
       const f = this._jogFeed(feed);
       const moved = Math.abs(t.x - base.x) > 5e-4 || Math.abs(t.y - base.y) > 5e-4;
       if (moved) {
-        this._setState('jogging');
+        this._enterJogging();
         await this._sendJog(t, f);
       }
       return { sent: moved, target: { x: t.x, y: t.y }, atLimit: t.atLimit, feed: f };
@@ -658,7 +668,7 @@
 
     // Press-and-hold jog: repeated segments of at most 0.25 s of travel each.
     async jogContinuousStart(dir, feed) {
-      this._requireManual('jogging');
+      this._requireManual('jogging', true);
       const mag = Math.hypot(dir.x || 0, dir.y || 0);
       if (!mag) throw new PlotterError('invalid', 'Jog direction is zero.');
       await this._raiseIfNeeded();
@@ -668,7 +678,7 @@
       const seg = (f / 60) * 0.25;
       const loop = { dir: { x: dir.x / mag, y: dir.y / mag }, target: { x: st.wpos.x, y: st.wpos.y }, busy: false, timer: null, stopped: false };
       this._jogLoop = loop;
-      this._setState('jogging');
+      this._enterJogging();
       const tick = async () => {
         if (loop.busy || loop.stopped) return;
         loop.busy = true;
@@ -940,10 +950,22 @@
       }
     }
 
+    // Raises the pen first if the user left it down (re-check height), then lets travel resume.
     continuePenChange() {
       const job = this._job;
-      if (!job || !job.penWait) throw new PlotterError('invalid', 'The plotter is not waiting for a pen change.');
-      job.penWait.resolve();
+      if (!job || !job.penWait || job.penWait.continuing) throw new PlotterError('invalid', 'The plotter is not waiting for a pen change.');
+      const wait = job.penWait;
+      wait.continuing = true;
+      return (async () => {
+        try {
+          await this.jogCancel();
+          await this._penUpRaw();
+          wait.resolve();
+        } catch (e) {
+          wait.continuing = false;
+          if (!job.finished) this._fatalError(e.message);
+        }
+      })();
     }
 
     async _onStreamDone(job) {

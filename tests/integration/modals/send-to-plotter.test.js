@@ -171,4 +171,30 @@ describe('Send to Plotter panel', () => {
     click('#btn-send-to-plotter');
     expect(document.querySelector('.stp-dialog')).toBeTruthy();
   });
+
+  test('pen-change "Re-check pen height" uses the public controller API and Continue raises the pen first', async () => {
+    const c = STP.getSession().controller;
+    if (c.state !== 'idle') await c.stop();
+    await waitFor(() => c.state === 'idle');
+    await c.setOrigin();
+    const lines = ['G21', 'G90', 'G1 Z0 F5000',
+      'G1 X10 Y10 F6000', 'G1 Z3.5 F5000', 'G1 X20 Y10 F3000', 'G1 Z0 F5000',
+      'G1 X30 Y30 F6000', 'G1 Z3.5 F5000', 'G1 X40 Y30 F3000', 'G1 Z0 F5000'];
+    const gcode = { lines, penChangeIndices: [7], pathStartIndices: [3, 7], pathCount: 2 };
+    const downSpy = vi.spyOn(c, 'penDown');
+    click('[data-tab="plot"]');
+    const done = c.run(gcode, { pens: [{ name: 'A', color: '#111111' }, { name: 'B', color: '#cc0000' }], penChange: 'pause' });
+    await waitFor(() => document.getElementById('stp-pc-check'));
+    click('#stp-pc-check');
+    await waitFor(() => document.getElementById('stp-pc-raise'));
+    expect(downSpy).toHaveBeenCalledTimes(1);
+    expect(c.state).toBe('penChange');
+    expect(c.pen.state).toBe('down');
+    click('#stp-pc-continue');
+    await done;
+    expect(c.state).toBe('idle');
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../../../src/ui/modals/send-to-plotter.js'), 'utf8');
+    expect(src).not.toMatch(/\._cmd\b|\._penUpLine\b/); // the modal only uses the public controller API
+    expect(STP.getSession().transport.getPosition().mpos.z).toBeLessThan(0.1);
+  }, 40000);
 });

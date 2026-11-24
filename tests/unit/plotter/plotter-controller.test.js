@@ -784,3 +784,89 @@ describe('driver registry and profile validation', () => {
     expect(seen).toEqual([1]);
   });
 });
+
+describe('pen-change repositioning and pen height re-check', () => {
+  const parked = async () => {
+    const s = await connectedWithOrigin();
+    const p = s.ctrl.run(makeJob(PENS), { pens: [{ name: 'Black' }, { name: 'Red' }] });
+    await until(s.clock, () => s.events.some((e) => e.name === 'penChange'));
+    return { s, p };
+  };
+  const states = (s) => s.events.filter((e) => e.name === 'state').map((e) => e.p.state);
+
+  test('penDown, setPenHeight (clamped), penUp, goTo and jog work without leaving penChange', async () => {
+    const { s, p } = await parked();
+    await s.run(s.ctrl.penDown());
+    expect(s.ctrl.state).toBe('penChange');
+    expect(s.sim.getPosition().mpos.z).toBeCloseTo(3.5, 3);
+    const r = await s.run(s.ctrl.setPenHeight(99));
+    expect(r.clamped).toBe(true);
+    expect(s.sim.getPosition().mpos.z).toBeCloseTo(10, 3);
+    await s.run(s.ctrl.setPenHeight(2));
+    expect(s.sim.getPosition().mpos.z).toBeCloseTo(2, 3);
+    await s.run(s.ctrl.penUp());
+    expect(s.sim.getPosition().mpos.z).toBeLessThan(0.1);
+    await s.run(s.ctrl.goTo(30, 40));
+    expect(s.ctrl.state).toBe('penChange');
+    expect(s.sim.getPosition().wpos.x).toBeCloseTo(30, 3);
+    await s.run(s.ctrl.jog(5, 0));
+    await s.clock.advance(3000);
+    expect(s.sim.getPosition().wpos.x).toBeCloseTo(35, 3);
+    expect(s.ctrl.state).toBe('penChange');
+    const seq = states(s);
+    expect(seq.slice(seq.lastIndexOf('penChange')).filter((x) => x !== 'penChange')).toEqual([]);
+    s.ctrl.continuePenChange();
+    await s.run(p);
+    expect(assertAllSafe(s.sim)).toEqual([]);
+  });
+
+  test('continuePenChange raises a lowered pen before travel resumes', async () => {
+    const { s, p } = await parked();
+    await s.run(s.ctrl.penDown());
+    const traceBefore = s.sim.getTrace().length;
+    await s.run(s.ctrl.continuePenChange());
+    expect(s.sim.getPosition().mpos.z).toBeLessThan(0.1);
+    const res = await s.run(p);
+    expect(res.status).toBe('done');
+    expectTrace(s.sim, PENS); // no stray pen-down segment from the re-check or the resume travel
+    expect(traceBefore).toBe(drawnSegments([PENS[0]]).length);
+  });
+
+  test('manual moves are refused while running, paused and stopping', async () => {
+    const s = await connectedWithOrigin();
+    const p = s.ctrl.run(makeJob(PENS));
+    await until(s.clock, () => s.ctrl.state === 'running');
+    for (const call of [() => s.ctrl.penUp(), () => s.ctrl.penDown(), () => s.ctrl.setPenHeight(1), () => s.ctrl.goTo(5, 5), () => s.ctrl.jog(1, 1)]) {
+      await expect(call()).rejects.toThrow(/while the plotter is running/);
+    }
+    s.ctrl.pause();
+    await expect(s.ctrl.penDown()).rejects.toThrow(/while the plotter is paused/);
+    await expect(s.ctrl.jog(1, 1)).rejects.toThrow(/paused/);
+    const stopP = s.ctrl.stop();
+    expect(s.ctrl.state).toBe('stopping');
+    await expect(s.ctrl.penDown()).rejects.toThrow(/stopping/);
+    await expect(s.ctrl.goTo(5, 5)).rejects.toThrow(/stopping/);
+    await s.run(stopP);
+    await s.run(p);
+  });
+
+  test('setOrigin stays refused at a pen change', async () => {
+    const { s, p } = await parked();
+    await expect(s.ctrl.setOrigin()).rejects.toThrow(/penChange/);
+    s.ctrl.continuePenChange();
+    await s.run(p);
+  });
+
+  test('moves are refused during the automatic pen-up/park travel before the wait begins', async () => {
+    const s = await connectedWithOrigin();
+    const p = s.ctrl.run(makeJob(PENS));
+    await until(s.clock, () => s.ctrl.state === 'penChange', 600000, 1);
+    // parked flag only true once the user wait is open
+    if (!s.events.some((e) => e.name === 'penChange')) {
+      await expect(s.ctrl.penDown()).rejects.toThrow(/penChange/);
+    }
+    await until(s.clock, () => s.events.some((e) => e.name === 'penChange'));
+    s.ctrl.continuePenChange();
+    await s.run(p);
+  });
+});
