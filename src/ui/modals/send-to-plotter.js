@@ -926,6 +926,8 @@
       e.preventDefault();
       const c = liveController();
       if (c && ACTIVE_STATES.includes(c.state)) { this.stopJob(); return; }
+      // The panel handles Escape first (it stops propagation), so a press-and-hold jog must be cancelled here.
+      if (c && c.state === 'jogging') { c.jogCancel().catch(() => null); return; }
       const ae = document.activeElement;
       if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) { ae.blur(); return; }
       this.requestClose();
@@ -946,6 +948,7 @@
     }
 
     mountTool(id) {
+      if (this.destroyed) return; // a closed panel's stale DOM must not mount tools that nobody would destroy
       const pane = this.panes[id];
       if (this.tools[id]) { try { this.tools[id].update(); } catch (e) { /* tool errors stay in the tool */ } return; }
       pane.textContent = '';
@@ -1692,10 +1695,15 @@
       const blockers = this.startBlockers();
       const idle = state === 'idle';
       if (this.auxBtns) {
-        const auxOk = !!c && idle && (c.originSet || sim || session.useMachineZero) && (sim || (this.calibration().axisChecked && this.calibration().penHeightChecked));
-        this.auxBtns.frame.disabled = !auxOk || !(this.s.job && this.s.job.bbox) || !this.jobReady();
-        this.auxBtns.scale.disabled = !auxOk;
-        this.swatchBtns.plot.disabled = !auxOk;
+        const why = this.auxBlocker();
+        const setBtn = (b, reason) => {
+          if (b.dataset.defTitle === undefined) b.dataset.defTitle = b.getAttribute('title') || '';
+          b.disabled = !!reason;
+          if (reason) b.title = reason; else if (b.dataset.defTitle) b.title = b.dataset.defTitle; else b.removeAttribute('title');
+        };
+        setBtn(this.auxBtns.frame, why || (!(this.s.job && this.s.job.bbox) ? 'There is no plot to frame.' : (!this.jobReady() ? 'Preparing the plot…' : '')));
+        setBtn(this.auxBtns.scale, why);
+        setBtn(this.swatchBtns.plot, why);
       }
 
       if (this.s.plotMsg) el.appendChild(h('div', { class: 'stp-note is-error', role: 'alert', id: 'stp-plot-error', text: this.s.plotMsg }));
@@ -1895,12 +1903,25 @@
       });
     },
 
+    // Why a helper that moves the machine (Frame, Scale check, Test swatch) cannot start; '' = it can.
+    auxBlocker() {
+      const c = liveController();
+      const sim = session.kind === 'sim';
+      if (!c) return 'Connect to a plotter first (Connect tab).';
+      if (c.state !== 'idle') return `The plotter is ${STATE_LABEL[c.state] ? STATE_LABEL[c.state].toLowerCase() : c.state}.`;
+      if (!(c.originSet || sim || session.useMachineZero)) return 'Set the origin first (Machine tab).';
+      if (!sim && !(this.calibration().axisChecked && this.calibration().penHeightChecked)) return 'Run the Axis check and the Pen height check once (Machine tab).';
+      return '';
+    },
+
     auxProfileArgs() {
       const c = liveController();
       return { originOffset: originOffsetOf(c), firmware: c ? c.fw : null };
     },
 
     runFrame() {
+      const blocked = this.auxBlocker();
+      if (blocked) { this.s.plotMsg = blocked; this.renderPlot(); return null; }
       const c = liveController();
       const job0 = this.s.job;
       if (!c || !job0 || !job0.bbox) return null;
@@ -1916,6 +1937,8 @@
     },
 
     runScaleCheck() {
+      const blocked = this.auxBlocker();
+      if (blocked) { this.s.plotMsg = blocked; this.renderPlot(); return null; }
       const c = liveController();
       if (!c) return null;
       const profile = this.profile();
@@ -1949,6 +1972,8 @@
     },
 
     plotSwatch() {
+      const blocked = this.auxBlocker();
+      if (blocked) { this.s.plotMsg = blocked; this.renderPlot(); return; }
       try {
         const { profile, job } = this.buildSwatch();
         if (!job.bounds.ok) throw new Error(this.overflowMessage(job.bounds));
