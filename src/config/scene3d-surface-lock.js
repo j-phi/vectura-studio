@@ -250,6 +250,8 @@
     }),
     // surface-fill-mono.js etfKang: strokes are spaced by SURFACE distance (screen gap = pitch x foreshortening |N.V|).
     ETF: Object.freeze({
+      SURFACE_K: 0.5,  // gap = pitch x m^K, m = |N.V| foreshortening: 1 = full surface spacing (A), 0.5 = partial (B), 0 = even SCREEN spacing (the old look)
+      GAP_FLOOR_X: 1,  // ink floor: compression never takes the gap under this x the plot-floor pitch (0 = off; B uses 1)
       GAP_MIN: 0.3,  // settled: the foreshortening floor (the limb, |N.V| -> 0, cannot run away into a flood)
       GAP_MIN_DRAFT: 0.5,  // law-tier drag draft: a higher floor keeps the first drag frame under the flat-fallback budget
     }),

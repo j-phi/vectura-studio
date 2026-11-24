@@ -16,7 +16,11 @@ describe('etfKang surface-distance spacing', () => {
   }, 300000);
   afterAll(() => runtime && runtime.cleanup && runtime.cleanup());
 
-  const run = () => {
+  // ETF config variants: TODAY = even screen spacing (K 0), A = full surface spacing (K 1), B = partial (K 0.5) with the ink floor.
+  const VARIANT = { today: { SURFACE_K: 0, GAP_FLOOR_X: 0 }, A: { SURFACE_K: 1, GAP_FLOOR_X: 0 }, B: { SURFACE_K: 0.5, GAP_FLOOR_X: 1 } };
+  const run = (variant = 'A') => {
+    const orig = V.SCENE3D_SURFACE_LOCK;
+    V.SCENE3D_SURFACE_LOCK = { ...orig, ETF: { ...orig.ETF, ...VARIANT[variant] } };
     runtime.window.__MONO_TRACE = true;
     try {
       const engine = new V.VectorEngine();
@@ -54,14 +58,21 @@ describe('etfKang surface-distance spacing', () => {
         return { n: ratios.length, med: ratios[Math.floor(ratios.length / 2)] };
       };
       return { centre: band(0, 0.35), limb: band(0.78, 0.92) };
-    } finally { delete runtime.window.__MONO_TRACE; delete runtime.window.__MONO_CTX; }
+    } finally { V.SCENE3D_SURFACE_LOCK = orig; delete runtime.window.__MONO_TRACE; delete runtime.window.__MONO_CTX; }
   };
 
-  test('gap/pitch compresses toward the limb (tracks |N.V|), centre stays ~1', () => {
-    const { centre, limb } = run();
+  test('variant A (K = 1): gap/pitch compresses toward the limb (tracks |N.V|), centre stays ~1', () => {
+    const { centre, limb } = run('A');
     expect(centre.n).toBeGreaterThan(15);
     expect(limb.n).toBeGreaterThan(15);
     // |N.V| at r/R = 0.85 is ~0.53: the limb gap must be well under the centre gap.
     expect(limb.med / centre.med).toBeLessThan(0.75);
   }, 180000);
+
+  test('variant B (K = 0.5 + ink floor) compresses less than A and more than the old even-screen spacing', () => {
+    const r = {};
+    ['today', 'A', 'B'].forEach((v) => { const m = run(v); r[v] = m.limb.med / m.centre.med; });
+    expect(r.A).toBeLessThan(r.B);
+    expect(r.B).toBeLessThan(r.today);
+  }, 300000);
 });

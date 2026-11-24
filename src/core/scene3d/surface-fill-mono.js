@@ -1026,6 +1026,7 @@
     // 1/sqrt(1+|g|^2) = |N.V| toward the limb, the way a printed pattern does in perspective.
     // Floored so the limb (|g| -> inf) cannot run away into a flood.
     const ETFC = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.ETF) || {};
+    const ETF_K = Number.isFinite(ETFC.SURFACE_K) ? ETFC.SURFACE_K : 1;   // 1 = full foreshortening (variant A), 0.5 = partial (variant B)
     const ETF_SURF_MIN = C.draft
       ? (Number.isFinite(ETFC.GAP_MIN_DRAFT) ? ETFC.GAP_MIN_DRAFT : 0.5)
       : (Number.isFinite(ETFC.GAP_MIN) ? ETFC.GAP_MIN : 0.3);
@@ -1038,11 +1039,15 @@
         const g = C.gradZ(C.minX + i * dx, C.minY + j * dy);
         if (!g) continue;
         const gp = -g.x * TY[k] + g.y * TX[k];   // g . p, p = the ruling's screen normal (-ty, tx)
-        SC[k] = Math.max(ETF_SURF_MIN, 1 / Math.sqrt(1 + gp * gp));
+        SC[k] = Math.max(ETF_SURF_MIN, Math.pow(1 / Math.sqrt(1 + gp * gp), ETF_K));
       }
     }
     const surfScale = (s) => SC[gj(s.y) * (NG + 1) + gi(s.x)];
-    streamFamily(C, dirAt, (s) => C.pitchOf(s) * surfScale(s));
+    // Ink floor: compression never takes the gap under ETF.GAP_FLOOR_X x the plot-floor pitch, unless the tone pitch itself is already finer.
+    const FLOOR_MM = (Number.isFinite(ETFC.GAP_FLOOR_X) ? ETFC.GAP_FLOOR_X : 0) * C.FLOOR;
+    streamFamily(C, dirAt, FLOOR_MM > 0
+      ? (s) => { const p = C.pitchOf(s); return Math.max(p * surfScale(s), Math.min(p, FLOOR_MM)); }
+      : (s) => C.pitchOf(s) * surfScale(s));
   };
 
   /* ── 02 · defectSplit ───────────────────────────────────────────────────────
