@@ -92,6 +92,17 @@ describe('Start Page P1 review fixes', () => {
       expect(svg.querySelector('linearGradient#gid1')).not.toBeNull();
     });
 
+    test('an <image> survives only as an inline PNG / JPEG / WebP data URL', async () => {
+      await boot();
+      const wrap = (href, extra = '') => `<svg viewBox="0 0 4 4" xmlns="http://www.w3.org/2000/svg"><image x="0" y="0" width="4" height="4" href="${href}"${extra}/></svg>`;
+      const ok = V.StartPageInk.safeSvg(wrap('data:image/png;base64,iVBORw0KGgo='), 'g');
+      expect(ok.querySelector('image').getAttribute('href')).toBe('data:image/png;base64,iVBORw0KGgo=');
+      ['data:image/svg+xml;base64,AAAA', 'data:text/html;base64,AAAA', 'https://evil.test/x.png', 'javascript:alert(1)'].forEach((bad) => {
+        expect(V.StartPageInk.safeSvg(wrap(bad), 'g').querySelector('image')).toBeNull();
+      });
+      expect(V.StartPageInk.safeSvg(wrap('data:image/png;base64,AAAA', ' onload="x()"'), 'g').querySelector('image').hasAttribute('onload')).toBe(false);
+    });
+
     test('clip-path may only point at a local fragment', async () => {
       await boot();
       const node = V.StartPageInk.safeSvg('<svg viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(http://evil.test/x.svg#a)"><path d="M0 0L1 1"/></g><g clip-path="url(#ok)"><path d="M0 0L1 1"/></g></svg>', 'g');

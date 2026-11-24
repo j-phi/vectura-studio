@@ -37,10 +37,31 @@
     if (!file || !ui) return;
     const name = (file.name || '').toLowerCase();
     if (name.endsWith('.vectura')) {
-      if (typeof ui.openVecturaFile === 'function') ui.openVecturaFile(file);
+      if (typeof ui.openVecturaFile === 'function') return ui.openVecturaFile(file);
     } else if (name.endsWith('.svg')) {
-      if (typeof ui.importSvgFile === 'function') ui.importSvgFile(file);
+      if (typeof ui.importSvgFile === 'function') return ui.importSvgFile(file);
     }
+  };
+
+  // Every .vectura file opens (several go through ui.openVecturaFiles as one ordered batch); the FIRST .svg is
+  // imported as before. In a mixed drop the projects open first and the SVG is then imported into the last
+  // project left on the canvas (importing first would be wiped by the project open). Extra SVGs are ignored.
+  const _routeMany = (ui, files) => {
+    const list = Array.from(files || []).filter(Boolean);
+    const ext = (f) => (f.name || '').toLowerCase();
+    const vec = list.filter((f) => ext(f).endsWith('.vectura'));
+    const svg = list.find((f) => ext(f).endsWith('.svg'));
+    if (vec.length > 1 && typeof ui.openVecturaFiles === 'function') {
+      const done = ui.openVecturaFiles(vec);
+      if (svg) Promise.resolve(done).then(() => _route(ui, svg));
+      return;
+    }
+    if (vec.length) {
+      const done = _route(ui, vec[0]);
+      if (svg) Promise.resolve(done).then(() => _route(ui, svg));
+      return;
+    }
+    if (svg) _route(ui, svg);
   };
 
   const attach = (ui) => {
@@ -50,12 +71,10 @@
       throw new Error('DragDropRouter requires UI.overlays.DragDropOverlay to be loaded first');
     }
     _overlay = UI.overlays.DragDropOverlay(document.body, {
-      message: 'Drop a .vectura project or .svg file to import',
+      message: 'Drop .vectura projects or an .svg file to import',
       accept: ['.vectura', '.svg'],
       onDrop: (files) => {
-        // Only the first matching file is consumed (matches the file-input
-        // single-select semantics of the existing UI buttons).
-        if (files && files.length) _route(ui, files[0]);
+        if (files && files.length) _routeMany(ui, files);
       },
     });
     _overlay.activate();
@@ -66,6 +85,7 @@
     bind(deps) { DEPS = deps || {}; },
     attach,
     _route,
+    _routeMany,
     _reset() {
       if (_overlay && typeof _overlay.destroy === 'function') _overlay.destroy();
       _overlay = null;
