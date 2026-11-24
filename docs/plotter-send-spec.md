@@ -277,3 +277,33 @@ safety behaviors, adding a profile/driver).
 ## 9. Out of scope v1
 EBB/AxiDraw driver (registry slot only), WiFi/Bluetooth UUNA modes, firmware config writes,
 G-code file export (cheap follow-up: `toGcode` → download; may add if trivial).
+
+## 10. Addendum (orchestrator review of A0 + forum research)
+
+1. **Console motion is bounds-checked by the controller.** `classifyCommand` is syntactic only.
+   `PlotterController.sendConsole(line)` must additionally: reject `G91` relative moves and
+   `G2`/`G3` arcs from the console (use Jog instead); for lines with X/Y/Z words compute absolute
+   work-coordinate targets (using last known WPos for missing axes) and reject unless
+   `checkJobBounds`-equivalent passes and Z is within `clampZ` range (no silent clamp in console —
+   refuse with reason); `G53` targets are checked against the machine area (0..workArea);
+   `$J=` lines from the console are parsed the same way (G90/G91 inside the jog honored) and
+   refused if out of bounds. Feeds above the cap are refused, not clamped.
+2. **G0 is never emitted** by the builder or controller (GRBL G0 runs at max rate). Travel uses
+   `G1 … F<travel>`. Console may send G0 only if its target passes bounds.
+3. **Jog cancel**: after `0x85`, send `G4 P0` and wait for its `ok` before the next jog/command
+   (0x85 can be missed when jogs are queued). Continuous (press-and-hold) jog = repeated short
+   `$J=` segments ≤ 0.25 s of travel each, cancelled on release / blur / Escape.
+4. **Web Serial lifecycle**: close = `reader.cancel()` → release reader/writer locks → `port.close()`;
+   handle `navigator.serial` 'disconnect' and `port.readable === null` as fatal; reconnect via
+   `navigator.serial.getPorts()` (no prompt) for a previously granted port; line splitting must
+   tolerate chunk boundaries mid-line and `\r\n`.
+5. **Pen change UX**: at each pen change offer (a) "Re-check pen height" (pen-down at the change
+   position for a touch test, adjustable, then up) and (b) optional "Registration mark" — a small
+   10 mm cross at the job's top-left corner drawn by every pen so color alignment can be checked
+   (toggle in Setup, default off).
+6. **Brush / dip support (artistic)**: per-pen `reload: {everyMm: 0 (off), position:{x,y},
+   dips: 1, dipDepth: <z>, dwell: s}` — the builder splits paths so pen-down length between reloads
+   ≤ everyMm, inserting pen up → travel to reload position → dip (Z down/up × dips, clamped) →
+   travel back → continue. Reload position must pass bounds. Off by default.
+7. **Path order options** per pen: `optimized` (default), `document`, `reverse`, `random` (seeded) —
+   random helps even ink coverage; seeded by `Vectura.RNG` style seed in settings.
