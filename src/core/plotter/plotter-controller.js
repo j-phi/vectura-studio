@@ -1011,8 +1011,23 @@
         await bannerP; // the reset wipes G92 and the planner
         this.wco = { x: 0, y: 0, z: 0 };
         let st = await this._refreshStatus(2000);
+        if (this._stopAlarm === 3) {
+          // ALARM:3 = reset while in motion: steps were lost, so machine and work
+          // positions are untrustworthy. Move nothing (no unlock, no G92, no Z):
+          // the user must recover by hand, then connect and set the origin again.
+          const message = 'The plotter stopped while moving, so its position is no longer reliable. '
+            + 'Power the plotter off, gently move the carriage back to its start corner, power it on, '
+            + 'then reconnect and set the origin again.';
+          this.originSet = false;
+          this.originMachine = null;
+          this._phase = null;
+          this._alarmCode = 3;
+          this._setState('alarm');
+          this.emit('alarm', { code: 3, message, positionLost: true, resumePoint: rp });
+          this.emit('done', { aborted: true, reason: info.status, message, resumePoint: rp, positionLost: true });
+          return { stopped: true, status: info.status, resumePoint: rp, positionLost: true };
+        }
         if (st.state === 'Alarm' || this._stopAlarm !== undefined) {
-          if (this._stopAlarm === 3) this._log('warn', 'Position may be inaccurate after the stop; check the origin.');
           await this._cmd('$X', { allowUnlock: true });
           st = await this._refreshStatus(2000);
         }

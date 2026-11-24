@@ -551,21 +551,27 @@ describe('run', () => {
     expect(s.events.some((e) => e.name === 'done' && e.p.aborted)).toBe(true);
   });
 
-  test('stop with a slow hold: ALARM:3 after the reset is unlocked ($X) before the G92 restore', async () => {
+  test('stop with a slow hold: ALARM:3 (reset in motion) moves nothing more and demands a new origin', async () => {
     const s = await connectedWithOrigin({ sim: { holdDecelMs: 60000 } });
     const p = s.ctrl.run(makeJob([[square(10, 10, 100)]]));
     await until(s.clock, () => s.sim.getTrace().length >= 2);
     s.sim.clearLog();
-    await s.run(s.ctrl.stop());
+    const r = await s.run(s.ctrl.stop());
     await s.run(p);
-    const labels = wireLabels(s.sim);
+    const labels = wireLabels(s.sim).filter((l) => l !== '?');
     const reset = labels.indexOf('0x18');
-    const unlock = labels.indexOf('$X');
-    const g92 = labels.findIndex((l) => /^G92 X/.test(l));
-    expect(unlock).toBeGreaterThan(reset);
-    expect(g92).toBeGreaterThan(unlock);
-    expect(s.ctrl.state).toBe('idle');
-    expect(s.sim.getState()).toBe('Idle');
+    expect(reset).toBeGreaterThan(-1);
+    const after = labels.slice(reset + 1);
+    // position is untrustworthy: no unlock, no origin restore, no Z or XY motion
+    expect(after).not.toContain('$X');
+    expect(after.some((l) => /^G92/.test(l))).toBe(false);
+    expect(after.some((l) => /^G1|^\$J=/.test(l))).toBe(false);
+    expect(s.ctrl.state).toBe('alarm');
+    expect(s.ctrl.originSet).toBe(false);
+    expect(r.positionLost).toBe(true);
+    const alarm = s.events.find((e) => e.name === 'alarm' && e.p.positionLost);
+    expect(alarm).toBeTruthy();
+    expect(alarm.p.message).toMatch(/power/i);
   });
 
   test('resumeFrom re-sends the preamble and a pen-up, then continues; nothing is left undrawn', async () => {
