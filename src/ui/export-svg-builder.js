@@ -8,6 +8,7 @@
  *   buildExportSnapshot(engine, { computeDisplayGeometry, optimizeTargets }) -> snapshot
  *   buildSvgDocument(snapshot) -> SVG string
  *   countPaths(snapshot) -> number
+   buildPlotPolylines(snapshot, { tolerance }) -> [{ penId, pen, polylines }]   (document mm, for Send to Plotter)
  *
  * Both read the global SETTINGS (paper size, margin, pens, crop flags, ...)
  * and write nothing. computeDisplayGeometry defaults to the engine's own;
@@ -389,5 +390,64 @@
   }
   const buildSvgDocument = (snapshot) => runToEnd(documentSteps(snapshot, { sliceMs: 0 }));
 
-  Vectura.ExportSvgBuilder = { buildExportSnapshot, buildSvgDocument, countPaths, snapshotSteps, documentSteps };
+  // Plotter geometry (Send to Plotter): every snapshot item flattened to a polyline in document mm, grouped by
+  // effective pen. Circles are expanded so the chord error stays within `tolerance`; everything else goes through
+  // PathDraw.toPolyline so the plot traces exactly what the SVG / canvas draw. Closed paths end on their start.
+  const circlePolyline = (meta, tolerance) => {
+    const cx = Number(meta.cx ?? meta.x);
+    const cy = Number(meta.cy ?? meta.y);
+    const rx = Number(meta.rx ?? meta.r);
+    const ry = Number(meta.ry ?? meta.r);
+    if (![cx, cy, rx, ry].every(Number.isFinite) || rx < 0 || ry < 0) return [];
+    const R = Math.max(rx, ry);
+    const tol = Math.max(1e-6, tolerance);
+    const need = R > tol ? Math.ceil(Math.PI / Math.acos(Math.max(-1, Math.min(1, 1 - tol / R)))) : 0;
+    const steps = Math.max(72, Math.min(8192, need));
+    const rot = Number.isFinite(Number(meta.rotation)) ? Number(meta.rotation) : 0;
+    const cr = Math.cos(rot);
+    const sr = Math.sin(rot);
+    const pts = [];
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const ex = rx * Math.cos(a);
+      const ey = ry * Math.sin(a);
+      pts.push({ x: cx + ex * cr - ey * sr, y: cy + ex * sr + ey * cr });
+    }
+    pts.push({ x: pts[0].x, y: pts[0].y });
+    return pts;
+  };
+
+  const buildPlotPolylines = (snapshot, opts = {}) => {
+    const tolerance = finite(opts.tolerance, 0.05) > 0 ? finite(opts.tolerance, 0.05) : 0.05;
+    const PD = window.Vectura.PathDraw;
+    const out = [];
+    for (const group of (snapshot && snapshot.groups) || []) {
+      const polylines = [];
+      for (const item of group.items || []) {
+        const path = item.path;
+        let poly;
+        if (path && path.meta && path.meta.kind === 'circle') {
+          poly = circlePolyline(path.meta, tolerance);
+        } else if (Array.isArray(path) && path.length) {
+          const drawOpts = { useCurves: Boolean(item.useCurves), sharpEdges: Boolean(item.sharpEdges) };
+          poly = PD.toPolyline(path, drawOpts, tolerance);
+          const cmds = PD.commands(path, drawOpts);
+          const closed = cmds.length > 0 && cmds[cmds.length - 1][0] === 'Z';
+          if (closed && poly.length > 1) {
+            const a = poly[0];
+            const b = poly[poly.length - 1];
+            if (a.x !== b.x || a.y !== b.y) poly.push({ x: a.x, y: a.y });
+          }
+        } else {
+          continue;
+        }
+        poly = poly.filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y));
+        if (poly.length >= 2) polylines.push(poly);
+      }
+      if (polylines.length) out.push({ penId: group.key, pen: group.pen, polylines });
+    }
+    return out;
+  };
+
+  Vectura.ExportSvgBuilder = { buildExportSnapshot, buildSvgDocument, countPaths, snapshotSteps, documentSteps, buildPlotPolylines };
 })();
