@@ -671,7 +671,10 @@
    * the existing roster touches. Every step is integrated on the chart, so a
    * streamline follows the body and stops on the silhouette.
    */
-  const streamFamily = (C, dirAt, clearAt) => {
+  const streamFamily = (C, dirAt, clearAt, opts) => {
+    // opts.closeLoops (etfKang's wrap rings): a streamline that comes back to its own start ends there, as a closed ring, instead of
+    // lapping the ring again and again (the walk's own points are not in the spacing grid until the line is placed).
+    const closeLoops = Boolean(opts && opts.closeLoops);
     // The spacing grid. A QUARTER-pitch cell with NUMERIC keys (fill-style
     // review NEW-1, U2): `tooClose` was the #1 mono hotspot (26 % self on
     // etfKang) because a PMAX-wide cell held dozens of 0.34 mm-spaced points and
@@ -741,6 +744,10 @@
         // field law measured a median paper gap of 0.3 mm against a requested
         // 0.9. 0.80 is the value that makes the placed spacing the requested
         // one; the free ends it costs are reported, split out, in the table.
+        if (closeLoops && i > 30 && Math.hypot(nx.x - s0.x, nx.y - s0.y) < STEP * 3) {
+          pts.push({ x: s0.x, y: s0.y, z: s0.z }); pts.closed = true;
+          break;
+        }
         if (i > 14 && tooClose(nx.x, nx.y, clearAt(nx) * 0.80)) break;
         if (C.paper(nx)) break;   // v2: a streamline ends where the paper begins
         cur = nx;
@@ -774,7 +781,7 @@
       const sep = clearAt(s);
       if (tooClose(s.x, s.y, sep * 0.95)) continue;
       const fwd = walk(s, 1);
-      const bwd = walk(s, -1);
+      const bwd = fwd.closed ? fwd.slice(0, 1) : walk(s, -1);
       bwd.reverse();
       const line = bwd.concat(fwd.slice(1));
       if (line.length < 3) continue;
@@ -1106,7 +1113,7 @@
     const FLOOR_MM = (Number.isFinite(ETFC.GAP_FLOOR_X) ? ETFC.GAP_FLOOR_X : 0) * C.FLOOR;
     streamFamily(C, dirAt, FLOOR_MM > 0
       ? (s) => { const p = C.pitchOf(s); return Math.max(p * surfScale(s), Math.min(p, FLOOR_MM)); }
-      : (s) => C.pitchOf(s) * surfScale(s));
+      : (s) => C.pitchOf(s) * surfScale(s), WRAPC ? { closeLoops: true } : null);
   };
 
   /* ── 02 · defectSplit ───────────────────────────────────────────────────────
