@@ -447,6 +447,66 @@
 
   const originOffsetOf = (c) => (c && c.wco ? { x: c.wco.x, y: c.wco.y } : { x: 0, y: 0 });
 
+  // ---- paper space (the sheet as the user sees it: origin top-left, x right, y down the page) ----
+  // PlotJob.applyAxes maps paper -> machine work coordinates (invert, then swap); these are its inverse.
+  const axesOf = (profile) => {
+    const a = (profile && profile.axes) || {};
+    return { invertX: !!a.invertX, invertY: !!a.invertY, swapXY: !!a.swapXY };
+  };
+  const axesAreIdentity = (ax) => !ax.invertX && !ax.invertY && !ax.swapXY;
+  const toPaper = (pt, ax) => {
+    let x = pt.x; let y = pt.y;
+    if (ax.swapXY) { const t = x; x = y; y = t; }
+    if (ax.invertX) x = -x;
+    if (ax.invertY) y = -y;
+    return { x: x + 0, y: y + 0 };
+  };
+  const fromPaper = (pt, ax) => {
+    let x = ax.invertX ? -pt.x : pt.x;
+    let y = ax.invertY ? -pt.y : pt.y;
+    if (ax.swapXY) { const t = x; x = y; y = t; }
+    return { x: x + 0, y: y + 0 };
+  };
+  // Work area rectangle (machine work coordinates, offset by the work-origin position wco) in paper space.
+  const paperAreaRect = (eff, wco, ax) => {
+    const c1 = toPaper({ x: -wco.x, y: -wco.y }, ax);
+    const c2 = toPaper({ x: eff.width - wco.x, y: eff.height - wco.y }, ax);
+    const x = Math.min(c1.x, c2.x); const y = Math.min(c1.y, c2.y);
+    return { x, y, w: Math.abs(c2.x - c1.x), h: Math.abs(c2.y - c1.y) };
+  };
+  // Disconnected: no WCO is known, so assume the origin sits at the work area's top-left corner in paper
+  // space. Returns the matching machine-space origin offset (so bounds checks agree with the preview).
+  const assumedOriginOffset = (eff, ax) => {
+    const pw = ax.swapXY ? eff.height : eff.width;
+    const ph = ax.swapXY ? eff.width : eff.height;
+    const a = fromPaper({ x: 0, y: 0 }, ax); const b = fromPaper({ x: pw, y: ph }, ax);
+    return { x: -Math.min(a.x, b.x) + 0, y: -Math.min(a.y, b.y) + 0 };
+  };
+  const jobOriginOffset = (c, profile, fw) => (c && c.wco ? originOffsetOf(c)
+    : assumedOriginOffset(PS().effectiveWorkArea(profile, fw || null), axesOf(profile)));
+
+  // Job geometry in paper space for the preview (cached per job object and axes).
+  const paperJobCache = new WeakMap();
+  const paperJobOf = (job, ax) => {
+    const key = `${ax.invertX}${ax.invertY}${ax.swapXY}`;
+    const hit = paperJobCache.get(job);
+    if (hit && hit.key === key) return hit.value;
+    const map = axesAreIdentity(ax) ? (p) => p : (p) => toPaper(p, ax);
+    const pens = (job.pens || []).map((pen) => ({ pen: pen.pen, paths: (pen.paths || []).map((path) => (path || []).map(map)) }));
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    pens.forEach((pen) => pen.paths.forEach((path) => path.forEach((pt) => {
+      if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+    })));
+    const value = {
+      pens,
+      bbox: minX === Infinity ? null : { minX, minY, maxX, maxY },
+      travel: travelOf(job).map(([p, q]) => [map(p), map(q)]),
+    };
+    paperJobCache.set(job, { key, value });
+    return value;
+  };
+
   function buildJobFor(geometry, settings, profile, controller) {
     const s = clone(settings);
     s.profileOverrides = {};
@@ -455,7 +515,7 @@
       profile,
       docSize: geometry.docSize,
       firmware: controller ? controller.fw : null,
-      originOffset: originOffsetOf(controller),
+      originOffset: jobOriginOffset(controller, profile, controller ? controller.fw : null),
     });
   }
 
@@ -493,7 +553,7 @@
   class Preview {
     constructor(panel) {
       this.panel = panel;
-      this.canvas = h('canvas', { class: 'stp-canvas', role: 'img', 'aria-label': 'Plot preview in machine coordinates' });
+      this.canvas = h('canvas', { class: 'stp-canvas', role: 'img', 'aria-label': 'Plot preview, sheet orientation (origin at the top-left of the sheet)' });
       this.el = h('div', { class: 'stp-canvas-wrap' }, this.canvas);
       this.raf = 0;
       this.ro = null;
@@ -576,7 +636,7 @@
       // travel moves
       if (v.job && v.showTravel) {
         ctx.beginPath();
-        travelOf(v.job).forEach(([p, q]) => { ctx.moveTo(X(p.x), Y(p.y)); ctx.lineTo(X(q.x), Y(q.y)); });
+        v.job.travel.forEach(([p, q]) => { ctx.moveTo(X(p.x), Y(p.y)); ctx.lineTo(X(q.x), Y(q.y)); });
         ctx.setLineDash([3, 3]);
         ctx.strokeStyle = 'rgba(160,160,170,0.55)';
         ctx.lineWidth = 0.75;
@@ -1016,8 +1076,9 @@
     view() {
       const c = liveController();
       const profile = this.profile();
-      const wco = originOffsetOf(c);
+      const ax = axesOf(profile);
       const eff = PS().effectiveWorkArea(profile, c ? c.fw : null);
+      const wco = jobOriginOffset(c, profile, c ? c.fw : null);
       const alt = this.s.altJob;
       const job = alt ? alt.job : this.s.job;
       const g = this.s.geometry;
@@ -1025,17 +1086,20 @@
       if (!alt && g && g.docSize.width > 0 && g.docSize.height > 0) {
         try {
           const w = g.docSize.width; const hh = g.docSize.height;
-          doc = PJ().placePolylines([[{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: hh }, { x: 0, y: hh }, { x: 0, y: 0 }]], g.docSize, eff, this.settings().placement, profile.axes)[0];
+          doc = PJ().placePolylines([[{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: hh }, { x: 0, y: hh }, { x: 0, y: 0 }]], g.docSize, eff, this.settings().placement, profile.axes)[0]
+            .map((p) => toPaper(p, ax));
         } catch (e) { doc = null; }
       }
       let live = null;
       const st = session.status;
       if (c && st && st.wpos && isNum(st.wpos.x)) {
-        live = { x: st.wpos.x, y: st.wpos.y, down: !!(st.mpos && isNum(st.mpos.z) && st.mpos.z > profile.pen.up + 0.3) };
+        const pp = toPaper(st.wpos, ax);
+        live = { x: pp.x, y: pp.y, down: !!(st.mpos && isNum(st.mpos.z) && st.mpos.z > profile.pen.up + 0.3) };
       }
       return {
-        area: { x: -wco.x, y: -wco.y, w: eff.width, h: eff.height },
-        job, doc, live,
+        area: paperAreaRect(eff, wco, ax),
+        job: job ? paperJobOf(job, ax) : null,
+        doc, live,
         showTravel: this.settings().showTravel,
         overflow: !!(job && job.bounds && !job.bounds.ok),
       };
@@ -1866,6 +1930,7 @@
     Store,
     getSession: () => session,
     getPanel: () => activePanel,
+    paperSpace: { toPaper, fromPaper, paperAreaRect, assumedOriginOffset },
     connectSession,
     disconnectSession,
     simOptions: null,

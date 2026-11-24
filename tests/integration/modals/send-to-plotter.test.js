@@ -197,4 +197,59 @@ describe('Send to Plotter panel', () => {
     expect(src).not.toMatch(/\._cmd\b|\._penUpLine\b/); // the modal only uses the public controller API
     expect(STP.getSession().transport.getPosition().mpos.z).toBeLessThan(0.1);
   }, 40000);
+
+  describe('setup preview is drawn in paper space', () => {
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+    const flat = (v) => v.job.pens.flatMap((p) => p.paths.flat());
+    const same = (a, b) => a.length === b.length && a.every((pt, i) => near(pt.x, b[i].x) && near(pt.y, b[i].y));
+
+    test('with invertY / invertX / swapXY the preview paths equal the non-inverted ones (disconnected)', async () => {
+      await STP.disconnectSession();
+      const panel = STP.getPanel();
+      const pid = panel.profile().id;
+      const reset = () => panel.setProfileOverride({ axes: { invertX: false, invertY: false, swapXY: false } });
+      reset(); panel.recompute();
+      const base = panel.view();
+      expect(flat(base).length).toBeGreaterThan(10);
+      expect(base.area).toMatchObject({ x: 0, y: 0, w: 420, h: 297 });
+      for (const axes of [{ invertY: true }, { invertX: true }, { invertX: true, invertY: true }, { swapXY: true }, { swapXY: true, invertY: true }]) {
+        reset(); panel.setProfileOverride({ axes }); panel.recompute();
+        const v = panel.view();
+        expect(same(flat(v), flat(base)), JSON.stringify(axes)).toBe(true);
+        expect(same(v.doc, base.doc), JSON.stringify(axes)).toBe(true);
+        // the work area keeps its origin at the paper's top-left corner; swap turns it sideways
+        const sw = axes.swapXY;
+        expect(v.area).toMatchObject({ x: 0, y: 0, w: sw ? 297 : 420, h: sw ? 420 : 297 });
+      }
+      reset(); panel.recompute();
+      expect(Store_overridesAxes(pid)).toMatchObject({ invertY: false });
+    });
+
+    const Store_overridesAxes = (pid) => (STP.Store.overrides(pid) || {}).axes;
+
+    test('connected: the work area follows the controller WCO and the live pen is mapped into paper space', async () => {
+      const panel = STP.getPanel();
+      panel.setProfileOverride({ axes: { invertX: false, invertY: true, swapXY: false } });
+      STP.simOptions = { bannerDelayMs: 10, speed: 4000 };
+      await STP.connectSession('sim', panel.profile());
+      await waitFor(() => STP.getSession().controller?.state === 'idle');
+      const c = STP.getSession().controller;
+      c.wco = { x: 100, y: 200, z: 0 }; // as reported by the controller: origin sits at machine (100, 200)
+      panel.recompute();
+      let v = panel.view();
+      // machine Y range [-200, 97] in work coordinates, inverted -> paper y in [-97, 200]
+      expect(v.area.x).toBeCloseTo(-100, 6);
+      expect(v.area.y).toBeCloseTo(-97, 6);
+      expect(v.area.w).toBe(420);
+      expect(v.area.h).toBe(297);
+      c.wco = { x: 0, y: 0, z: 0 };
+      // live WPos (machine work coords) -> paper
+      STP.getSession().status = { wpos: { x: 12, y: -34, z: 0 }, mpos: { x: 12, y: -34, z: 0 } };
+      v = panel.view();
+      expect(v.live).toMatchObject({ x: 12, y: 34 });
+      panel.setProfileOverride({ axes: { invertX: false, invertY: false, swapXY: false } });
+      STP.getSession().status = null;
+      await STP.disconnectSession();
+    });
+  });
 });
