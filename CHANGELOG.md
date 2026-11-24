@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Send to Plotter (docs)
+
+#### Added
+- **Send to Plotter.** `File > Send to Plotter...` streams the document to a UUNATEK 3.0 (GRBL / DrawCore) pen plotter from Chrome or Edge over Web Serial, with a plotter profile and driver registry, per-pen speed, height, dwell, passes, brush re-dip and path order, jog and calibration wizards, a bounds-checked console, and a Simulator. User guide: `docs/plotter-send.md`; documented in the README (new Send to Plotter feature group), the in-app Help Guide and the shortcut list (Machine tab keys).
+
 ### Touch: Shading row target fix (v1.5.30)
 
 #### Fixed
