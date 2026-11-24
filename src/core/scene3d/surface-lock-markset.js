@@ -23,6 +23,9 @@
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
   const CFG = Vectura.SCENE3D_SURFACE_LOCK || {};
+  // Local aliases: a hot-loop `Math.x` / `Number.isFinite` is a global lookup, which a window-backed global (jsdom, a vm context) answers through an interceptor.
+  const Mth = Math;
+  const isFin = Number.isFinite;
   const OCT = CFG.OCT_SCALE || 32767;
   const MAX_LEVELS = CFG.MAX_LEVELS || 6;
 
@@ -36,33 +39,33 @@
 
   const signNZ = (v) => (v < 0 ? -1 : 1);
   const octEncode = (nx, ny, nz, out, i) => {
-    const L = Math.abs(nx) + Math.abs(ny) + Math.abs(nz) || 1;
+    const L = Mth.abs(nx) + Mth.abs(ny) + Mth.abs(nz) || 1;
     let u = nx / L; let v = ny / L;
     if (nz < 0) {
       const ou = u;
-      u = (1 - Math.abs(v)) * signNZ(ou);
-      v = (1 - Math.abs(ou)) * signNZ(v);
+      u = (1 - Mth.abs(v)) * signNZ(ou);
+      v = (1 - Mth.abs(ou)) * signNZ(v);
     }
-    out[i] = Math.round(Math.max(-1, Math.min(1, u)) * OCT);
-    out[i + 1] = Math.round(Math.max(-1, Math.min(1, v)) * OCT);
+    out[i] = Mth.round(Mth.max(-1, Mth.min(1, u)) * OCT);
+    out[i + 1] = Mth.round(Mth.max(-1, Mth.min(1, v)) * OCT);
   };
   // Writes the decoded UNIT normal into out[0..2] and returns out.
   const octDecode = (oct, i, out) => {
     const u = oct[i] / OCT; const v = oct[i + 1] / OCT;
-    let z = 1 - Math.abs(u) - Math.abs(v);
+    let z = 1 - Mth.abs(u) - Mth.abs(v);
     let x = u; let y = v;
     if (z < 0) {
-      x = (1 - Math.abs(v)) * signNZ(u);
-      y = (1 - Math.abs(u)) * signNZ(v);
+      x = (1 - Mth.abs(v)) * signNZ(u);
+      y = (1 - Mth.abs(u)) * signNZ(v);
     }
-    const L = Math.hypot(x, y, z) || 1;
+    const L = Mth.hypot(x, y, z) || 1;
     out[0] = x / L; out[1] = y / L; out[2] = z / L;
     return out;
   };
 
   const grow = (arr, need) => {
     if (need <= arr.length) return arr;
-    let n = Math.max(16, arr.length * 2);
+    let n = Mth.max(16, arr.length * 2);
     while (n < need) n *= 2;
     const next = new arr.constructor(n);
     next.set(arr);
@@ -85,18 +88,18 @@
         if (L < 0 || L >= MAX_LEVELS) throw new Error(`SurfaceLockMarkSet: level ${lv} outside 0..${MAX_LEVELS - 1}`);
         const rr = Number(r);
         if (!(rr >= 0 && rr < 1)) throw new Error(`SurfaceLockMarkSet: rank ${r} outside [0, 1)`);
-        open = { v0: nv, level: L, rank: Math.min(RANK_SCALE - 1, Math.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null, pen: 0, weight: 0, band: null };
+        open = { v0: nv, level: L, rank: Mth.min(RANK_SCALE - 1, Mth.round(rr * RANK_SCALE)), family: fam | 0, flags: fl | 0, cap: null, pen: 0, weight: 0, band: null };
         if (bandLo !== undefined || bandHi !== undefined) {
-          const lo = Math.max(0, Math.min(255, Math.round(255 * (Number.isFinite(bandLo) ? bandLo : 0))));
-          const hi = Math.max(0, Math.min(255, Math.round(255 * (Number.isFinite(bandHi) ? bandHi : 1))));
+          const lo = Mth.max(0, Mth.min(255, Mth.round(255 * (isFin(bandLo) ? bandLo : 0))));
+          const hi = Mth.max(0, Mth.min(255, Mth.round(255 * (isFin(bandHi) ? bandHi : 1))));
           if (lo > 0 || hi < 255) open.band = [lo, hi];
         }
-        if (pen) open.pen = Math.max(0, Math.min(255, pen | 0));
-        if (weight) open.weight = Math.max(0, Math.min(255, Math.round(Number(weight)) || 0));
+        if (pen) open.pen = Mth.max(0, Mth.min(255, pen | 0));
+        if (weight) open.weight = Mth.max(0, Mth.min(255, Mth.round(Number(weight)) || 0));
         if (cap !== undefined && cap !== null) {
           const cc = Number(cap);
           if (!(cc >= 0 && cc < 1)) throw new Error(`SurfaceLockMarkSet: capRank ${cap} outside [0, 1)`);
-          open.cap = Math.min(RANK_SCALE - 1, Math.round(cc * RANK_SCALE));
+          open.cap = Mth.min(RANK_SCALE - 1, Mth.round(cc * RANK_SCALE));
         }
       },
       vertex(x, y, z, nx, ny, nz) {
@@ -113,13 +116,13 @@
         if (n < 1 || (!dot && n < 2)) { nv = open.v0; open = null; return false; }
         start = grow(start, nr + 2); level = grow(level, nr + 1); rank = grow(rank, nr + 1);
         family = grow(family, nr + 1); flags = grow(flags, nr + 1);
-        if (open.cap !== null && !capRank) capRank = new Uint16Array(Math.max(256, level.length));
+        if (open.cap !== null && !capRank) capRank = new Uint16Array(Mth.max(256, level.length));
         if (capRank) { capRank = grow(capRank, nr + 1); capRank[nr] = open.cap === null ? 0 : open.cap; }
-        if (open.pen && !runPen) runPen = new Uint8Array(Math.max(256, level.length));
+        if (open.pen && !runPen) runPen = new Uint8Array(Mth.max(256, level.length));
         if (runPen) { runPen = grow(runPen, nr + 1); runPen[nr] = open.pen; }
-        if (open.band && !runBand) { runBand = new Uint8Array(2 * Math.max(256, level.length)); for (let q = 0; q < nr; q++) runBand[2 * q + 1] = 255; }
+        if (open.band && !runBand) { runBand = new Uint8Array(2 * Mth.max(256, level.length)); for (let q = 0; q < nr; q++) runBand[2 * q + 1] = 255; }
         if (runBand) { runBand = grow(runBand, 2 * (nr + 1)); runBand[2 * nr] = open.band ? open.band[0] : 0; runBand[2 * nr + 1] = open.band ? open.band[1] : 255; }
-        if (open.weight && !runWeight) runWeight = new Uint8Array(Math.max(256, level.length));
+        if (open.weight && !runWeight) runWeight = new Uint8Array(Mth.max(256, level.length));
         if (runWeight) { runWeight = grow(runWeight, nr + 1); runWeight[nr] = open.weight; }
         start[nr] = open.v0; level[nr] = open.level; rank[nr] = open.rank; family[nr] = open.family; flags[nr] = open.flags;
         levelCounts[open.level] += 1;
@@ -179,7 +182,7 @@
       if (ms.runStart[r + 1] <= ms.runStart[r]) { bad.push(`run ${r} empty`); break; }
       if (ms.runLevel[r] >= MAX_LEVELS) { bad.push(`run ${r} level`); break; }
     }
-    for (let i = 0; i < ms.positions.length; i++) if (!Number.isFinite(ms.positions[i])) { bad.push('non-finite position'); break; }
+    for (let i = 0; i < ms.positions.length; i++) if (!isFin(ms.positions[i])) { bad.push('non-finite position'); break; }
     if (!ms.meta || !(ms.meta.p0 > 0)) bad.push('meta.p0');
     return bad;
   };

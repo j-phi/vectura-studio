@@ -23,13 +23,16 @@
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
 
+  // Local aliases: a hot-loop `Math.x` / `Number.isFinite` is a global lookup, which a window-backed global (jsdom, a vm context) answers through an interceptor.
+  const Mth = Math;
+  const isFin = Number.isFinite;
   const EPS = 1 / 4096;
   const POLE_EPS = 2e-3;
 
   const hash = (i, j, salt) => {
     let h = ((i | 0) * 73856093) ^ ((j | 0) * 19349663);
     h ^= (salt | 0);
-    h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
+    h ^= h >>> 13; h = Mth.imul(h, 1274126177); h ^= h >>> 16;
     return (h >>> 0) / 4294967296;
   };
 
@@ -39,10 +42,10 @@
     const raw = SF.chartFor(mode, sizes || {});
     if (typeof raw !== 'function') return null;
     const s = scale || {};
-    const sx = Number.isFinite(s.sx) ? s.sx : 1; const sy = Number.isFinite(s.sy) ? s.sy : 1; const sz = Number.isFinite(s.sz) ? s.sz : 1;
+    const sx = isFin(s.sx) ? s.sx : 1; const sy = isFin(s.sy) ? s.sy : 1; const sz = isFin(s.sz) ? s.sz : 1;
     const at = (a, b) => {
       const q = raw(a, b);
-      return q && Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) ? q : null;
+      return q && isFin(q.x) && isFin(q.y) && isFin(q.z) ? q : null;
     };
     // Orientation: sign of the enclosed volume (local frame; scale has positive determinant).
     let vol = 0;
@@ -59,7 +62,7 @@
       }
     }
     const orientation = vol < 0 ? -1 : 1;
-    const close = (p, q) => p && q && Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 1e-6 * (1 + Math.hypot(p.x, p.y, p.z));
+    const close = (p, q) => p && q && Mth.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 1e-6 * (1 + Mth.hypot(p.x, p.y, p.z));
     const periodicA = [0.25, 0.5, 0.75].every((u) => close(at(0, u), at(1, u)));
     const periodicB = [0.25, 0.5, 0.75].every((u) => close(at(u, 0), at(u, 1)));
 
@@ -94,20 +97,20 @@
       let dA = deriv(a, b, true, false); let dB = deriv(a, b, false, true);
       if (!dA || !dB) return null;
       let cx = dA.y * dB.z - dA.z * dB.y; let cy = dA.z * dB.x - dA.x * dB.z; let cz = dA.x * dB.y - dA.y * dB.x;
-      if (Math.hypot(cx, cy, cz) < 1e-9) {
+      if (Mth.hypot(cx, cy, cz) < 1e-9) {
         // Pole / apex: re-measure the frame just inside the domain (the point is kept). That frame's
         // normal is off by ~POLE_EPS * pi, so where the a-tangents of two meridians a quarter-turn apart
         // span the tangent plane (a true pole) their cross product is used, signed to agree with it.
-        const a2 = Math.min(1 - POLE_EPS, Math.max(POLE_EPS, a)); const b2 = Math.min(1 - POLE_EPS, Math.max(POLE_EPS, b));
+        const a2 = Mth.min(1 - POLE_EPS, Mth.max(POLE_EPS, a)); const b2 = Mth.min(1 - POLE_EPS, Mth.max(POLE_EPS, b));
         dA = deriv(a2, b2, true, false); dB = deriv(a2, b2, false, true);
         if (!dA || !dB) return null;
         cx = dA.y * dB.z - dA.z * dB.y; cy = dA.z * dB.x - dA.x * dB.z; cz = dA.x * dB.y - dA.y * dB.x;
-        if (Math.hypot(cx, cy, cz) < 1e-12) return null;
+        if (Mth.hypot(cx, cy, cz) < 1e-12) return null;
         const t1 = deriv(a, b, true, false); const t2 = deriv(a, (b + 0.25) % 1, true, false);
         if (t1 && t2) {
           const px = t1.y * t2.z - t1.z * t2.y; const py = t1.z * t2.x - t1.x * t2.z; const pz = t1.x * t2.y - t1.y * t2.x;
-          const pl = Math.hypot(px, py, pz); const cl = Math.hypot(cx, cy, cz);
-          if (pl > 1e-6 * (Math.hypot(t1.x, t1.y, t1.z) * Math.hypot(t2.x, t2.y, t2.z) + 1e-12)) {
+          const pl = Mth.hypot(px, py, pz); const cl = Mth.hypot(cx, cy, cz);
+          if (pl > 1e-6 * (Mth.hypot(t1.x, t1.y, t1.z) * Mth.hypot(t2.x, t2.y, t2.z) + 1e-12)) {
             const sgn = px * cx + py * cy + pz * cz < 0 ? -1 : 1;
             cx = (sgn * px * cl) / pl; cy = (sgn * py * cl) / pl; cz = (sgn * pz * cl) / pl;
           }
@@ -115,7 +118,7 @@
       }
       // Scaled frame: P' = S P, dP' = S dP, n' ~ S^-1 n.
       let nx = (orientation * cx) / sx; let ny = (orientation * cy) / sy; let nz = (orientation * cz) / sz;
-      const L = Math.hypot(nx, ny, nz) || 1;
+      const L = Mth.hypot(nx, ny, nz) || 1;
       nx /= L; ny /= L; nz /= L;
       return {
         x: p.x * sx, y: p.y * sy, z: p.z * sz,
@@ -136,7 +139,7 @@
     return {
       get size() { return size; },
       insert(x, y, z, id) {
-        const i = Math.floor(x / C); const j = Math.floor(y / C); const k = Math.floor(z / C);
+        const i = Mth.floor(x / C); const j = Mth.floor(y / C); const k = Mth.floor(z / C);
         const key = K(i, j, k);
         let list = map.get(key);
         if (!list) { list = []; map.set(key, list); }
@@ -146,8 +149,8 @@
       },
       // Calls fn(id, d2) for every inserted point within r; stops early when fn returns true.
       near(x, y, z, r, fn) {
-        const R = Math.ceil(r / C);
-        const i0 = Math.floor(x / C); const j0 = Math.floor(y / C); const k0 = Math.floor(z / C);
+        const R = Mth.ceil(r / C);
+        const i0 = Mth.floor(x / C); const j0 = Mth.floor(y / C); const k0 = Mth.floor(z / C);
         const r2 = r * r;
         for (let i = i0 - R; i <= i0 + R; i++) {
           for (let j = j0 - R; j <= j0 + R; j++) {

@@ -3,9 +3,8 @@ const LR = require('../helpers/light-realism');
 const crypto = require('crypto');
 const shaOf = (paths) => crypto.createHash('sha1').update(signature(paths, 9).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, 'ID')).digest('hex');
 
-// D5-voronoi (contract A33): voronoiWeb is baked onto the surface for v2 scenes as a DRAG-PREVIEW ONLY law (SurfaceLockWebs, second FIT row, `v2Only` +
-// `dragPreviewOnly`). While a 3D drag / orbit is in progress the frame is the bake: one FULL Voronoi web per tone level in the object's chart, each run
-// carrying the tone band of its level, so the cell size follows the light with no rebake. Settled and export output is the pose compose, byte for byte.
+// D5-voronoi (contract A33): voronoiWeb is baked onto the surface for v2 scenes as Level S at rest (SurfaceLockWebs, second FIT row, `v2Only`, A33 amended): the bake is the drag frame AND the settled / export frame: one FULL Voronoi
+// web per tone level in the object's chart, each run carrying the tone band of its level, so the cell size follows the light with no rebake.
 
 const PEN = 0.3;
 const LAW = 'voronoiWeb';
@@ -16,7 +15,7 @@ const specOf = (o = {}) => ({
   seed: { salt: 0, phase: 0, off: 0 }, toneModel: 'v2', dragPreview: true, ...o,
 });
 
-describe('surface lock D5 (voronoiWeb): v2 drag-preview-only one full Voronoi web per tone level', () => {
+describe('surface lock D5 (voronoiWeb): v2 Level S one full Voronoi web per tone level', () => {
   let rt; let V; let SL; let W; let MS;
   let surfProf; let poseProf;
   beforeAll(async () => {
@@ -24,32 +23,36 @@ describe('surface lock D5 (voronoiWeb): v2 drag-preview-only one full Voronoi we
     V = rt.V; SL = V.Scene3D.SurfaceLock; W = V.Scene3D.SurfaceLockWebs; MS = V.Scene3D.SurfaceLockMarkSet;
     const sS = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
     SL.clearCache(); SL.resetStats();
-    surfProf = LR.measure(sS, { model: 'v2', paths: sS.composePreview() });
+    // the settled / full-resolution look (a cold composePreview is the coarse LOD frame since the speed amendment)
+    surfProf = LR.measure(sS, { model: 'v2', paths: sS.composeFull() });
     const sP = LR.buildCase(V, { law: LAW, markSpace: 'pose' });
     poseProf = LR.measure(sP, { model: 'v2', paths: sP.composeFull() });
   }, 240000);
   afterAll(() => rt && rt.cleanup());
 
 
-  it('RED: settled / export output equals the pose compose byte for byte (sha); the baked frame exists only while dragging', () => {
+  it('RED: v2 voronoi is Level S at rest: the settled frame is the drag frame at the same pose (sha), no swap on release', () => {
     const a = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
     const b = LR.buildCase(V, { law: LAW, markSpace: 'pose' });
     SL.clearCache(); SL.resetStats();
     const settled = a.composeFull();
-    expect(SL.stats.bakes, 'no surface bake when settled').toBe(0);
-    expect(shaOf(settled)).toBe(shaOf(b.composeFull()));
-    a.setPose({ camYaw: 50, camPitch: 25 }); b.setPose({ camYaw: 50, camPitch: 25 });
+    expect(SL.stats.bakes, 'the settled frame is baked (Level S at rest)').toBeGreaterThan(0);
+    expect(shaOf(settled), 'settled is no longer the pose compose').not.toBe(shaOf(b.composeFull()));
+    a.setPose({ camYaw: 50, camPitch: 25 });
     const drag = a.composePreview();
-    expect(SL.stats.bakes, 'the drag frame is baked (Level S)').toBeGreaterThan(0);
-    expect(shaOf(drag)).not.toBe(shaOf(b.composeFull()));
-    expect(shaOf(a.composeFull()), 'release swaps back to pose').toBe(shaOf(b.composeFull()));
+    const rest = a.composeFull();
+    expect(shaOf(rest), 'settled == drag at the same pose: nothing flattens on release').toBe(shaOf(drag));
+    const before = SL.stats.bakeMisses;
+    a.setPose({ camYaw: -30, camPitch: 10 });
+    a.composePreview(); a.composeFull();
+    expect(SL.stats.bakeMisses, 'a pose change and its release bake nothing new').toBe(before);
   });
 
-  it('RED: effectiveMarkSpace is surface only for a v2 hatch / crosshatch drag spec; settled, legacy, contour and tripleHatch stay pose', () => {
+  it('RED: effectiveMarkSpace is surface for any v2 hatch / crosshatch spec (settled too); legacy, contour and tripleHatch stay pose', () => {
     const ctx = (sp) => ({ spec: sp, mapper: sp.mapper, visibility: 'hidden', emissiveCoreBlank: false, csgCarve: false, receiveShadow: false, areaLight: false });
     const spec = specOf(); const settled = specOf({ dragPreview: undefined });
-    expect(SL.effectiveMarkSpace(settled.style, ctx(settled))).toBe('pose');
-    expect(W.supports(settled)).toBe(false);
+    expect(SL.effectiveMarkSpace(settled.style, ctx(settled))).toBe('surface');
+    expect(W.supports(settled)).toBe(true);
     expect(SL.effectiveMarkSpace(spec.style, ctx(spec))).toBe('surface');
     expect(W.supports(specOf({ mapper: 'crosshatch' }))).toBe(true);
     const legacy = specOf(); delete legacy.toneModel;
@@ -149,5 +152,90 @@ describe('surface lock D5 (voronoiWeb): v2 drag-preview-only one full Voronoi we
     expect(dt).toBeLessThan(1600);
     const tor = W.bake(specOf({ primitive: 'torus', mode: 'torus', sizes: { sx: 34, sy: 9, sz: 9, detail: 24 } }));
     expect(tor.vertexCount).toBeGreaterThan(500);
+  });
+
+  // ---- speed: bake once, pre-warm idle, coarse LOD only on a missed drag frame (general mechanism in SurfaceLock) ------------------------
+  const sigOf = (ms) => crypto.createHash('sha1').update(Buffer.from(ms.positions.buffer, ms.positions.byteOffset, ms.positions.byteLength)).digest('hex');
+  const waitIdle = async (group) => { for (let i = 0; i < 400 && group._sceneLodBaking; i++) await new Promise((r) => setTimeout(r, 50)); };
+
+  it('RED: prewarm makes the first drag frame a bake hit (0 misses); a settled compose is itself the prewarm', () => {
+    const spec = specOf({ objectId: 'pw1', scaleRef: 1 });
+    SL.clearCache(); SL.resetStats();
+    expect(SL.missingBakes([spec]).length).toBe(1);
+    expect(typeof SL.prewarm, 'SurfaceLock.prewarm').toBe('function');
+    SL.prewarm([spec], { sync: true });
+    expect(SL.missingBakes([spec]).length, 'the prewarm baked it').toBe(0);
+    SL.resetStats();
+    SL.bake(spec);
+    expect(SL.stats.bakeMisses, 'first lookup after prewarm').toBe(0);
+    expect(SL.stats.bakeHits).toBe(1);
+    // end to end: settle, then the first drag frame at a new pose bakes nothing
+    const s = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
+    SL.clearCache(); SL.resetStats();
+    s.composeFull();
+    const misses = SL.stats.bakeMisses;
+    s.setPose({ camYaw: 40, camPitch: 20 });
+    s.composePreview();
+    expect(SL.stats.bakeMisses, 'the first drag frame after a settled render is a hit').toBe(misses);
+    expect(s.group._sceneLodFrame).toBe(false);
+  });
+
+  it('RED: coarse LOD is used only on a missed DRAG frame; the full bake replaces it; settled / export never uses it', async () => {
+    const s = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
+    SL.clearCache(); SL.resetStats();
+    s.setPose({ camYaw: 35, camPitch: 15 });
+    const coarseDrag = s.composePreview();
+    expect(SL.stats.lodBakes, 'a cold drag frame builds the coarse bake').toBe(1);
+    expect(s.group._sceneLodFrame).toBe(true);
+    expect(s.fills(coarseDrag).length, 'the coarse frame has ink').toBeGreaterThan(100);
+    await waitIdle(s.group);
+    expect(s.group._sceneLodBaking, 'the full bake finished in the background').toBeFalsy();
+    SL.resetStats();
+    const fullDrag = s.composePreview();
+    expect(SL.stats.lodBakes + SL.stats.lodServed, 'the next frame is the full bake').toBe(0);
+    expect(SL.stats.bakeMisses).toBe(0);
+    expect(s.group._sceneLodFrame).toBe(false);
+    expect(shaOf(fullDrag)).not.toBe(shaOf(coarseDrag));
+    expect(shaOf(s.composeFull()), 'settled == the full drag frame at the same pose').toBe(shaOf(fullDrag));
+    // settled with a cold cache never takes the coarse path
+    const t = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
+    SL.clearCache(); SL.resetStats();
+    t.setPose({ camYaw: 35, camPitch: 15 });
+    const rest = t.composeFull();
+    expect(SL.stats.lodBakes + SL.stats.lodServed, 'no LOD at rest / export').toBe(0);
+    expect(t.group._sceneLodFrame).toBe(false);
+    expect(shaOf(rest)).toBe(shaOf(fullDrag));
+    // a released coarse frame is never the settled one: the memo is not written for it
+    const u = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
+    SL.clearCache(); SL.resetStats();
+    u.setPose({ camYaw: 35, camPitch: 15 });
+    u.composePreview();
+    const settledAfterLod = u.composeFull();
+    expect(shaOf(settledAfterLod), 'release after a LOD drag frame is the full look').toBe(shaOf(fullDrag));
+    await waitIdle(u.group);
+  });
+
+  it('the coarse bake is a strict subset of the work: fewer levels and vertices, bands still tile [0, 1], a separate cache key, deterministic', () => {
+    const full = W.bake(specOf({ scaleRef: 2 }));
+    const c1 = W.bakeCoarse(specOf({ scaleRef: 2 }));
+    const c2 = W.bakeCoarse(specOf({ scaleRef: 2 }));
+    expect(MS.validate(c1)).toEqual([]);
+    expect(c1.meta.lod).toBe(1);
+    expect(full.meta.lod).toBe(0);
+    expect(c1.meta.voronoiLevels).toBeLessThan(full.meta.voronoiLevels);
+    expect(c1.vertexCount).toBeLessThan(full.vertexCount * 0.6);
+    const b = c1.meta.voronoiBands.slice().sort((p, q) => p[0] - q[0]);
+    expect(b[0][0]).toBeLessThanOrEqual(0.003);
+    expect(b[b.length - 1][1]).toBeGreaterThanOrEqual(0.997);
+    for (let i = 1; i < b.length; i++) expect(Math.abs(b[i][0] - b[i - 1][1])).toBeLessThan(2 / 256);
+    expect(sigOf(c1), 'coarse bake is deterministic').toBe(sigOf(c2));
+    expect(sigOf(W.bake(specOf({ scaleRef: 2 }))), 'full bake is deterministic').toBe(sigOf(full));
+    SL.clearCache();
+    const spec = specOf({ objectId: 'lodkey' });
+    const lod = SL.bake(spec, { lod: true });
+    expect(lod.meta.lod).toBe(1);
+    expect(SL.missingBakes([spec]).length, 'a coarse bake does not satisfy a full lookup').toBe(1);
+    expect(SL.bake(spec).meta.lod, 'the plain bake is the full one').toBe(0);
+    expect(SL.canCoarse(specOf({ toneLaw: 'mazeFill' })), 'the maze has no coarse form (its bake is cheap)').toBe(false);
   });
 });

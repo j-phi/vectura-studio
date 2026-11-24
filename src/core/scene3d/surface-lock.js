@@ -72,7 +72,7 @@
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
     culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, prepassProjected: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
-    bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
+    bakeErrors: 0, adopted: 0, lodBakes: 0, lodServed: 0, prewarmed: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
   // The cache counters describe live state, not events: resetStats keeps them in step with the cache.
@@ -202,12 +202,39 @@
     stats.cacheBytes = 0; stats.cacheEntries = 0;
   };
 
-  const bake = (spec) => {
+  // LOD (a drag-only coarse bake). The surface texture is baked once and re-baked only when its inputs change; a drag frame that finds the
+  // full bake missing may ask for a COARSE one instead (`bake(spec, { lod: true })`, a baker with `bakeCoarse(spec)`): faster to build, cached
+  // under its own key (`|lod1`) so it can never answer a full lookup. Settled / export compose never passes `lod`.
+  const LOD_SUFFIX = '|lod1';
+  const canCoarse = (spec) => { const b = spec ? bakerFor(spec) : null; return !!(b && typeof b.bakeCoarse === 'function' && (typeof b.supportsCoarse !== 'function' || b.supportsCoarse(spec))); };
+  const bake = (spec, opts) => {
     stats.bakes += 1;
     const baker = bakerFor(spec);
     if (!baker) return null;
-    const key = bakeKey(spec);
-    const hit = cache.get(key);
+    let key = bakeKey(spec);
+    let hit = cache.get(key);
+    if (!hit && opts && opts.lod === true && canCoarse(spec)) {
+      // full bake missing and a coarse one allowed (drag frames only)
+      key += LOD_SUFFIX; hit = cache.get(key);
+      if (!hit) {
+        stats.bakeMisses += 1; stats.lodBakes += 1;
+        const t0c = now();
+        let msc = null;
+        try { msc = baker.bakeCoarse(spec); } catch (e) { msc = null; stats.bakeErrors += 1; }
+        stats.msBake += now() - t0c;
+        if (!msc) return null;
+        msc.key = key;
+        const MSc = Scene3D.SurfaceLockMarkSet;
+        const bytesC = MSc && MSc.byteSize ? MSc.byteSize(msc) : 0;
+        cache.set(key, { ms: msc, bytes: bytesC }); cacheBytes += bytesC;
+        evictToLimit(key);
+        stats.lodServed += 1;
+        return msc;
+      }
+      stats.bakeHits += 1; stats.lodServed += 1;
+      cache.delete(key); cache.set(key, hit);
+      return hit.ms;
+    }
     if (hit) {
       stats.bakeHits += 1;
       cache.delete(key); cache.set(key, hit); // most recently used last
@@ -264,6 +291,26 @@
   };
   // The specs among `specs` that would bake (a baker exists) but are not cached. Read-only: no LRU touch, no stat.
   const missingBakes = (specs) => (specs || []).filter((spec) => spec && bakerFor(spec) && !cache.has(bakeKey(spec)));
+  // PREWARM: bake the missing full MarkSets while the app is idle, one bake per idle slice, so the first drag frame is a cache hit.
+  // `opts.sync` bakes them all now (tests); `opts.done(n)` is called when the queue drains. Returns a handle { cancel }.
+  const prewarm = (specs, opts) => {
+    const queue = missingBakes(specs);
+    const o = opts || {};
+    let cancelled = false; let n = 0;
+    const step = () => {
+      if (cancelled) return;
+      const spec = queue.shift();
+      if (!spec) { if (typeof o.done === 'function') o.done(n); return; }
+      if (!cache.has(bakeKey(spec))) { try { bake(spec); } catch (e) { /* counted by bake */ } stats.prewarmed += 1; n += 1; }
+      later();
+    };
+    const later = () => {
+      if (o.sync) { step(); return; }
+      if (typeof globalScope.requestIdleCallback === 'function') globalScope.requestIdleCallback(step, { timeout: 1500 }); else setTimeout(step, 30);
+    };
+    later();
+    return { cancel() { cancelled = true; queue.length = 0; } };
+  };
 
   // ── tone table (contract §5, A16) ──────────────────────────────────────────────────────────────────────────────────────
   // The LUT is memoized per baker + tone shape and never depends on the light's position: the v2 model only changes it through
@@ -1467,7 +1514,7 @@
         const spec = specOfObject(p, o, bounds, seedOf(o.id));
         if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, meshes[i]));
         withToneModel(p, spec);
-        const ms = bake(spec);
+        const ms = bake(spec, bounds && bounds.lodDrag === true ? { lod: true } : undefined);
         if (ms) {
           const v2 = spec.toneModel === 'v2';
           const recv = v2 ? receiveCtxFor(p, objects, meshes, poses, i) : null;
@@ -1537,6 +1584,8 @@
     takeFreshBakes,
     adopt,
     missingBakes,
+    prewarm,
+    canCoarse,
     sceneBakeSpecs,
     toneTable,
     exclusionCtx,
