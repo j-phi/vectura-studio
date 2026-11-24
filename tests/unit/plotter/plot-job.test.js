@@ -43,19 +43,42 @@ describe('PlotJob placement math (exact numbers)', () => {
     expect(build([group(line)], { ...RAW, placement: { mode: 'fit' } }).placement.scale).toBeCloseTo(4.2, 9);
   });
 
-  test('invertX / invertY mirror within the work area', () => {
-    close(place({}, withAxes({ invertX: true }))[0], 410, 20);
-    close(place({}, withAxes({ invertY: true }))[0], 10, 277);
+  test('invertX / invertY flip the sign about the work origin', () => {
+    close(place({}, withAxes({ invertX: true }))[0], -10, 20);
+    close(place({}, withAxes({ invertY: true }))[0], 10, -20);
+    close(place({}, withAxes({ invertX: true, invertY: true }))[1], -30, -20);
   });
 
-  test('swapXY swaps after placement; inversion mirrors within the swapped sheet', () => {
+  test('swapXY swaps after inversion', () => {
     close(place({}, withAxes({ swapXY: true }))[0], 20, 10);
-    close(place({}, withAxes({ swapXY: true, invertX: true }))[0], 20, 287);
+    close(place({}, withAxes({ swapXY: true, invertX: true }))[0], 20, -10);
+  });
+
+  test('invertY job is in-bounds only with a matching originOffset', () => {
+    const prof = withAxes({ invertY: true });
+    const mk = (originOffset) => J.buildJob([group(line)], { settings: RAW, profile: prof, docSize: DOC, originOffset });
+    expect(mk({ x: 0, y: 297 }).bounds.ok).toBe(true);
+    const bad = mk({ x: 0, y: 0 });
+    expect(bad.bounds.ok).toBe(false);
+    expect(bad.bounds.overflow.top).toBeCloseTo(20, 9);
+    const g = J.toGcode(mk({ x: 0, y: 0 }), prof, { originOffset: { x: 0, y: 297 } });
+    expect(g.bounds.ok).toBe(true);
+    expect(g.lines).toContain('G1 X10 Y-20 F6000');
+  });
+
+  test('swatch and scale-check jobs follow the axes transform', () => {
+    const prof = withAxes({ invertY: true });
+    const sc = J.scaleCheckJob(prof, { offsetX: 20, offsetY: 30, originOffset: { x: 0, y: 297 } });
+    expect(sc.pens[0].paths[0].map((p) => [p.x, p.y])).toEqual([[20, -30], [120, -30], [120, -130], [20, -130], [20, -30]]);
+    expect(sc.bounds.ok).toBe(true);
+    const sw = J.testSwatchJob({ rows: [1000], cols: [2], offsetX: 10, offsetY: 10, originOffset: { x: 0, y: 297 } }, prof);
+    expect(Math.max(...sw.pens[0].paths.flat().map((q) => q.y))).toBeLessThanOrEqual(-10);
+    expect(sw.bounds.ok).toBe(true);
   });
 
   test('settings.profileOverrides.axes applies without mutating the profile', () => {
     const job = build([group(line)], { ...RAW, profileOverrides: { axes: { invertX: true } } });
-    close(firstPath(job)[0], 410, 20);
+    close(firstPath(job)[0], -10, 20);
     expect(a3.axes.invertX).toBe(false);
   });
 });

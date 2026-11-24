@@ -307,6 +307,15 @@
     return v;
   };
 
+  // Axis inversion is a sign flip about the work origin (G92 X0 Y0 = sheet top-left), then optional swap.
+  const applyAxes = (pt, axes) => {
+    const ax = axes || {};
+    let x = ax.invertX ? -pt.x : pt.x;
+    let y = ax.invertY ? -pt.y : pt.y;
+    if (ax.swapXY) { const t = x; x = y; y = t; }
+    return { x: x + 0, y: y + 0 };
+  };
+
   /**
    * Build the sheet -> machine transform.
    * area: effective work area {width,height}. axes: {invertX,invertY,swapXY}.
@@ -334,10 +343,7 @@
       const r = rotateDoc(pt.x, pt.y, w, h, rot);
       let x = r.x * scale + tx;
       let y = r.y * scale + ty;
-      if (ax.invertX) x = sheet.width - x;
-      if (ax.invertY) y = sheet.height - y;
-      if (ax.swapXY) { const t = x; x = y; y = t; }
-      return { x, y };
+      return applyAxes({ x, y }, ax);
     };
     return { apply, scale, rotate: rot, mode, rotatedSize: { width: rw, height: rh }, sheetArea: sheet, offset: { x: tx, y: ty } };
   };
@@ -484,11 +490,11 @@
     return minX === Infinity ? null : { minX, minY, maxX, maxY };
   };
 
-  const checkBounds = (pens, area) => {
+  const checkBounds = (pens, area, originOffset) => {
     const S = safety();
     const extra = [];
     pens.forEach((pen) => { if (pen.reload && pen.reload.everyMm > 0) extra.push([pen.reload.position]); });
-    const r = S.checkJobBounds({ pens: extra.length ? pens.concat([{ paths: extra }]) : pens }, area);
+    const r = S.checkJobBounds({ pens: extra.length ? pens.concat([{ paths: extra }]) : pens }, area, { originOffset: originOffset || { x: 0, y: 0 } });
     return { ok: r.ok, overflow: r.overflow, bbox: r.bbox, ...(r.reason ? { reason: r.reason } : {}) };
   };
 
@@ -509,7 +515,8 @@
       warnings: ctx.warnings || [],
     };
     job.stats = estimate(job, ctx.prof);
-    job.bounds = checkBounds(pens, ctx.area);
+    job.originOffset = ctx.originOffset || { x: 0, y: 0 };
+    job.bounds = checkBounds(pens, ctx.area, job.originOffset);
     return job;
   };
 
@@ -607,6 +614,7 @@
       airPlot: false,
       returnToOrigin: settings.returnToOrigin !== false,
       penChange: settings.penChange === 'continue' ? 'continue' : 'pause',
+      originOffset: c.originOffset,
       placement: { mode: place.mode, scale: place.scale, rotate: place.rotate, offsetX: place.offset.x, offsetY: place.offset.y },
       warnings,
     });
@@ -712,12 +720,13 @@
       const tf = lastSettings ? lastSettings.travelFeed : S.clampFeedXY(prof.motion.travelFeed, prof, null);
       add(join(['G1', word('X', 0), word('Y', 0), feedStr(tf)]));
     }
+    const bounds = o.originOffset ? checkBounds(job.pens || [], job.area || S.effectiveWorkArea(prof, null), o.originOffset) : (job.bounds || null);
     return {
       lines,
       penChangeIndices,
       pathStartIndices,
       pathCount: pathStartIndices.length,
-      bounds: job.bounds || null,
+      bounds,
       bbox: job.bbox || null,
     };
   };
@@ -749,7 +758,7 @@
       reloadBefore: [],
       paths: [[{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }]],
     }];
-    return finishJob(pens, { prof, area, airPlot: true, returnToOrigin: o.returnToOrigin === true, penChange: 'continue' });
+    return finishJob(pens, { prof, area, airPlot: true, returnToOrigin: o.returnToOrigin === true, penChange: 'continue', originOffset: o.originOffset });
   };
 
   const swatchPaths = (pattern, x, y, size) => {
@@ -805,11 +814,12 @@
           passes: 1,
           reload: null,
           reloadBefore: [],
-          paths: swatchPaths(pattern, ox + c * (size + gap), oy + r * (size + gap), size),
+          paths: swatchPaths(pattern, ox + c * (size + gap), oy + r * (size + gap), size)
+            .map((path) => path.map((q) => applyAxes(q, prof.axes))),
         });
       });
     });
-    return finishJob(pens, { prof, area, airPlot: Boolean(sp.airPlot), returnToOrigin: sp.returnToOrigin !== false, penChange: 'continue' });
+    return finishJob(pens, { prof, area, airPlot: Boolean(sp.airPlot), returnToOrigin: sp.returnToOrigin !== false, penChange: 'continue', originOffset: sp.originOffset });
   };
 
   const scaleCheckJob = (profile, opts) => {
@@ -828,9 +838,9 @@
         [{ x, y }, { x: x + 100, y }, { x: x + 100, y: y + 100 }, { x, y: y + 100 }, { x, y }],
         [{ x: x + 25, y: y + 50 }, { x: x + 75, y: y + 50 }],
         [{ x: x + 50, y: y + 25 }, { x: x + 50, y: y + 75 }],
-      ],
+      ].map((path) => path.map((q) => applyAxes(q, prof.axes))),
     }];
-    return finishJob(pens, { prof, area, returnToOrigin: o.returnToOrigin !== false, penChange: 'continue' });
+    return finishJob(pens, { prof, area, returnToOrigin: o.returnToOrigin !== false, penChange: 'continue', originOffset: o.originOffset });
   };
 
   const placePolylines = (polylines, docSize, area, placement, axes) => {
@@ -849,6 +859,7 @@
     optimizePolylines,
     placePolylines,
     makePlacement,
+    applyAxes,
     mulberry32,
     formatNumber: fmt,
   };
