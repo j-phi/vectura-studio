@@ -144,8 +144,9 @@ describe('curved CSG carve per-face tone (U7b)', () => {
     'boxbox crosshatch -35/30': '09073974b65e',
     'boxbox default -35/30': '3eaea579aa20',
     // E2 re-pin: a curved carve now splits per source face + a repaired crack-free mesh (intended look change).
-    'sphere toneoff -35/30': '535388b432e1',
-    'sphere default -35/30 OLD': '49c1d8c80f23',
+    // U7c re-pin: the carved curved surface is now ruled as rings (a bowl / bore) instead of one straight family; flat planes unchanged.
+    'sphere toneoff -35/30': '5e41a2a66a37',
+    'sphere default -35/30 OLD': 'f4748fe26f9e',
   };
   [[30, 20], [-35, 30]].forEach(([yaw, pitch]) => {
     [['hatch', 'hatch'], ['crosshatch', 'crosshatch'], ['default', undefined]].forEach(([nm, mapper]) => {
@@ -166,9 +167,11 @@ describe('curved CSG carve per-face tone (U7b)', () => {
     V.scene3dStats = {};
     const now = sig(gen(params(g, null, true)));
     const st = V.scene3dStats;
-    expect(st.csgToneClusters).toBeGreaterThanOrEqual(2);
+    // U7c: the curved surface is ruled as a bowl (no cluster union); the flat planes still tone-cluster (the last group is a plane).
+    expect(st.csgBowlGroups).toBeGreaterThanOrEqual(1);
+    expect(st.csgToneGroups).toBeGreaterThanOrEqual(1);
+    expect(st.csgToneClusters).toBeGreaterThanOrEqual(1);
     expect(st.csgToneClusters).toBeLessThanOrEqual(8);
-    expect(now).not.toBe(PIN['sphere default -35/30 OLD']);
     // stub: the 1st union (whole-group boundary) works, every later one (the clusters) fails
     const FB = V.FillBoolean; const orig = FB.union; let n = 0;
     FB.union = (...a) => { n += 1; if (n > 1) throw new Error('stub'); return orig(...a); };
@@ -177,6 +180,7 @@ describe('curved CSG carve per-face tone (U7b)', () => {
       const fb = sig(gen(params(g, null, true)));
       expect(V.scene3dStats.csgToneClusters).toBeUndefined();
       expect(fb).toBe(PIN['sphere default -35/30 OLD']);
+      expect(fb).not.toBe(now);
     } finally { FB.union = orig; }
   });
 });

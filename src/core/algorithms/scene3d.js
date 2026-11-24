@@ -5493,6 +5493,7 @@
               });
               parts.forEach((faces, ck) => {
                 const sub = { style: g.style, faces };
+                if (ck === 'c') sub.csgBowl = true;
                 if (ck !== 'c') {
                   let rep = faces[0]; let best = -1;
                   faces.forEach((fi) => { const a = faceArea(fi); if (a > best) { best = a; rep = fi; } });
@@ -5593,6 +5594,136 @@
             stats.csgToneClusters = parts.length;
             stats.csgToneGroups = (stats.csgToneGroups || 0) + 1;
             return out;
+          };
+          // U7c — the carved CURVED surface reads as a bowl / bore: instead of one screen-straight hatch family it is ruled by
+          // parallel WORLD planes cut through its own triangles (planes parallel to the carved face give concentric rings
+          // around a dimple / stacked rings down a bore; crosshatch adds the perpendicular plane family). Ring pitch follows each
+          // triangle's own tone band (a stride over the finest lattice), so the lit inner wall is sparse and the far wall dense.
+          // Returns null for any doubt so the caller keeps the flat hatch.
+          const csgBowlLines = (rec, g, sp, cross) => {
+            const faceSet = new Set(g.faces);
+            const votes = new Map();
+            (rec.edges || []).forEach((e) => {
+              if (!e.faces || e.faces.length !== 2) return;
+              const a = faceSet.has(e.faces[0]); const b = faceSet.has(e.faces[1]);
+              if (a === b) return;
+              const fo = rec.faces[a ? e.faces[1] : e.faces[0]];
+              const n = fo && fo.normalWorld;
+              if (!n || Math.abs(Math.hypot(n.x, n.y, n.z) - 1) > 0.05) return;
+              if (csgCurvedFaces && csgCurvedFaces.has(a ? e.faces[1] : e.faces[0])) return;
+              const key = `${Math.round(n.x * 50)},${Math.round(n.y * 50)},${Math.round(n.z * 50)}`;
+              const v = votes.get(key) || { n: { x: 0, y: 0, z: 0 }, c: 0 };
+              v.n.x += n.x; v.n.y += n.y; v.n.z += n.z; v.c += 1;
+              votes.set(key, v);
+            });
+            let best = null;
+            votes.forEach((v) => { if (!best || v.c > best.c) best = v; });
+            if (!best) return null;
+            const bl = Math.hypot(best.n.x, best.n.y, best.n.z);
+            if (!(bl > 1e-6)) return null;
+            const n0 = { x: best.n.x / bl, y: best.n.y / bl, z: best.n.z / bl };
+            const tris = [];
+            let wl = 0; let pl = 0;
+            g.faces.forEach((fi) => {
+              const idx = rec.faceIndexArrays[fi];
+              const face = rec.faces[fi];
+              if (!Array.isArray(idx) || idx.length < 3 || !face || !face.normalWorld) return;
+              const band = (toneOn && typeof intensityFn === 'function')
+                ? Regions.band(intensityFn(face.normalWorld, faceWorldCentroid(face)), p.tone) : 0;
+              for (let i = 1; i + 1 < idx.length; i += 1) {
+                const t = [idx[0], idx[i], idx[i + 1]];
+                // Foreshortening of this triangle on screen (projected area / world area, relative to the group's mean scale):
+                // a wall seen edge-on packs the same ring ink into little screen area, so its ring stride grows to keep the
+                // INK PER SCREEN AREA following the tone band rather than the viewing slant.
+                const W0 = rec.world[t[0]]; const W1 = rec.world[t[1]]; const W2 = rec.world[t[2]];
+                const P0 = rec.projected[t[0]]; const P1 = rec.projected[t[1]]; const P2 = rec.projected[t[2]];
+                const wa = Math.hypot((W1.y - W0.y) * (W2.z - W0.z) - (W1.z - W0.z) * (W2.y - W0.y),
+                  (W1.z - W0.z) * (W2.x - W0.x) - (W1.x - W0.x) * (W2.z - W0.z),
+                  (W1.x - W0.x) * (W2.y - W0.y) - (W1.y - W0.y) * (W2.x - W0.x)) / 2;
+                const pa = Math.abs((P1.x - P0.x) * (P2.y - P0.y) - (P2.x - P0.x) * (P1.y - P0.y)) / 2;
+                tris.push({ t, band, wa, pa });
+                for (let k = 0; k < 3; k += 1) {
+                  const a = rec.world[t[k]]; const b = rec.world[t[(k + 1) % 3]];
+                  const A = rec.projected[t[k]]; const B = rec.projected[t[(k + 1) % 3]];
+                  wl += Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z); pl += Math.hypot(A.x - B.x, A.y - B.y);
+                }
+              }
+            });
+            if (!tris.length || !(wl > 0) || !(pl > 0)) return null;
+            const scale = pl / wl;
+            // Relative foreshortening per triangle (1 = as facing the camera as the group's best-facing triangle).
+            let foreMax = 0;
+            tris.forEach((tr) => { tr.fore = tr.wa > 0 ? tr.pa / (tr.wa * scale * scale) : 0; foreMax = Math.max(foreMax, tr.fore); });
+            if (!(foreMax > 0)) return null;
+            tris.forEach((tr) => { tr.fore = clamp(tr.fore / foreMax, 0.35, 1); });
+            const spcOf = (band) => Math.max(penWidth, hatchSpacing(sp.fillDensity) / (toneOn ? coverageGain(band) : 1));
+            let spcBase = Infinity;
+            tris.forEach((tr) => { spcBase = Math.min(spcBase, spcOf(tr.band)); });
+            const ds = 0.5 * spcBase / scale; // rings are foreshortened on screen: pitch them tighter than a flat family
+            const up = Math.abs(n0.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+            let u = { x: n0.y * up.z - n0.z * up.y, y: n0.z * up.x - n0.x * up.z, z: n0.x * up.y - n0.y * up.x };
+            const ul = Math.hypot(u.x, u.y, u.z);
+            u = { x: u.x / ul, y: u.y / ul, z: u.z / ul };
+            const fams = [{ n: n0, ratio: 1 }];
+            if (cross) fams.push({ n: u, ratio: clamp(finite(sp.crossDensityRatio, 1), 0.25, 2) });
+            const out = [];
+            const Q = 1e4;
+            fams.forEach((fam) => {
+              const dd = ds * fam.ratio;
+              const planes = new Map();
+              tris.forEach((tr) => {
+                const d = tr.t.map((vi) => { const w = rec.world[vi]; return w.x * fam.n.x + w.y * fam.n.y + w.z * fam.n.z; });
+                const lo = Math.min(d[0], d[1], d[2]); const hi = Math.max(d[0], d[1], d[2]);
+                const stride = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore));
+                for (let k = Math.ceil(lo / dd); k * dd <= hi; k += 1) {
+                  if (((k % stride) + stride) % stride !== 0) continue;
+                  const lvl = k * dd;
+                  const pts = [];
+                  for (let e = 0; e < 3; e += 1) {
+                    const i0 = tr.t[e]; const i1 = tr.t[(e + 1) % 3];
+                    const d0 = d[e]; const d1 = d[(e + 1) % 3];
+                    if ((d0 - lvl) * (d1 - lvl) > 0 || d0 === d1) continue;
+                    const lo2 = i0 < i1; const a = lo2 ? i0 : i1; const b = lo2 ? i1 : i0;
+                    const da = lo2 ? d0 : d1; const db = lo2 ? d1 : d0;
+                    const f = (lvl - da) / (db - da);
+                    if (f < 0 || f > 1) continue;
+                    const A = rec.projected[a]; const B = rec.projected[b];
+                    pts.push({ x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f });
+                  }
+                  if (pts.length >= 2 && Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) > 1e-6) {
+                    if (!planes.has(k)) planes.set(k, []);
+                    planes.get(k).push([pts[0], pts[1]]);
+                  }
+                }
+              });
+              planes.forEach((segs) => {
+                const key = (q) => `${Math.round(q.x * Q)},${Math.round(q.y * Q)}`;
+                const ends = new Map();
+                segs.forEach((sg, i) => sg.forEach((q) => { const kk = key(q); if (!ends.has(kk)) ends.set(kk, []); ends.get(kk).push(i); }));
+                const used = new Array(segs.length).fill(false);
+                const grow = (line, atEnd) => {
+                  for (;;) {
+                    const tip = atEnd ? line[line.length - 1] : line[0];
+                    const cand = (ends.get(key(tip)) || []).find((i) => !used[i]);
+                    if (cand === undefined) return;
+                    used[cand] = true;
+                    const sg = segs[cand];
+                    const nxt = key(sg[0]) === key(tip) ? sg[1] : sg[0];
+                    if (atEnd) line.push(nxt); else line.unshift(nxt);
+                  }
+                };
+                segs.forEach((sg, i) => {
+                  if (used[i]) return;
+                  used[i] = true;
+                  const line = [sg[0], sg[1]];
+                  grow(line, true); grow(line, false);
+                  if (line.length >= 2) out.push(line);
+                });
+              });
+            });
+            const stats = (Vectura.scene3dStats = Vectura.scene3dStats || {});
+            stats.csgBowlGroups = (stats.csgBowlGroups || 0) + 1;
+            return out.length ? out : null;
           };
           groups.forEach((g) => {
             // U7: a curved carve's boundary comes from a polygon union (faceted CSG, every other primitive: unchanged).
@@ -5891,11 +6022,18 @@
                 // header. Family B below (× crossDensityRatio) keeps the old
                 // floor of 1 unconditionally: an existing document at density
                 // 100 with ratio 0.25 already relied on being clamped to 1mm.
+                // U7c: the carved curved surface is ruled as a bowl / bore (world-plane rings), not one straight family.
+                const bowlLines = (g.csgBowl && !draft && record.primitive === 'csg' && !record.csgFaceted && !lockedFill
+                  && !chartParams && (g.style.mapper === 'hatch' || g.style.mapper === 'crosshatch'))
+                  ? csgBowlLines(record, g, sp, g.style.mapper === 'crosshatch') : null;
                 // U7b: each tone cluster of a curved carve hatches by its own light (null = today's single region).
-                const toneClusterLines = (!draft && toneOn && record.primitive === 'csg' && !record.csgFaceted && !lockedFill
+                const toneClusterLines = bowlLines ? null : (!draft && toneOn && record.primitive === 'csg' && !record.csgFaceted && !lockedFill
                   && !chartParams && (g.style.mapper === 'hatch' || g.style.mapper === 'crosshatch'))
                   ? csgToneClusterLines(record, g, sp, angleDeg, boundary) : null;
-                if (toneClusterLines) {
+                if (bowlLines) {
+                  lines = bowlLines;
+                  csgToneDone = true;
+                } else if (toneClusterLines) {
                   lines = toneClusterLines;
                   csgToneDone = true;
                 } else {
