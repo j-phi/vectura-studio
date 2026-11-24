@@ -137,6 +137,9 @@
               <button id="btn-export-animated" class="top-menu-item" type="button" role="menuitem">
                 <span>Export Animated SVG…</span>
               </button>
+              <button id="btn-send-to-plotter" class="top-menu-item" type="button" role="menuitem">
+                <span>Send to Plotter…</span>
+              </button>
               <button id="btn-settings" class="top-menu-item" type="button" role="menuitem">
                 <span>Document Setup</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Cmd+K" data-shortcut-win="Ctrl+K"></span>
@@ -1123,6 +1126,10 @@
   <script src="./src/core/text-metrics.js?v=1.5.30" defer></script>
   <script src="./src/core/optimization-utils.js?v=1.5.30" defer></script>
   <script src="./src/core/plotter/plot-safety.js?v=1.5.30" defer></script>
+  <script src="./src/core/plotter/plot-job.js?v=1.5.30" defer></script>
+  <script src="./src/core/plotter/grbl-protocol.js?v=1.5.30" defer></script>
+  <script src="./src/core/plotter/serial-transport.js?v=1.5.30" defer></script>
+  <script src="./src/core/plotter/plotter-controller.js?v=1.5.30" defer></script>
   <!-- The single source of truth for how a path is drawn (native cubic / verbatim
        polyline / draw-time quadratic). Consumed by the renderer, the SVG exporter,
        the export preview, and the flatteners — must load before all of them. -->
@@ -1406,6 +1413,8 @@
   <script src="./src/ui/modals/image-asset.js?v=1.5.30" defer></script>
   <script src="./src/ui/modals/image-source.js?v=1.5.30" defer></script>
   <script src="./src/ui/modals/export-svg.js?v=1.5.30" defer></script>
+  <script src="./src/ui/modals/send-to-plotter.js?v=1.5.30" defer></script>
+  <script src="./src/ui/plotter-machine-tools.js?v=1.5.30" defer></script>
   <!-- Meridian Unit 1.10 (2026-05-20): `_ui-legacy.js` deleted; its IIFE
        (helper locals, satellite bootstrap block, `class UI` stub, legacy
        mixin Object.assign chain) merged into `src/ui/ui.js` alongside the
