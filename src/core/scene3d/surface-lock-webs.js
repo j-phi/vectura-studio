@@ -53,6 +53,8 @@
     MAZE_SURVEY: 25,         // chart survey grid
     MAZE_RANK_JITTER: 0.3,   // random share of a chamber rank (the rest is a low-discrepancy lattice)
     MAZE_ROOT_MAX: 6000,     // most root chambers
+    MAZE_RUN: 4,             // longest straight wall, in cells of the tone it is drawn at: a longer wall is drawn as runs of this many cells with a one-cell gap
+    MAZE_RING_OPEN: 0.2,     // chambers on the thin side of the chart (poles, torus inner equator): the share of the ring / lane walls that keep their one gap (the rest are closed rings)
   };
   const K = Object.assign({}, DEFAULTS);
 
@@ -61,10 +63,9 @@
   const FIT_PRIMITIVES = ['sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'torus'];
   const PRIM_MODE = { sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone', capsule: 'capsule', torus: 'torus' };
   const CONVEX_MODES = { sphere: true, cylinder: true, cone: true, capsule: true };
-  // v2 only AND drag preview only (contract A32): `supports` needs spec.dragPreview === true (set from bounds.dragPreview).
+  // v2 only (contract A32, amended: no longer drag-preview only): the bake is the drag frame AND the settled / export frame (Level S at rest).
   const FIT = Object.freeze([Object.freeze({
     v2Only: true,
-    dragPreviewOnly: true,
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(MAZE_LAWS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
@@ -149,7 +150,6 @@
     const style = spec.style || {};
     return FIT.some((row) => row.laws.indexOf(spec.toneLaw) !== -1
       && (!row.v2Only || spec.toneModel === 'v2')
-      && (!row.dragPreviewOnly || spec.dragPreview === true)
       && row.mappers.indexOf(spec.mapper) !== -1
       && row.primitives.indexOf(prim) !== -1
       && (spec.mode === undefined || spec.mode === PRIM_MODE[prim])
@@ -245,16 +245,16 @@
       return s;
     };
     let pieces = 0;
-    const emitPiece = (level, rank, x0, y0, x1, y1) => {
+    const emitPiece = (level, rank, x0, y0, x1, y1, bLo, bHi, dash) => {
       const rt = ratioAt((x0 + x1) / 2, (y0 + y1) / 2);
       if (!(opts && opts.noThin) && (x0 === x1 ? rt < K.MAZE_THIN : rt > 1 / K.MAZE_THIN)) return;
-      if (opts && opts.collect) opts.collect.push({ level, rank, x0, y0, x1, y1 });
+      if (opts && opts.collect) opts.collect.push({ level, rank, x0, y0, x1, y1, band: bLo !== undefined, dash: dash === true });
       const p = latticeSample(x0, y0); const q = latticeSample(x1, y1);
       if (!p || !q) return;
       const len = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
       if (!(len > 1e-4)) return;
       const n = Math.max(1, Math.ceil(len / stepObj));
-      builder.beginRun(level, rank, 0, 0);
+      if (bLo === undefined) builder.beginRun(level, rank, 0, 0); else builder.beginRun(level, rank, 0, 0, undefined, 0, 0, bLo, bHi);
       for (let u = 0; u <= n; u++) {
         const s = u === 0 ? p : (u === n ? q : sampleAt(x0 + (x1 - x0) * u / n, y0 + (y1 - y0) * u / n));
         if (!s) continue;
@@ -272,27 +272,78 @@
     // keyed (closedLevel, closedRank). Open: the nested chain of gap pieces (one per finer level), each keyed by the finer of the two chambers
     // it separates at the level above.
     const bitOf = (id, k) => SC.hash(id | 0, k * 131 + 7, salt + 4099) < 0.5 ? 0 : 1;
+    // Long straight walls. A wall of slot level l is 2^(m - l) cells long at the tone level m. Past MAZE_RUN cells it is drawn as runs of MAZE_RUN
+    // cells with a one-cell gap instead (a few extra doors: the maze is perfect up to that tone and braided past it). Ink is monotone in the key
+    // but a gap is not, so the broken copies are tone BANDS (runBand, A28): the whole wall up to level mB - 1 in the band t < 2^(mB - 1), then one
+    // dashed copy per finer level m in the band t in [2^(m - 1), 2^m).
+    const lutT = toneLUT(spec, null).lut; const lutN = lutT.length - 1;
+    const p0Screen = cmin * Math.pow(2, Lc);
+    const iCross = (T) => { // the I at which the tone threshold t = lut(I) x p0 falls to T (t falls as I rises)
+      for (let q = 0; q <= lutN; q++) if (lutT[q] * p0Screen < T) return clamp((q - 0.5) / lutN, 0, 1);
+      return 1;
+    };
+    const runCells = Math.max(1, Math.round(K.MAZE_RUN));
+    const firstBroken = Math.floor(Math.log2(runCells)) + 1; // levels below a slot at which the wall first exceeds runCells
+    const noBreak = !!(opts && opts.noBreak);
+    const bandCache = new Map();
+    const bandOf = (m) => { let v = bandCache.get(m); if (v === undefined) { v = iCross(Math.pow(2, m)); bandCache.set(m, v); } return v; };
     const wall = (o, fixed, start, lvSlot, closed, closedRank, id) => {
       const len = S(lvSlot);
       const at = (s0, w) => (o === 'h' ? [start + s0, fixed, start + s0 + w, fixed] : [fixed, start + s0, fixed, start + s0 + w]);
+      // a wall on the thin side of the chart (a ring at a pole, a lane on a torus's inner equator) is a ring: closed, with a few gaps
+      let ring = false;
+      { const c = at(len / 2, 0); const rt = ratioAt(c[0], c[1]); ring = o === 'h' ? rt < K.MAZE_THIN : rt > 1 / K.MAZE_THIN; }
+      if (ring && !closed && !(opts && opts.noThin) && SC.hash(id | 0, 17, salt + 733) >= K.MAZE_RING_OPEN) closed = true;
+      // a ring is keyed as ONE mark per line and level: it appears whole at one tone, not as scattered arcs
+      const ringRank = SC.hash(o === 'h' ? 1 : 2, fixed * 131 + lvSlot, salt + 89) * 0.999;
+      if (ring) closedRank = ringRank;
+      const mB = lvSlot + firstBroken;
+      const broken = !noBreak && !ring && mB <= Kf;
+      const uLo = broken ? bandOf(mB - 1) : undefined; // the whole wall draws where t < 2^(mB - 1), i.e. I >= iCross(2^(mB - 1))
       if (closed) {
         const c = at(0, len);
-        emitPiece(lvSlot, closedRank, c[0], c[1], c[2], c[3]);
-        return;
+        if (broken) emitPiece(lvSlot, closedRank, c[0], c[1], c[2], c[3], uLo, 1);
+        else emitPiece(lvSlot, closedRank, c[0], c[1], c[2], c[3]);
       }
       let pos = 0;
-      for (let k = lvSlot + 1; k <= Kf; k++) {
-        const bit = bitOf(id, k);
-        const sk = S(k); const sp = S(k - 1);
-        const sib = 2 * pos + (1 - bit);
-        // chambers of level k - 1 on the two sides of the slot of level k - 1
-        const s0 = start + pos * sp;
-        let rA; let rB;
-        if (o === 'h') { const ci = Math.floor(s0 / sp); const cj = fixed / sp; rA = rankOf(k - 1, ci, cj - 1); rB = rankOf(k - 1, ci, cj); }
-        else { const cj = Math.floor(s0 / sp); const ci = fixed / sp; rA = rankOf(k - 1, ci - 1, cj); rB = rankOf(k - 1, ci, cj); }
-        const piece = o === 'h' ? [start + sib * sk, fixed, start + (sib + 1) * sk, fixed] : [fixed, start + sib * sk, fixed, start + (sib + 1) * sk];
-        emitPiece(k, Math.min(rA, rB), piece[0], piece[1], piece[2], piece[3]);
-        pos = 2 * pos + bit;
+      const gapPos = [lvSlot === Kf ? 0 : -1]; // gapPos[m - lvSlot]: the real gap cell of an open wall at level m
+      if (!closed) {
+        for (let k = lvSlot + 1; k <= Kf; k++) {
+          const bit = bitOf(id, k);
+          const sk = S(k); const sp = S(k - 1);
+          const sib = 2 * pos + (1 - bit);
+          // chambers of level k - 1 on the two sides of the slot of level k - 1
+          const s0 = start + pos * sp;
+          let rA; let rB;
+          if (o === 'h') { const ci = Math.floor(s0 / sp); const cj = fixed / sp; rA = rankOf(k - 1, ci, cj - 1); rB = rankOf(k - 1, ci, cj); }
+          else { const cj = Math.floor(s0 / sp); const ci = fixed / sp; rA = rankOf(k - 1, ci - 1, cj); rB = rankOf(k - 1, ci, cj); }
+          const piece = o === 'h' ? [start + sib * sk, fixed, start + (sib + 1) * sk, fixed] : [fixed, start + sib * sk, fixed, start + (sib + 1) * sk];
+          pos = 2 * pos + bit; gapPos[k - lvSlot] = pos;
+          if (broken && k >= mB) continue;
+          if (broken) emitPiece(k, ring ? ringRank : Math.min(rA, rB), piece[0], piece[1], piece[2], piece[3], uLo, 1);
+          else emitPiece(k, ring ? ringRank : Math.min(rA, rB), piece[0], piece[1], piece[2], piece[3]);
+        }
+      }
+      if (!broken) return;
+      // the dashed copies: runs of runCells cells (of the level m) with a one-cell gap, and the wall's real gap
+      const period = runCells + 1;
+      for (let m = mB; m <= Kf; m++) {
+        const n = Math.pow(2, m - lvSlot); const sm = S(m);
+        const off = Math.floor(SC.hash(id | 0, m * 31 + 3, salt + 5003) * period);
+        const real = closed ? -1 : gapPos[m - lvSlot];
+        const lo = m === Kf ? 0 : bandOf(m); const hi = bandOf(m - 1);
+        if (!(hi > lo)) continue;
+        let c = 0;
+        while (c < n) {
+          const isGap = (q) => q === real || (q + off) % period === 0;
+          while (c < n && isGap(c)) c += 1;
+          const c0 = c;
+          while (c < n && !isGap(c)) c += 1;
+          if (c > c0) {
+            const w = at(c0 * sm, (c - c0) * sm);
+            emitPiece(Math.max(0, m - 1), 0, w[0], w[1], w[2], w[3], lo, hi, true);
+          }
+        }
       }
     };
 
@@ -353,8 +404,8 @@
   };
 
   const bake = (spec) => bakeCore(spec, null);
-  // Test hook: the lattice pieces { level, rank, x0, y0, x1, y1 } of a bake (finest-cell units) and its geometry; `noThin` keeps every wall.
-  const debugLattice = (spec, opts) => { const pieces = []; const info = {}; bakeCore(spec, { collect: pieces, info, noThin: !opts || opts.noThin !== false }); return { pieces, info }; };
+  // Test hook: the lattice pieces { level, rank, x0, y0, x1, y1 } of a bake (finest-cell units) and its geometry; `noThin` keeps every wall and closes no ring, `noBreak` keeps every wall whole (the perfect-maze skeleton); both default on.
+  const debugLattice = (spec, opts) => { const pieces = []; const info = {}; bakeCore(spec, { collect: pieces, info, noThin: !opts || opts.noThin !== false, noBreak: !opts || opts.noBreak !== false }); return { pieces, info }; };
 
   Scene3D.SurfaceLockWebs = { id: 'webs', FIT, supports, bake, toneLUT, debug: { lattice: debugLattice } };
 })();

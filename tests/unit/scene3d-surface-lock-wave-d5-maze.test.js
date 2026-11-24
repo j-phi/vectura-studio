@@ -3,10 +3,9 @@ const LR = require('../helpers/light-realism');
 const crypto = require('crypto');
 const shaOf = (paths) => crypto.createHash('sha1').update(signature(paths, 9).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, 'ID')).digest('hex');
 
-// D5-maze (contract A32): mazeFill is baked onto the surface for v2 scenes as a DRAG-PREVIEW ONLY law (SurfaceLockWebs, FIT row `v2Only` +
-// `dragPreviewOnly`). While a 3D drag / orbit is in progress the frame is the bake: a recursive-division maze in the object's chart whose
-// walls are keyed so every tone threshold draws a perfect maze (cell size follows the light, no rebake). Settled and export output is the
-// pose compose, byte for byte.
+// D5-maze (contract A32, amended): mazeFill is baked onto the surface for v2 scenes (SurfaceLockWebs, FIT row `v2Only`): a recursive-division
+// maze in the object's chart whose walls are keyed so every tone threshold draws a perfect maze (cell size follows the light, no rebake).
+// The bake is the drag frame AND the settled / export frame (Level S at rest): no swap on release. Legacy tone and non-maze fills are untouched.
 
 const PEN = 0.3;
 const LAW = 'mazeFill';
@@ -17,7 +16,7 @@ const specOf = (o = {}) => ({
   seed: { salt: 0, phase: 0, off: 0 }, toneModel: 'v2', dragPreview: true, ...o,
 });
 
-describe('surface lock D5 (mazeFill): v2 drag-preview-only keyed-subset recursive-division maze', () => {
+describe('surface lock D5 (mazeFill): v2 keyed-subset recursive-division maze', () => {
   let rt; let V; let SL; let W; let MS;
   let surfProf; let poseProf;
   beforeAll(async () => {
@@ -31,25 +30,32 @@ describe('surface lock D5 (mazeFill): v2 drag-preview-only keyed-subset recursiv
   }, 240000);
   afterAll(() => rt && rt.cleanup());
 
-  it('RED: settled / export output equals the pose compose byte for byte (sha); the baked frame exists only while dragging', () => {
+  it('RED: settled / export output is the surface-locked drawing (Level S at rest): the drag frame at the same pose, not the pose compose', () => {
     const a = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
     const b = LR.buildCase(V, { law: LAW, markSpace: 'pose' });
     SL.clearCache(); SL.resetStats();
-    const settled = a.composeFull();
-    expect(SL.stats.bakes, 'no surface bake when settled').toBe(0);
-    expect(shaOf(settled)).toBe(shaOf(b.composeFull()));
     a.setPose({ camYaw: 50, camPitch: 25 }); b.setPose({ camYaw: 50, camPitch: 25 });
     const drag = a.composePreview();
-    expect(SL.stats.bakes, 'the drag frame is baked (Level S)').toBeGreaterThan(0);
-    expect(shaOf(drag)).not.toBe(shaOf(b.composeFull()));
-    expect(shaOf(a.composeFull()), 'release swaps back to pose').toBe(shaOf(b.composeFull()));
+    const bakesAfterDrag = SL.stats.bakes;
+    expect(bakesAfterDrag, 'the drag frame is baked (Level S)').toBeGreaterThan(0);
+    const settled = a.composeFull();
+    expect(SL.stats.bakeMisses, 'release bakes nothing new: the same cached MarkSet').toBe(1);
+    expect(shaOf(settled), 'settled == drag at the same pose: no swap on release').toBe(shaOf(drag));
+    expect(shaOf(settled), 'settled is no longer the flat pose maze').not.toBe(shaOf(b.composeFull()));
+    // a fresh settled compose with no drag first is a Level S bake too
+    const c = LR.buildCase(V, { law: LAW, markSpace: 'surface' });
+    SL.clearCache(); SL.resetStats();
+    c.setPose({ camYaw: 50, camPitch: 25 });
+    expect(shaOf(c.composeFull())).toBe(shaOf(drag));
+    expect(SL.stats.bakes, 'a settled compose bakes the surface maze').toBeGreaterThan(0);
   });
 
-  it('RED: effectiveMarkSpace is surface only for a v2 hatch / crosshatch drag spec; settled, legacy, contour and tripleHatch stay pose', () => {
+  it('RED: effectiveMarkSpace is surface for a v2 hatch / crosshatch spec drag or settled; legacy, contour and tripleHatch stay pose', () => {
     const ctx = (sp) => ({ spec: sp, mapper: sp.mapper, visibility: 'hidden', emissiveCoreBlank: false, csgCarve: false, receiveShadow: false, areaLight: false });
     const spec = specOf(); const settled = specOf({ dragPreview: undefined });
-    expect(SL.effectiveMarkSpace(settled.style, ctx(settled))).toBe('pose');
-    expect(W.supports(settled)).toBe(false);
+    expect(SL.effectiveMarkSpace(settled.style, ctx(settled))).toBe('surface');
+    expect(W.supports(settled)).toBe(true);
+    expect(W.FIT.some((r) => r.dragPreviewOnly)).toBe(false);
     expect(SL.effectiveMarkSpace(spec.style, ctx(spec))).toBe('surface');
     expect(W.supports(specOf({ mapper: 'crosshatch' }))).toBe(true);
     const legacy = specOf(); delete legacy.toneModel;
@@ -153,6 +159,87 @@ describe('surface lock D5 (mazeFill): v2 drag-preview-only keyed-subset recursiv
       expect(comps, `level ${m}: connected`).toBe(1);
       expect(open, `level ${m}: edges = cells - 1`).toBe(cols * rows - 1);
     }
+  });
+
+  it('long walls: no straight run of ink exceeds a few cells at any tone band (broken copies in tone bands), and a ring is closed on the thin side', () => {
+    const spec = specOf();
+    const ms = W.bake(specOf());
+    expect(MS.validate(ms)).toEqual([]);
+    expect(ms.runBand, 'long walls are tone-banded').toBeTruthy();
+    const { pieces, info } = W.debug.lattice(spec, { noBreak: false });
+    const { Kf } = info;
+    const dashes = pieces.filter((p) => p.dash);
+    expect(dashes.length).toBeGreaterThan(50);
+    // a band copy of level m: group by line, merge touching intervals; the longest merged run in level-m cells
+    const runLimit = V.SCENE3D_SURFACE_LOCK.LAWS.MAZE_RUN || 4;
+    const byLevel = new Map();
+    dashes.forEach((p) => { const m = p.level + 1; if (!byLevel.has(m)) byLevel.set(m, []); byLevel.get(m).push(p); });
+    expect(byLevel.size).toBeGreaterThan(0);
+    byLevel.forEach((list, m) => {
+      const cell = Math.pow(2, Kf - m);
+      const lines = new Map();
+      list.forEach((p) => {
+        const v = p.x0 === p.x1; const k = (v ? 'v:' : 'h:') + (v ? p.x0 : p.y0);
+        if (!lines.has(k)) lines.set(k, []);
+        lines.get(k).push(v ? [Math.min(p.y0, p.y1), Math.max(p.y0, p.y1)] : [Math.min(p.x0, p.x1), Math.max(p.x0, p.x1)]);
+      });
+      let longest = 0;
+      lines.forEach((iv) => {
+        iv.sort((a, b2) => a[0] - b2[0]);
+        let lo = iv[0][0]; let hi = iv[0][1];
+        for (let q = 1; q < iv.length; q++) { if (iv[q][0] <= hi) hi = Math.max(hi, iv[q][1]); else { longest = Math.max(longest, hi - lo); lo = iv[q][0]; hi = iv[q][1]; } }
+        longest = Math.max(longest, hi - lo);
+      });
+      expect(longest / cell, `level ${m}: longest merged dashed run in cells`).toBeLessThanOrEqual(2 * runLimit);
+    });
+    // the skeleton (no break) draws longer runs: the break is what shortens them
+    const skel = W.debug.lattice(spec).pieces;
+    expect(skel.some((p) => p.band || p.dash)).toBe(false);
+  });
+
+  it('bands tile the tone range: at every I the broken copies of one level are the only ones drawn (no overlap, no hole)', () => {
+    const ms = W.bake(specOf());
+    const n = ms.runCount; let banded = 0;
+    const lo = new Float32Array(n); const hi = new Float32Array(n);
+    for (let r = 0; r < n; r++) { lo[r] = ms.runBand[2 * r] / 255; hi[r] = ms.runBand[2 * r + 1] / 255; if (ms.runBand[2 * r] > 0 || ms.runBand[2 * r + 1] < 255) banded += 1; }
+    expect(banded).toBeGreaterThan(100);
+    const lut = W.toneLUT(specOf(), { tone: { enabled: true } }).lut;
+    // a probe vertical (I) where ink exists must always be covered by at least one run of every banded wall: a spot check on the lightest drawn and darkest I
+    const covered = (I) => { let c = 0; for (let r = 0; r < n; r++) if (I >= lo[r] - 1e-6 && I <= hi[r] + 1e-6) c += 1; return c; };
+    [0, 0.2, 0.5, 0.8, 1].forEach((I) => expect(covered(I), `I ${I}`).toBeGreaterThan(0));
+    expect(lut[0]).toBeGreaterThan(lut[Math.floor(lut.length / 2)]);
+  });
+
+  it('sphere pole: the rings are closed (long closed runs, a few gaps), not dashes', () => {
+    const ms = W.bake(specOf());
+    expect(MS.validate(ms)).toEqual([]);
+    // the sphere chart is (a, b) = (latitude, longitude): the poles are the a edges and a ring is a constant-a (vertical) wall
+    const share = (opt) => {
+      const { pieces, info } = W.debug.lattice(specOf(), opt);
+      const { UA, UB } = info;
+      const lines = new Map();
+      pieces.filter((p) => p.x0 === p.x1 && !p.dash && (p.x0 < UA * 0.06 || p.x0 > UA * 0.94)).forEach((p) => {
+        if (!lines.has(p.x0)) lines.set(p.x0, []);
+        lines.get(p.x0).push([Math.min(p.y0, p.y1), Math.max(p.y0, p.y1)]);
+      });
+      let covered = 0; let total = 0;
+      lines.forEach((iv) => {
+        iv.sort((x, y) => x[0] - y[0]);
+        let lo = iv[0][0]; let hi = iv[0][1]; let c = 0;
+        for (let q = 1; q < iv.length; q++) { if (iv[q][0] <= hi) hi = Math.max(hi, iv[q][1]); else { c += hi - lo; lo = iv[q][0]; hi = iv[q][1]; } }
+        c += hi - lo; covered += c; total += UB;
+      });
+      return { lines: lines.size, cover: covered / total };
+    };
+    const closed = share({ noThin: false, noBreak: false });
+    const open = share({ noThin: true, noBreak: false });
+    expect(closed.lines).toBeGreaterThan(3);
+    expect(closed.cover, JSON.stringify({ closed, open })).toBeGreaterThan(0.85);
+    expect(closed.cover, JSON.stringify({ closed, open })).toBeGreaterThan(open.cover + 0.1);
+    // and no ring is dashed (the break rule leaves the thin side alone)
+    const { pieces } = W.debug.lattice(specOf(), { noThin: false, noBreak: false });
+    const { UA } = W.debug.lattice(specOf()).info;
+    expect(pieces.filter((p) => p.dash && p.x0 === p.x1 && (p.x0 < UA * 0.05 || p.x0 > UA * 0.95)).length).toBe(0);
   });
 
   it('perf: the bake stays within the vertex budget and 400 ms (node vm is 3-8x slower than Chromium: the budget is checked at 4x)', () => {

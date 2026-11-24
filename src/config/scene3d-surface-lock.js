@@ -227,6 +227,8 @@
       MAZE_SURVEY: 25,  // D5-maze: chart survey grid
       MAZE_RANK_JITTER: 0.3,  // D5-maze: random share of a chamber's rank
       MAZE_ROOT_MAX: 6000,  // D5-maze: most root chambers
+      MAZE_RUN: 4,  // D5-maze: longest straight wall in cells of the tone it is drawn at; longer walls are drawn as runs of this many cells with a one-cell gap (tone bands)
+      MAZE_RING_OPEN: 0.2,  // D5-maze: share of the ring / lane walls on the thin side of the chart (poles, torus inner equator) that keep their gap; the rest are closed rings
       AMP_STEPS: 10,  // WD-D1 ampSpacing: polyline samples per wavelength
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
