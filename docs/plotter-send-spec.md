@@ -307,3 +307,14 @@ G-code file export (cheap follow-up: `toGcode` → download; may add if trivial)
    travel back → continue. Reload position must pass bounds. Off by default.
 7. **Path order options** per pen: `optimized` (default), `document`, `reverse`, `random` (seeded) —
    random helps even ink coverage; seeded by `Vectura.RNG` style seed in settings.
+
+## 11. Addendum — DrawCore hardware facts (GitHub research: Leggin/stiftwerk, plotterbench, Nib, uunatek_3_software)
+
+- Firmware is **"Grbl 1.1h DrawCore"** (banner `Grbl 1.1h DrawCore V2.12 ['$' for help]`, `$I` → `[VER:1.1h DrawCore V2.12.…:]` `[OPT:VZHDL,15,128]`). RX buffer 128 → use 127.
+- **Opening the port resets the board (DTR)**: banner ≈1.2 s later, anything sent earlier is lost, position → 0 and G92 cleared. Connect waits for the banner; `originSet=false` after every connect/reset; a mid-session banner = reset → abort + "re-set origin" message.
+- USB: WCH vendor 0x1A86, PIDs 0x7523 and 0x8040 seen → vendor-only filter.
+- Some units have homing switches (`$22=1`); homing stays opt-in and firmware-gated.
+- Pen Z conventions differ across sources (0/3.5 UUNA app, 0.5/5 Nib/stiftwerk, 0/10 another tool). Default stays conservative (up 0, down 3.5) — the **Pen height wizard is mandatory on first use** of a profile (UI nudges until done; stored per profile).
+- Axis direction / origin corner unverified across sources → **Axis check wizard is mandatory on first use** too.
+- Vendor tools end with `$SLP` (motors off); we do not (blocked); motors stay energized, which also keeps registration between pens.
+- Max rates on an iDraw A4 dump are 15000; our cap 11000 stays (Nib's measured-safe value).

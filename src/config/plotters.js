@@ -47,7 +47,8 @@
       dataBits: 8,
       stopBits: 1,
       parity: 'none',
-      filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],
+      // WCH CH340 family; DrawCore boards seen with PID 0x7523 and 0x8040.
+      filters: [{ usbVendorId: 0x1a86 }],
       rxBuffer: 127,
       lineEnding: '\n',
     },
@@ -68,7 +69,8 @@
     motion: { drawFeed: 3000, travelFeed: 6000, jogFeed: 2500 },
     limits: { maxFeedXY: 11000, maxFeedZ: 5000, maxJogFeed: 6000 },
     gcode: { preamble: ['G21', 'G90'], postamble: [], decimals: 3, compact: false },
-    capabilities: { homing: false, statusBufferReport: 'optional' },
+    // homing is decided at runtime from firmware $22 (some DrawCore units report $22=1).
+    capabilities: { homing: false, statusBufferReport: 'optional', resetsOnOpen: true },
   };
 
   const SETTINGS_DEFAULTS = {
