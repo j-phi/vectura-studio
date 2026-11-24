@@ -1,6 +1,6 @@
 /**
  * Scene3D.SurfaceLockWebs — the surface-locked baker for WEB laws (docs/surface-lock-contract.md §9, A32): fills whose marks are the
- * walls of a connected network rather than parallel rulings. Two laws: mazeFill (A32) and voronoiWeb (A33, bottom of this file).
+ * walls of a connected network rather than parallel rulings. Three laws: mazeFill (A32), voronoiWeb (A33) and turingStripe (A35, bottom of this file).
  *
  *   FIT, supports(spec) -> boolean, bake(spec) -> MarkSet, toneLUT(spec, toneCtx) -> { lut, scaleFn: null }
  *
@@ -78,6 +78,21 @@
     VORONOI_THIN_RANK: 0.5,     // chain ranks run over [0, this): the facing / paper thinning only starts where the tone demand falls under it (webs tear into fragments if thinned from 1)
     VORONOI_COARSE_DROP: 2,     // a drag-LOD (coarse) bake leaves out this many of the finest levels (they are ~70% of the bake time)
     VORONOI_INK_X: 1.45,         // wall length calibration: cell sizes x this
+    TURING_PAPER_BAND: 0.15, // pose turingStripe: the lightest share of the tone range that rolls off to paper (surface-fill-mono V2_PAPER_BAND)
+    TURING_PAPER_DENS: 0.03, // pose turingStripe: relative density at and below which nothing is drawn (V2_PAPER_DENS)
+    TURING_DMIN: 0.9,        // pose turingStripe TURING_V2_DMIN: the wavelength follows the tone only down to this share of the dark end; lighter tones keep that pattern and the paper gate thins it
+    TURING_PITCH_X: 2,       // pose turingStripe: the v2 sparse end runs to this x the legacy lit pitch (V2_PITCH_X)
+    TURING_SPACING_X: 1.2,     // calibration: the baked line spacing is the pose clearance x this
+    TURING_WAVES: 9,         // plane waves summed into the stripe field
+    TURING_K: 3.46,          // wave number x spacing: the zero set of a random plane-wave field has a line spacing of 2 sqrt(3) / k
+    TURING_GRID: 2.2,        // chart grid nodes per line spacing
+    TURING_PIECE: 4,         // a stripe is gated in pieces of this many spacings (the pose gate thins it in 1.2 mm cells)
+    TURING_STEP: 0.6,        // polyline vertex spacing, x the line spacing
+    TURING_NORMAL_EVERY: 3,  // a vertex normal is sampled from the chart every this many vertices (the positions in between are exact, the normals blend)
+    TURING_OFF_DENS: 0.5,    // tone OFF: the uniform pattern of this relative density
+    TURING_FLOOR_PEN: 0.7,   // meta.floorPitchPen (see MAZE_FLOOR_PEN)
+    TURING_MAX_VERTS: 150000, // the vertex step grows until the estimate fits
+    TURING_MAX_NODES: 1500000, // most grid nodes per bake (the grid is coarsened to fit)
     MAZE_RUN: 4,             // longest straight wall, in cells of the tone it is drawn at: a longer wall is drawn as runs of this many cells with a one-cell gap
     MAZE_RING_OPEN: 0.2,     // chambers on the thin side of the chart (poles, torus inner equator): the share of the ring / lane walls that keep their one gap (the rest are closed rings)
   };
@@ -85,9 +100,10 @@
 
   const MAZE_LAWS = ['mazeFill'];
   const VORONOI_LAWS = ['voronoiWeb'];
+  const TURING_LAWS = ['turingStripe'];
   const FIT_MAPPERS = ['hatch', 'crosshatch'];
   const FIT_PRIMITIVES = ['sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'torus'];
-  const PRIM_MODE = { sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone', capsule: 'capsule', torus: 'torus' };
+  const PRIM_MODE = { box: 'faceted', sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone', capsule: 'capsule', torus: 'torus' };
   const CONVEX_MODES = { sphere: true, cylinder: true, cone: true, capsule: true };
   // v2 only (contract A32, amended: no longer drag-preview only): the bake is the drag frame AND the settled / export frame (Level S at rest).
   const FIT = Object.freeze([Object.freeze({
@@ -101,6 +117,12 @@
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(VORONOI_LAWS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(TURING_LAWS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.concat(['box'])),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   })]);
 
@@ -198,6 +220,7 @@
   const bakeCore = (spec, opts) => {
     sync();
     if (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1) return bakeVoronoi(spec, opts);
+    if (spec && TURING_LAWS.indexOf(spec.toneLaw) !== -1) return bakeTuring(spec, opts);
     if (!supports(spec)) throw new Error(`SurfaceLockWebs.bake: unsupported spec (law ${spec && spec.toneLaw})`);
     const SM = MS(); const SC = CH();
     const prim = primitiveOf(spec);
@@ -942,12 +965,317 @@
     return ms;
   };
 
-  const toneLUT = (spec, toneCtx) => (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1 ? (sync(), voronoiLUT(spec, toneCtx)) : mazeLUT(spec, toneCtx));
+
+  // ===================================================================================================================================
+  // turingStripe (contract A35): a v2 Level S law, the bake is the drag AND the settled / export frame. The pose law relaxes a reaction-diffusion
+  // field on a SCREEN raster and draws its zero set: a labyrinth of stripes whose pitch is the tone's clearance (v2: the wavelength follows the
+  // tone only down to TURING_DMIN of the dark end, lighter tones keep that pattern and the paper gate thins it by cells). A screen pattern cannot
+  // follow the surface, so the bake gives the SURFACE its own stripe texture:
+  //   - the field is f(p) = sum of TURING_WAVES plane waves cos(k n_i . p + phi_i) of the object's scaled LOCAL 3D position (random unit n_i and
+  //     phi_i from the scene seed): a Turing-like labyrinth of uniform physical line spacing on any surface, with forks and dislocations, no
+  //     chart distortion at poles and no seam, and the same field on every box face;
+  //   - the zero set is traced by marching squares on a chart grid (curved primitives: the object's own chart, grid spacing = spacing /
+  //     TURING_GRID; box: one planar grid per face), chained into stripes, cut into pieces of TURING_PIECE spacings;
+  //   - a piece is keyed by a hash rank in [0, 1); the LUT is the paper gate g(I) = min(1, d(I) / TURING_DMIN) (0 at and below the pose paper
+  //     density), so the lit side thins out piece by piece exactly as the pose gate thins cells, with no rebake. Line spacing is the pose
+  //     clearance max(FLOOR, pitchOfDens(max(d, DMIN))) x Stripe scale (it varies only ~10 % across the whole tone range, so one level).
+  // Not baked (a screen / light quantity): Stripe align (the pose combs the stripes across the shading) and Maturity (the relaxation steps).
+  // The bake is POSE-FREE (contract §3, §8).
+  // ===================================================================================================================================
+  const turingModel = (spec) => {
+    const T = toneParams(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const areaMax = clamp((T.INK / (T.FLOOR * 1.05)) * T.DS, 0.02, K.A_DARK);
+    const pmaxV = T.PMAX * K.TURING_PITCH_X;
+    const pitchOfDens = (d) => clamp(T.INK / Mth.max(1e-6, clamp(areaMax * d, 0, K.A_DARK)), T.INK / K.A_DARK, pmaxV);
+    const FC = Vectura.SCENE_FILL_CONTROLS;
+    const ss = FC && typeof FC.read === 'function' ? FC.read(spec.style || {}, 'stripeScale') : undefined;
+    const stripeScale = isFin(ss) && ss > 0 ? ss : 1;
+    const clearance = (d) => Mth.max(T.FLOOR, pitchOfDens(Mth.max(d, K.TURING_DMIN)));
+    const S = clearance(1) * stripeScale * K.TURING_SPACING_X; // screen mm at the bake scale
+    return { T, scaleRef, S, stripeScale, dens: targetOf(T, K.TURING_PAPER_BAND), gate: (d) => (d <= K.TURING_PAPER_DENS ? 0 : Mth.min(1, d / K.TURING_DMIN)) };
+  };
+  const turingLUT = (spec, toneCtx) => {
+    const m = turingModel(spec);
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const lut = new Float32Array(size + 1);
+    const off = toneIsOff(toneCtx);
+    const gOff = m.gate(K.TURING_OFF_DENS);
+    for (let k = 0; k <= size; k++) lut[k] = 1.001 * (off ? gOff : m.gate(m.dens(k / size))) / m.S;
+    return { lut, scaleFn: null };
+  };
+
+  // Marching squares of f (NNu x NNv nodes, node (i, j) at chart (i / Nu, j / Nv)) on f = 0, chained through shared edges.
+  // Returns [{ uv: Float64Array [u0, v0, u1, v1, ...], closed }] (open chains first).
+  const traceZero = (Nu, Nv, f, ok) => {
+    const NNu = Nu + 1; const NNv = Nv + 1;
+    const nE = NNu * NNv;
+    const adj = new Int32Array(4 * nE).fill(-1); // edge id (H: j * NNu + i, V: nE + j * NNu + i) -> up to two partner edges
+    const link = (a, b) => {
+      if (adj[2 * a] < 0) adj[2 * a] = b; else adj[2 * a + 1] = b;
+      if (adj[2 * b] < 0) adj[2 * b] = a; else adj[2 * b + 1] = a;
+    };
+    for (let j = 0; j < Nv; j++) {
+      for (let i = 0; i < Nu; i++) {
+        const k0 = j * NNu + i; const k1 = k0 + 1; const k2 = k1 + NNu; const k3 = k0 + NNu;
+        if (!(ok[k0] && ok[k1] && ok[k2] && ok[k3])) continue;
+        const a = f[k0]; const b = f[k1]; const c = f[k2]; const d = f[k3];
+        const cidx = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
+        if (cidx === 0 || cidx === 15) continue;
+        const eT = k0; const eB = k3; const eL = nE + k0; const eR = nE + k1;
+        switch (cidx) {
+          case 1: case 14: link(eL, eT); break;
+          case 2: case 13: link(eT, eR); break;
+          case 3: case 12: link(eL, eR); break;
+          case 4: case 11: link(eR, eB); break;
+          case 6: case 9: link(eT, eB); break;
+          case 7: case 8: link(eL, eB); break;
+          case 5: if ((a + b + c + d) > 0) { link(eT, eR); link(eL, eB); } else { link(eL, eT); link(eR, eB); } break;
+          default: if ((a + b + c + d) > 0) { link(eL, eT); link(eR, eB); } else { link(eT, eR); link(eL, eB); } break; // 10
+        }
+      }
+    }
+    const seen = new Uint8Array(2 * nE);
+    const uvOf = (e, out) => {
+      let i; let j; let t;
+      if (e < nE) { j = (e / NNu) | 0; i = e - j * NNu; const f0 = f[e]; const f1 = f[e + 1]; t = f0 / (f0 - f1); out[0] = (i + t) / Nu; out[1] = j / Nv; }
+      else { const q = e - nE; j = (q / NNu) | 0; i = q - j * NNu; const f0 = f[q]; const f1 = f[q + NNu]; t = f0 / (f0 - f1); out[0] = i / Nu; out[1] = (j + t) / Nv; }
+    };
+    const chains = [];
+    const tmp = [0, 0];
+    const walk = (start, closedHint) => {
+      const ids = [start]; seen[start] = 1;
+      let prev = -1; let cur = start;
+      for (;;) {
+        const a0 = adj[2 * cur]; const a1 = adj[2 * cur + 1];
+        let nx = -1;
+        if (a0 >= 0 && a0 !== prev && !seen[a0]) nx = a0; else if (a1 >= 0 && a1 !== prev && !seen[a1]) nx = a1;
+        if (nx < 0) break;
+        seen[nx] = 1; ids.push(nx); prev = cur; cur = nx;
+      }
+      let closed = false;
+      if (closedHint) { const a0 = adj[2 * cur]; const a1 = adj[2 * cur + 1]; if (ids.length > 2 && (a0 === start || a1 === start)) closed = true; }
+      const uv = new Float64Array(2 * (ids.length + (closed ? 1 : 0)));
+      for (let q = 0; q < ids.length; q++) { uvOf(ids[q], tmp); uv[2 * q] = tmp[0]; uv[2 * q + 1] = tmp[1]; }
+      if (closed) { uv[2 * ids.length] = uv[0]; uv[2 * ids.length + 1] = uv[1]; }
+      chains.push({ uv, closed });
+    };
+    for (let e = 0; e < 2 * nE; e++) { // open chains: start at the degree-one edges
+      if (seen[e]) continue;
+      const deg = (adj[2 * e] >= 0 ? 1 : 0) + (adj[2 * e + 1] >= 0 ? 1 : 0);
+      if (deg === 1) walk(e, false);
+    }
+    for (let e = 0; e < 2 * nE; e++) { if (!seen[e] && adj[2 * e] >= 0) walk(e, true); }
+    return chains;
+  };
+
+  const bakeTuring = (spec, opts) => {
+    sync();
+    if (!supports(spec)) throw new Error(`SurfaceLockWebs.bake: unsupported spec (law ${spec && spec.toneLaw})`);
+    const SM = MS(); const SC = CH();
+    const prim = primitiveOf(spec);
+    const mode = spec.mode || PRIM_MODE[prim];
+    const sc = scaleOf(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const seed = (spec.seed && typeof spec.seed === 'object') ? spec.seed : {};
+    const salt = finite(seed.salt, 0) | 0;
+    const builder = SM.createBuilder({ bakerId: 'webs', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const emptyMeta = { p0: 1, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'turingStripe', bounds: { min: [0, 0, 0], max: [0, 0, 0], radius: 0 }, convex: false };
+    const model = turingModel(spec);
+    const So = model.S / scaleRef; // line spacing, scaled local mm
+    const stats = { areaMM2: 0, lenMM: 0, chains: 0, pieces: 0 };
+    const bmin = [Infinity, Infinity, Infinity]; const bmax = [-Infinity, -Infinity, -Infinity]; let rmax2 = 0;
+    let vertsOut = 0;
+
+    // ---- the field: plane waves of the local 3D position -----------------------------------------------------------------------------
+    const t00 = Date.now();
+    const rng = mulberry(salt * 7919 + 271828);
+    const NW = Mth.max(3, K.TURING_WAVES | 0);
+    const kk = K.TURING_K / So;
+    const wx = new Float64Array(NW); const wy = new Float64Array(NW); const wz = new Float64Array(NW); const wp = new Float64Array(NW);
+    for (let w = 0; w < NW; w++) {
+      const z = 2 * rng() - 1; const a = 2 * Mth.PI * rng(); const rr = Mth.sqrt(Mth.max(0, 1 - z * z));
+      wx[w] = kk * rr * Mth.cos(a); wy[w] = kk * rr * Mth.sin(a); wz[w] = kk * z; wp[w] = 2 * Mth.PI * rng();
+    }
+    const field = (x, y, z) => { let v = 0; for (let w = 0; w < NW; w++) v += Mth.cos(wx[w] * x + wy[w] * y + wz[w] * z + wp[w]); return v; };
+
+    // ---- stripes -> pieces -> runs ---------------------------------------------------------------------------------------------------
+    let stepO = Mth.max(1e-4, K.TURING_STEP * So);
+    let pieceLen = Mth.max(stepO * 2, K.TURING_PIECE * So);
+    // vertex budget: the stripe length is about area / spacing, so verts ~ area / (spacing x step); the step grows until that fits
+    const fitStep = (area) => { stepO = Mth.max(stepO, area / (So * K.TURING_MAX_VERTS)); pieceLen = Mth.max(stepO * 2, K.TURING_PIECE * So); };
+    const emitChains = (chains, cheapAt, fullAt, tag) => {
+      chains.forEach((ch, ci) => {
+        const n = ch.uv.length / 2;
+        if (n < 2) return;
+        const P = new Array(n); const cum = new Float64Array(n);
+        for (let q = 0; q < n; q++) {
+          const v = cheapAt(ch.uv[2 * q], ch.uv[2 * q + 1]); // position only: the full vertex (normal) is built for the kept points
+          P[q] = v;
+          if (q > 0) cum[q] = cum[q - 1] + (v && P[q - 1] ? Mth.hypot(v.x - P[q - 1].x, v.y - P[q - 1].y, v.z - P[q - 1].z) : 0);
+        }
+        const total = cum[n - 1];
+        if (!(total > stepO)) return;
+        stats.chains += 1; stats.lenMM += total;
+        const np = Mth.max(1, Mth.round(total / pieceLen));
+        const single = np === 1 && ch.closed;
+        for (let pc = 0; pc < np; pc++) {
+          const s0 = total * pc / np; const s1 = total * (pc + 1) / np;
+          const idx = [];
+          let last = -Infinity;
+          for (let q = 0; q < n; q++) {
+            if (cum[q] < s0 - 1e-9 || cum[q] > s1 + 1e-9 || !P[q]) continue;
+            if (!idx.length || cum[q] - last >= stepO || (cum[q] >= s1 - 1e-9)) { idx.push(q); last = cum[q]; }
+          }
+          if (idx.length < 2) continue;
+          const rank = Mth.min(0.99998, SC.hash(ci * 977 + tag, pc, salt + 4421));
+          builder.beginRun(0, rank, 0, single ? SM.FLAG.CLOSED : 0);
+          let n0 = 0; const nextN = {};
+          const m = single ? idx.length - 1 : idx.length;
+          const ne = Mth.max(1, K.TURING_NORMAL_EVERY | 0);
+          let pa = null; let pi = -1; // last sampled normal and its vertex index
+          const nrm = (a) => { const q = idx[a]; const sm = fullAt(ch.uv[2 * q], ch.uv[2 * q + 1]); return sm && isFin(sm.nx + sm.ny + sm.nz) ? sm : null; };
+          for (let a = 0; a < m; a++) {
+            const c = P[idx[a]];
+            let nx; let ny; let nz;
+            if (!fullAt) { nx = c.nx; ny = c.ny; nz = c.nz; }
+            else {
+              if (a % ne === 0 || pa === null) { const sm = nextN[a] || nrm(a); if (sm) { pa = { nx: sm.nx, ny: sm.ny, nz: sm.nz }; pi = a; } }
+              let na = pa; let ia = pi;
+              // blend toward the next sampled normal when the block is complete
+              const nb = ((a % ne) !== 0 && (a - (a % ne) + ne) < m) ? (nextN[a - (a % ne) + ne] || (nextN[a - (a % ne) + ne] = nrm(a - (a % ne) + ne))) : null;
+              if (nb && na) { const f = (a - ia) / Mth.max(1, (a - (a % ne) + ne) - ia); nx = na.nx + (nb.nx - na.nx) * f; ny = na.ny + (nb.ny - na.ny) * f; nz = na.nz + (nb.nz - na.nz) * f; const nl = Mth.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl; }
+              else if (na) { nx = na.nx; ny = na.ny; nz = na.nz; } else continue;
+            }
+            builder.vertex(c.x, c.y, c.z, nx, ny, nz); n0 += 1;
+            if (c.x < bmin[0]) bmin[0] = c.x; if (c.x > bmax[0]) bmax[0] = c.x;
+            if (c.y < bmin[1]) bmin[1] = c.y; if (c.y > bmax[1]) bmax[1] = c.y;
+            if (c.z < bmin[2]) bmin[2] = c.z; if (c.z > bmax[2]) bmax[2] = c.z;
+            const r2 = c.x * c.x + c.y * c.y + c.z * c.z; if (r2 > rmax2) rmax2 = r2;
+          }
+          if (builder.endRun()) { vertsOut += n0; stats.pieces += 1; }
+        }
+      });
+    };
+    const finish = (convex) => {
+      const ms = builder.finish();
+      ms.bakerId = 'webs';
+      if (ms.vertexCount > 200000) throw new Error('SurfaceLockWebs.bake: vertex budget exceeded');
+      const has = ms.vertexCount > 0;
+      if (opts && opts.info) Object.assign(opts.info, stats);
+      ms.meta = {
+        p0: model.S / scaleRef, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'turingStripe',
+        toneScaleFree: true,
+        floorPitchPen: K.TURING_FLOOR_PEN,
+        turingSpacingMM: model.S, turingPieces: stats.pieces, turingLenMM: stats.lenMM, turingAreaMM2: stats.areaMM2,
+        bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Mth.sqrt(rmax2) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
+        convex: typeof spec.convex === 'boolean' ? spec.convex : convex,
+      };
+      return ms;
+    };
+    const nodeBudget = (Nu, Nv) => { while ((Nu + 1) * (Nv + 1) > K.TURING_MAX_NODES) { Nu = Mth.max(8, Mth.round(Nu * 0.9)); Nv = Mth.max(8, Mth.round(Nv * 0.9)); if (Nu === 8 && Nv === 8) break; } return [Nu, Nv]; };
+
+    if (prim === 'box') { // ---- one planar grid per face, in the object's scaled local frame ----------------------------------------------------
+      const only = Number.isInteger(spec.sizes && spec.sizes.face) ? spec.sizes.face : -1;
+      const params = Object.assign({}, spec.sizes || {}); delete params.face;
+      const mesh = Scene3D.Scene && Scene3D.Scene.buildPrimitiveMesh ? Scene3D.Scene.buildPrimitiveMesh({ primitive: 'box', params }, 1) : null;
+      if (!mesh) { const e0 = builder.finish(); e0.bakerId = 'webs'; e0.meta = emptyMeta; return e0; }
+      { const bs = spec.sizes || {}; const ax = finite(bs.sx, 20) * sc.sx; const ay = finite(bs.sy, 20) * sc.sy; const az = finite(bs.sz, 20) * sc.sz; fitStep(2 * (ax * ay + ay * az + ax * az)); }
+      for (let fi = 0; fi < mesh.faces.length; fi++) {
+        if (only >= 0 && fi !== only) continue;
+        const idxs = mesh.faces[fi];
+        if (!Array.isArray(idxs) || idxs.length < 3) continue;
+        const pts = idxs.map((q) => { const v = mesh.vertices[q]; return [v.x * sc.sx, v.y * sc.sy, v.z * sc.sz]; });
+        let nx = 0; let ny = 0; let nz = 0;
+        for (let k = 0; k < pts.length; k++) {
+          const a = pts[k]; const b = pts[(k + 1) % pts.length];
+          nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1]);
+        }
+        const nl = Mth.hypot(nx, ny, nz);
+        if (!(nl > 1e-9)) continue;
+        const n = [nx / nl, ny / nl, nz / nl];
+        let U = null;
+        const cands = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+        for (let c = 0; c < 3 && !U; c++) {
+          const a = cands[c]; const dd = a[0] * n[0] + a[1] * n[1] + a[2] * n[2];
+          const px = a[0] - n[0] * dd; const py = a[1] - n[1] * dd; const pz = a[2] - n[2] * dd; const pl = Mth.hypot(px, py, pz);
+          if (pl > 1e-3) U = [px / pl, py / pl, pz / pl];
+        }
+        if (!U) continue;
+        const Vv = [n[1] * U[2] - n[2] * U[1], n[2] * U[0] - n[0] * U[2], n[0] * U[1] - n[1] * U[0]];
+        let h0 = 0; let umin = Infinity; let umax = -Infinity; let vmin = Infinity; let vmax = -Infinity;
+        pts.forEach((q) => {
+          h0 += n[0] * q[0] + n[1] * q[1] + n[2] * q[2];
+          const u = U[0] * q[0] + U[1] * q[1] + U[2] * q[2]; const v = Vv[0] * q[0] + Vv[1] * q[1] + Vv[2] * q[2];
+          umin = Mth.min(umin, u); umax = Mth.max(umax, u); vmin = Mth.min(vmin, v); vmax = Mth.max(vmax, v);
+        });
+        h0 /= pts.length;
+        const W0 = umax - umin; const H0 = vmax - vmin;
+        if (!(W0 > 1e-6 && H0 > 1e-6)) continue;
+        stats.areaMM2 += W0 * H0;
+        const hh = So / Mth.max(2, K.TURING_GRID);
+        const [Nu, Nv] = nodeBudget(Mth.max(4, Mth.ceil(W0 / hh)), Mth.max(4, Mth.ceil(H0 / hh)));
+        const NNu = Nu + 1; const NNv = Nv + 1;
+        const f = new Float32Array(NNu * NNv); const ok = new Uint8Array(NNu * NNv).fill(1);
+        const at = (u, v) => { const s = umin + W0 * u; const t = vmin + H0 * v; return [U[0] * s + Vv[0] * t + n[0] * h0, U[1] * s + Vv[1] * t + n[1] * h0, U[2] * s + Vv[2] * t + n[2] * h0]; };
+        for (let j = 0; j < NNv; j++) for (let i = 0; i < NNu; i++) { const p = at(i / Nu, j / Nv); f[j * NNu + i] = field(p[0], p[1], p[2]); }
+        const chains = traceZero(Nu, Nv, f, ok);
+        const faceVtx = (u, v) => { const p = at(u, v); return { x: p[0], y: p[1], z: p[2], nx: n[0], ny: n[1], nz: n[2] }; };
+        emitChains(chains, faceVtx, faceVtx, fi * 131071);
+      }
+      return finish(true);
+    }
+
+    // ---- curved primitive: the object's chart -----------------------------------------------------------------------------------------
+    const M = SC.metric(mode, spec.sizes || {}, sc);
+    const raw = rawChart(spec);
+    if (!M || !raw) { const e0 = builder.finish(); e0.bakerId = 'webs'; e0.meta = emptyMeta; return e0; }
+    const G = 25; const la = []; const lb = []; let areaSum = 0;
+    for (let i = 0; i < G; i++) {
+      for (let j = 0; j < G; j++) {
+        const s = M.sample((i + 0.5) / G, (j + 0.5) / G);
+        if (!s) continue;
+        const A = Mth.hypot(s.dax, s.day, s.daz); const B = Mth.hypot(s.dbx, s.dby, s.dbz);
+        const cx = s.day * s.dbz - s.daz * s.dby; const cy = s.daz * s.dbx - s.dax * s.dbz; const cz = s.dax * s.dby - s.day * s.dbx;
+        areaSum += Mth.hypot(cx, cy, cz);
+        if (A > 1e-9) la.push(A); if (B > 1e-9) lb.push(B);
+      }
+    }
+    stats.areaMM2 = areaSum / (G * G);
+    if (!(stats.areaMM2 > 0) || !la.length || !lb.length) { const e1 = builder.finish(); e1.bakerId = 'webs'; e1.meta = emptyMeta; return e1; }
+    const pct = (arr, q) => { const s = Float64Array.from(arr).sort(); return s[Mth.min(s.length - 1, Mth.floor(q * s.length))]; };
+    const extA = pct(la, 0.9); const extB = pct(lb, 0.9);
+    const hh = So / Mth.max(2, K.TURING_GRID);
+    const [Nu, Nv] = nodeBudget(Mth.max(8, Mth.ceil(extA / hh)), Mth.max(8, Mth.ceil(extB / hh)));
+    const NNu = Nu + 1; const NNv = Nv + 1;
+    const f = new Float32Array(NNu * NNv); const ok = new Uint8Array(NNu * NNv);
+    for (let j = 0; j < NNv; j++) {
+      for (let i = 0; i < NNu; i++) {
+        const q = raw(i / Nu, j / Nv); const k = j * NNu + i;
+        if (!q || !isFin(q.x + q.y + q.z)) continue;
+        f[k] = field(q.x * sc.sx, q.y * sc.sy, q.z * sc.sz); ok[k] = 1;
+      }
+    }
+    fitStep(stats.areaMM2);
+    const tF = Date.now(); stats.nodes = NNu * NNv; stats.fieldMs = tF - t00;
+    const chains = traceZero(Nu, Nv, f, ok);
+    stats.traceMs = Date.now() - tF;
+    const cheapAt = (u, v) => { const q = raw(u, v); return q && isFin(q.x + q.y + q.z) ? { x: q.x * sc.sx, y: q.y * sc.sy, z: q.z * sc.sz } : null; };
+    emitChains(chains, cheapAt, (u, v) => { const s = M.sample(u, v); return s && isFin(s.x + s.y + s.z) ? s : null; }, 0);
+    stats.emitMs = Date.now() - tF - stats.traceMs;
+    return finish(Boolean(CONVEX_MODES[mode]));
+  };
+
+  const toneLUT = (spec, toneCtx) => {
+    if (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1) { sync(); return voronoiLUT(spec, toneCtx); }
+    if (spec && TURING_LAWS.indexOf(spec.toneLaw) !== -1) { sync(); return turingLUT(spec, toneCtx); }
+    return mazeLUT(spec, toneCtx);
+  };
   const bake = (spec) => bakeCore(spec, null);
   // A drag-only coarse MarkSet (SurfaceLock.bake(spec, { lod: true })); a law without a coarse form returns null and the full bake is used.
   const bakeCoarse = (spec) => (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1 ? (sync(), bakeVoronoi(spec, { coarse: true })) : null);
   // Test hook: the lattice pieces { level, rank, x0, y0, x1, y1 } of a bake (finest-cell units) and its geometry; `noThin` keeps every wall and closes no ring, `noBreak` keeps every wall whole (the perfect-maze skeleton); both default on.
   const debugLattice = (spec, opts) => { const pieces = []; const info = {}; bakeCore(spec, { collect: pieces, info, noThin: !opts || opts.noThin !== false, noBreak: !opts || opts.noBreak !== false }); return { pieces, info }; };
 
-  Scene3D.SurfaceLockWebs = { id: 'webs', FIT, supports, bake, bakeCoarse, supportsCoarse: (spec) => !!(spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1), toneLUT, debug: { lattice: debugLattice, voronoi: (spec, opts) => { const info = {}; const ms = bakeVoronoi(spec, Object.assign({ info, timing: true }, opts || {})); return { ms, info }; } } };
+  Scene3D.SurfaceLockWebs = { id: 'webs', FIT, supports, bake, bakeCoarse, supportsCoarse: (spec) => !!(spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1), toneLUT, debug: { lattice: debugLattice, turing: (spec, opts) => { const info = {}; const ms = bakeTuring(spec, Object.assign({ info }, opts || {})); return { ms, info }; }, voronoi: (spec, opts) => { const info = {}; const ms = bakeVoronoi(spec, Object.assign({ info, timing: true }, opts || {})); return { ms, info }; } } };
 })();
