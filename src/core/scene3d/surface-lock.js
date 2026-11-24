@@ -1223,6 +1223,23 @@
     }
     const R = rotMatrix({ yaw: pose.obj.yaw, pitch: pose.obj.pitch, roll: pose.obj.roll });
     const V = mesh && mesh.vertices ? mesh.vertices : [];
+    // A torus / torus knot: the footprint is the union of the projected world triangles (A34), the same triangles the pose
+    // path's receive map uses, so the hole stays open. Cached per transform: a light move or an orbit re-reads it.
+    const MP = Scene3D.SurfaceLockShadow && Scene3D.SurfaceLockShadow.MESH_PRIMITIVES;
+    if (MP && MP.has(o.primitive) && mesh && mesh.triVerts && mesh.triVerts.length >= 3) {
+      const key = JSON.stringify([o.id, o.primitive, o.params, o.transform || null, pose.obj.yaw, pose.obj.pitch, pose.obj.roll]);
+      const triangles = auxGet(2, 'cast|' + key, () => {
+        const Tv = mesh.triVerts; const out = new Float64Array(Tv.length * 3);
+        for (let k = 0; k < Tv.length; k += 1) {
+          const i = Tv[k]; const w = 3 * k;
+          out[w] = R[0] * V[3 * i] + R[1] * V[3 * i + 1] + R[2] * V[3 * i + 2] + tr.x;
+          out[w + 1] = R[3] * V[3 * i] + R[4] * V[3 * i + 1] + R[5] * V[3 * i + 2] + tr.y;
+          out[w + 2] = R[6] * V[3 * i] + R[7] * V[3 * i + 1] + R[8] * V[3 * i + 2] + tr.z;
+        }
+        return out;
+      });
+      return { primitive: o.primitive, shape: 'mesh', triangles };
+    }
     const points = [];
     for (let i = 0; i + 2 < V.length; i += 3) {
       points.push({

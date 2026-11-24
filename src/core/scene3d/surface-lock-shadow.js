@@ -63,6 +63,9 @@
   // Chart primitives whose ground footprint is exactly the convex hull of their projected vertices
   // (torus / torusKnot have a hole and are excluded: a hull would fill it) plus box.
   const CONVEX_PRIMITIVES = new Set(['sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'superellipsoid', 'pyramid', 'box']);
+  // Non-convex primitives whose footprint is the exact union of their projected triangles ({ shape: 'mesh' } records):
+  // the hole of a torus stays open when the light makes it visible (A34).
+  const MESH_PRIMITIVES = new Set(['torus', 'torusKnot']);
 
   const hash01 = (i, salt) => {
     let h = ((i | 0) * 73856093) ^ (salt | 0);
@@ -114,7 +117,8 @@
     if (!Array.isArray(casters)) return false;
     return casters.every((c) => {
       if (!c || typeof c !== 'object') return false;
-      if (c.primitive != null && !CONVEX_PRIMITIVES.has(c.primitive)) return false;
+      if (c.shape === 'mesh') return c.triangles != null && c.triangles.length >= 9;
+      if (c.primitive != null && !CONVEX_PRIMITIVES.has(c.primitive) && !MESH_PRIMITIVES.has(c.primitive)) return false;
       if (c.shape === 'sphere' || c.shape === 'hull') return true;
       return c.primitive != null;
     });
@@ -305,7 +309,150 @@
       if (!ring || !cring) return null;
       return finishCaster({ kind: 'poly', ring }, { kind: 'poly', ring: cring });
     }
+    if (shape === 'mesh') {
+      // The footprint depends on the triangles, the light and the receiver, not on the camera: an orbit frame reuses it.
+      const hit = meshPrep.get(c.triangles);
+      if (hit && hit.dx === d.x && hit.dy === d.y && hit.dz === d.z && hit.gy === gy) return hit.pc;
+      const pc = prepareMesh(c, d, gy);
+      meshPrep.set(c.triangles, { dx: d.x, dy: d.y, dz: d.z, gy, pc });
+      return pc;
+    }
     return null;
+  };
+
+  // Non-convex caster (A34): every triangle is projected along the light onto y = gy (each is a convex triangle) and the
+  // footprint is their union, taken per baked line. Triangles are binned by the range of line indices their offset span
+  // touches (CSR arrays), so a line tests only the triangles that can reach it. A triangle with a vertex under the receiver
+  // is dropped, as the hull path drops such a vertex. The throw length / tone grading mirror the pose path: contact is the
+  // convex hull of the vertices in the lowest slice (shadows.js nadirContact, h0 = max(0.5, 3 % of the height)).
+  // Akl-Toussaint: drop the points strictly inside the octagon of the eight directional extremes before the hull sort
+  // (a torus has thousands of projected vertices, nearly all interior); the hull of the survivors is the same polygon.
+  const fastHull = (pts) => {
+    if (pts.length < 64) return hullRing(pts);
+    const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const ext = dirs.map(() => null); const best = dirs.map(() => -Infinity);
+    for (let i = 0; i < pts.length; i += 1) for (let k = 0; k < 8; k += 1) { const v = pts[i].x * dirs[k][0] + pts[i].z * dirs[k][1]; if (v > best[k]) { best[k] = v; ext[k] = pts[i]; } }
+    // octagon (CCW by direction angle); a point is interior when strictly left of every edge
+    const keep = [];
+    for (let i = 0; i < pts.length; i += 1) {
+      let inside = true;
+      for (let k = 0; k < 8 && inside; k += 1) {
+        const a = ext[k]; const b = ext[(k + 1) % 8];
+        if ((b.x - a.x) * (pts[i].z - a.z) - (b.z - a.z) * (pts[i].x - a.x) <= 1e-9) inside = false;
+      }
+      if (!inside) keep.push(pts[i]);
+    }
+    return hullRing(keep.length >= 3 ? keep : pts);
+  };
+  const meshPrep = new WeakMap();
+  const prepareMesh = (c, d, gy) => {
+    const T = c.triangles;
+    const n = Math.floor(T.length / 9);
+    if (!n) return null;
+    const proj = new Float64Array(n * 6); const kept = [];
+    let minY = Infinity; let maxY = -Infinity;
+    for (let t = 0; t < n; t += 1) {
+      const o = 9 * t; let ok = true;
+      for (let v = 0; v < 3; v += 1) { const y = T[o + 3 * v + 1]; if (!Number.isFinite(y) || !Number.isFinite(T[o + 3 * v]) || !Number.isFinite(T[o + 3 * v + 2]) || y - gy < -1e-9) ok = false; }
+      if (!ok) continue;
+      for (let v = 0; v < 3; v += 1) {
+        const y = T[o + 3 * v + 1]; const k = (y - gy) / d.y;
+        proj[6 * t + 2 * v] = T[o + 3 * v] - k * d.x; proj[6 * t + 2 * v + 1] = T[o + 3 * v + 2] - k * d.z;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      kept.push(t);
+    }
+    if (!kept.length) return null;
+    // contact: lowest slice, widened until it holds a polygon
+    let cring = null;
+    const base = Math.max(minY, gy); const h0 = Math.max(0.5, 0.03 * Math.max(0, maxY - minY));
+    for (let pass = 0; pass < 6 && !cring; pass += 1) {
+      const cut = base + h0 * Math.pow(2, pass); const nad = [];
+      for (let q = 0; q < kept.length; q += 1) {
+        const o = 9 * kept[q];
+        for (let v = 0; v < 3; v += 1) if (T[o + 3 * v + 1] <= cut) nad.push({ x: T[o + 3 * v], y: 0, z: T[o + 3 * v + 2] });
+      }
+      if (nad.length >= 3) cring = fastHull(nad);
+    }
+    if (cring && cring.length > MESH_CONTACT_MAX) { // an inscribed polygon: distances read at most a sagitta (< 0.3 mm at 30 mm radius) high
+      const m = cring.length; const dec = [];
+      for (let q = 0; q < MESH_CONTACT_MAX; q += 1) dec.push(cring[Math.floor(q * m / MESH_CONTACT_MAX)]);
+      cring = dec;
+    }
+    const pts = [];
+    for (let q = 0; q < kept.length; q += 1) for (let v = 0; v < 3; v += 1) pts.push({ x: proj[6 * kept[q] + 2 * v], y: 0, z: proj[6 * kept[q] + 2 * v + 1] });
+    const outer = fastHull(pts);
+    if (!outer || !cring) return null;
+    const fp = { kind: 'mesh', proj, kept, ring: outer, bins: null, binLo: 0 };
+    const pc = finishCaster(fp, { kind: 'poly', ring: cring });
+    pc.cx = 0; pc.cz = 0;
+    pts.forEach((q) => { pc.cx += q.x; pc.cz += q.z; });
+    pc.cx /= pts.length; pc.cz /= pts.length;
+    return pc;
+  };
+
+  // Bin the kept triangles by line index (CSR): bins.start[i - lo] .. bins.start[i - lo + 1] index bins.list.
+  const binMesh = (fp, nx, nz, pitch, phase, iLo, iHi, hatch) => {
+    if (fp.bins && fp.bins.hatch === hatch && fp.bins.lo === iLo && fp.bins.hi === iHi) return; // same hatch bake and range: kept
+    const m = iHi - iLo + 1;
+    const start = new Int32Array(m + 1);
+    const ranges = new Int32Array(fp.kept.length * 2);
+    const P = fp.proj;
+    for (let q = 0; q < fp.kept.length; q += 1) {
+      const o = 6 * fp.kept[q];
+      const a = P[o] * nx + P[o + 1] * nz; const b = P[o + 2] * nx + P[o + 3] * nz; const c = P[o + 4] * nx + P[o + 5] * nz;
+      const lo = Math.max(iLo, Math.ceil(Math.min(a, b, c) / pitch - phase)); const hi = Math.min(iHi, Math.floor(Math.max(a, b, c) / pitch - phase));
+      ranges[2 * q] = lo; ranges[2 * q + 1] = hi;
+      for (let i = lo; i <= hi; i += 1) start[i - iLo + 1] += 1;
+    }
+    for (let i = 0; i < m; i += 1) start[i + 1] += start[i];
+    const fill = start.slice(0, m); const list = new Int32Array(start[m]);
+    for (let q = 0; q < fp.kept.length; q += 1) for (let i = ranges[2 * q]; i <= ranges[2 * q + 1]; i += 1) list[fill[i - iLo]++] = fp.kept[q];
+    fp.bins = { start, list, lo: iLo, hi: iHi, hatch, lines: new Map() };
+  };
+
+  const MESH_CONTACT_MAX = 24;
+  const MESH_SEAM = 1e-7; // intervals of adjacent triangles meet at a seam to float error: bridge it
+  // Merged intervals (flat [a0, b0, a1, b1 ...], ascending, disjoint) of line (off along n, direction u) inside the mesh footprint.
+  const meshIntervals = (fp, ux, uz, nx, nz, off, i) => {
+    let out;
+    const B = fp.bins; const k = i - B.lo;
+    const memoHit = B.lines.get(i); // per-line intervals depend on the hatch and the footprint only: an orbit frame reads them back
+    if (memoHit) return memoHit;
+    out = [];
+    B.lines.set(i, out);
+    if (k < 0 || k + 1 >= B.start.length) return out;
+    const bx = off * nx; const bz = off * nz; const P = fp.proj;
+    const tmp = [];
+    for (let e = B.start[k]; e < B.start[k + 1]; e += 1) {
+      const o = 6 * B.list[e];
+      const ax = P[o]; const az = P[o + 1]; let b0x = P[o + 2]; let b0z = P[o + 3]; let c0x = P[o + 4]; let c0z = P[o + 5];
+      const area = (b0x - ax) * (c0z - az) - (b0z - az) * (c0x - ax);
+      if (Math.abs(area) < 1e-12) continue;
+      if (area < 0) { const tx = b0x; const tz = b0z; b0x = c0x; b0z = c0z; c0x = tx; c0z = tz; }
+      let lo = -Infinity; let hi = Infinity; let miss = false;
+      for (let q = 0; q < 3 && !miss; q += 1) {
+        const px = q === 0 ? ax : q === 1 ? b0x : c0x; const pz = q === 0 ? az : q === 1 ? b0z : c0z;
+        const qx = q === 0 ? b0x : q === 1 ? c0x : ax; const qz = q === 0 ? b0z : q === 1 ? c0z : az;
+        const ex = qx - px; const ez = qz - pz;
+        const f0 = ex * (bz - pz) - ez * (bx - px); const fs = ex * uz - ez * ux;
+        if (Math.abs(fs) < 1e-14) { if (f0 < 0) miss = true; continue; }
+        const s = -f0 / fs;
+        if (fs > 0) { if (s > lo) lo = s; } else if (s < hi) hi = s;
+      }
+      if (!miss && lo < hi) tmp.push(lo, hi);
+    }
+    const m = tmp.length / 2;
+    if (!m) return out;
+    const idx = new Array(m); for (let q = 0; q < m; q += 1) idx[q] = q;
+    idx.sort((p, q) => tmp[2 * p] - tmp[2 * q]);
+    let cs = tmp[2 * idx[0]]; let ce = tmp[2 * idx[0] + 1];
+    for (let q = 1; q < m; q += 1) {
+      const s = tmp[2 * idx[q]]; const e = tmp[2 * idx[q] + 1];
+      if (s <= ce + MESH_SEAM) { if (e > ce) ce = e; } else { out.push(cs, ce); cs = s; ce = e; }
+    }
+    out.push(cs, ce);
+    return out;
   };
 
   const contactDist = (contact, x, z) => {
@@ -327,11 +474,15 @@
         const ca = Math.cos(a) * fp.A; const sb = Math.sin(a) * fp.B;
         L = Math.max(L, contactDist(contact, fp.cx + fp.hx * ca + fp.px * sb, fp.cz + fp.hz * ca + fp.pz * sb));
       }
+    } else if (fp.kind === 'mesh') {
+      // contactDist is convex, so its max over the footprint is reached at an extreme point of the footprint, and those are
+      // vertices of the outer hull ring (which are projected vertices, hence in the footprint)
+      fp.ring.forEach((q) => { L = Math.max(L, contactDist(contact, q.x, q.z)); });
     } else {
       fp.ring.forEach((q) => { L = Math.max(L, contactDist(contact, q.x, q.z)); });
     }
     let cx = 0; let cz = 0;
-    if (fp.kind === 'ellipse') { cx = fp.cx; cz = fp.cz; } else {
+    if (fp.kind === 'ellipse') { cx = fp.cx; cz = fp.cz; } else if (fp.kind === 'mesh') { /* set by prepareMesh */ } else {
       fp.ring.forEach((q) => { cx += q.x; cz += q.z; });
       cx /= fp.ring.length; cz /= fp.ring.length;
     }
@@ -345,7 +496,7 @@
       const ext = Math.hypot(fp.A * (fp.hx * nx + fp.hz * nz), fp.B * (fp.px * nx + fp.pz * nz));
       return [c - ext, c + ext];
     }
-    let lo = Infinity; let hi = -Infinity;
+    let lo = Infinity; let hi = -Infinity; // hull and mesh: the (outer) ring bounds every projected vertex
     fp.ring.forEach((q) => { const v = q.x * nx + q.z * nz; if (v < lo) lo = v; if (v > hi) hi = v; });
     return [lo, hi];
   };
@@ -489,6 +640,7 @@
 
     const world = []; const runs = [];
     const iv = [];
+    prepared.forEach((pc) => { if (pc.fp.kind === 'mesh' && iHi >= iLo) binMesh(pc.fp, nx, nz, pitch, phase, iLo, iHi, hatch); });
     for (let i = iLo; i <= iHi; i += 1) {
       const k = i - iMin;
       // Even thinning (Bresenham): line k is drawn when floor((k + 1) * thin) steps past floor(k * thin), so gaps
@@ -505,6 +657,24 @@
       iv.length = 0;
       for (let c = 0; c < prepared.length; c += 1) {
         const pc = prepared[c];
+        if (pc.fp.kind === 'mesh') {
+          // a non-convex footprint is several intervals per line; each is clipped and tone-gated on its own
+          const mi = meshIntervals(pc.fp, ux, uz, nx, nz, off, i);
+          for (let m = 0; m < mi.length; m += 2) {
+            let a = Math.max(mi[m], lo0); let b = Math.min(mi[m + 1], hi0);
+            if (!(b > a)) continue;
+            if (lut && pc.L > 1e-9) {
+              const ts = tStarFor(lut, r);
+              if (ts < 1) {
+                const g = ts > 0 ? gateInterval(pc.contact, bx, bz, ux, uz, a, b, pc.L * ts) : null;
+                if (!g) continue;
+                a = g[0]; b = g[1];
+              }
+            }
+            iv.push(a, b);
+          }
+          continue;
+        }
         const base = lineInterval(pc.fp, ux, uz, nx, nz, off);
         if (!base) continue;
         let a = Math.max(base[0], lo0); let b = Math.min(base[1], hi0);
@@ -705,5 +875,6 @@
     get MIN_ABS_DY() { return TUNE.MIN_ABS_DY; },
     get MIN_RUN_MM() { return TUNE.MIN_RUN_MM; },
     CONVEX_PRIMITIVES,
+    MESH_PRIMITIVES,
   };
 })();
