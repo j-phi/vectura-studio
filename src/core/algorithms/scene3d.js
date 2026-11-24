@@ -5707,38 +5707,97 @@
               return { c, R, a: { x: ax.x / al, y: ax.y / al, z: ax.z / al } };
             })();
             const planeVals = (fam) => (tr) => tr.t.map((vi) => { const w = rec.world[vi]; return w.x * fam.n.x + w.y * fam.n.y + w.z * fam.n.z; });
-            let fams;
-            if (sphereFit) {
-              const { c, R, a } = sphereFit;
-              const ref = Math.abs(a.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
-              let e1 = { x: a.y * ref.z - a.z * ref.y, y: a.z * ref.x - a.x * ref.z, z: a.x * ref.y - a.y * ref.x };
-              const el = Math.hypot(e1.x, e1.y, e1.z); e1 = { x: e1.x / el, y: e1.y / el, z: e1.z / el };
-              const e2 = { x: a.y * e1.z - a.z * e1.y, y: a.z * e1.x - a.x * e1.z, z: a.x * e1.y - a.y * e1.x };
-              const dsArc = 0.42 * spcBase / scale; // surface (arc) pitch of the finest ring (foreshortened on screen, so tighter than a flat family)
-              const polar = (wi) => { const w = rec.world[wi]; const vx = w.x - c.x; const vy = w.y - c.y; const vz = w.z - c.z; return { vx, vy, vz, r: Math.hypot(vx, vy, vz) || 1 }; };
-              const theta = (vi) => { const q = polar(vi); return Math.acos(clamp((q.vx * a.x + q.vy * a.y + q.vz * a.z) / q.r, -1, 1)); };
-              const ringStride = (tr) => Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore));
-              const ring = { vals: (tr) => tr.t.map((vi) => R * theta(vi)), dd: dsArc, emit: (tr, k) => { const st = ringStride(tr); return ((k % st) + st) % st === 0; } };
-              fams = [ring];
-              if (cross) {
-                const Nmax = clamp(2 ** Math.ceil(Math.log2(Math.max(2, 2 * Math.PI * R / (dsArc * crossRatio)))), 2, 256);
-                const dpsi = 2 * Math.PI / Nmax;
-                const merVals = (tr) => {
-                  const v = tr.t.map((vi) => { const q = polar(vi); return Math.atan2(q.vx * e2.x + q.vy * e2.y + q.vz * e2.z, q.vx * e1.x + q.vy * e1.y + q.vz * e1.z); });
-                  for (let i = 1; i < 3; i += 1) { while (v[i] - v[0] > Math.PI) v[i] -= 2 * Math.PI; while (v[i] - v[0] < -Math.PI) v[i] += 2 * Math.PI; }
-                  return (Math.max(...v) - Math.min(...v) > 1.2) ? null : v; // a triangle on the pole has no meridian
+            if (sphereFit && typeof scene.projectWorld === 'function') {
+              const lines = (() => {
+                const { c, R, a } = sphereFit;
+                const ref = Math.abs(a.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+                let e1 = { x: a.y * ref.z - a.z * ref.y, y: a.z * ref.x - a.x * ref.z, z: a.x * ref.y - a.y * ref.x };
+                const el = Math.hypot(e1.x, e1.y, e1.z); e1 = { x: e1.x / el, y: e1.y / el, z: e1.z / el };
+                const e2 = { x: a.y * e1.z - a.z * e1.y, y: a.z * e1.x - a.x * e1.z, z: a.x * e1.y - a.y * e1.x };
+                const dsArc = 0.36 * spcBase / scale; // surface (arc) pitch of the finest ring
+                const depthAt = csgSurfaceDepthFn(rec, g.faces);
+                if (!depthAt) return null;
+                let thMax = 0;
+                tris.forEach((tr) => tr.t.forEach((vi) => {
+                  const w = rec.world[vi]; const vx = w.x - c.x; const vy = w.y - c.y; const vz = w.z - c.z;
+                  thMax = Math.max(thMax, Math.acos(clamp((vx * a.x + vy * a.y + vz * a.z) / (Math.hypot(vx, vy, vz) || 1), -1, 1)));
+                }));
+                const tolZ = 0.05 * R * scale;
+                const EPS = 1e-3 * R;
+                // One analytic surface sample at (theta, psi): its screen point, whether it lies on the carved front surface,
+                // and its tone stride (band x foreshortening), exactly the quantities the old per-triangle path used.
+                const sampleAt = (th, psi) => {
+                  const st = Math.sin(th); const ct = Math.cos(th); const cp = Math.cos(psi); const sp2 = Math.sin(psi);
+                  const dx = ct * a.x + st * (cp * e1.x + sp2 * e2.x); const dy = ct * a.y + st * (cp * e1.y + sp2 * e2.y); const dz = ct * a.z + st * (cp * e1.z + sp2 * e2.z);
+                  const w = { x: c.x + R * dx, y: c.y + R * dy, z: c.z + R * dz };
+                  const P = scene.projectWorld(w);
+                  if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y)) return null;
+                  const Z = depthAt(P.x, P.y);
+                  const inside = Z !== null && Math.abs(Z - P.z) < tolZ;
+                  if (!inside) return { x: P.x, y: P.y, inside: false };
+                  const n = { x: -dx, y: -dy, z: -dz }; // outward-of-solid normal of the concave surface
+                  const Pn = scene.projectWorld({ x: w.x + n.x * EPS, y: w.y + n.y * EPS, z: w.z + n.z * EPS });
+                  const fore = clamp(Pn ? Math.abs(Pn.z - P.z) / EPS : 1, 0.35, 1);
+                  const band = (toneOn && typeof intensityFn === 'function') ? Regions.band(intensityFn(n, w), p.tone) : 0;
+                  // Fractional stride (ring k is drawn when it crosses a multiple of it), so the tone ladder is not rounded to whole rings;
+                  // the tone ratio is shaped (^1.5) so the dark side reads clearly denser than the lit side, and foreshortening is
+                  // corrected by its square root (full correction over-thins the steep wall).
+                  return { x: P.x, y: P.y, inside: true, stride: Math.max(1, Math.round(2 * (spcOf(band) / spcBase) ** 1.5 / Math.sqrt(fore)) / 2), th }; // half-ring steps, so a ring does not flicker along its length
                 };
-                const merEmit = (tr, k) => {
-                  const ctr = (theta(tr.t[0]) + theta(tr.t[1]) + theta(tr.t[2])) / 3;
-                  if (R * ctr < 2.2 * dsArc) return false; // the pole belongs to the rings
-                  const n = (2 * Math.PI * R * Math.sin(ctr)) / (dsArc * ringStride(tr) * crossRatio);
-                  const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
-                  const step = Nmax / cnt;
-                  return (((k % Nmax) + Nmax) % Nmax) % step === 0;
+                const out = [];
+                // Split a sampled curve into runs where `keep` holds; the ends of a run sit on the last kept sample, so strokes
+                // stay as smooth as the sampling (never re-meshed).
+                const runsOf = (samples, keep, closed) => {
+                  const ok = (q) => !!(q && q.inside && keep(q));
+                  let runs = []; let cur = [];
+                  samples.forEach((q) => { if (ok(q)) cur.push({ x: q.x, y: q.y }); else { if (cur.length) runs.push(cur); cur = []; } });
+                  if (cur.length) runs.push(cur);
+                  if (closed && runs.length > 1 && ok(samples[0]) && ok(samples[samples.length - 1])) {
+                    const first = runs.shift(); runs[runs.length - 1] = runs[runs.length - 1].concat(first); // the ring's seam
+                  }
+                  runs = runs.filter((r) => r.length > 1);
+                  // A stroke shorter than ~1.5 pen widths is a fleck, not a mark.
+                  return runs.filter((r) => { let len = 0; for (let i = 1; i < r.length; i += 1) len += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y); return len >= 1.5 * penWidth + 0.3; });
                 };
-                fams.push({ vals: merVals, dd: dpsi, emit: merEmit });
+                const dTh = dsArc / R;
+                const nRing = Math.floor((thMax + 1e-6) / dTh);
+                const DPSI = Math.PI / 180;
+                const ringSamples = [];
+                for (let k = 1; k <= nRing; k += 1) {
+                  const row = [];
+                  for (let i = 0; i <= 360; i += 1) row.push(sampleAt(k * dTh, i * DPSI));
+                  ringSamples.push({ k, row });
+                }
+                ringSamples.forEach(({ k, row }) => {
+                  runsOf(row, (q) => Math.floor(k / q.stride + 1e-9) > Math.floor((k - 1) / q.stride + 1e-9), true).forEach((r) => out.push(r));
+                });
+                if (cross) {
+                  const Nmax = clamp(2 ** Math.ceil(Math.log2(Math.max(2, 2 * Math.PI * R / (dsArc * crossRatio)))), 2, 256);
+                  for (let m = 0; m < Nmax; m += 1) {
+                    const row = [];
+                    const psi = (2 * Math.PI * m) / Nmax;
+                    const nTh = Math.max(2, Math.ceil(thMax / (0.5 * Math.PI / 180)));
+                    for (let i = 0; i <= nTh; i += 1) row.push(sampleAt(Math.max(1e-4, (thMax * i) / nTh), psi));
+                    const keep = (q) => {
+                      if (R * q.th < 0.6 * dsArc) return false; // the pole is left to the innermost ring
+                      const n = (2 * Math.PI * R * Math.sin(q.th)) / (dsArc * q.stride * crossRatio);
+                      const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
+                      return m % (Nmax / cnt) === 0;
+                    };
+                    runsOf(row, keep, false).forEach((r) => out.push(r));
+                  }
+                }
+                return out;
+              })();
+              if (lines && lines.length) {
+                const st0 = (Vectura.scene3dStats = Vectura.scene3dStats || {});
+                st0.csgBowlGroups = (st0.csgBowlGroups || 0) + 1;
+                st0.csgBowlAnalytic = (st0.csgBowlAnalytic || 0) + 1;
+                return lines;
               }
-            } else {
+            }
+            let fams;
+            {
               fams = [{ vals: planeVals({ n: n0 }), dd: ds, emit: (tr, k) => { const st = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore)); return ((k % st) + st) % st === 0; } }];
               if (cross) fams.push({ vals: planeVals({ n: u }), dd: ds * crossRatio, emit: (tr, k) => { const st = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore)); return ((k % st) + st) % st === 0; } });
             }

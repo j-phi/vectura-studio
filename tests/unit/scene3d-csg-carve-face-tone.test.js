@@ -145,8 +145,8 @@ describe('curved CSG carve per-face tone (U7b)', () => {
     'boxbox default -35/30': '3eaea579aa20',
     // E2 re-pin: a curved carve now splits per source face + a repaired crack-free mesh (intended look change).
     // U7c/U7d re-pin: the carved curved surface is ruled as rings (a bowl / bore; the dimple by surface arc length) instead of one straight family; flat planes unchanged.
-    'sphere toneoff -35/30': '9b117cdb13ea',
-    'sphere default -35/30 OLD': '26a34da4945b',
+    'sphere toneoff -35/30': '127a357dd1fd',
+    'sphere default -35/30 OLD': 'fbe82eaef2f9',
   };
   [[30, 20], [-35, 30]].forEach(([yaw, pitch]) => {
     [['hatch', 'hatch'], ['crosshatch', 'crosshatch'], ['default', undefined]].forEach(([nm, mapper]) => {

@@ -215,4 +215,47 @@ describe('curved CSG carve reads as a bowl / bore (U7c)', () => {
     // previous build 2.02, now 2.42
     expect(ratio).toBeGreaterThanOrEqual(2.2);
   });
+
+  // ---- U7e: smooth strokes only (straight lines or smooth curves, never polygonal / jagged) ----
+  // Largest turning angle between consecutive segments of every stroke that lies inside the dimple.
+  const maxTurn = (bowl, ink) => {
+    const polys = bowl.map((f) => f.poly);
+    let worst = 0; let strokes = 0;
+    ink.forEach((p) => {
+      const mid = p[Math.floor(p.length / 2)];
+      if (!covers(polys, mid.x, mid.y)) return;
+      strokes += 1;
+      const seg = [];
+      for (let i = 0; i + 1 < p.length; i += 1) if (Math.hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y) > 0.05) seg.push([p[i + 1].x - p[i].x, p[i + 1].y - p[i].y]);
+      for (let i = 0; i + 1 < seg.length; i += 1) {
+        const c = (seg[i][0] * seg[i + 1][0] + seg[i][1] * seg[i + 1][1]) / (Math.hypot(...seg[i]) * Math.hypot(...seg[i + 1]));
+        worst = Math.max(worst, Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI);
+      }
+    });
+    return { worst, strokes };
+  };
+  ['hatch', 'crosshatch'].forEach((mapper) => {
+    test(`dimple ${mapper}: strokes are smooth (max turning angle between consecutive segments < 6 degrees)`, () => {
+      const { bowl, ink } = bowlOf(mapper, { az: 90, el: 30 });
+      const r = maxTurn(bowl, ink);
+      require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `turn ${mapper} ${r.worst.toFixed(2)} strokes ${r.strokes}\n`);
+      expect(r.strokes).toBeGreaterThanOrEqual(8);
+      expect(r.worst).toBeLessThan(6);
+    });
+  });
+
+  // Clipping / hidden-line removal still work on the analytic strokes: they stay inside the carved region (a stroke that
+  // strayed onto the flat faces or the far hemisphere would leave the dimple's projected faces).
+  test('dimple strokes are clipped to the carved region (<= 4% of stroke points outside the dimple faces)', () => {
+    const { bowl, ink } = bowlOf('crosshatch', { az: 90, el: 30 });
+    const polys = bowl.map((f) => f.poly);
+    let inn = 0; let out = 0;
+    ink.forEach((p) => {
+      const mid = p[Math.floor(p.length / 2)];
+      if (!covers(polys, mid.x, mid.y)) return;
+      p.forEach((q) => { if (covers(polys, q.x, q.y)) inn += 1; else out += 1; });
+    });
+    expect(inn).toBeGreaterThan(200);
+    expect(out / (inn + out)).toBeLessThanOrEqual(0.04);
+  });
 });
