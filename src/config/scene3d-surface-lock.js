@@ -248,6 +248,11 @@
       DOT_SEGS: 8,  // tone model v2 stipple: dot polygon segments
       SPIRAL_MIN_S: 0.03,  // tone model v2 spiral: stop when the scale toward the face centre drops under this
     }),
+    // surface-fill-mono.js etfKang: strokes are spaced by SURFACE distance (screen gap = pitch x foreshortening |N.V|).
+    ETF: Object.freeze({
+      GAP_MIN: 0.3,  // settled: the foreshortening floor (the limb, |N.V| -> 0, cannot run away into a flood)
+      GAP_MIN_DRAFT: 0.5,  // law-tier drag draft: a higher floor keeps the first drag frame under the flat-fallback budget
+    }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({
       DEPTH_BIAS_MM: 0.05,  // cross-object depth margin (the HLR clipper's HLR_BIAS)

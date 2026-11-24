@@ -1018,7 +1018,31 @@
     // `__MONO_CTX` behind): publish the field itself so a harness can measure
     // its winding number directly rather than reconstructing this grid.
     if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
-    streamFamily(C, dirAt, (s) => C.pitchOf(s));
+    // SURFACE-DISTANCE SPACING. The pitch is the gap ON the surface; on screen the gap across a
+    // ruling is that pitch times the surface's foreshortening in the direction perpendicular to
+    // the ruling. With z the camera depth, a screen step p moves the surface by (p, grad z . p),
+    // so one screen mm covers sqrt(1 + (g.p)^2) surface mm and the screen gap is the pitch over
+    // that. Rulings are depth isocontours, so p is the gradient direction and the gap shrinks as
+    // 1/sqrt(1+|g|^2) = |N.V| toward the limb, the way a printed pattern does in perspective.
+    // Floored so the limb (|g| -> inf) cannot run away into a flood.
+    const ETFC = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.ETF) || {};
+    const ETF_SURF_MIN = C.draft
+      ? (Number.isFinite(ETFC.GAP_MIN_DRAFT) ? ETFC.GAP_MIN_DRAFT : 0.5)
+      : (Number.isFinite(ETFC.GAP_MIN) ? ETFC.GAP_MIN : 0.3);
+    // Tabulated on the Kang grid (one gradZ per cell), so the per-step separation test is a lookup.
+    const SC = new Float32Array((NG + 1) * (NG + 1)).fill(1);
+    for (let j = 0; j <= NG; j++) {
+      for (let i = 0; i <= NG; i++) {
+        const k = j * (NG + 1) + i;
+        if (!MK[k]) continue;
+        const g = C.gradZ(C.minX + i * dx, C.minY + j * dy);
+        if (!g) continue;
+        const gp = -g.x * TY[k] + g.y * TX[k];   // g . p, p = the ruling's screen normal (-ty, tx)
+        SC[k] = Math.max(ETF_SURF_MIN, 1 / Math.sqrt(1 + gp * gp));
+      }
+    }
+    const surfScale = (s) => SC[gj(s.y) * (NG + 1) + gi(s.x)];
+    streamFamily(C, dirAt, (s) => C.pitchOf(s) * surfScale(s));
   };
 
   /* ── 02 · defectSplit ───────────────────────────────────────────────────────
