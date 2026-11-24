@@ -143,4 +143,76 @@ describe('curved CSG carve reads as a bowl / bore (U7c)', () => {
     expect(bands.length).toBeGreaterThanOrEqual(2);
     expect(per[bands[0]].dens).toBeGreaterThan(1.15 * per[bands[bands.length - 1]].dens);
   });
+
+  // ---- U7d: the dimple floor is filled, the crosshatch is a grid, the dark side is clearly denser ----
+  const polyline = (ink) => ink.filter((q) => q.length > 1);
+  const segCross = (a, b, c, d) => {
+    const r = { x: b.x - a.x, y: b.y - a.y }; const t = { x: d.x - c.x, y: d.y - c.y };
+    const den = r.x * t.y - r.y * t.x;
+    if (Math.abs(den) < 1e-9) return null;
+    const u = ((c.x - a.x) * t.y - (c.y - a.y) * t.x) / den; const v = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / den;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+    return { u, v, ang: Math.acos(Math.min(1, Math.abs(r.x * t.x + r.y * t.y) / (Math.hypot(r.x, r.y) * Math.hypot(t.x, t.y)))) * 180 / Math.PI };
+  };
+  const bowlOf = (mapper, light) => {
+    const { g } = build({ cutter: 'sphere', yaw: -35, pitch: 30, mapper });
+    const pr = params(g, light);
+    const faces = bandedFaces(pr);
+    return { pr, faces, bowl: faces.filter((f) => !f.plane), ink: polyline(fillInk(gen(pr))) };
+  };
+  // Largest bare patch of the bowl: the greatest distance from any point inside the dimple to the nearest ink, as a share of the
+  // dimple's width. A floor left empty by widely spaced rings shows up here; an evenly ruled bowl keeps it small.
+  const bareShare = (bowl, ink) => {
+    const polys = bowl.map((f) => f.poly);
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    polys.forEach((q) => { x0 = Math.min(x0, q.x0); y0 = Math.min(y0, q.y0); x1 = Math.max(x1, q.x1); y1 = Math.max(y1, q.y1); });
+    const pts = [];
+    ink.forEach((p) => {
+      for (let i = 0; i + 1 < p.length; i += 1) {
+        const a = p[i]; const b = p[i + 1]; const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.4));
+        for (let k = 0; k <= n; k += 1) pts.push({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n });
+      }
+    });
+    let worst = 0;
+    for (let x = Math.floor(x0); x < x1; x += 1) for (let y = Math.floor(y0); y < y1; y += 1) {
+      if (!covers(polys, x + 0.5, y + 0.5)) continue;
+      let d = Infinity;
+      for (let i = 0; i < pts.length; i += 1) d = Math.min(d, Math.hypot(pts[i].x - x - 0.5, pts[i].y - y - 0.5));
+      worst = Math.max(worst, d);
+    }
+    return worst / Math.max(x1 - x0, y1 - y0);
+  };
+  test('dimple floor: no bare patch wider than a tenth of the dimple (the middle of the bowl gets rings too)', () => {
+    const { bowl, ink } = bowlOf('hatch', { az: 90, el: 30 });
+    const r = bareShare(bowl, ink);
+    require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `bare ${r.toFixed(3)}\n`);
+    // previous build 0.128 (empty floor); sphere-arc rings 0.081
+    expect(r).toBeLessThan(0.1);
+  });
+  test('dimple crosshatch: the two families cross at near right angles (a grid, not loose loops)', () => {
+    const { bowl, ink } = bowlOf('crosshatch', { az: 90, el: 30 });
+    const inside = ink.filter((p) => covers(bowl.map((f) => f.poly), p[Math.floor(p.length / 2)].x, p[Math.floor(p.length / 2)].y));
+    const angs = [];
+    for (let a = 0; a < inside.length; a += 1) for (let b = a + 1; b < inside.length; b += 1) {
+      for (let i = 0; i + 1 < inside[a].length; i += 1) for (let j = 0; j + 1 < inside[b].length; j += 1) {
+        const c = segCross(inside[a][i], inside[a][i + 1], inside[b][j], inside[b][j + 1]);
+        if (c) angs.push(c.ang);
+      }
+    }
+    const good = angs.filter((x) => x >= 55).length;
+    require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `cross n=${angs.length} good=${good} share=${(good / Math.max(1, angs.length)).toFixed(3)}\n`);
+    // previous build: 24 crossings, 0.79 near-perpendicular (loose loops); rings x meridians: 73, 0.945
+    expect(angs.length).toBeGreaterThanOrEqual(40);
+    expect(good / angs.length).toBeGreaterThanOrEqual(0.9);
+  });
+  test('dimple side light: the dark side carries clearly more ink than the lit side', () => {
+    const { faces, ink } = bowlOf('hatch', { az: 90, el: 30 });
+    const per = perBand(faces, ink, (f) => !f.plane);
+    const bands = Object.keys(per).map(Number).sort((a, b) => a - b).filter((b) => per[b].area > 60);
+    const ratio = per[bands[0]].dens / per[bands[bands.length - 1]].dens;
+    require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `side ratio ${ratio.toFixed(3)} bands ${bands.join(',')}\n`);
+    expect(bands.length).toBeGreaterThanOrEqual(2);
+    // previous build 2.02, now 2.42
+    expect(ratio).toBeGreaterThanOrEqual(2.2);
+  });
 });

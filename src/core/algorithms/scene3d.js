@@ -5664,30 +5664,106 @@
             let u = { x: n0.y * up.z - n0.z * up.y, y: n0.z * up.x - n0.x * up.z, z: n0.x * up.y - n0.y * up.x };
             const ul = Math.hypot(u.x, u.y, u.z);
             u = { x: u.x / ul, y: u.y / ul, z: u.z / ul };
-            const fams = [{ n: n0, ratio: 1 }];
-            if (cross) fams.push({ n: u, ratio: clamp(finite(sp.crossDensityRatio, 1), 0.25, 2) });
+            const crossRatio = clamp(finite(sp.crossDensityRatio, 1), 0.25, 2);
+            // U7d — a SPHERICAL carve (dimple) is ruled by SURFACE distance, not plane offset: rings at equal arc length from
+            // the bowl's deepest point (so the floor fills as evenly as the wall) and, for crosshatch, meridians through the
+            // bowl axis, thinned toward the pole (halving the count at each octave) so the grid stays even. Any other curved
+            // carve (bore) keeps the plane family above, untouched. A least-squares sphere fit that does not hold (residual) falls back.
+            const sphereFit = (() => {
+              const seen = new Set(); const P = [];
+              tris.forEach((tr) => tr.t.forEach((vi) => { if (!seen.has(vi)) { seen.add(vi); P.push(rec.world[vi]); } }));
+              if (P.length < 12) return null;
+              const M = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]; const rhs = [0, 0, 0, 0];
+              P.forEach((q) => {
+                const row = [2 * q.x, 2 * q.y, 2 * q.z, 1]; const y = q.x * q.x + q.y * q.y + q.z * q.z;
+                for (let i = 0; i < 4; i += 1) { rhs[i] += row[i] * y; for (let j = 0; j < 4; j += 1) M[i][j] += row[i] * row[j]; }
+              });
+              for (let i = 0; i < 4; i += 1) {
+                let piv = i;
+                for (let r = i + 1; r < 4; r += 1) if (Math.abs(M[r][i]) > Math.abs(M[piv][i])) piv = r;
+                if (Math.abs(M[piv][i]) < 1e-9) return null;
+                [M[i], M[piv]] = [M[piv], M[i]]; [rhs[i], rhs[piv]] = [rhs[piv], rhs[i]];
+                for (let r = i + 1; r < 4; r += 1) {
+                  const f = M[r][i] / M[i][i];
+                  for (let c2 = i; c2 < 4; c2 += 1) M[r][c2] -= f * M[i][c2];
+                  rhs[r] -= f * rhs[i];
+                }
+              }
+              const x = [0, 0, 0, 0];
+              for (let i = 3; i >= 0; i -= 1) {
+                let v = rhs[i];
+                for (let j = i + 1; j < 4; j += 1) v -= M[i][j] * x[j];
+                x[i] = v / M[i][i];
+              }
+              const R2 = x[3] + x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
+              if (!(R2 > 0)) return null;
+              const R = Math.sqrt(R2); const c = { x: x[0], y: x[1], z: x[2] };
+              let err = 0; let mx = { x: 0, y: 0, z: 0 };
+              P.forEach((q) => { const e = Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z) - R; err += e * e; mx = { x: mx.x + q.x, y: mx.y + q.y, z: mx.z + q.z }; });
+              if (Math.sqrt(err / P.length) > 0.004 * R) return null;
+              const ax = { x: mx.x / P.length - c.x, y: mx.y / P.length - c.y, z: mx.z / P.length - c.z };
+              const al = Math.hypot(ax.x, ax.y, ax.z);
+              if (!(al > 1e-6)) return null;
+              return { c, R, a: { x: ax.x / al, y: ax.y / al, z: ax.z / al } };
+            })();
+            const planeVals = (fam) => (tr) => tr.t.map((vi) => { const w = rec.world[vi]; return w.x * fam.n.x + w.y * fam.n.y + w.z * fam.n.z; });
+            let fams;
+            if (sphereFit) {
+              const { c, R, a } = sphereFit;
+              const ref = Math.abs(a.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+              let e1 = { x: a.y * ref.z - a.z * ref.y, y: a.z * ref.x - a.x * ref.z, z: a.x * ref.y - a.y * ref.x };
+              const el = Math.hypot(e1.x, e1.y, e1.z); e1 = { x: e1.x / el, y: e1.y / el, z: e1.z / el };
+              const e2 = { x: a.y * e1.z - a.z * e1.y, y: a.z * e1.x - a.x * e1.z, z: a.x * e1.y - a.y * e1.x };
+              const dsArc = 0.42 * spcBase / scale; // surface (arc) pitch of the finest ring (foreshortened on screen, so tighter than a flat family)
+              const polar = (wi) => { const w = rec.world[wi]; const vx = w.x - c.x; const vy = w.y - c.y; const vz = w.z - c.z; return { vx, vy, vz, r: Math.hypot(vx, vy, vz) || 1 }; };
+              const theta = (vi) => { const q = polar(vi); return Math.acos(clamp((q.vx * a.x + q.vy * a.y + q.vz * a.z) / q.r, -1, 1)); };
+              const ringStride = (tr) => Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore));
+              const ring = { vals: (tr) => tr.t.map((vi) => R * theta(vi)), dd: dsArc, emit: (tr, k) => { const st = ringStride(tr); return ((k % st) + st) % st === 0; } };
+              fams = [ring];
+              if (cross) {
+                const Nmax = clamp(2 ** Math.ceil(Math.log2(Math.max(2, 2 * Math.PI * R / (dsArc * crossRatio)))), 2, 256);
+                const dpsi = 2 * Math.PI / Nmax;
+                const merVals = (tr) => {
+                  const v = tr.t.map((vi) => { const q = polar(vi); return Math.atan2(q.vx * e2.x + q.vy * e2.y + q.vz * e2.z, q.vx * e1.x + q.vy * e1.y + q.vz * e1.z); });
+                  for (let i = 1; i < 3; i += 1) { while (v[i] - v[0] > Math.PI) v[i] -= 2 * Math.PI; while (v[i] - v[0] < -Math.PI) v[i] += 2 * Math.PI; }
+                  return (Math.max(...v) - Math.min(...v) > 1.2) ? null : v; // a triangle on the pole has no meridian
+                };
+                const merEmit = (tr, k) => {
+                  const ctr = (theta(tr.t[0]) + theta(tr.t[1]) + theta(tr.t[2])) / 3;
+                  if (R * ctr < 2.2 * dsArc) return false; // the pole belongs to the rings
+                  const n = (2 * Math.PI * R * Math.sin(ctr)) / (dsArc * ringStride(tr) * crossRatio);
+                  const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
+                  const step = Nmax / cnt;
+                  return (((k % Nmax) + Nmax) % Nmax) % step === 0;
+                };
+                fams.push({ vals: merVals, dd: dpsi, emit: merEmit });
+              }
+            } else {
+              fams = [{ vals: planeVals({ n: n0 }), dd: ds, emit: (tr, k) => { const st = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore)); return ((k % st) + st) % st === 0; } }];
+              if (cross) fams.push({ vals: planeVals({ n: u }), dd: ds * crossRatio, emit: (tr, k) => { const st = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore)); return ((k % st) + st) % st === 0; } });
+            }
             const out = [];
             const Q = 1e4;
             fams.forEach((fam) => {
-              const dd = ds * fam.ratio;
+              const dd = fam.dd;
               const planes = new Map();
               tris.forEach((tr) => {
-                const d = tr.t.map((vi) => { const w = rec.world[vi]; return w.x * fam.n.x + w.y * fam.n.y + w.z * fam.n.z; });
+                const d = fam.vals(tr);
+                if (!d) return;
                 const lo = Math.min(d[0], d[1], d[2]); const hi = Math.max(d[0], d[1], d[2]);
-                const stride = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore));
                 for (let k = Math.ceil(lo / dd); k * dd <= hi; k += 1) {
-                  if (((k % stride) + stride) % stride !== 0) continue;
+                  if (!fam.emit(tr, k)) continue;
                   const lvl = k * dd;
                   const pts = [];
                   for (let e = 0; e < 3; e += 1) {
                     const i0 = tr.t[e]; const i1 = tr.t[(e + 1) % 3];
                     const d0 = d[e]; const d1 = d[(e + 1) % 3];
                     if ((d0 - lvl) * (d1 - lvl) > 0 || d0 === d1) continue;
-                    const lo2 = i0 < i1; const a = lo2 ? i0 : i1; const b = lo2 ? i1 : i0;
+                    const lo2 = i0 < i1; const a2 = lo2 ? i0 : i1; const b2 = lo2 ? i1 : i0;
                     const da = lo2 ? d0 : d1; const db = lo2 ? d1 : d0;
                     const f = (lvl - da) / (db - da);
                     if (f < 0 || f > 1) continue;
-                    const A = rec.projected[a]; const B = rec.projected[b];
+                    const A = rec.projected[a2]; const B = rec.projected[b2];
                     pts.push({ x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f });
                   }
                   if (pts.length >= 2 && Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) > 1e-6) {
