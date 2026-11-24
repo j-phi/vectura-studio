@@ -820,6 +820,9 @@
     C.fieldCells = (N + 1) * (N + 1);
     const dx = C.W / N; const dy = C.H / N;
     let Z = null; let Ii = null; let M = null;
+    // Object-locked fields (etfKang's wrap rings): the world position and world normal of every raster cell, read
+    // through C.gradOn / C.fieldWorld. Filled in the same loop as Z, so it costs no extra `inv`.
+    let WP = null; let WNm = null;
     C.fieldBuilds = 0;
     const raster = () => {
       if (M) return;
@@ -827,12 +830,18 @@
       Z = new Float32Array((N + 1) * (N + 1));
       Ii = new Float32Array((N + 1) * (N + 1));
       M = new Uint8Array((N + 1) * (N + 1));
+      WP = new Float32Array((N + 1) * (N + 1) * 3);
+      WNm = new Float32Array((N + 1) * (N + 1) * 3);
       for (let j = 0; j <= N; j++) {
         for (let i = 0; i <= N; i++) {
           const s = C.inv(C.minX + i * dx, C.minY + j * dy);
           const k = j * (N + 1) + i;
           if (!s) continue;
           M[k] = 1; Z[k] = finite(s.z, 0); Ii[k] = lum(s);
+          if (s.world && s.wN) {
+            WP[k * 3] = finite(s.world.x, 0); WP[k * 3 + 1] = finite(s.world.y, 0); WP[k * 3 + 2] = finite(s.world.z, 0);
+            WNm[k * 3] = finite(s.wN.x, 0); WNm[k * 3 + 1] = finite(s.wN.y, 0); WNm[k * 3 + 2] = finite(s.wN.z, 0);
+          }
         }
       }
     };
@@ -848,6 +857,16 @@
       if (!M[k] || !M[k - 1] || !M[k + 1] || !M[k - (N + 1)] || !M[k + (N + 1)]) return null;
       return { x: (Z[k + 1] - Z[k - 1]) / (2 * dx), y: (Z[k + (N + 1)] - Z[k - (N + 1)]) / (2 * dy) };
     };
+    // Screen gradient of any per-cell scalar f(k) over the same raster (the same stencil as gradZ).
+    C.gradOn = (x, y, f) => {
+      raster();
+      const i = gi(x); const j = gj(y);
+      if (i < 1 || j < 1 || i >= N || j >= N) return null;
+      const k = j * (N + 1) + i;
+      if (!M[k] || !M[k - 1] || !M[k + 1] || !M[k - (N + 1)] || !M[k + (N + 1)]) return null;
+      return { x: (f(k + 1) - f(k - 1)) / (2 * dx), y: (f(k + (N + 1)) - f(k - (N + 1))) / (2 * dy), k };
+    };
+    C.fieldWorld = () => { raster(); return { P: WP, N: WNm }; };
     // AMBIENT OCCLUSION, as its own term. Horizon sampling in twelve screen
     // directions over the depth raster: a direction is occluded when a nearby
     // sample stands NEARER the camera than the tangent plane predicts. On a
@@ -931,6 +950,7 @@
     // gradient, so a coarser grid + fewer smoothing passes keeps the flow's
     // look while a drag keeps its tone. The settled compose and every export
     // (no substrateDraft) keep 96 / 4 byte-for-byte.
+    const ETF0 = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.ETF) || {};
     const NG = C.draft ? 48 : 96;
     const PASSES = C.draft ? 2 : 4;
     C.etfWork = NG * NG * PASSES;     // grid cells x passes (test-visible)
@@ -939,12 +959,51 @@
     let TY = new Float32Array((NG + 1) * (NG + 1));
     const CF = new Float32Array((NG + 1) * (NG + 1));
     const MK = new Uint8Array((NG + 1) * (NG + 1));
+    // THE WRAP RINGS (object-locked). With a wrap axis `a` (the object's own, rotated into world: C.wrap.a) the
+    // strokes are the level sets of the height h = P.a: the slices of the surface by planes perpendicular to `a`.
+    // On a sphere with `a` = the top pole those are the latitude rings; on a cylinder's side, horizontal rings; on
+    // a torus, contour rings. Where the surface faces along `a` (|a x n| -> 0: a cylinder cap, a box top, the pole
+    // itself) a slice degenerates, so the stroke blends over to the level sets of q = P.e, e a fixed axis
+    // perpendicular to `a`: straight parallel lines across the face. The field is a function of the surface and the
+    // object alone: it ignores the light and the camera, so it rotates with the object. The screen direction is the
+    // perpendicular of the screen gradient of h (and q) over the same depth raster, exactly as the old depth field
+    // was. Without a wrap axis (a direct harness call) the field stays the old depth isocontours.
+    const WRAPC = C.wrap || null;
+    const WLO = Number.isFinite(ETF0.WRAP_LO) ? ETF0.WRAP_LO : 0.015;
+    const WHI = Number.isFinite(ETF0.WRAP_HI) ? ETF0.WRAP_HI : 0.07;
+    const WF = WRAPC ? C.fieldWorld() : null;
+    const hOf = WRAPC ? (k) => WF.P[k * 3] * WRAPC.a.x + WF.P[k * 3 + 1] * WRAPC.a.y + WF.P[k * 3 + 2] * WRAPC.a.z : null;
+    const qOf = WRAPC ? (k) => WF.P[k * 3] * WRAPC.e.x + WF.P[k * 3 + 1] * WRAPC.e.y + WF.P[k * 3 + 2] * WRAPC.e.z : null;
     for (let j = 0; j <= NG; j++) {
       for (let i = 0; i <= NG; i++) {
         const x = C.minX + i * dx; const y = C.minY + j * dy;
         const g = C.gradZ(x, y);
         const k = j * (NG + 1) + i;
         if (!g) continue;
+        if (WRAPC) {
+          const gh = C.gradOn(x, y, hOf); const gq = C.gradOn(x, y, qOf);
+          if (!gh || !gq) continue;
+          const nx = WF.N[gh.k * 3]; const ny = WF.N[gh.k * 3 + 1]; const nz = WF.N[gh.k * 3 + 2];
+          const ax = WRAPC.a;
+          const cx = ax.y * nz - ax.z * ny; const cy = ax.z * nx - ax.x * nz; const cz = ax.x * ny - ax.y * nx;
+          const w = smooth01((Math.hypot(cx, cy, cz) - WLO) / Math.max(1e-6, WHI - WLO));
+          const Lh = Math.hypot(gh.x, gh.y); const Lq = Math.hypot(gq.x, gq.y);
+          let t1x = 0; let t1y = 0; let t2x = 0; let t2y = 0;
+          if (Lh > 1e-9) { t1x = -gh.y / Lh; t1y = gh.x / Lh; }
+          if (Lq > 1e-9) { t2x = -gq.y / Lq; t2y = gq.x / Lq; }
+          if (!(Lh > 1e-9) && !(Lq > 1e-9)) continue;
+          if (!(Lh > 1e-9)) { t1x = t2x; t1y = t2y; }
+          if (!(Lq > 1e-9)) { t2x = t1x; t2y = t1y; }
+          const sg = (t1x * t2x + t1y * t2y) < 0 ? -1 : 1;
+          let bx = w * t1x + (1 - w) * sg * t2x; let by = w * t1y + (1 - w) * sg * t2y;
+          let Lb = Math.hypot(bx, by);
+          if (!(Lb > 1e-6)) { bx = w >= 0.5 ? t1x : sg * t2x; by = w >= 0.5 ? t1y : sg * t2y; Lb = Math.hypot(bx, by); }
+          if (!(Lb > 1e-9)) continue;
+          MK[k] = 1;
+          TX[k] = bx / Lb; TY[k] = by / Lb;
+          CF[k] = w * Lh + (1 - w) * Lq;
+          continue;
+        }
         const L = Math.hypot(g.x, g.y);
         if (!(L > 1e-9)) continue;
         MK[k] = 1;
@@ -3357,6 +3416,7 @@
     if (!fn) return false;
     const C = makeCtx(o);
     if (!C.ok) return true;
+    C.wrap = o.wrapAxis && o.wrapAxis.a && o.wrapAxis.e ? o.wrapAxis : null;
     attachFields(C);
     // The crosshatch mapper is a crossed pair by definition, so a law that owns
     // family A there owns family B too: the same construction, rotated by the
@@ -3428,5 +3488,26 @@
   const ANGLE_LAWS = ['mezzoRegion', 'dutyConst', 'endShorten', 'creviceAO', 'transReserveMono',
     'jitterOverdraw', 'mergeLadder', 'shearClear', 'phaseBlue', 'fiboQuasi'];
   const readsAngle = (algo) => ANGLE_LAWS.indexOf(String(algo)) !== -1;
-  Scene3D.SurfaceFillMono = { LAWS, isMono, emit, readsAngle, STRIPE_ALIGN_MAX };
+  /* The wrap axis of an object, in WORLD space. (px, py) is the Wrap-origin pad value: a point on the unit disk read as
+   * a top-down view of the object's upper hemisphere (centre = the top pole +Y, rim = the equator at that azimuth; the
+   * pad's down is toward the viewer, +Z). Returns { a, e }: `a` the unit axis whose level sets are the rings, `e` the
+   * fixed axis perpendicular to it that the straight-line fallback uses, both rotated by the object's own transform
+   * (`apply(pt, transform)` is Scene.applyObjectTransform), so the field is locked to the object. Null when the
+   * transform helper is missing. (0, 0) is the default and gives a = +Y, e = +Z. */
+  const wrapAxisWorld = (px, py, transform, apply) => {
+    if (typeof apply !== 'function') return null;
+    let x = finite(px, 0); let z = finite(py, 0);
+    const r = Math.hypot(x, z);
+    if (r > 1) { x /= r; z /= r; }
+    const y = Math.sqrt(Math.max(0, 1 - x * x - z * z));
+    const unit = (v) => { const L = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / L, y: v.y / L, z: v.z / L }; };
+    const a = unit({ x, y, z });
+    const pick = Math.abs(a.z) > 0.95 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 0, z: 1 };
+    const d = a.x * pick.x + a.y * pick.y + a.z * pick.z;
+    const e = unit({ x: pick.x - d * a.x, y: pick.y - d * a.y, z: pick.z - d * a.z });
+    const o0 = apply({ x: 0, y: 0, z: 0 }, transform);
+    const rot = (v) => { const w = apply(v, transform); return unit({ x: w.x - o0.x, y: w.y - o0.y, z: w.z - o0.z }); };
+    return { a: rot(a), e: rot(e) };
+  };
+  Scene3D.SurfaceFillMono = { LAWS, isMono, emit, readsAngle, STRIPE_ALIGN_MAX, wrapAxisWorld };
 }());

@@ -439,15 +439,18 @@ describe('Scene3D flow-field singularity control — etfKang / defectSplit on to
     expect(r.central).toBe(0);
   }, SLOW);
 
-  // etfKang is UNCHANGED by this pass (see this file's header comment and
+  // Since the wrap-origin change the etfKang strokes are the object's own level sets of height (rings around the top
+  // pole), not the camera's depth isocontours, so the torus no longer inherits the depth field's crown critical points:
+  // 6 -> 2 singularities. This count moved on purpose; the remaining two are the field's own.
+  // (Older note: etfKang was UNCHANGED by the F-18 pass (see this file's header comment and
   // `surface-fill-mono.js`'s Kang-loop comment: two tuning attempts were
   // tried and rejected, so `lawEtf` ships identical to before except for
   // the `C.__dirAt` trace hook `singularities()` above reads). This is a
   // baseline measurement, not a regression guard for a fix — it documents
   // the known-open count so a future attempt has a number to beat, and so
   // this number moving is a deliberate signal, not silent drift.
-  test('etfKang: torus baseline singularity count (KNOWN OPEN — not fixed by this pass)', () => {
+  test('etfKang: torus singularity count (6 before the object-locked wrap rings)', () => {
     const r = singularities('torus', 'etfKang');
-    expect(r.sing, `${r.sing}/${r.total} singularities`).toBe(6);
+    expect(r.sing, `${r.sing}/${r.total} singularities`).toBe(2);
   }, SLOW);
 });

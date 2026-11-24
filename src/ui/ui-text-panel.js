@@ -1818,4 +1818,61 @@
   const openFontPicker = (anchorRect) => { if (CURRENT && CURRENT.openFontPicker) CURRENT.openFontPicker(anchorRect); };
   const openSizePresets = (anchorRect) => { if (CURRENT && CURRENT.openSizePresets) CURRENT.openSizePresets(anchorRect); };
   Vectura.UI.TextPanel = { build, openFontPicker, openSizePresets };
+
+  /* Shared circular XY pad (the `.vtp-xypad` look the Fill offset / Centerpoint pads use), for any panel.
+   * Values are normalised to the unit disk: x right, y down, the rim is radius 1. Pointer drag and the arrow keys
+   * (Shift = a bigger step) move the knob; double-click recentres. `onInput(v)` fires while dragging (visual only),
+   * `onCommit(v)` once per gesture (pointer release, each key press, recentre) so a caller writes one undo step.
+   *   const pad = Vectura.UI.XYPad(host, { value: {x, y}, ariaLabel, readout(v) -> text, onInput, onCommit });
+   *   pad.set({x, y}) repositions without firing; pad.el is the pad element. */
+  // A keyboard commit makes the host panel rebuild its rows (the pad is a new element); the next pad with the same label takes focus
+  // back so the arrow keys keep stepping.
+  let padRefocus = null;
+  Vectura.UI.XYPad = (host, props = {}) => {
+    const clampDisk = (x, y) => { const r = Math.hypot(x, y); return r > 1 ? { x: x / r, y: y / r } : { x, y }; };
+    const round = (n) => Math.round(n * 100) / 100;
+    const fmt = typeof props.readout === 'function' ? props.readout : (v) => (v.x || v.y ? `${v.x.toFixed(2)}, ${v.y.toFixed(2)}` : 'centred');
+    const wrap = document.createElement('div');
+    wrap.className = 'vtp-xypad-wrap';
+    wrap.innerHTML = '<div class="vtp-xypad" role="slider" tabindex="0"><div class="vtp-xypad-cross"></div><div class="vtp-xypad-rim"></div><div class="vtp-xypad-knob"></div></div><div class="vtp-xypad-read"></div>';
+    host.appendChild(wrap);
+    const pad = wrap.querySelector('.vtp-xypad'); const knob = wrap.querySelector('.vtp-xypad-knob'); const read = wrap.querySelector('.vtp-xypad-read');
+    pad.setAttribute('aria-label', props.ariaLabel || 'XY pad');
+    let cur = clampDisk(Number(props.value && props.value.x) || 0, Number(props.value && props.value.y) || 0);
+    const paint = () => {
+      knob.style.left = `${50 + cur.x * 50}%`; knob.style.top = `${50 + cur.y * 50}%`;
+      pad.classList.toggle('off', !cur.x && !cur.y);
+      const t = fmt(cur); pad.setAttribute('aria-valuetext', t); read.textContent = t;
+    };
+    const setCur = (x, y) => { const c = clampDisk(x, y); cur = { x: round(c.x), y: round(c.y) }; paint(); };
+    const fromPoint = (cx, cy) => { const r = pad.getBoundingClientRect(); setCur(((cx - r.left) / r.width - 0.5) * 2, ((cy - r.top) / r.height - 0.5) * 2); };
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { pad.setPointerCapture(e.pointerId); } catch (_) { /* */ }
+      fromPoint(e.clientX, e.clientY);
+      if (props.onInput) props.onInput({ ...cur });
+      const mv = (ev) => { fromPoint(ev.clientX, ev.clientY); if (props.onInput) props.onInput({ ...cur }); };
+      const up = () => {
+        pad.removeEventListener('pointermove', mv); pad.removeEventListener('pointerup', up); pad.removeEventListener('pointercancel', up);
+        if (props.onCommit) props.onCommit({ ...cur });
+      };
+      pad.addEventListener('pointermove', mv); pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+    });
+    pad.addEventListener('dblclick', () => { setCur(0, 0); if (props.onCommit) props.onCommit({ ...cur }); });
+    pad.addEventListener('keydown', (e) => {
+      const s = e.shiftKey ? 0.1 : 0.02;
+      const d = { ArrowLeft: [-s, 0], ArrowRight: [s, 0], ArrowUp: [0, -s], ArrowDown: [0, s] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      setCur(cur.x + d[0], cur.y + d[1]);
+      padRefocus = props.ariaLabel || 'XY pad';
+      if (props.onCommit) props.onCommit({ ...cur });
+    });
+    paint();
+    if (padRefocus && padRefocus === (props.ariaLabel || 'XY pad')) {
+      padRefocus = null;
+      setTimeout(() => { if (pad.isConnected) { try { pad.focus(); } catch (_) { /* */ } } }, 0);
+    }
+    return { el: pad, set: (v) => { cur = clampDisk(Number(v && v.x) || 0, Number(v && v.y) || 0); paint(); }, destroy: () => wrap.remove() };
+  };
 })();

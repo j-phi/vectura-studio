@@ -11406,6 +11406,9 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 .vtp-xypad.off .vtp-xypad-knob { background: var(--ui-muted); box-shadow: 0 0 0 1px var(--ui-border); }
 .vtp-xypad-read { text-align: center; font-family: var(--font-mono); font-size: 9px; color: var(--ui-muted); margin-top: 5px; }
 
+/* Shared UI.XYPad host (e.g. the Scene 3D Wrap origin row): pad above its readout, centred in the control column. */
+.vtp-xypad-wrap { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
 /* Fill-offset pad + vertical max-offset slider, laid out side by side. */
 .vtp-xypad-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 3px; }
 .vtp-xypad-row .vtp-xypad { margin: 0; }

@@ -17,8 +17,8 @@ const hashPaths = (paths) => {
   });
   return { hash: h.toString(16), paths: n, pts };
 };
-// Settled etfKang sphere (yaw 33, same scene as scene3d-mono-draft-substrate; x64 value of its pinned golden, recorded pre-change).
-const SETTLED = { hash: 'b2689b20', paths: 285, pts: 13885 };
+// Settled etfKang sphere (yaw 33, same scene as scene3d-mono-draft-substrate; x64 value of its pinned golden). Re-pinned when the strokes became object-locked wrap rings (was b2689b20 / 285 / 13885).
+const SETTLED = { hash: 'c742534c', paths: 197, pts: 11896 };
 const BASE_WORK = 96 * 96 * 4;
 
 describe('etfKang law-tier draft', () => {
