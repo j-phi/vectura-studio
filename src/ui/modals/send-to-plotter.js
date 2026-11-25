@@ -1489,8 +1489,20 @@
         this.s.geomVersion = (this.s.geomVersion || 0) + 1;
         this.s.jobError = `Could not read the document: ${err.message}`;
       }
+      this.updateRotIcons();
       this.recompute();
       if (this.setupPens) this.renderPens();
+    }
+
+    // Redraw the rotation pictures from the current document size (after a refresh or a size change).
+    updateRotIcons() {
+      if (!this.rotRow) return;
+      const doc = this.s.geometry && this.s.geometry.docSize;
+      this.rotRow.querySelectorAll('.stp-rotcard').forEach((b) => {
+        const old = b.querySelector('svg');
+        const next = rotIcon(Number(b.dataset.rotate), doc);
+        if (old && next) old.replaceWith(next);
+      });
     }
 
     // Everything the built job depends on; Start only plots a job whose key matches the current one.
@@ -1903,7 +1915,23 @@
   // ---------------------------------------------------------------------------
   // Setup tab
   // ---------------------------------------------------------------------------
-  const rotIcon = (deg) => svgEl(`<svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><g transform="rotate(${deg} 20 20)"><rect x="11" y="6" width="18" height="26" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 14h10M15 19h10M15 24h6" stroke="currentColor" stroke-width="1.2" opacity=".6"/><path d="M20 2.5l3 3.2h-6z" fill="currentColor"/></g></svg>`);
+  // Page picture for a rotation option, drawn from the real document aspect ratio. The rect is drawn at its
+  // rotated size (so 90/270 swap width and height); a small triangle on the page's original top edge shows which
+  // way the artwork's top ends up. Square documents draw squares; an unknown size falls back to a portrait page.
+  const rotIconMarkup = (deg, docW, docH) => {
+    const known = isNum(docW) && isNum(docH) && docW > 0 && docH > 0;
+    const aspect = known ? docW / docH : 0.7;
+    const MAX = 28;
+    const uw = aspect >= 1 ? MAX : MAX * aspect; // unrotated page size
+    const uh = aspect >= 1 ? MAX / aspect : MAX;
+    const swap = deg === 90 || deg === 270;
+    const rw = swap ? uh : uw; const rh = swap ? uw : uh;
+    const f = (n) => Number(n.toFixed(2));
+    const x = f(20 - rw / 2); const y = f(20 - rh / 2);
+    const top = f(20 - uh / 2); // original top edge, rotated about the centre by the marker group
+    return `<svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><rect x="${x}" y="${y}" width="${f(rw)}" height="${f(rh)}" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><g data-top-marker="${deg}" transform="rotate(${deg} 20 20)"><path d="M20 ${f(top + 1.5)}l3 3.4h-6z" fill="currentColor"/></g></svg>`;
+  };
+  const rotIcon = (deg, docSize) => svgEl(rotIconMarkup(deg, docSize && docSize.width, docSize && docSize.height));
 
   Object.assign(Panel.prototype, {
     buildSetup() {
@@ -1920,11 +1948,12 @@
         (v) => { this.saveSettings({ placement: { mode: v } }); }, 'Placement mode');
       modeSeg.id = 'stp-place-mode';
       const rotRow = h('div', { class: 'stp-rotcards', role: 'radiogroup', 'aria-label': 'Rotation' });
+      this.rotRow = rotRow;
       [0, 90, 180, 270].forEach((deg) => {
         const b = h('button', { type: 'button', class: `stp-rotcard${pl.rotate === deg ? ' is-current' : ''}`, role: 'radio', 'aria-checked': String(pl.rotate === deg), 'aria-label': `Rotate ${deg} degrees`, dataset: { rotate: String(deg) }, onclick: () => {
           this.saveSettings({ placement: { rotate: deg } });
           rotRow.querySelectorAll('.stp-rotcard').forEach((x) => { const on = x.dataset.rotate === String(deg); x.classList.toggle('is-current', on); x.setAttribute('aria-checked', String(on)); });
-        } }, rotIcon(deg), h('span', { text: `${deg}°` }));
+        } }, rotIcon(deg, this.s.geometry && this.s.geometry.docSize), h('span', { text: `${deg}°` }));
         rotRow.appendChild(b);
       });
       const place = section('Placement',

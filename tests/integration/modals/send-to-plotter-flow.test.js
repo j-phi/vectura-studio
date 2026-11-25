@@ -361,4 +361,39 @@ describe('Send to Plotter v2 flow', () => {
     expect(document.querySelectorAll('.stp-card').length).toBeGreaterThan(1);
     click('#stp-change-profile');
   });
+
+  describe('rotation pictures follow the document orientation', () => {
+    const iconRect = (deg) => document.querySelector(`.stp-rotcard[data-rotate="${deg}"] svg rect`);
+    const dims = (deg) => ({ w: Number(iconRect(deg).getAttribute('width')), h: Number(iconRect(deg).getAttribute('height')) });
+    const setDoc = (w, h) => {
+      const panel = STP.getPanel();
+      panel.s.geometry = Object.assign({}, panel.s.geometry, { docSize: { width: w, height: h } });
+      panel.updateRotIcons();
+    };
+
+    test('landscape document: 0 and 180 are landscape, 90 and 270 portrait', () => {
+      setDoc(420, 297);
+      [0, 180].forEach((d) => expect(dims(d).w).toBeGreaterThan(dims(d).h));
+      [90, 270].forEach((d) => expect(dims(d).h).toBeGreaterThan(dims(d).w));
+    });
+
+    test('portrait document: the reverse; square stays square', () => {
+      setDoc(297, 420);
+      [0, 180].forEach((d) => expect(dims(d).h).toBeGreaterThan(dims(d).w));
+      [90, 270].forEach((d) => expect(dims(d).w).toBeGreaterThan(dims(d).h));
+      setDoc(200, 200);
+      [0, 90, 180, 270].forEach((d) => expect(dims(d).w).toBe(dims(d).h));
+    });
+
+    test('each icon carries a top marker and Refresh from canvas re-reads the document size', () => {
+      expect(document.querySelectorAll('.stp-rotcard svg [data-top-marker]').length).toBe(4);
+      const panel = STP.getPanel();
+      const orig = panel.ui.getExportSnapshot.bind(panel.ui);
+      panel.ui.getExportSnapshot = () => { const sn = orig(); return Object.assign({}, sn, { prof: Object.assign({}, sn.prof, { width: 400, height: 200 }) }); };
+      try {
+        click('#stp-refresh');
+        expect(dims(0).w).toBeGreaterThan(dims(0).h);
+      } finally { panel.ui.getExportSnapshot = orig; }
+    });
+  });
 });
