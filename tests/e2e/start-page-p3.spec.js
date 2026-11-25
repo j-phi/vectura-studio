@@ -129,11 +129,15 @@ test.describe('Start Page P3', () => {
 
   test('no idle rAF: with the pointer idle and nothing animating, the page schedules no frames (Still off or on)', async ({ page }) => {
     await bootWithWorks(page);
-    const count = (ms) => page.evaluate((t) => new Promise((res) => {
-      let n = 0; const orig = window.requestAnimationFrame;
-      window.requestAnimationFrame = function (cb) { n += 1; return orig.call(window, cb); };
-      setTimeout(() => { window.requestAnimationFrame = orig; res(n); }, t);
-    }), ms);
+    const count = async (ms) => { // TEMP-DIAG
+      const r = await page.evaluate((t) => new Promise((res) => {
+        let n = 0; const st = []; const orig = window.requestAnimationFrame;
+        window.requestAnimationFrame = function (cb) { n += 1; st.push(String(new Error().stack).split('\n').slice(2, 6).map((l) => l.trim().replace(/.*\/src\//, 'src/')).join(' < ')); return orig.call(window, cb); };
+        setTimeout(() => { window.requestAnimationFrame = orig; res({ n, st }); }, t);
+      }), ms);
+      if (r.n > 4) console.log('RAFDIAG ' + r.n + ' ' + JSON.stringify(r.st));
+      return r.n;
+    };
     // settled = a whole window passes with (almost) no frames; poll for it instead of guessing how long the draw-ins take
     await expect.poll(() => count(1000), { timeout: 30000, intervals: [250] }).toBeLessThanOrEqual(4);
     expect(await count(2000)).toBeLessThanOrEqual(4);
