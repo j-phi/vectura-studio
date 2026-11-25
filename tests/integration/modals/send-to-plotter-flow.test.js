@@ -513,4 +513,49 @@ describe('Send to Plotter v2 flow', () => {
       click('#stp-specs-close');
     });
   });
+
+  describe('speed range UI (spec 13.1, 13.4)', () => {
+    const toggleHs = (on) => { const inp = document.querySelector('#stp-highspeed input'); inp.checked = on; inp.dispatchEvent(new window.Event('change', { bubbles: true })); };
+    const setProfile = (patch) => { const r = STP.getPanel().setProfileOverride(patch); expect(r.ok).toBe(true); };
+
+    test('High-speed: confirm dialog quotes the warning; Cancel changes nothing; Enable sets the flag and header badge; off is immediate', async () => {
+      click('[data-tab="setup"]');
+      const det = document.querySelector('[data-adv="speed"]'); expect(det).toBeTruthy(); det.open = true;
+      expect(STP.getPanel().profile().highSpeed).not.toBe(true);
+      toggleHs(true);
+      const dlg = document.getElementById('stp-hs-confirm');
+      expect(dlg).toBeTruthy();
+      expect(dlg.textContent).toMatch(/noise/i);
+      expect(dlg.textContent).toMatch(/step loss/i);
+      expect(dlg.textContent).toMatch(/never changes firmware acceleration/i);
+      click('#stp-hs-cancel');
+      expect(document.getElementById('stp-hs-confirm')).toBeNull();
+      expect(STP.getPanel().profile().highSpeed).not.toBe(true);
+      toggleHs(true);
+      click('#stp-hs-enable');
+      expect(STP.getPanel().profile().highSpeed).toBe(true);
+      await waitFor(() => document.getElementById('stp-hs-badge'));
+      expect(document.getElementById('stp-hs-badge').textContent).toMatch(/High-speed/);
+      toggleHs(false);
+      expect(STP.getPanel().profile().highSpeed).toBe(false);
+      await waitFor(() => !document.getElementById('stp-hs-badge'));
+    });
+
+    test('tips never block: draw quality tip above 6000, travel step-loss tip above 12000', () => {
+      const panel = STP.getPanel();
+      expect(panel.speedTip('draw', 6000)).toBe('');
+      expect(panel.speedTip('draw', 6001)).toMatch(/quality tip/i);
+      expect(panel.speedTip('travel', 12000)).toBe('');
+      expect(panel.speedTip('travel', 12001)).toMatch(/step-loss tip/i);
+    });
+
+    test('per-pen speed field shows the effective value and the cap source', () => {
+      click('[data-tab="setup"]');
+      const panel = STP.getPanel();
+      const note = panel.speedNote(20000);
+      expect(note).toMatch(/Capped at 15000 mm\/min \(profile limit\)/);
+      expect(panel.speedNote(4000)).toMatch(/Effective 4000 mm\/min/);
+      expect(document.querySelector('.stp-pen .stp-speed-note')).toBeTruthy();
+    });
+  });
 });

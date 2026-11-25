@@ -857,7 +857,7 @@
     return inp;
   };
   const field = (label, control, hint) => h('label', { class: 'stp-field' },
-    h('span', { class: 'stp-field-lbl', text: label }), control, hint ? h('span', { class: 'stp-hint', text: hint }) : null);
+    h('span', { class: 'stp-field-lbl', text: label }), control, hint ? (typeof hint === 'object' ? hint : h('span', { class: 'stp-hint', text: hint })) : null);
   const row = (label, control, hint) => h('div', { class: 'stp-row' },
     h('span', { class: 'stp-row-lbl' }, label, hint ? h('span', { class: 'stp-hint', text: hint }) : null), control);
   const section = (title, ...kids) => h('section', { class: 'stp-sec' }, h('h3', { class: 'stp-sec-h', text: title }), ...kids);
@@ -1328,6 +1328,7 @@
         h('h2', { class: 'stp-title', text: 'Send to Plotter' }),
         h('span', { class: 'stp-profile-name', text: session.kind === 'sim' && c ? `${profile.name} (simulator)` : profile.name }),
         this.pill,
+        profile.highSpeed ? h('span', { class: 'stp-chip stp-hs-badge', id: 'stp-hs-badge', text: 'High-speed', title: 'High-speed mode is on: XY feed can reach 20000 mm/min if your firmware allows it' }) : null,
         this.readoutEl,
         this.originChip,
         h('span', { class: 'stp-spacer' }),
@@ -1519,6 +1520,8 @@
       if (w.has('connected') || w.has('disconnected') || w.has('origin') || w.has('profile') || w.has('all')) this.scheduleRecompute();
       this.renderPlot();
       this.renderStats();
+      this.renderSpeedBox();
+      if (w.has('profile') || w.has('connected') || w.has('disconnected') || w.has('all')) this.renderPens();
       ['machine', 'console'].forEach((k) => { if (this.tools[k]) { try { this.tools[k].update(); } catch (e) { /* ignore */ } } });
       this.previews.forEach((p) => p.invalidate());
       // Needs attention: bring Plot forward for a pen change or alarm.
@@ -2137,11 +2140,14 @@
         optToggle('merge', 'Merge touching paths'));
       const optimize = adv('optimize', 'Optimization', optBody);
 
+      this.speedBox = h('div', { class: 'stp-speedbox', id: 'stp-speedbox' });
+      this.renderSpeedBox();
+      const speedAdv = adv('speed', 'Speed', this.speedBox);
       const regmark = adv('regmark', 'Registration marks',
         row('Registration mark', ctlSwitch(s.registrationMark, (v) => this.saveSettings({ registrationMark: v }), 'Registration mark'), `A ${fmtLen(10)} cross at the top-left, drawn by every pen, to check color alignment.`));
       const betweenPens = field('Between pens', ctlSeg([{ value: 'pause', label: 'Pause for pen change' }, { value: 'continue', label: 'Keep going' }], s.penChange, (v) => this.saveSettings({ penChange: v }), 'Pen change behavior'));
 
-      left.append(place, section('Pens', this.penBox, betweenPens), optimize, regmark, section('Estimate', this.statsEl));
+      left.append(place, section('Pens', this.penBox, betweenPens), speedAdv, optimize, regmark, section('Estimate', this.statsEl));
 
       // preview column
       this.setupPreview = new Preview(this);
@@ -2170,6 +2176,63 @@
         if (ra !== rb) return ra === Infinity ? 1 : rb === Infinity ? -1 : ra - rb;
         return a.i - b.i;
       }).map((x) => x.id);
+    },
+
+    // ---- speed range (spec 13): tips, effective feed note, High-speed mode ----
+    firmwareNow() { const c = liveController(); return c && c.fw ? c.fw : null; },
+
+    speedTip(kind, feed) {
+      const t = this.profile().speedTiers || {};
+      if (kind === 'draw' && isNum(t.drawQuality) && feed > t.drawQuality) return `Quality tip: above ${fmtN(t.drawQuality, 0)} mm/min fine lines may thin or skip.`;
+      if (kind === 'travel' && isNum(t.travelStepLoss) && feed > t.travelStepLoss) return `Step-loss tip: above ${fmtN(t.travelStepLoss, 0)} mm/min travel moves can lose steps; watch registration.`;
+      return '';
+    },
+
+    // Effective clamped draw feed plus where the cap comes from (never blocks; PlotSafety still clamps the real value).
+    speedNote(requested) {
+      const prof = this.profile();
+      const info = PS().feedCapInfo(prof, this.firmwareNow());
+      const want = isNum(requested) ? requested : prof.motion.drawFeed;
+      const eff = PS().clampFeedXY(want, prof, this.firmwareNow());
+      const src = info.source === 'firmware' ? 'capped by your firmware' : info.source === 'high-speed' ? 'High-speed mode' : 'profile limit';
+      const base = want > info.cap + 1e-6 ? `Capped at ${fmtN(eff, 0)} mm/min (${src})` : `Effective ${fmtN(eff, 0)} mm/min`;
+      const tip = this.speedTip('draw', eff);
+      return tip ? `${base}. ${tip}` : base;
+    },
+
+    renderSpeedBox() {
+      const box = this.speedBox;
+      if (!box) return;
+      box.textContent = '';
+      const prof = this.profile();
+      const canHs = isNum((prof.limits || {}).highSpeedXY) && prof.limits.highSpeedXY > prof.limits.maxFeedXY;
+      const info = PS().feedCapInfo(prof, this.firmwareNow());
+      box.appendChild(h('p', { class: 'stp-hint', id: 'stp-speed-cap', text: `XY speed limit now: ${fmtN(info.cap, 0)} mm/min (${info.source === 'firmware' ? 'your firmware' : info.source === 'high-speed' ? 'High-speed mode' : 'profile limit'}). Z: ${fmtN(prof.limits.maxFeedZ, 0)} mm/min.` }));
+      const tt = this.speedTip('travel', PS().clampFeedXY(prof.motion.travelFeed, prof, this.firmwareNow()));
+      if (tt) box.appendChild(h('p', { class: 'stp-hint', id: 'stp-travel-tip', text: tt }));
+      if (!canHs) return;
+      const sw = ctlSwitch(prof.highSpeed === true && !this.s.hsConfirm, (v) => {
+        if (v) { this.s.hsConfirm = true; this.renderSpeedBox(); return; }
+        this.s.hsConfirm = false;
+        this.setProfileOverride({ highSpeed: false });
+        this.renderSpeedBox();
+      }, 'High-speed mode');
+      sw.id = 'stp-highspeed';
+      box.appendChild(row('High-speed mode', sw, `Raises the XY limit to ${fmtN(prof.limits.highSpeedXY, 0)} mm/min, only if your firmware's $110/$111 allow it.`));
+      if (prof.highSpeed === true) {
+        const fwv = this.firmwareNow();
+        if (fwv && isNum(fwv[110]) && isNum(fwv[111]) && Math.min(fwv[110], fwv[111]) < prof.limits.highSpeedXY) {
+          box.appendChild(h('p', { class: 'stp-hint', text: `Your firmware limits XY to ${fmtN(Math.min(fwv[110], fwv[111]), 0)} mm/min ($110/$111), so High-speed mode cannot go faster until those are raised.` }));
+        }
+      }
+      if (this.s.hsConfirm) {
+        box.appendChild(h('div', { class: 'stp-confirm', id: 'stp-hs-confirm', role: 'alertdialog', 'aria-label': 'Turn on High-speed mode' },
+          h('p', { text: 'High-speed mode: high acceleration increases noise and decreases precision. Exceeding the plotter\'s limits may cause abnormal operation, positioning errors, motor step loss and stalling.' }),
+          h('p', { class: 'stp-hint', text: 'Vectura never changes firmware acceleration or speed settings; it only allows faster feeds up to your firmware\'s own limit.' }),
+          h('div', { class: 'stp-btnrow' },
+            btn('Enable High-speed mode', () => { this.s.hsConfirm = false; this.setProfileOverride({ highSpeed: true }); this.renderSpeedBox(); }, 'is-warn', { id: 'stp-hs-enable' }),
+            btn('Cancel', () => { this.s.hsConfirm = false; this.renderSpeedBox(); }, '', { id: 'stp-hs-cancel' }))));
+      }
     },
 
     renderPens() {
@@ -2208,6 +2271,7 @@
           this.saveSettings({ penOrder: order });
           this.renderPens();
         };
+        const speedNoteEl = h('span', { class: 'stp-hint stp-speed-note', text: this.speedNote(cfg.drawFeed) });
         const card = h('div', { class: `stp-pen${cfg.enabled ? '' : ' is-off'}`, dataset: { penId: id } },
           h('div', { class: 'stp-pen-head' },
             ctlSwitch(cfg.enabled, (v) => { save({ enabled: v }); card.classList.toggle('is-off', !v); }, `Plot ${pen.name || id}`),
@@ -2218,7 +2282,7 @@
             btn('↑', () => move(-1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} earlier`, disabled: idx === 0 }),
             btn('↓', () => move(1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} later`, disabled: idx === ids.length - 1 })),
           h('div', { class: 'stp-pen-grid is-primary' },
-            field('Draw speed (mm/min)', ctlNum(cfg.drawFeed, { ariaLabel: `${pen.name} draw speed`, min: 50, max: 20000, nullable: true, placeholder: prof.motion.drawFeed }, (v) => save({ drawFeed: v }))),
+            field('Draw speed (mm/min)', ctlNum(cfg.drawFeed, { ariaLabel: `${pen.name} draw speed`, min: 50, max: 20000, nullable: true, placeholder: prof.motion.drawFeed }, (v) => { save({ drawFeed: v }); speedNoteEl.textContent = this.speedNote(v); }), speedNoteEl),
             field('Pen-down height (mm)', ctlNum(cfg.down, { ariaLabel: `${pen.name} pen-down height`, min: 0, max: 12, step: 0.05, nullable: true, placeholder: prof.pen.down }, (v) => save({ down: v })))),
           adv(`pen-more-${id}`, 'More',
             h('div', { class: 'stp-pen-grid' },
