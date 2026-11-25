@@ -27,6 +27,54 @@
     return DEPS;
   };
 
+  const copyText = async (text) => {
+    try {
+      if (G.navigator && G.navigator.clipboard && G.navigator.clipboard.writeText) {
+        await G.navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) { /* fall through to the textarea path */ }
+    try {
+      const doc = G.document;
+      const ta = doc.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      doc.body.appendChild(ta);
+      ta.select();
+      const ok = doc.execCommand && doc.execCommand('copy');
+      ta.remove();
+      return !!ok;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  // One delegated listener per #formula-display: the block is re-rendered via
+  // innerHTML on every update, so the button itself can't hold the handler.
+  function bindCopy(formula) {
+    // JS properties, not data-* attributes: an attribute write on every update is
+    // a DOM mutation that page-wide observers answer with frames (no-idle-rAF).
+    if (formula._vecturaCopyBound) return;
+    formula._vecturaCopyBound = true;
+    formula.addEventListener('click', async (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.formula-copy-btn') : null;
+      if (!btn) return;
+      e.preventDefault();
+      const ok = await copyText(formula._vecturaCopyText || '');
+      const label = btn.querySelector('.formula-copy-label');
+      btn.dataset.state = ok ? 'copied' : 'failed';
+      if (label) label.textContent = ok ? 'Copied' : 'Copy failed';
+      clearTimeout(btn._copyTimer);
+      btn._copyTimer = setTimeout(() => {
+        if (!btn.isConnected) return;
+        delete btn.dataset.state;
+        if (label) label.textContent = 'Copy';
+      }, 1600);
+    });
+  }
+
   function updateFormula() {
     const { getEl, escapeHtml, usesSeed } = requireDeps('updateFormula');
     const l = this.app.engine.getActiveLayer();
@@ -92,8 +140,22 @@
             </div>
           `
         : '';
+      // Plain-text copy of the whole model (formula, every Values row, seed),
+      // read by the Copy button so the clipboard never depends on what's visible.
+      // Kept as a property; see bindCopy for why it is not a data-* attribute.
+      const seedLine = usesSeed(l.type) && l.params ? `Seed: ${l.params.seed}` : '';
+      formula._vecturaCopyText = [
+        ...formulaLines.map((line) => line.trim()),
+        ...(entries.length ? ['', 'Values', ...entries.map(([key, val]) => `${key}: ${val}`)] : []),
+        ...(seedLine ? ['', seedLine] : []),
+      ].join('\n');
+      bindCopy(formula);
       formula.innerHTML = `
           <div class="formula-block">
+            <button type="button" class="formula-copy-btn" aria-label="Copy mathematical model" title="Copy the full mathematical model">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span class="formula-copy-label">Copy</span>
+            </button>
             <div class="formula-equation">${formulaHtml || '<span class="text-vectura-muted">Select a layer...</span>'}</div>
             ${valuesHtml}
           </div>
