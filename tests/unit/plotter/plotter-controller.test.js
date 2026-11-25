@@ -713,8 +713,8 @@ describe('failure handling', () => {
 
   test('a banner during a jog also drops the origin and aborts the jog loop', async () => {
     const s = await connectedWithOrigin();
-    await s.run(s.ctrl.jogContinuousStart({ x: 1, y: 0 }, 3000));
-    await s.clock.advance(600);
+    const h = await s.run(s.ctrl.jogContinuousStart({ x: 1, y: 0 }, 3000));
+    for (let i = 0; i < 6; i += 1) { await s.clock.advance(100); h.keepAlive(); }
     s.sim.writeRealtime(0x18);
     await s.clock.advance(500);
     expect(s.ctrl.originSet).toBe(false);

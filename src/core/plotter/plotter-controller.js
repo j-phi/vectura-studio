@@ -14,6 +14,10 @@
   const MANUAL_STATES = ['idle', 'jogging'];
   const PLANNER_BLOCKS = 15;
   const EPS = 1e-6;
+  const JOG_SEGMENT_S = 0.15;
+  const JOG_MAX_LEAD_S = 0.3;
+  const JOG_DEADMAN_MS = 350;
+  const JOG_MAX_HOLD_MS = 8000;
 
   class PlotterError extends Error {
     constructor(code, message, details) {
@@ -382,6 +386,7 @@
 
     // ---- polling ----
     _pollInterval() {
+      if (this.state === 'jogging') return Math.min(100, this.opts.statusRunMs);
       return ['running', 'paused', 'penChange', 'jogging', 'stopping'].includes(this.state) ? this.opts.statusRunMs : this.opts.statusIdleMs;
     }
 
@@ -655,23 +660,33 @@
       this._lastJogTarget = { x: target.x, y: target.y };
     }
 
+    // At most one single jog in flight (command round trip plus the motion itself): further
+    // calls are dropped so key auto-repeat can never queue travel ahead of the carriage.
     async jog(dx, dy, feed) {
       this._requireManual('jogging', true);
       if (!Number.isFinite(dx) || !Number.isFinite(dy)) throw new PlotterError('invalid', 'Jog distances must be numbers.');
-      await this._raiseIfNeeded();
-      const st = await this._refreshStatus();
-      const base = this.state === 'jogging' && this._lastJogTarget ? this._lastJogTarget : st.wpos;
-      const t = this._clampTarget(base, dx, dy);
-      const f = this._jogFeed(feed);
-      const moved = Math.abs(t.x - base.x) > 5e-4 || Math.abs(t.y - base.y) > 5e-4;
-      if (moved) {
-        this._enterJogging();
-        await this._sendJog(t, f);
+      if (this._jogBusy || (this.state === 'jogging' && !this._jogLoop && this._lastJogTarget)) {
+        return { sent: false, reason: 'busy', target: null, atLimit: { x: null, y: null, any: false }, feed: null };
       }
-      return { sent: moved, target: { x: t.x, y: t.y }, atLimit: t.atLimit, feed: f };
+      this._jogBusy = true;
+      try {
+        await this._raiseIfNeeded();
+        const st = await this._refreshStatus();
+        const base = st.wpos;
+        const t = this._clampTarget(base, dx, dy);
+        const f = this._jogFeed(feed);
+        const moved = Math.abs(t.x - base.x) > 5e-4 || Math.abs(t.y - base.y) > 5e-4;
+        if (moved) {
+          this._enterJogging();
+          await this._sendJog(t, f);
+        }
+        return { sent: moved, target: { x: t.x, y: t.y }, atLimit: t.atLimit, feed: f };
+      } finally { this._jogBusy = false; }
     }
 
-    // Press-and-hold jog: repeated segments of at most 0.25 s of travel each.
+    // Press-and-hold jog. Segments are 0.15 s of travel; the commanded target never leads the
+    // reported position by more than 0.3 s. Deadman: the UI must call handle.keepAlive() at least
+    // every 350 ms or the hold is cancelled; hard cap of 8 s per hold.
     async jogContinuousStart(dir, feed) {
       this._requireManual('jogging', true);
       const mag = Math.hypot(dir.x || 0, dir.y || 0);
@@ -680,15 +695,36 @@
       this._stopJogLoop();
       const st = await this._refreshStatus();
       const f = this._jogFeed(feed);
-      const seg = (f / 60) * 0.25;
-      const loop = { dir: { x: dir.x / mag, y: dir.y / mag }, target: { x: st.wpos.x, y: st.wpos.y }, busy: false, timer: null, stopped: false };
+      const mmPerS = f / 60;
+      const seg = mmPerS * JOG_SEGMENT_S;
+      const maxLead = mmPerS * JOG_MAX_LEAD_S;
+      const u = { x: dir.x / mag, y: dir.y / mag };
+      const loop = { dir: u, target: { x: st.wpos.x, y: st.wpos.y }, busy: false, timer: null, stopped: false, deadman: null, maxTimer: null };
       this._jogLoop = loop;
       this._enterJogging();
+      this._startPolling(); // 100 ms status while jogging
+      const stopFor = (reason) => {
+        if (loop.stopped || this._jogLoop !== loop) return;
+        this.emit('jogstop', { reason });
+        this.jogCancel().catch(() => {});
+      };
+      const keepAlive = () => {
+        if (loop.stopped) return;
+        if (loop.deadman) this.sch.clearTimeout(loop.deadman);
+        loop.deadman = this.sch.setTimeout(() => stopFor('deadman'), JOG_DEADMAN_MS);
+      };
+      keepAlive();
+      loop.maxTimer = this.sch.setTimeout(() => stopFor('max-hold'), JOG_MAX_HOLD_MS);
       const tick = async () => {
         if (loop.busy || loop.stopped) return;
         loop.busy = true;
         try {
-          const t = this._clampTarget(loop.target, loop.dir.x * seg, loop.dir.y * seg);
+          const s2 = this.status && this.status.wpos;
+          if (!s2 || this.sch.now() - this._lastStatusAt > 300) return; // stale position: do not lead blindly
+          let lead = (loop.target.x - s2.x) * u.x + (loop.target.y - s2.y) * u.y;
+          if (lead < 0) { loop.target = { x: s2.x, y: s2.y }; lead = 0; }
+          if (lead + seg > maxLead + 1e-9) return;
+          const t = this._clampTarget(loop.target, u.x * seg, u.y * seg);
           const moved = Math.abs(t.x - loop.target.x) > 5e-4 || Math.abs(t.y - loop.target.y) > 5e-4;
           if (moved && !loop.stopped) {
             loop.target = { x: t.x, y: t.y };
@@ -702,9 +738,9 @@
           this._stopJogLoop();
         } finally { loop.busy = false; }
       };
-      loop.timer = this.sch.setInterval(tick, 200);
+      loop.timer = this.sch.setInterval(tick, 50);
       tick();
-      return { feed: f };
+      return { feed: f, keepAlive, stop: () => this.jogCancel() };
     }
 
     _stopJogLoop() {
@@ -712,6 +748,8 @@
       if (!loop) return;
       loop.stopped = true;
       if (loop.timer) this.sch.clearInterval(loop.timer);
+      if (loop.deadman) this.sch.clearTimeout(loop.deadman);
+      if (loop.maxTimer) this.sch.clearTimeout(loop.maxTimer);
       this._jogLoop = null;
     }
 
