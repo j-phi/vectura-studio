@@ -127,7 +127,7 @@ describe('jog pad', () => {
     m.q('[data-stp-jog="e"]').click();
     await flush(s, 8000);
     expect(s.sim.getPosition().mpos.x).toBeCloseTo(10, 2);
-    expect(m.q('[data-stp-pos="wpos-x"]').textContent).toBe('10.000');
+    expect(m.q('[data-stp-pos]')).toBeNull(); // the live readout moved to the panel header (spec 12.2)
   });
 
   test('speed is clamped to the profile maxJogFeed', async () => {
@@ -593,5 +593,200 @@ describe('console', () => {
     c.tool.destroy();
     expect(s.ctrl._handlers.log.size).toBe(before);
     expect(c.host.children.length).toBe(0);
+  });
+});
+
+describe('v2 safety and layout (spec 12)', () => {
+  const stubHandle = () => ({ keepAlive: vi.fn(), stop: vi.fn() });
+  const hold = async (s, m, handle) => {
+    vi.spyOn(s.ctrl, 'jogContinuousStart').mockImplementation(async () => handle);
+    vi.spyOn(s.ctrl, 'jogContinuousStop').mockResolvedValue(true);
+    const b = m.q('[data-stp-jog="e"]');
+    b.dispatchEvent(ev('pointerdown'));
+    await s.clock.advance(400);
+    return b;
+  };
+
+  test('the Machine tab has no position block; Advanced sections are collapsed by default', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    expect(m.q('[data-stp-pos]')).toBeNull();
+    expect(m.host.textContent).not.toMatch(/WPos|MPos/);
+    const advs = m.qa('details[data-stp-adv]');
+    expect(advs.map((d) => d.getAttribute('data-stp-adv')).sort()).toEqual(['calibration', 'machine']);
+    expect(m.q('[data-stp-adv="machine"]').open).toBe(false);
+    expect(m.q('[data-stp-adv="machine"] [data-stp-field="pen-z"]')).toBeTruthy(); // pen-height slider lives in Advanced
+    expect(m.q('[data-stp-adv="machine"] [data-stp-act="home"]')).toBeTruthy();
+  });
+
+  test('keepAlive is called on pointermove and every 150 ms while held, and stops when the pointer is released', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    const handle = stubHandle();
+    const b = await hold(s, m, handle);
+    await s.clock.advance(450);
+    expect(handle.keepAlive.mock.calls.length).toBeGreaterThanOrEqual(3);
+    handle.keepAlive.mockClear();
+    m.q('[data-stp-pad]').dispatchEvent(ev('pointermove'));
+    expect(handle.keepAlive).toHaveBeenCalledTimes(1);
+    b.dispatchEvent(ev('pointerup'));
+    await flush(s);
+    handle.keepAlive.mockClear();
+    await s.clock.advance(1000);
+    expect(handle.keepAlive).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['wheel', (e) => e.document.dispatchEvent(ev('wheel'))],
+    ['pointerleave of the pad', (e, m) => m.q('[data-stp-pad]').dispatchEvent(ev('pointerleave'))],
+    ['lostpointercapture', (e, m) => m.q('[data-stp-jog="e"]').dispatchEvent(ev('lostpointercapture'))],
+    ['visibilitychange', (e) => e.document.dispatchEvent(ev('visibilitychange'))],
+    ['contextmenu', (e) => e.document.dispatchEvent(ev('contextmenu'))],
+    ['a non-modifier keydown', (e) => e.document.dispatchEvent(key('keydown', 'a'))],
+  ])('the hold ends on %s (keepAlive stops being called)', async (name, fire) => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    const handle = stubHandle();
+    await hold(s, m, handle);
+    const stop = s.ctrl.jogContinuousStop;
+    await s.clock.advance(300);
+    expect(handle.keepAlive).toHaveBeenCalled();
+    fire(env, m);
+    await flush(s);
+    expect(stop).toHaveBeenCalledTimes(1);
+    handle.keepAlive.mockClear();
+    await s.clock.advance(1000);
+    expect(handle.keepAlive).not.toHaveBeenCalled();
+  });
+
+  test('a modifier keydown does not end the hold', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    const handle = stubHandle();
+    await hold(s, m, handle);
+    env.document.dispatchEvent(key('keydown', 'Shift'));
+    await s.clock.advance(300);
+    expect(s.ctrl.jogContinuousStop).not.toHaveBeenCalled();
+    expect(handle.keepAlive).toHaveBeenCalled();
+  });
+
+  test('a hold on a controller without a handle (older API) still starts and stops', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    const b = await hold(s, m, undefined);
+    b.dispatchEvent(ev('pointerup'));
+    await flush(s);
+    expect(s.ctrl.jogContinuousStop).toHaveBeenCalledTimes(1);
+  });
+
+  test('keydown auto-repeat is ignored for single jogs', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    const jog = vi.spyOn(s.ctrl, 'jog');
+    const pad = m.q('[data-stp-pad]');
+    pad.dispatchEvent(key('keydown', 'ArrowRight', { repeat: true }));
+    pad.dispatchEvent(key('keydown', 'ArrowRight', { repeat: true }));
+    await flush(s);
+    expect(jog).not.toHaveBeenCalled();
+    pad.dispatchEvent(key('keydown', 'ArrowRight'));
+    await flush(s);
+    expect(jog).toHaveBeenCalledTimes(1);
+  });
+
+  test('the arrow buttons are disabled while a single jog is in flight', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    let release;
+    vi.spyOn(s.ctrl, 'jog').mockImplementation(() => new Promise((r) => { release = () => r({ sent: true }); }));
+    m.q('[data-stp-jog="e"]').click();
+    await s.clock.advance(10);
+    m.qa('[data-stp-jog]').forEach((b) => expect(b.disabled).toBe(true));
+    m.q('[data-stp-pad]').dispatchEvent(key('keydown', 'ArrowLeft'));
+    expect(s.ctrl.jog).toHaveBeenCalledTimes(1);
+    release();
+    await s.clock.advance(10);
+    m.qa('[data-stp-jog]').forEach((b) => expect(b.disabled).toBe(false));
+  });
+
+  describe('dial centre stop sign', () => {
+    const sign = (m) => m.q('[data-stp-act="dial-stop"]');
+
+    test('the neutral dot shows when idle; the stop sign replaces it during a single jog in flight and reverts', async () => {
+      const s = await connectedWithOrigin();
+      const m = mountMachine(s);
+      expect(sign(m).hidden).toBe(true);
+      expect(m.q('.stp-mt-dial-hub').hidden).toBe(false);
+      let release;
+      vi.spyOn(s.ctrl, 'jog').mockImplementation(() => new Promise((r) => { release = () => r({ sent: true }); }));
+      m.q('[data-stp-jog="e"]').click();
+      await s.clock.advance(10);
+      expect(sign(m).hidden).toBe(false);
+      expect(m.q('.stp-mt-dial-hub').hidden).toBe(true);
+      expect(sign(m).getAttribute('aria-label')).toBe('Emergency stop');
+      expect(sign(m).querySelector('svg polygon')).toBeTruthy();
+      expect(sign(m).textContent).toMatch(/STOP/);
+      release();
+      await s.clock.advance(10);
+      expect(sign(m).hidden).toBe(true);
+      expect(m.q('.stp-mt-dial-hub').hidden).toBe(false);
+    });
+
+    test('it shows during a press-and-hold jog and pointerdown (not click) calls emergencyStop without jogging', async () => {
+      const s = await connectedWithOrigin();
+      const m = mountMachine(s);
+      s.ctrl.emergencyStop = vi.fn(async () => ({}));
+      const handle = stubHandle();
+      const jog = vi.spyOn(s.ctrl, 'jog');
+      await hold(s, m, handle);
+      expect(sign(m).hidden).toBe(false);
+      sign(m).dispatchEvent(ev('pointerdown'));
+      expect(s.ctrl.emergencyStop).toHaveBeenCalledTimes(1);
+      expect(jog).not.toHaveBeenCalled();
+      await flush(s);
+      expect(s.ctrl.jogContinuousStop).toHaveBeenCalledTimes(1); // the hold is ended locally too
+      sign(m).click(); // the click that follows the pointerdown does not stop twice
+      expect(s.ctrl.emergencyStop).toHaveBeenCalledTimes(1);
+    });
+
+    test('without controller.emergencyStop the fallback cancels the jog and stops', async () => {
+      const s = await connectedWithOrigin();
+      const m = mountMachine(s);
+      expect(s.ctrl.emergencyStop).toBeUndefined();
+      const cancel = vi.spyOn(s.ctrl, 'jogCancel');
+      const stop = vi.spyOn(s.ctrl, 'stop');
+      const handle = stubHandle();
+      await hold(s, m, handle);
+      sign(m).dispatchEvent(ev('pointerdown'));
+      await flush(s);
+      expect(cancel).toHaveBeenCalled();
+      expect(stop.mock.calls.length).toBeLessThanOrEqual(1); // stop() only runs if the jog cancel left something active
+      expect(s.ctrl.state).toBe('idle');
+    });
+
+    test('the emergency stop button also shows near the dial while moving and calls the same path', async () => {
+      const s = await connectedWithOrigin();
+      const m = mountMachine(s);
+      expect(act(m, 'stop').hidden).toBe(true);
+      s.ctrl.emergencyStop = vi.fn(async () => ({}));
+      await hold(s, m, stubHandle());
+      expect(act(m, 'stop').hidden).toBe(false);
+      expect(act(m, 'stop').textContent).toMatch(/EMERGENCY STOP/);
+      act(m, 'stop').click();
+      expect(s.ctrl.emergencyStop).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('corner-unconfirmed refusals are reported to the panel with the message', async () => {
+    const s = await connectedWithOrigin();
+    const m = mountMachine(s);
+    const err = Object.assign(new Error('Confirm the start corner first.'), { code: 'corner-unconfirmed' });
+    vi.spyOn(s.ctrl, 'jog').mockRejectedValue(err);
+    m.ctx.reportError = vi.fn();
+    m.ctx.requestCorner = vi.fn();
+    m.q('[data-stp-jog="e"]').click();
+    await flush(s);
+    expect(m.ctx.requestCorner).toHaveBeenCalledTimes(1);
+    expect(m.ctx.reportError).toHaveBeenCalledWith(err);
+    expect(m.host.textContent).toMatch(/Confirm the start corner first/);
   });
 });

@@ -14,6 +14,9 @@
   const Vectura = (window.Vectura = window.Vectura || {});
 
   const HOLD_MS = 280;
+  const KEEPALIVE_MS = 150; // the controller drops a hold that is not refreshed within ~350 ms
+  const MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock'];
+  const OPEN = {}; // remembered open state of the collapsed sections, for the browser session
   const LOG_CAP = 2000;
   const STEPS = [0.1, 1, 10, 50];
   const ALARM_WARNING = 'Position may be wrong after an alarm. Check the pen is clear of the paper edge before moving.';
@@ -144,6 +147,7 @@
     pen: '<svg viewBox="0 0 48 30" aria-hidden="true"><path d="M24 3 V18 M20 18 H28 L24 25 Z M8 27 H40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     origin: '<svg viewBox="0 0 48 30" aria-hidden="true"><path d="M8 26 V6 H40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="6" r="3" fill="currentColor"/></svg>',
     scale: '<svg viewBox="0 0 48 30" aria-hidden="true"><rect x="10" y="4" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M36 6 V24 M34 6 H38 M34 24 H38" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+    stop: '<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><polygon points="30,3 70,3 97,30 97,70 70,97 30,97 3,70 3,30" fill="#d4111b" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><text x="50" y="60" text-anchor="middle" font-size="27" font-weight="800" fill="#fff" font-family="Arial, Helvetica, sans-serif" letter-spacing="1">STOP</text></svg>',
     arrow: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2 L10 8.5 H2 Z" fill="currentColor"/></svg>',
   };
 
@@ -173,6 +177,7 @@
     const S = {
       alarm: null, limitTimer: null, press: null, holdPromise: null, skipClick: false,
       busy: false, homeConfirm: false, wizard: null, step: 1, feed: null, customStep: false,
+      flight: 0, singleFlight: false, holdHandle: null, keepTimer: null, estopAt: 0, moving: false, calComplete: null,
     };
     const prof = () => ctx.getProfile() || {};
     const profPen = () => prof().pen || {};
@@ -187,6 +192,12 @@
     const jogFeed = () => clamp(S.feed != null ? S.feed : num((prof().motion || {}).jogFeed, 2500), 1, maxJog());
 
     const canMove = () => { const c = ctrlOf(); return !!c && (c.state === 'idle' || c.state === 'jogging'); };
+    const isMoving = () => {
+      const c = ctrlOf();
+      if (!c) return false;
+      return c.state === 'jogging' || c.state === 'running' || c.state === 'paused' || c.state === 'penChange'
+        || S.flight > 0 || S.busy || !!S.holdPromise || !!(S.wizard && S.wizard.busy);
+    };
     const reasonText = () => {
       const c = ctrlOf();
       if (!c) return 'Connect to a plotter to use the machine tools.';
@@ -212,6 +223,8 @@
       const m = (e && e.message) || String(e);
       setMsg(m, 'error');
       if (ctx.log) ctx.log(m, 'warn');
+      if (e && e.code === 'corner-unconfirmed' && ctx.requestCorner) ctx.requestCorner(e);
+      if (e && e.code && ctx.reportError) ctx.reportError(e);
     };
     const guard = async (fn) => {
       try { return await fn(); } catch (e) { fail(e); return undefined; }
@@ -243,38 +256,17 @@
     root.appendChild(alarmBox);
 
     root.appendChild(msgEl);
-    const stopBtn = button('Stop', 'is-danger stp-mt-stop', 'stop');
+    const stopBtn = button('EMERGENCY STOP', 'is-danger stp-mt-stop', 'stop');
     stopBtn.hidden = true;
-    root.appendChild(stopBtn);
     const reasonEl = h('div', 'stp-mt-reason');
     root.appendChild(reasonEl);
 
-    // readout
-    const sRead = section('Position');
+    // state + origin pills (the live position readout lives in the panel header)
     const pill = h('span', 'stp-mt-pill', 'Not connected');
     const originPill = h('span', 'stp-mt-pill stp-mt-origin-pill', 'Origin not set');
-    const pillRow = h('div', 'stp-mt-row');
+    const pillRow = h('div', 'stp-mt-row stp-mt-pills');
     pillRow.append(pill, originPill);
-    const grid = h('div', 'stp-mt-readout');
-    const cells = {};
-    [['wpos', 'WPos'], ['mpos', 'MPos']].forEach(([k, label]) => {
-      const row = h('div', 'stp-mt-readout-row');
-      row.appendChild(h('span', 'stp-mt-readout-lbl', label));
-      ['x', 'y', 'z'].forEach((a) => {
-        const c = h('span', 'stp-mt-readout-val', '—');
-        c.setAttribute('data-stp-pos', k + '-' + a);
-        cells[k + a] = c;
-        row.appendChild(h('span', 'stp-mt-readout-axis', a.toUpperCase()));
-        row.appendChild(c);
-      });
-      grid.appendChild(row);
-    });
-    const feedRow = h('div', 'stp-mt-readout-row');
-    feedRow.appendChild(h('span', 'stp-mt-readout-lbl', 'Feed'));
-    const feedVal = h('span', 'stp-mt-readout-val', '—');
-    feedRow.appendChild(feedVal);
-    grid.appendChild(feedRow);
-    sRead.append(pillRow, grid);
+    root.appendChild(pillRow);
 
     // jog
     const sJog = section('Jog');
@@ -285,8 +277,16 @@
     pad.setAttribute('data-stp-pad', '1');
     pad.setAttribute('aria-label', 'Jog pad. Arrow keys move the pen; Shift moves 10 times farther, Alt a tenth. Page Up raises and Page Down lowers the pen.');
     const dirBtns = [];
+    const hub = h('span', 'stp-mt-dial-hub');
+    // Big octagonal stop sign: replaces the hub while anything is moving. Reacts on pointerdown (not click).
+    const stopSign = h('button', 'stp-mt-dial-stop');
+    stopSign.type = 'button';
+    stopSign.hidden = true;
+    stopSign.setAttribute('aria-label', 'Emergency stop');
+    stopSign.setAttribute('data-stp-act', 'dial-stop');
+    stopSign.innerHTML = ICONS.stop;
     DIRS.forEach((d) => {
-      if (d.id === 'c') { pad.appendChild(h('span', 'stp-mt-dial-hub')); return; }
+      if (d.id === 'c') { pad.append(hub, stopSign); return; }
       const b = h('button', 'stp-mt-dir stp-mt-dir-' + d.id);
       b.type = 'button';
       b.tabIndex = -1;
@@ -295,7 +295,7 @@
       b.innerHTML = ICONS.arrow;
       b.firstChild.style.setProperty('--stp-mt-rot', d.rot + 'deg');
       pad.appendChild(b);
-      reg(b, 'move');
+      reg(b, 'jog');
       dirBtns.push({ b, d });
     });
     const limitEl = h('div', 'stp-mt-limit');
@@ -317,13 +317,12 @@
     const customStep = numField({ label: 'Custom step (mm)', min: 0.01, max: 200, step: 0.1, value: S.step, act: 'custom-step' });
     const speed = numField({ label: 'Jog speed (mm/min)', min: 1, max: maxJog(), step: 100, value: jogFeed(), act: 'jog-feed' });
     const speedNote = h('span', 'stp-mt-hint');
-    jogSide.append(customStep.wrap, speed.wrap, speedNote);
+    jogSide.append(speed.wrap, speedNote);
     jogWrap.append(pad, jogSide);
-    sJog.append(jogWrap, limitEl);
-    sJog.appendChild(h('p', 'stp-mt-hint', 'Tap to step, press and hold to keep moving. Directions are relative to the paper. Click the pad, then use the arrow keys.'));
+    sJog.append(stopBtn, jogWrap, limitEl);
+    sJog.appendChild(h('p', 'stp-mt-hint', 'Tap to step, press and hold to keep moving. Directions are relative to the paper.'));
 
-    // pen
-    const sPen = section('Pen');
+    // pen + origin (primary block, right column next to the dial)
     const penRow = h('div', 'stp-mt-row');
     const upBtn = reg(button('Pen up', '', 'pen-up'), 'move');
     const downBtn = reg(button('Pen down', '', 'pen-down'), 'move');
@@ -338,30 +337,40 @@
     const zVal = h('span', 'stp-mt-readout-val', '—');
     zWrap.append(zRange, zVal);
     reg(zRange, 'z');
-    sPen.append(penRow, zWrap, h('p', 'stp-mt-hint', 'Move the slider to set the pen height live. Release to send. Use the Pen height wizard to save the result.'));
 
-    // origin
-    const sOrigin = section('Origin');
-    const originRow = h('div', 'stp-mt-row');
+    const originRow = h('div', 'stp-mt-row stp-mt-origin-row');
     const setOriginBtn = reg(button('Set origin here', 'is-primary', 'set-origin'), 'move');
     const gotoOriginBtn = reg(button('Go to origin', '', 'goto-origin'), 'origin');
     const frameBtn = reg(button('Frame', '', 'frame'), 'frame');
     const homeBtn = reg(button('Home', '', 'home'), 'move');
-    originRow.append(setOriginBtn, gotoOriginBtn, frameBtn, homeBtn);
+    originRow.append(setOriginBtn, gotoOriginBtn, frameBtn);
     const homeConfirmBox = h('div', 'stp-mt-confirm');
     homeConfirmBox.hidden = true;
     const homeYes = button('Home now', 'is-danger', 'home-confirm');
     const homeNo = button('Cancel', '', 'home-cancel');
     homeConfirmBox.append(h('span', '', 'Homing moves the machine until it reaches its limit switches and clears the origin. Make sure the way is clear.'), homeYes, homeNo);
-    sOrigin.append(originRow, homeConfirmBox, h('p', 'stp-mt-hint', 'Frame traces the job outline with the pen raised. It needs an origin.'));
+    jogSide.append(h('span', 'stp-mt-field-lbl', 'Origin'), originRow, h('span', 'stp-mt-field-lbl', 'Pen'), penRow);
+
+    // Advanced (collapsed; open state remembered for the session)
+    const adv = h('details', 'stp-mt-advsec');
+    adv.setAttribute('data-stp-adv', 'machine');
+    adv.open = OPEN['machine.advanced'] === true;
+    adv.appendChild(h('summary', '', 'Advanced'));
+    adv.append(zWrap, h('p', 'stp-mt-hint', 'Move the slider to set the pen height live. Release to send. Use the Pen height check to save the result.'), customStep.wrap, homeBtn, homeConfirmBox);
+    B.on(adv, 'toggle', () => { OPEN['machine.advanced'] = adv.open; });
 
     // calibration
-    const sCal = section('Calibration');
+    const sCal = h('details', 'stp-mt-sec stp-mt-calsec');
+    sCal.setAttribute('data-stp-adv', 'calibration');
+    const calSummary = h('summary', 'stp-mt-cal-sum', 'First-run checks');
+    sCal.appendChild(calSummary);
+    root.appendChild(sCal);
     const calHost = h('div', 'stp-mt-cal');
     const simNote = h('p', 'stp-mt-hint', 'Simulator calibration is practice only \u2014 it is not saved for your plotter.');
     simNote.setAttribute('data-stp-sim-cal-note', '');
     simNote.hidden = true;
     sCal.append(simNote, calHost);
+    root.appendChild(adv);
 
     // ---- refresh (cheap, no DOM rebuild)
     const setEnabled = (el, ok, why) => {
@@ -371,7 +380,7 @@
     const fwOf = (c) => (c && c.fw) || (ctx.getFirmware && ctx.getFirmware()) || {};
     const refresh = () => {
       if (B.isDestroyed()) return;
-      const { c, changed } = B.bind(['state', 'status', 'alarm', 'limit', 'origin', 'done', 'error'], onEvent);
+      const { c, changed } = B.bind(['state', 'status', 'alarm', 'limit', 'origin', 'done', 'error', 'jogstop', 'estop', 'corner'], onEvent);
       if (changed) S.alarm = null;
       const st = c ? c.getState() : null;
       const move = canMove();
@@ -384,14 +393,6 @@
       pill.className = 'stp-mt-pill' + (c ? ' is-' + String(c.state).toLowerCase() : '');
       originPill.textContent = c && c.originSet ? 'Origin set' : 'Origin not set';
       originPill.className = 'stp-mt-pill stp-mt-origin-pill' + (c && c.originSet ? ' is-set' : '');
-      ['wpos', 'mpos'].forEach((k) => {
-        ['x', 'y', 'z'].forEach((a) => {
-          const p = st && st[k];
-          cells[k + a].textContent = fix(p ? p[a] : NaN, 3);
-        });
-      });
-      const fs = c && c.status && c.status.fs;
-      feedVal.textContent = fs && Number.isFinite(fs.feed) ? Math.round(fs.feed) + ' mm/min' : '—';
       // alarm
       const inAlarm = !!c && c.state === 'alarm';
       if (!inAlarm) S.alarm = null;
@@ -406,7 +407,6 @@
         unlockBtn.hidden = lost;
         alarmBox.classList.toggle('is-lost', lost);
       }
-      stopBtn.hidden = !(c && ['running', 'paused', 'penChange'].includes(c.state));
       // jog controls
       stepBtns.forEach(({ b, v }) => {
         const isOn = !S.customStep && S.step === v;
@@ -424,11 +424,24 @@
       if (document.activeElement !== zRange && Number.isFinite(curZ)) zRange.value = String(curZ);
       zVal.textContent = Number.isFinite(curZ) ? fix(Number(zRange.value), 2) : '—';
       // enablement
+      // motion in flight: the dial centre turns into a stop sign and the emergency stop appears
+      const moving = isMoving();
+      stopSign.hidden = !moving;
+      hub.hidden = moving;
+      stopBtn.hidden = !moving;
+      if (moving !== S.moving) { S.moving = moving; if (ctx.reportMotion) ctx.reportMotion(moving); }
+      // calibration disclosure: open while first-run checks are outstanding
+      const calP = prof().calibration || {};
+      const calDone = (ctx.isSimulator && ctx.isSimulator()) ? (calP.axisChecked === true && calP.penHeightChecked === true) : (calP.axisChecked === true && calP.penHeightChecked === true);
+      calSummary.textContent = calDone ? 'Calibration \u2713 \u00b7 Re-run\u2026' : 'First-run checks (one-time)';
+      if (S.wizard) sCal.open = true;
+      else if (S.calComplete !== calDone) { S.calComplete = calDone; sCal.open = !calDone; }
       const bbox = ctx.getJobBbox ? ctx.getJobBbox() : null;
       const idle = !!c && c.state === 'idle' && !S.busy;
       controls.forEach(({ el, need }) => {
         let ok = move;
         let w = why;
+        if (need === 'jog') { ok = move && !S.singleFlight; if (move && !ok) w = 'A move is in progress.'; }
         if (need === 'origin') { ok = move && c.originSet; if (move && !ok) w = 'Set the origin first.'; }
         if (need === 'frame') {
           ok = idle && !!c.originSet && !!bbox;
@@ -449,6 +462,14 @@
     const onEvent = (evt, p) => {
       if (evt === 'alarm') S.alarm = p || {};
       if (evt === 'limit' && p && p.atLimit) showLimit(p.atLimit);
+      if (evt === 'jogstop') {
+        S.holdPromise = null; S.holdHandle = null; S.press = null;
+        B.cancel(S.keepTimer); S.keepTimer = null;
+        const why = p && p.reason;
+        setMsg(why === 'deadman' ? 'Jog stopped: the pointer was released or lost.'
+          : why === 'max-hold' ? 'Jog stopped: the hold reached its time limit.'
+            : why === 'untrusted' ? 'Jog stopped: the plotter position is no longer trusted.' : 'Jog stopped.', 'warn');
+      }
       refresh();
     };
 
@@ -462,30 +483,59 @@
       B.cancel(S.limitTimer);
       S.limitTimer = B.later(() => { limitEl.hidden = true; }, 2500);
     };
-    const single = (px, py, mult) => guard(async () => {
-      const c = ctrlOf();
-      if (!c || !canMove()) return;
-      const dist = Math.round(num(S.step, 1) * (mult || 1) * 10000) / 10000;
-      const m = paperToMachine(profAxes(), px * dist, py * dist);
-      const r = await c.jog(m.x, m.y, jogFeed());
-      if (r && r.atLimit && r.atLimit.any) showLimit(r.atLimit);
-      else limitEl.hidden = true;
-      setMsg('', '');
-      refresh();
-    });
+    const single = (px, py, mult) => {
+      if (S.singleFlight) return Promise.resolve();
+      return guard(async () => {
+        const c = ctrlOf();
+        if (!c || !canMove()) return;
+        const dist = Math.round(num(S.step, 1) * (mult || 1) * 10000) / 10000;
+        const m = paperToMachine(profAxes(), px * dist, py * dist);
+        S.singleFlight = true; S.flight += 1; refresh();
+        try {
+          const r = await c.jog(m.x, m.y, jogFeed());
+          if (r && r.atLimit && r.atLimit.any) showLimit(r.atLimit);
+          else if (!(r && r.sent === false && r.reason === 'busy')) limitEl.hidden = true;
+          setMsg('', '');
+        } finally {
+          S.singleFlight = false; S.flight -= 1;
+          refresh();
+        }
+      });
+    };
+    const keepAlive = () => {
+      const hd = S.holdHandle;
+      if (hd && typeof hd.keepAlive === 'function') { try { hd.keepAlive(); } catch (e) { /* the controller ends the hold itself */ } }
+    };
+    const startKeepAlive = () => {
+      B.cancel(S.keepTimer);
+      const tick = () => {
+        if (!S.holdPromise) { S.keepTimer = null; return; }
+        keepAlive();
+        S.keepTimer = B.later(tick, KEEPALIVE_MS);
+      };
+      S.keepTimer = B.later(tick, KEEPALIVE_MS);
+    };
     const startHold = (px, py) => {
       const c = ctrlOf();
       if (!c || !canMove()) return;
       const m = paperToMachine(profAxes(), px, py);
-      S.holdPromise = Promise.resolve(c.jogContinuousStart({ x: m.x, y: m.y }, jogFeed())).catch((e) => { fail(e); });
+      S.holdHandle = null;
+      S.holdPromise = Promise.resolve(c.jogContinuousStart({ x: m.x, y: m.y }, jogFeed()))
+        .then((hd) => { if (hd && typeof hd.keepAlive === 'function') S.holdHandle = hd; return hd; })
+        .catch((e) => { fail(e); });
+      startKeepAlive();
+      refresh();
     };
     // A release can arrive before jogContinuousStart resolved: wait for it, then cancel.
     const stopHold = () => {
       const c = ctrlOf();
       const pending = S.holdPromise;
       S.holdPromise = null;
+      S.holdHandle = null;
+      B.cancel(S.keepTimer);
+      S.keepTimer = null;
       if (!pending || !c) return Promise.resolve();
-      return pending.then(() => c.jogContinuousStop()).catch(() => null);
+      return pending.then(() => c.jogContinuousStop()).catch(() => null).then(() => { refresh(); });
     };
     // jog=true performs the single step for a short press.
     const endPress = (jog) => {
@@ -519,10 +569,21 @@
     });
     B.on(pad, 'pointerup', () => { if (S.press) S.skipClick = true; endPress(true); }, true);
     B.on(pad, 'pointercancel', () => { if (S.press) S.skipClick = true; endPress(false); }, true);
+    // Deadman: anything that suggests the user let go (or stopped looking) ends the hold.
+    B.on(pad, 'pointermove', keepAlive);
+    B.on(pad, 'lostpointercapture', () => { if (S.press) S.skipClick = true; endPress(false); });
+    B.on(pad, 'pointerleave', () => { if (S.press) S.skipClick = true; endPress(false); });
+    B.on(document, 'wheel', stopAll, { capture: true, passive: true });
+    B.on(document, 'contextmenu', stopAll, true);
+    B.on(document, 'visibilitychange', stopAll);
     B.on(window, 'blur', stopAll);
-    B.on(document, 'keydown', (e) => { if (e.key === 'Escape') stopAll(); });
+    B.on(document, 'keydown', (e) => {
+      if (MODIFIER_KEYS.includes(e.key)) return;
+      if (S.press || S.holdPromise) stopAll();
+    }, true);
     B.on(pad, 'keydown', (e) => {
       const key = e.key;
+      if (e.repeat) { if (key.indexOf('Arrow') === 0 || key === 'PageUp' || key === 'PageDown') e.preventDefault(); return; }
       const mult = e.shiftKey ? 10 : (e.altKey ? 0.1 : 1);
       const dirs = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] };
       if (dirs[key]) { e.preventDefault(); single(dirs[key][0], dirs[key][1], mult); }
@@ -548,9 +609,11 @@
     const doPen = (which) => guard(async () => {
       const c = ctrlOf();
       if (!c || !canMove()) return;
-      if (which === 'up') await c.penUp(); else await c.penDown();
-      setMsg('', '');
-      refresh();
+      S.flight += 1; refresh();
+      try {
+        if (which === 'up') await c.penUp(); else await c.penDown();
+        setMsg('', '');
+      } finally { S.flight -= 1; refresh(); }
     });
     B.on(upBtn, 'click', () => doPen('up'));
     B.on(downBtn, 'click', () => doPen('down'));
@@ -572,7 +635,26 @@
       setMsg('Unlocked. Check the origin before plotting.', 'warn');
       refresh();
     }));
-    B.on(stopBtn, 'click', () => guard(async () => { await ctrlOf().stop(); refresh(); }));
+    // Emergency stop: the controller's own method when present, else cancel the jog and stop the job.
+    const callSafe = (fn) => { try { return Promise.resolve(fn()).catch(() => null); } catch (e) { return Promise.resolve(null); } };
+    const estop = () => {
+      stopAll();
+      if (ctx.emergencyStop) return callSafe(() => ctx.emergencyStop()).then(refresh);
+      const c = ctrlOf();
+      if (!c) return Promise.resolve();
+      if (typeof c.emergencyStop === 'function') return callSafe(() => c.emergencyStop()).then(refresh);
+      return (typeof c.jogCancel === 'function' ? callSafe(() => c.jogCancel()) : Promise.resolve())
+        .then(() => (typeof c.stop === 'function' && c.state !== 'idle' && c.state !== 'disconnected' ? callSafe(() => c.stop()) : null))
+        .then(refresh);
+    };
+    B.on(stopBtn, 'click', () => estop());
+    B.on(stopSign, 'pointerdown', (e) => {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      S.estopAt = Date.now();
+      estop();
+    });
+    B.on(stopSign, 'click', () => { if (Date.now() - S.estopAt > 700) estop(); }); // keyboard activation
     B.on(homeBtn, 'click', () => { S.homeConfirm = true; refresh(); });
     B.on(homeNo, 'click', () => { S.homeConfirm = false; refresh(); });
     B.on(homeYes, 'click', () => {
@@ -830,6 +912,8 @@
     refresh();
     return {
       update: refresh,
+      startWizard: (key) => { if (CAL.some((w) => w.key === key)) startWizard(key); },
+      emergencyStop: estop,
       destroy: () => {
         const c = ctrlOf();
         const hadHold = !!S.holdPromise || (S.press && S.press.mode === 'hold');

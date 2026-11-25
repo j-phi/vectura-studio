@@ -69,7 +69,7 @@ describe('Send to Plotter panel CSS contract', () => {
       expect(tok('--stp-font-readout')).toBeGreaterThanOrEqual(22);
       expect(tok('--stp-hit')).toBeGreaterThanOrEqual(48);
       expect(tok('--stp-stop-h')).toBeGreaterThanOrEqual(64);
-      expect(tok('--stp-dial')).toBeGreaterThanOrEqual(300);
+      expect(tok('--stp-dial')).toBeGreaterThanOrEqual(270); // spec 12.4: about 280 px so the primary block fits 1280x800
       expect(tok('--stp-dir-hit')).toBeGreaterThanOrEqual(56);
     });
     test('controls are driven by the tokens', () => {
@@ -91,5 +91,33 @@ describe('Send to Plotter panel CSS contract', () => {
       expect(root).toMatch(/width:\s*min\(1500px,\s*96vw\)/);
       expect(root).toMatch(/92vh/);
     });
+  });
+});
+
+describe('v2 scale fixes (spec 12.5)', () => {
+  const px = (decl, prop) => { const m = new RegExp(`${prop}:\\s*(\\d+(?:\\.\\d+)?)px`).exec(decl); return m ? Number(m[1]) : 0; };
+  test('jog step chips are at least 52 px tall, 64 px wide with an 18 px label', () => {
+    const d = decls('.stp-mt-steps .tog-btn');
+    expect(px(d, 'min-height')).toBeGreaterThanOrEqual(52);
+    expect(px(d, 'min-width')).toBeGreaterThanOrEqual(64);
+    expect(px(d, 'font-size')).toBeGreaterThanOrEqual(18);
+  });
+  test('the pen-height slider has a thumb of at least 28 px and a track of at least 8 px', () => {
+    const thumb = decls('.stp-mt-range::-webkit-slider-thumb');
+    expect(px(thumb, 'width')).toBeGreaterThanOrEqual(28);
+    expect(px(thumb, 'height')).toBeGreaterThanOrEqual(28);
+    expect(px(decls('.stp-mt-range::-webkit-slider-runnable-track'), 'height')).toBeGreaterThanOrEqual(8);
+    expect(px(decls('.stp-mt-range::-moz-range-thumb'), 'width')).toBeGreaterThanOrEqual(28);
+    expect(px(decls('.stp-mt-range::-moz-range-track'), 'height')).toBeGreaterThanOrEqual(8);
+  });
+  test('the dial-centre stop sign is at least 96 px across', () => {
+    const d = decls('.stp-mt-dial-stop');
+    expect(px(d, 'width')).toBeGreaterThanOrEqual(96);
+    expect(px(d, 'height')).toBeGreaterThanOrEqual(96);
+  });
+  test('the header is a single row and E-STOP turns solid red only when armed', () => {
+    expect(decls('.stp-head')).toMatch(/flex-wrap:\s*nowrap/);
+    expect(decls('.stp-btn.stp-stop.is-armed')).toMatch(/background:\s*var\(--ui-danger\)/);
+    expect(decls('.stp-btn.stp-stop')).toMatch(/min-height:\s*var\(--stp-stop-h\)/);
   });
 });
