@@ -17,6 +17,27 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **A plate never collapses to a sliver.** A work with no stored copy but a raster thumbnail draws that thumbnail on its plate (`<image>` with an inline png/jpeg/webp data URL only; colorways do not recolor it and the stroke figures are left out). A work with nothing stored shows a visible plate: its name, "No preview stored for this work. Open the file again to refresh it." and Open.
 - **Open several projects at once.** File ▸ Open, the Start Page Open file… and drag and drop take several `.vectura` files. They open in order, each recorded as a work with its own thumbnail (one plate each); the last stays on the canvas. Unsaved changes are asked about once; unreadable files are skipped and named in one summary toast. In a mixed drop the projects open first, then the first `.svg` is imported.
 
+### Scene3D: surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching (v1.5.41)
+
+One release that finishes the surface-locked fills, anchors Etf Kang to the object and makes carved shapes read as carved solids. Saved scenes and presets keep their old look unless noted; every new key is written only when it is off its default.
+
+#### Added
+- **Surface-locked fills no longer flatten on release.** Maze, Voronoi and Turing Stripe now follow the object at rest, in export and while dragging, the same drawing in all three (they used to swap to a flat screen pattern on release). A torus with a ground shadow stays wrapped too (non-convex shadow casters are supported). Turing Stripe reads as long smooth labyrinth stripes. Amendments A32-A35 in `docs/surface-lock-contract.md`.
+- **Faster turning for the heavy fills.** The surface texture is baked once at rest and kept (idle prewarm), and the first drag frame of a Voronoi uses a coarser texture when the full one is not ready yet (`sceneBakeLod`, on by default).
+- **Etf Kang rings are anchored to the object** ("Follows the object (Kang)"), with a **Wrap origin** XY pad that sets where the rings are centred (top pole by default). The rings close on themselves, spacing follows the surface, and a cylinder keeps its cap and side separate at the rim.
+- **Pen laws preview while dragging.** Pen Interleave / Reserve / Cross, Weight Modulated and Amplitude + Spacing show their look while you orbit or drag (the settled and exported drawing is unchanged for the pen laws; Amplitude + Spacing follows the light with no rebake). A28, A29.
+- **Multi-object gizmo and sun handle.** Several selected objects move, rotate and scale together on the selection centroid, the object inspector keeps a multi-object selection, and the directional-light sun handle follows the Scene group's transform.
+- **Raised ground occludes.** Geometry below a raised ground (Height Y) no longer draws.
+- **Tone-model v2 audits (U8)** for the mkTick spacing tone; mkTick continuation ticks no longer hook at the hub near the limb (U9).
+
+#### Fixed
+- **Carved dimples and holes follow the curve.** A curved carve (a sphere or cylinder cut out of a box) is hatched with smooth analytic rings and great-circle arcs instead of polygons, reads as a bowl or bore, shades each source face by its own light, and gets a crack-free rim crease (U7, U7b-U7e).
+- **Duty Cycle and Scribble (v2) retuned** (separation 1.0; Scribble key 0.92); surface-lock preparation skips provably dead runs and back-facing blocks (U1).
+
+#### Notes
+- Taper (`taperedEnds`) is not part of this release.
+- In-app help has a Wrap origin entry.
+
 ### Touch: Shading row target fix (v1.5.30)
 
 #### Fixed

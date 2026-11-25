@@ -170,6 +170,10 @@
         the ground has an On / Off one. Off stops that surface receiving cast shadows. An object whose Cast shadow is Off
         casts none on the ground or on other objects. The Light panel's <em>Key light</em> line says whether the light is
         in front of or behind the subject.</p>
+        <p><strong>Wrap origin.</strong> With the Etf Kang fill (Direction field: "Follows the object (Kang)"), the rings are anchored
+        to the object and turn with it. The <strong>Wrap origin</strong> XY pad sets where they are centred: it is a
+        top-down view of the object, the middle is the top pole and the edge circle is the equator. Drag the knob or use
+        the arrow keys to move the ring centre, and double-click to recentre it on the top.</p>
         <p><strong>Shadow look</strong> is the Fill Style row in the Shadow section. It picks the texture drawn inside cast
         shadows. It offers the sub-controls of each family that look different on a flat footprint.</p>
         <p><strong>Artistic controls</strong> are all off until you move them:</p>

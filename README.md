@@ -766,6 +766,12 @@ CI lives in `.github/workflows/test.yml`:
 - **Every work shows on the Start Page.** Large works keep their stored copy, a work without one shows its thumbnail, and a work with nothing stored shows a visible "open it again" plate instead of vanishing.
 - **Open several projects at once** from File ▸ Open, Open file… or by dropping them on the window; each becomes a plate.
 
+### 1.5.41 - Surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching
+- **Maze, Voronoi and Turing Stripe no longer flatten on release.** They follow the object at rest, in export and while you drag, including a torus with a ground shadow; dragging is faster (baked once, idle prewarm, coarser first frame for Voronoi).
+- **Etf Kang rings are anchored to the object** ("Follows the object (Kang)") with a **Wrap origin** XY pad for where the rings are centred; a cylinder keeps cap and side apart at the rim.
+- **Carved dimples and holes follow the curve:** smooth analytic rings, a bowl or bore look, per-face tone and a clean rim.
+- **Pen laws preview while dragging.** Also: multi-object move / rotate / scale gizmo, sun handle follows Scene Transform, a raised ground hides what is below it. Taper is not included.
+
 ### 1.5.30 - Touch fix for the Shading row
 - On phones and tablets the Scene3D **Shading** slider gets its own full-width line, and the Threshold 1 control is a full finger-sized target again.
 
