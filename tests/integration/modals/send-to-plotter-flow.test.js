@@ -414,4 +414,42 @@ describe('Send to Plotter v2 flow', () => {
       } finally { S.documentUnits = prev; panel.renderConnect(); }
     });
   });
+
+  describe('confirming the start corner also sets the origin', () => {
+    const g92 = () => STP.getSession().transport.getLog().filter((e) => e.dir === 'in' && /^G92/.test(e.data));
+    const unconfirm = (c) => { c.machineCornerConfirmed = false; c.emit('corner', { confirmed: false }); };
+
+    test('unmoved since connect: Yes confirms, sets the origin once, shows the note, enables Go to origin', async () => {
+      const c = await connectSim();
+      unconfirm(c);
+      await waitFor(() => document.getElementById('stp-corner'));
+      expect(c.originSet).toBe(false);
+      click('#stp-corner-yes');
+      await waitFor(() => c.originSet);
+      expect(c.machineCornerConfirmed).toBe(true);
+      expect(g92().map((e) => e.data)).toEqual(['G92 X0 Y0']);
+      await waitFor(() => /Origin set at the start corner\. If your sheet's top-left corner is elsewhere, jog there and press Set origin here\./.test(document.getElementById('stp-banner-note')?.textContent || ''));
+      click('[data-tab="machine"]');
+      await waitFor(() => { const b = document.querySelector('[data-stp-act="goto-origin"]'); return b && !b.disabled; });
+      expect(status('connect')).toBe('done');
+    });
+
+    test('carriage moved since connect: confirm only, no auto origin', async () => {
+      const c = await connectSim();
+      c.machineCornerConfirmed = true;
+      await c.setOrigin();
+      await c.jog(5, 0, 2000).catch(() => null);
+      await waitFor(() => c.state === 'idle' && c.status && Math.abs(c.status.mpos.x) > 1);
+      c.originSet = false;
+      const before = g92().length;
+      unconfirm(c);
+      await waitFor(() => document.getElementById('stp-corner'));
+      click('#stp-corner-yes');
+      await waitFor(() => c.machineCornerConfirmed);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(c.originSet).toBe(false);
+      expect(g92().length).toBe(before);
+      expect(document.getElementById('stp-banner-text').textContent).toMatch(/origin/i);
+    });
+  });
 });

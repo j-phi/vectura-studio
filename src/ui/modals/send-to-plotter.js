@@ -1433,10 +1433,21 @@
       if (!c || typeof c.confirmMachineCorner !== 'function') return Promise.resolve();
       let r;
       try { r = c.confirmMachineCorner(); } catch (e) { r = Promise.reject(e); }
-      return Promise.resolve(r).then(() => {
+      return Promise.resolve(r).then(async () => {
         this.s.cornerHelp = false;
         this.s.bannerErr = null;
         notify('corner');
+        // The board's position resets to 0,0 at the carriage's location on connect. If the carriage has not moved
+        // since (still within 0.05 mm of 0,0) and the plotter is idle, the start corner is the origin.
+        const st = c.status;
+        const mp = st && st.mpos;
+        const atZero = !!mp && isNum(mp.x) && isNum(mp.y) && Math.abs(mp.x) <= 0.05 && Math.abs(mp.y) <= 0.05;
+        if (atZero && c.state === 'idle' && !c.originSet && typeof c.setOrigin === 'function') {
+          try {
+            await c.setOrigin();
+            this.note("Origin set at the start corner. If your sheet's top-left corner is elsewhere, jog there and press Set origin here.", { persist: true });
+          } catch (e) { this.s.bannerErr = (e && e.message) || String(e); this.renderBanner(); }
+        }
       }, (e) => { this.s.bannerErr = (e && e.message) || String(e); this.renderBanner(); });
     }
 
