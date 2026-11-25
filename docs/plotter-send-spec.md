@@ -380,3 +380,46 @@ power on, Reconnect (button). Until confirmed, motion is limited to ±15 mm (con
 Keep ≥52 px hit targets and ≥17 px body text, but remove dead space: section headings 14 px caps
 with 8 px gap, readouts moved to the header, cards smaller, two-column layouts where width allows
 (container queries). Each pane's primary action must be visible without scrolling at 1280×800.
+
+## 13. Speed range (research-backed, v2)
+
+Sources: vendor speed-mode tables (user-supplied from uunatek.com: High-speed 20000/accel 6000-2000-4000,
+Standard 15000/8000 Z, Drawing 12000, Silence 10000/8000 Z), LordKromdar/uunatek_3_software (boards
+"rated 12000", draw default 10000, accel usually the real limit), Nib (draw 6000 / travel 12000; cap 11000),
+stiftwerk (2000/8000), idraw_ui (warn >4000 draw, >10000 travel), AxiDraw docs (pen speed presets as % of max;
+pen delays normally 0; constant speed reduces pooling). No UUNATEK step-loss reports found.
+
+### 13.1 Limits (UUNATEK 3.0 profiles)
+- `limits.maxFeedXY` 11000 → **15000** (vendor Standard = factory default); `limits.maxFeedZ` 5000 → **8000**.
+  `limits.maxJogFeed` stays **6000** (jogging is hands-near-the-machine).
+- Every feed is still clamped to the firmware's `$110/$111` (XY) and `$112` (Z) — unchanged rule.
+- **High-speed mode** (new, opt-in, per profile): raises the XY cap to **20000** (Z stays 8000) **only if**
+  the connected firmware reports `$110` and `$111` ≥ the requested feed. Enabling requires a confirm dialog
+  quoting the vendor warning (noise, lower precision, possible step loss/stalling) and noting that Vectura never
+  changes firmware acceleration. Shown as a "High-speed" badge in the header while on. Simulator: allowed.
+- Profile `speedTiers` drives soft UI tips (never blocks): draw > 6000 → "quality tip: fine lines may thin or
+  skip"; travel > 12000 → "step-loss tip: watch registration"; anything above 15000 only in High-speed mode.
+
+### 13.2 Defaults
+- `motion.drawFeed` 3000 → **4000**, `motion.travelFeed` 6000 → **10000**, `pen.zFeed` 5000 (unchanged).
+
+### 13.3 Pen-type presets (per pen in Setup; fill speed + pen-down dwell; values stay editable)
+| Preset | Draw mm/min | Down dwell s |
+|---|---|---|
+| Fineliner (Micron, pigment liner) | 4000 | 0 |
+| Gel pen | 2500 | 0 |
+| Ballpoint | 4000 | 0 |
+| Fountain pen | 3000 | 0 |
+| Brush / watercolor | 2000 | 0.15 |
+| Paint marker (Posca) | 2500 | 0.15 |
+| Technical pen | 2500 | 0 |
+| Pencil / graphite | 4500 | 0 |
+| Metallic / white gel on dark paper | 2000 | 0.1 |
+| Custom | (user) | (user) |
+Presets are labeled "starting points" (community-derived, see sources). Each pen row shows its preset; changing
+speed/dwell manually switches it to Custom.
+
+### 13.4 Visibility
+Specs panel "Speed modes" table highlights which vendor mode the connected firmware's `$110–$122` most closely
+matches, and the Setup per-pen speed field shows the effective clamped value + the cap source
+("capped by your firmware at 12000" / "profile limit 15000" / "High-speed mode").
