@@ -147,8 +147,20 @@
     return Math.max(1, Math.min(isNum(v) ? v : c, c));
   };
 
+  // High-speed mode (profile.highSpeed, opt-in) raises the XY cap to limits.highSpeedXY, but only when the firmware
+  // reports both $110 and $111 (the cap is then min(highSpeedXY, $110, $111)). An unknown firmware never gets it.
+  const feedCapInfo = (profile, fw) => {
+    const lim = profile.limits || {};
+    const known = posNum(fw && fw[110]) && posNum(fw && fw[111]);
+    const hs = profile.highSpeed === true && posNum(lim.highSpeedXY) && lim.highSpeedXY > lim.maxFeedXY && known;
+    const base = hs ? lim.highSpeedXY : lim.maxFeedXY;
+    const fwCap = Math.min(fwVal(fw, 110), fwVal(fw, 111));
+    if (fwCap < base) return { cap: fwCap, source: 'firmware' };
+    return { cap: base, source: hs ? 'high-speed' : 'profile' };
+  };
+
   const clampFeedXY = (f, profile, fw) => {
-    const cap = Math.min(profile.limits.maxFeedXY, fwVal(fw, 110), fwVal(fw, 111));
+    const cap = feedCapInfo(profile, fw).cap;
     return clampFeed(f, cap, profile.motion && profile.motion.drawFeed);
   };
 
@@ -285,6 +297,7 @@
     const feedLabels = [];
     ['drawFeed', 'travelFeed', 'jogFeed'].forEach((k) => feedLabels.push(['motion.' + k, (p.motion || {})[k]]));
     ['maxFeedXY', 'maxFeedZ', 'maxJogFeed'].forEach((k) => feedLabels.push(['limits.' + k, (p.limits || {})[k]]));
+    if ((p.limits || {}).highSpeedXY !== undefined) feedLabels.push(['limits.highSpeedXY', p.limits.highSpeedXY]);
     feedLabels.push(['pen.zFeed', pen.zFeed]);
     feedLabels.forEach(([label, v]) => {
       if (!isNum(v) || v <= 0) errors.push(label + ' must be greater than 0.');
@@ -319,6 +332,7 @@
     classifyCommand,
     effectiveWorkArea,
     clampFeedXY,
+    feedCapInfo,
     clampFeedZ,
     clampZ,
     checkJobBounds,

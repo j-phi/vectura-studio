@@ -25,7 +25,7 @@ describe('plotter profile registry', () => {
     expect(a3.serial.filters).toEqual([{ usbVendorId: 0x1a86 }]);
     expect(a3.capabilities.resetsOnOpen).toBe(true);
     expect(a3.pen).toMatchObject({ mechanism: 'z', up: 0, down: 3.5, zMin: 0, zMax: 10, zFeed: 5000 });
-    expect(a3.limits).toMatchObject({ maxFeedXY: 11000, maxFeedZ: 5000 });
+    expect(a3.limits).toMatchObject({ maxFeedXY: 15000, maxFeedZ: 8000 });
     expect(a3.gcode.preamble).toEqual(['G21', 'G90']);
     expect(a3.capabilities.homing).toBe(false);
   });

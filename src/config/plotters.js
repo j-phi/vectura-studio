@@ -66,7 +66,7 @@
       downDelay: 0.05,
       upDelay: 0,
     },
-    motion: { drawFeed: 3000, travelFeed: 6000, jogFeed: 2500 },
+    motion: { drawFeed: 4000, travelFeed: 10000, jogFeed: 2500 },
     limits: { maxFeedXY: 11000, maxFeedZ: 5000, maxJogFeed: 6000, edgeMargin: 2 },
     gcode: { preamble: ['G21', 'G90'], postamble: [], decimals: 3, compact: false },
     // homing is decided at runtime from firmware $22 (some DrawCore units report $22=1).
@@ -156,6 +156,10 @@
     vendor: 'UUNATEK',
     tested,
     workArea: { width, height },
+    // Vendor Standard mode (factory default) is the everyday cap; High-speed mode (opt-in, firmware permitting) reaches 20000.
+    limits: { maxFeedXY: 15000, maxFeedZ: 8000, maxJogFeed: 6000, highSpeedXY: 20000 },
+    // Soft UI tips only; these never block a plot.
+    speedTiers: { drawQuality: 6000, travelStepLoss: 12000 },
     specs: uunatekSpecs(UUNATEK_PHYSICAL[size]),
   });
 

@@ -537,7 +537,7 @@
         area,
         zLo: p.pen.zMin,
         zHi: S.clampZ(p.pen.zMax, p, fw),
-        xyCap: Math.min(p.limits.maxFeedXY, fw[110] > 0 ? fw[110] : Infinity, fw[111] > 0 ? fw[111] : Infinity),
+        xyCap: S.feedCapInfo(p, fw).cap,
         zCap: Math.min(p.limits.maxFeedZ, fw[112] > 0 ? fw[112] : Infinity),
         jogCap: p.limits.maxJogFeed,
       };

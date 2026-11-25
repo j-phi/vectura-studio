@@ -63,7 +63,7 @@ describe('PlotJob placement math (exact numbers)', () => {
     expect(bad.bounds.overflow.top).toBeCloseTo(20, 9);
     const g = J.toGcode(mk({ x: 0, y: 0 }), prof, { originOffset: { x: 0, y: 297 } });
     expect(g.bounds.ok).toBe(true);
-    expect(g.lines).toContain('G1 X10 Y-20 F6000');
+    expect(g.lines).toContain('G1 X10 Y-20 F10000');
   });
 
   test('swatch and scale-check jobs follow the axes transform', () => {
@@ -182,7 +182,7 @@ describe('PlotJob passes and per-pen settings', () => {
 
   test('per-pen overrides are clamped by PlotSafety', () => {
     const job = build([group(line)], { ...RAW, pens: { p1: { drawFeed: 99999, down: 50, downDelay: 0.2 } } });
-    expect(job.pens[0].settings).toMatchObject({ drawFeed: 11000, down: 10, up: 0, downDelay: 0.2, travelFeed: 6000, zFeed: 5000 });
+    expect(job.pens[0].settings).toMatchObject({ drawFeed: 15000, down: 10, up: 0, downDelay: 0.2, travelFeed: 10000, zFeed: 5000 });
   });
 });
 
@@ -202,10 +202,10 @@ describe('PlotJob reload / dip', () => {
   test('G-code dips at the reload position and travels back', () => {
     const job = build([group(long)], reloadSettings(R), a3, { width: 200, height: 50 });
     const g = J.toGcode(job, a3);
-    expect(g.lines.filter((l) => l === 'G1 X5 Y5 F6000')).toHaveLength(4);
+    expect(g.lines.filter((l) => l === 'G1 X5 Y5 F10000')).toHaveLength(4);
     expect(g.lines.filter((l) => l.startsWith('G1 Z6 '))).toHaveLength(8);
     expect(g.lines).toContain('G4 P0.5');
-    expect(g.lines[g.pathStartIndices[0]]).toBe('G1 X5 Y5 F6000');
+    expect(g.lines[g.pathStartIndices[0]]).toBe('G1 X5 Y5 F10000');
     g.lines.forEach((l) => expect(safety.classifyCommand(l).ok).toBe(true));
   });
 
@@ -269,10 +269,10 @@ describe('PlotJob.toGcode', () => {
     g.lines.forEach((l) => {
       const z = /Z(-?[\d.]+)/.exec(l);
       if (z) { lastZ = parseFloat(z[1]); down = lastZ > 0; return; }
-      if (/ F6000$/.test(l) && /X/.test(l)) expect(down).toBe(false);
+      if (/ F10000$/.test(l) && /X/.test(l)) expect(down).toBe(false);
     });
     expect(lastZ).toBe(0);
-    expect(g.lines[g.lines.length - 1]).toBe('G1 X0 Y0 F6000');
+    expect(g.lines[g.lines.length - 1]).toBe('G1 X0 Y0 F10000');
     const zLines = g.lines.filter((l) => /Z/.test(l));
     expect(zLines[zLines.length - 1]).toBe('G1 Z0 F5000');
   });
@@ -281,8 +281,8 @@ describe('PlotJob.toGcode', () => {
     const job = build([group([[pt(10, 10), pt(50, 10), pt(50, 20)]])], RAW);
     expect(J.toGcode(job, a3).lines).toEqual([
       'G21', 'G90', 'G1 Z0 F5000',
-      'G1 X10 Y10 F6000', 'G1 Z3.5 F5000', 'G4 P0.05', 'G1 X50 Y10 F3000', 'G1 X50 Y20', 'G1 Z0 F5000',
-      'G1 X0 Y0 F6000',
+      'G1 X10 Y10 F10000', 'G1 Z3.5 F5000', 'G4 P0.05', 'G1 X50 Y10 F4000', 'G1 X50 Y20', 'G1 Z0 F5000',
+      'G1 X0 Y0 F10000',
     ]);
   });
 
@@ -291,7 +291,7 @@ describe('PlotJob.toGcode', () => {
     const g = J.toGcode(job, a3);
     expect(g.pathCount).toBe(job.stats.pathCount);
     expect(g.pathStartIndices).toHaveLength(g.pathCount);
-    g.pathStartIndices.forEach((i) => expect(g.lines[i]).toMatch(/^G1 X[-\d.]+ Y[-\d.]+ F6000$/));
+    g.pathStartIndices.forEach((i) => expect(g.lines[i]).toMatch(/^G1 X[-\d.]+ Y[-\d.]+ F10000$/));
     expect(g.penChangeIndices).toHaveLength(1);
     const idx = g.penChangeIndices[0];
     expect(g.lines[idx - 1]).toBe('G1 Z0 F5000');
@@ -307,14 +307,14 @@ describe('PlotJob.toGcode', () => {
     const p1 = { ...a3, gcode: { ...a3.gcode, decimals: 1 } };
     const job = build([group([[pt(10.123, 10.987), pt(50.04, 10)]])], RAW);
     const lines = J.toGcode(job, p1).lines;
-    expect(lines).toContain('G1 X10.1 Y11 F6000');
+    expect(lines).toContain('G1 X10.1 Y11 F10000');
     expect(lines.join('\n')).not.toMatch(/-0\b/);
   });
 
   test('compact removes spaces and stays classifiable', () => {
     const p1 = { ...a3, gcode: { ...a3.gcode, compact: true } };
     const lines = J.toGcode(build([group(line)], RAW), p1).lines;
-    expect(lines).toContain('G1X10Y20F6000');
+    expect(lines).toContain('G1X10Y20F10000');
     lines.forEach((l) => expect(safety.classifyCommand(l).ok).toBe(true));
   });
 
@@ -381,8 +381,8 @@ describe('PlotJob servo / custom mechanisms', () => {
     expect(lines).toContain('M5');
     expect(lines).toContain('M3 S1000');
     const i = lines.indexOf('M3 S1000');
-    expect(lines[i - 1]).toBe('G1 X10 Y10 F6000');
-    expect(lines[i + 2]).toBe('G1 X50 Y10 F3000');
+    expect(lines[i - 1]).toBe('G1 X10 Y10 F10000');
+    expect(lines[i + 2]).toBe('G1 X50 Y10 F4000');
     expect(lines.indexOf('M5', i)).toBeGreaterThan(i);
     lines.forEach((l) => expect(safety.classifyCommand(l).ok).toBe(true));
   });

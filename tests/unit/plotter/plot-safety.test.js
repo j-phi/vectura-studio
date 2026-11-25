@@ -73,7 +73,7 @@ describe('PlotSafety limits', () => {
   });
 
   test('clampFeedXY respects profile max, $110 and $111, and a floor of 1', () => {
-    expect(safety.clampFeedXY(50000, a3, {})).toBe(11000);
+    expect(safety.clampFeedXY(50000, a3, {})).toBe(15000);
     expect(safety.clampFeedXY(50000, a3, { 110: 8000, 111: 9000 })).toBe(8000);
     expect(safety.clampFeedXY(50000, a3, { 110: 9000, 111: 6000 })).toBe(6000);
     expect(safety.clampFeedXY(2500, a3, fw)).toBe(2500);
@@ -82,7 +82,7 @@ describe('PlotSafety limits', () => {
   });
 
   test('clampFeedZ respects maxFeedZ and $112', () => {
-    expect(safety.clampFeedZ(9000, a3, {})).toBe(5000);
+    expect(safety.clampFeedZ(9000, a3, {})).toBe(8000);
     expect(safety.clampFeedZ(9000, a3, { 112: 3000 })).toBe(3000);
     expect(safety.clampFeedZ(100, a3, fw)).toBe(100);
   });

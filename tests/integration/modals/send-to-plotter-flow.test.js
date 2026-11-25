@@ -509,7 +509,7 @@ describe('Send to Plotter v2 flow', () => {
       const t = panelEl().textContent;
       expect(t).toMatch(/\$110\/\$111\/\$112 = 11000 \/ 11000 \/ 5000/);
       expect(t).toMatch(/\$120\/\$121\/\$122 = 2000 \/ 2000 \/ 2000/);
-      expect(t).toMatch(/currently capped at 11000 mm\/min/);
+      expect(t).toMatch(/currently capped at 15000 mm\/min/);
       click('#stp-specs-close');
     });
   });

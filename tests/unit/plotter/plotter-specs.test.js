@@ -58,6 +58,6 @@ describe('manufacturer specs on the UUNATEK profiles', () => {
 
   test('the generic profile has no specs and profile limits are unchanged', () => {
     expect(byId('generic-grbl-servo').specs).toBeUndefined();
-    expect(byId('uunatek-3-a3').limits).toMatchObject({ maxFeedXY: 11000, maxFeedZ: 5000 });
+    expect(byId('uunatek-3-a3').limits).toMatchObject({ maxFeedXY: 15000, maxFeedZ: 8000 });
   });
 });
