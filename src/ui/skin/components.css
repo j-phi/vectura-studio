@@ -19388,3 +19388,7 @@ textarea.stp-in { height: auto; padding: 10px 12px; font-family: var(--font-mono
 .stp-spec-speeds { width: 100%; border-collapse: collapse; }
 .stp-spec-speeds th, .stp-spec-speeds td { padding: 6px 8px; border-bottom: 1px solid var(--ui-border); text-align: left; vertical-align: top; }
 .stp-spec-speeds td span, .stp-spec-speeds th span { display: block; }
+.stp-spec-speeds tr.is-closest { background: color-mix(in srgb, var(--ui-accent) 14%, transparent); }
+.stp-spec-closest { color: var(--ui-accent-text, var(--ui-accent)); font-weight: 600; }
+.stp-hs-badge { border-color: var(--ui-warn, var(--ui-accent)); }
+.stp-pen-preset { min-height: var(--stp-hit); }

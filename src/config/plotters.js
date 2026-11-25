@@ -178,14 +178,29 @@
     }),
   ]);
 
+  // Pen-type starting points (community-derived; always editable). drawFeed mm/min, downDelay seconds.
+  const PEN_PRESETS = deepFreeze([
+    { id: 'fineliner', name: 'Fineliner (Micron, pigment liner)', drawFeed: 4000, downDelay: 0 },
+    { id: 'gel', name: 'Gel pen', drawFeed: 2500, downDelay: 0 },
+    { id: 'ballpoint', name: 'Ballpoint', drawFeed: 4000, downDelay: 0 },
+    { id: 'fountain', name: 'Fountain pen', drawFeed: 3000, downDelay: 0 },
+    { id: 'brush', name: 'Brush / watercolor', drawFeed: 2000, downDelay: 0.15 },
+    { id: 'paint-marker', name: 'Paint marker (Posca)', drawFeed: 2500, downDelay: 0.15 },
+    { id: 'technical', name: 'Technical pen', drawFeed: 2500, downDelay: 0 },
+    { id: 'pencil', name: 'Pencil / graphite', drawFeed: 4500, downDelay: 0 },
+    { id: 'metallic-gel', name: 'Metallic / white gel on dark paper', drawFeed: 2000, downDelay: 0.1 },
+    { id: 'custom', name: 'Custom', drawFeed: null, downDelay: null },
+  ]);
+
   const PLOTTER_DEFAULTS = { profile: BASE_PROFILE, settings: SETTINGS_DEFAULTS };
 
-  const api = { PLOTTER_PROFILES, PLOTTER_DEFAULTS };
+  const api = { PLOTTER_PROFILES, PLOTTER_DEFAULTS, PEN_PRESETS };
 
   if (typeof window !== 'undefined') {
     const Vectura = (window.Vectura = window.Vectura || {});
     Vectura.PLOTTER_PROFILES = PLOTTER_PROFILES;
     Vectura.PLOTTER_DEFAULTS = PLOTTER_DEFAULTS;
+    Vectura.PLOTTER_PEN_PRESETS = PEN_PRESETS;
   }
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

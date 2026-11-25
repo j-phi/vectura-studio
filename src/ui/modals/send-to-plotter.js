@@ -132,6 +132,17 @@
     const t = lenPair([mm], precision);
     return unitsMode() === 'imperial' ? `${t.inch} in (${t.mm} mm)` : `${t.mm} mm (${t.inch} in)`;
   };
+  // Vendor speed mode whose per-axis max feed and acceleration are nearest the firmware's $110-$112 / $120-$122.
+  const closestSpeedMode = (modes, fw) => {
+    const keys = [[110, 'x', 'maxFeed'], [111, 'y', 'maxFeed'], [112, 'z', 'maxFeed'], [120, 'x', 'maxAccel'], [121, 'y', 'maxAccel'], [122, 'z', 'maxAccel']];
+    if (!Array.isArray(modes) || !fw || !keys.every(([n]) => isNum(fw[n]) && fw[n] > 0)) return null;
+    let best = null; let bestD = Infinity;
+    modes.forEach((m) => {
+      const d = keys.reduce((a, [n, ax, k]) => { const v = m.axes[ax][k]; return a + Math.abs(fw[n] - v) / Math.max(fw[n], v); }, 0);
+      if (d < bestD) { bestD = d; best = m; }
+    });
+    return best;
+  };
   // Distances that can get long (draw/travel): mm and in below 1 m, m and ft above.
   const fmtDist = (mm) => {
     if (!isNum(mm)) return '–';
@@ -173,6 +184,7 @@
     });
   };
 
+  const penPresets = () => Vectura.PLOTTER_PEN_PRESETS || [];
   const sanitizePen = (raw) => {
     const r = raw && typeof raw === 'object' ? raw : {};
     const optNum = (v, lo, hi) => (isNum(v) ? Math.min(hi, Math.max(lo, v)) : null);
@@ -183,6 +195,7 @@
       downDelay: optNum(r.downDelay, 0, 10),
       passes: Math.round(clampNum(r.passes, 1, 10, 1)),
       order: ORDER_MODES.includes(r.order) ? r.order : 'optimized',
+      preset: penPresets().some((x) => x.id === r.preset) ? r.preset : null,
     };
     if (r.reload && typeof r.reload === 'object' && isNum(r.reload.everyMm) && r.reload.everyMm > 0) {
       const rl = r.reload;
@@ -1868,10 +1881,11 @@
         sw.fileFormats ? ['File formats', sw.fileFormats.join(', ')] : null,
       ])));
       if (Array.isArray(sp.speedModes) && sp.speedModes.length) {
+        const closest = closestSpeedMode(sp.speedModes, fw);
         const table = h('table', { class: 'stp-spec-speeds', id: 'stp-spec-speeds' },
           h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Mode' }), ...['X', 'Y', 'Z'].map((a) => h('th', { scope: 'col', text: `${a} max speed / acceleration` })))),
-          h('tbody', {}, ...sp.speedModes.map((m) => h('tr', {},
-            h('th', { scope: 'row' }, h('strong', { text: m.name }), m.note ? h('span', { class: 'stp-hint', text: m.note }) : null),
+          h('tbody', {}, ...sp.speedModes.map((m) => h('tr', { class: closest && closest.id === m.id ? 'is-closest' : '' },
+            h('th', { scope: 'row' }, h('strong', { text: m.name }), closest && closest.id === m.id ? h('span', { class: 'stp-spec-closest', text: 'Closest to your firmware' }) : null, m.note ? h('span', { class: 'stp-hint', text: m.note }) : null),
             ...['x', 'y', 'z'].map((a) => h('td', {}, h('span', { text: fmtFeed(m.axes[a].maxFeed) }), h('span', { text: fmtAccel(m.axes[a].maxAccel) })))))));
         const cap = profile.limits && isNum(profile.limits.maxFeedXY) ? profile.limits.maxFeedXY : null;
         body.appendChild(sec('Speed modes', table,
@@ -2271,6 +2285,14 @@
           this.saveSettings({ penOrder: order });
           this.renderPens();
         };
+        const presetSel = h('select', { class: 'stp-in stp-pen-preset', 'aria-label': `${pen.name} pen type` }, penPresets().map((x) => h('option', { value: x.id, text: x.name })));
+        presetSel.value = cfg.preset || 'custom';
+        presetSel.addEventListener('change', () => {
+          const pr = penPresets().find((x) => x.id === presetSel.value);
+          if (!pr || pr.id === 'custom') { save({ preset: 'custom' }); return; }
+          save({ preset: pr.id, drawFeed: pr.drawFeed, downDelay: pr.downDelay });
+          this.renderPens();
+        });
         const speedNoteEl = h('span', { class: 'stp-hint stp-speed-note', text: this.speedNote(cfg.drawFeed) });
         const card = h('div', { class: `stp-pen${cfg.enabled ? '' : ' is-off'}`, dataset: { penId: id } },
           h('div', { class: 'stp-pen-head' },
@@ -2282,11 +2304,12 @@
             btn('↑', () => move(-1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} earlier`, disabled: idx === 0 }),
             btn('↓', () => move(1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} later`, disabled: idx === ids.length - 1 })),
           h('div', { class: 'stp-pen-grid is-primary' },
-            field('Draw speed (mm/min)', ctlNum(cfg.drawFeed, { ariaLabel: `${pen.name} draw speed`, min: 50, max: 20000, nullable: true, placeholder: prof.motion.drawFeed }, (v) => { save({ drawFeed: v }); speedNoteEl.textContent = this.speedNote(v); }), speedNoteEl),
+            field('Pen type (starting point)', presetSel),
+            field('Draw speed (mm/min)', ctlNum(cfg.drawFeed, { ariaLabel: `${pen.name} draw speed`, min: 50, max: 20000, nullable: true, placeholder: prof.motion.drawFeed }, (v) => { save({ drawFeed: v, preset: 'custom' }); presetSel.value = 'custom'; speedNoteEl.textContent = this.speedNote(v); }), speedNoteEl),
             field('Pen-down height (mm)', ctlNum(cfg.down, { ariaLabel: `${pen.name} pen-down height`, min: 0, max: 12, step: 0.05, nullable: true, placeholder: prof.pen.down }, (v) => save({ down: v })))),
           adv(`pen-more-${id}`, 'More',
             h('div', { class: 'stp-pen-grid' },
-              field('Down dwell (s)', ctlNum(cfg.downDelay, { ariaLabel: `${pen.name} down dwell`, min: 0, max: 10, step: 0.05, nullable: true, placeholder: prof.pen.downDelay }, (v) => save({ downDelay: v }))),
+              field('Down dwell (s)', ctlNum(cfg.downDelay, { ariaLabel: `${pen.name} down dwell`, min: 0, max: 10, step: 0.05, nullable: true, placeholder: prof.pen.downDelay }, (v) => { save({ downDelay: v, preset: 'custom' }); presetSel.value = 'custom'; })),
               field('Passes', ctlNum(cfg.passes, { ariaLabel: `${pen.name} passes`, min: 1, max: 10, step: 1, fallback: 1 }, (v) => save({ passes: Math.round(v) }))),
               field('Path order', (() => {
                 const sel = h('select', { class: 'stp-in', 'aria-label': `${pen.name} path order` }, ORDER_MODES.map((m) => h('option', { value: m, text: m[0].toUpperCase() + m.slice(1) })));
@@ -2732,6 +2755,7 @@
     paperSpace: { toPaper, fromPaper, paperAreaRect, assumedOriginOffset },
     connectSession,
     disconnectSession,
+    closestSpeedMode,
     fmtLen,
     fmtDims,
     fmtFeed,

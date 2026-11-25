@@ -558,4 +558,52 @@ describe('Send to Plotter v2 flow', () => {
       expect(document.querySelector('.stp-pen .stp-speed-note')).toBeTruthy();
     });
   });
+
+  describe('pen-type presets and closest vendor mode (spec 13.3, 13.4)', () => {
+    const penId = () => document.querySelector('.stp-pen').dataset.penId;
+    const sel = () => document.querySelector('.stp-pen .stp-pen-preset');
+    const pick = (v) => { sel().value = v; sel().dispatchEvent(new window.Event('change', { bubbles: true })); };
+
+    test('the preset table has the exact starting-point values', () => {
+      const P = window.Vectura.PLOTTER_PEN_PRESETS;
+      const t = Object.fromEntries(P.map((x) => [x.id, [x.drawFeed, x.downDelay]]));
+      expect(t).toEqual({
+        fineliner: [4000, 0], gel: [2500, 0], ballpoint: [4000, 0], fountain: [3000, 0], brush: [2000, 0.15],
+        'paint-marker': [2500, 0.15], technical: [2500, 0], pencil: [4500, 0], 'metallic-gel': [2000, 0.1], custom: [null, null],
+      });
+    });
+
+    test('choosing a preset fills speed and dwell and persists per pen; a manual edit switches to Custom', () => {
+      click('[data-tab="setup"]');
+      expect(sel()).toBeTruthy();
+      pick('brush');
+      const id = penId();
+      expect(STP.getPanel().settings().pens[id]).toMatchObject({ preset: 'brush', drawFeed: 2000, downDelay: 0.15 });
+      expect(document.querySelector('.stp-pen input[aria-label$="draw speed"]').value).toBe('2000');
+      const inp = document.querySelector('.stp-pen input[aria-label$="draw speed"]');
+      inp.value = '2100'; inp.dispatchEvent(new window.Event('change', { bubbles: true }));
+      expect(STP.getPanel().settings().pens[id]).toMatchObject({ preset: 'custom', drawFeed: 2100 });
+      expect(sel().value).toBe('custom');
+      pick('pencil');
+      expect(STP.getPanel().settings().pens[id]).toMatchObject({ preset: 'pencil', drawFeed: 4500, downDelay: 0 });
+      const dw = document.querySelector('.stp-pen input[aria-label$="down dwell"]');
+      dw.value = '0.3'; dw.dispatchEvent(new window.Event('change', { bubbles: true }));
+      expect(STP.getPanel().settings().pens[id]).toMatchObject({ preset: 'custom', downDelay: 0.3 });
+    });
+
+    test('closestSpeedMode matches the firmware to a vendor mode and needs all six values', () => {
+      const modes = window.Vectura.PLOTTER_PROFILES[0].specs.speedModes;
+      expect(STP.closestSpeedMode(modes, { 110: 15000, 111: 15000, 112: 8000, 120: 2000, 121: 2000, 122: 2000 }).id).toBe('standard');
+      expect(STP.closestSpeedMode(modes, { 110: 12000, 111: 12000, 112: 12000, 120: 500, 121: 500, 122: 2000 }).id).toBe('drawing');
+      expect(STP.closestSpeedMode(modes, { 110: 12000, 111: 12000, 112: 12000 })).toBeNull();
+    });
+
+    test('the specs panel highlights the closest mode when connected', async () => {
+      await connectSim();
+      click('#stp-specs-btn');
+      expect(document.querySelectorAll('#stp-spec-speeds tr.is-closest').length).toBe(1);
+      expect(document.querySelector('#stp-spec-speeds tr.is-closest').textContent).toMatch(/Closest to your firmware/);
+      click('#stp-specs-close');
+    });
+  });
 });
