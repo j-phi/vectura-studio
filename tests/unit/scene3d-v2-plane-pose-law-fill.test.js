@@ -30,8 +30,8 @@ describe('Scene3D v2 pose — a lit lone plane keeps its mono-law marks', () => 
   it('plane pitch 0 and 90 are unchanged', () => {
     expect(count('plane', 'dutyConst', 0)).toBe(830);
     expect(count('plane', 'dutyConst', 90)).toBe(1903);
-    expect(count('plane', 'etfKang', 0)).toBe(26);
-    expect(count('plane', 'etfKang', 90)).toBe(59);
+    expect(count('plane', 'etfKang', 0)).toBe(48);
+    expect(count('plane', 'etfKang', 90)).toBe(66);
   });
   it('a box is unchanged', () => {
     expect(count('box', 'dutyConst', 30)).toBe(595);

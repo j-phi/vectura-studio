@@ -266,6 +266,17 @@
       DOT_SEGS: 8,  // tone model v2 stipple: dot polygon segments
       SPIRAL_MIN_S: 0.03,  // tone model v2 spiral: stop when the scale toward the face centre drops under this
     }),
+    // surface-fill-mono.js etfKang: strokes are spaced by SURFACE distance (screen gap = pitch x foreshortening |N.V|).
+    ETF: Object.freeze({
+      SURFACE_K: 0.5,  // gap = pitch x m^K, m = |N.V| foreshortening: 1 = full surface spacing (A), 0.5 = partial (B), 0 = even SCREEN spacing (the old look)
+      GAP_FLOOR_X: 1,  // ink floor: compression never takes the gap under this x the plot-floor pitch (0 = off; B uses 1)
+      GAP_MIN: 0.3,  // settled: the foreshortening floor (the limb, |N.V| -> 0, cannot run away into a flood)
+      WRAP_LO: 0.015,  // wrap rings: |a x n| (sin of the angle off the wrap axis) under this = a straight-line face (cap, box top, the pole)
+      WRAP_HI: 0.07,  // ... and over this = full rings; between the two the stroke blends from straight to ring
+      EDGE_DEG: 30,  // wrap rings, edge-aware: a normal turn over this between neighbouring cells is a crease (cylinder rim): differences go one-sided and smoothing never mixes the two faces (0 = off)
+      REGION_DEG: 45,  // ... and cells whose neighbours' normals stay within this belong to one face; a stroke ends where it would step onto another
+      GAP_MIN_DRAFT: 0.5,  // law-tier drag draft: a higher floor keeps the first drag frame under the flat-fallback budget
+    }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({
       DEPTH_BIAS_MM: 0.05,  // cross-object depth margin (the HLR clipper's HLR_BIAS)

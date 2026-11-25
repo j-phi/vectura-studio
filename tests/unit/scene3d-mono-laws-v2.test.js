@@ -98,7 +98,7 @@ const profileOf = (V, rig, cell = 0.25, rimFrac = 0.85) => {
 
 // Recorded on Node 24 x64 (the CI and golden-values runtime, .nvmrc); Node 22 rounds some math differently.
 const LEGACY_HASH = {
- "etfKang/hatch": "215f288a6e35:63",
+ "etfKang/hatch": "f452dcb1eaa8:55",
  "defectSplit/hatch": "88a1e6ef5a66:91",
  "mezzoRegion/hatch": "aa1be0f01757:179",
  "mezzoRegion/crosshatch": "5ca4ad8dc975:353",

@@ -49,6 +49,10 @@
     stripeAlign: { ...NUM(0, 1.2, 0.05, 0), group: 'turing', label: 'Stripe align', aria: 'Stripe alignment', help: 'Combs the stripes along the form instead of a random labyrinth. 0 = off.' },
     patternMaturity: { ...NUM(40, 400, 10, 170), group: 'turing', label: 'Maturity', help: 'How long the pattern relaxes. Low = young, broken stripes. High = settled stripes.' },
     stripeScale: { ...NUM(0.5, 3, 0.05, 1), group: 'turing', label: 'Stripe scale', help: 'Stripe wavelength multiplier. Below 1 = finer stripes. Above 1 = broader stripes.' },
+    // etfKang wrap origin (the Wrap origin XY pad): the point the rings are centred on, as a top-down pad position.
+    // (0, 0) = the object's top pole. x to the right, y toward the viewer; the unit circle is the equator.
+    wrapOriginX: { ...NUM(-1, 1, 0.01, 0), group: 'wrap', label: 'Wrap origin X', help: 'Which way the rings are centred, left to right. 0 = over the top.' },
+    wrapOriginY: { ...NUM(-1, 1, 0.01, 0), group: 'wrap', label: 'Wrap origin Y', help: 'Which way the rings are centred, away from or toward the viewer. 0 = over the top.' },
     // Highlight Alt fill: line angle (the second layer crosses at the shared Cross angle).
     altFillAngle: { ...NUM(0, 180, 1, 45), group: 'alt', label: 'Alt angle', help: 'Angle of the Alt fill lines. A second layer crosses at the Cross angle. 45 = the fixed angle used before.' },
     // Mark chaining (maze).

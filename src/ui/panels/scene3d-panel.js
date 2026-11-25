@@ -841,6 +841,10 @@
     const writeLawKey = (key, v) => {
       if (typeof o.writeStyleParams === 'function') o.writeStyleParams({ [key]: v });
     };
+    // Several keys in ONE write (one undo step), for a two-axis control such as the Wrap origin pad.
+    writeLawKey.many = (patch) => {
+      if (typeof o.writeStyleParams === 'function') o.writeStyleParams(patch);
+    };
     // U6 — the artistic rows of this Fill Style (nib, taper, wave, Turing, maze, tier pens).
     renderLawArtRows(host, comps, o, styleParamBag, law, lawDialLaw, writeLawKey);
     if (lawDialLaw === 'mkDotScreen' && (o.mapper === 'hatch' || o.mapper === 'crosshatch' || o.mapper === 'contour')) {
@@ -1659,6 +1663,22 @@
     const prim = o.primitiveMode;
     const cls = primClassOf(prim);
     const faceted = cls === 'faceted';
+    // etfKang: the Wrap origin pad. A top-down view of the object's upper hemisphere: the centre is the top pole,
+    // the rim the equator. The rings follow the object, not the light or the camera.
+    if (eff === 'etfKang' && Vectura.UI && Vectura.UI.XYPad) {
+      const ctl = labeledRow(host, 'Wrap origin');
+      const dx = FC.CONTROLS.wrapOriginX.default; const dy = FC.CONTROLS.wrapOriginY.default;
+      const pad = Vectura.UI.XYPad(ctl, {
+        value: { x: Number.isFinite(bag.wrapOriginX) ? bag.wrapOriginX : dx, y: Number.isFinite(bag.wrapOriginY) ? bag.wrapOriginY : dy },
+        ariaLabel: 'Wrap origin',
+        readout: (v) => (v.x || v.y ? `${Math.round(Math.asin(Math.min(1, Math.hypot(v.x, v.y))) * 180 / Math.PI)} deg off the top` : 'top pole'),
+        onCommit: (v) => { if (typeof write.many === 'function') write.many({ wrapOriginX: v.x, wrapOriginY: v.y }); else { write('wrapOriginX', v.x); write('wrapOriginY', v.y); } },
+      });
+      comps.push(pad);
+      ctl.parentNode.dataset.art = '1';
+      ctl.parentNode.dataset.wrapOrigin = '1';
+      ctl.parentNode.setAttribute('title', 'Where the rings are centred, seen from above: the middle is the top of the object, the rim its equator. Drag the knob or use the arrow keys. Double-click recentres.');
+    }
     // Turing stripes: alignment, maturity, scale (mono, any shape).
     if (eff === 'turingStripe') {
       artSliderRow(host, comps, bag, 'stripeAlign', write, '');

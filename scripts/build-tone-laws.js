@@ -192,7 +192,7 @@ const SURVIVOR_COPY = {
   taperedEnds: { label: 'Width Ribbon', extra: 'Width from picks Tone, Calligraphic nib angle or Isophotes; Ends picks Tapered or Hard.' },
   bundleCount: { label: 'Bundle', extra: 'Closest approach picks Touching or Overlapping (a 0.55 ink step, up to 13 passes); Bundle ends picks Square or Lozenge.' },
   ampSpacing: { label: 'Wave', extra: 'Phase picks In-phase or Interlocked; Waveform picks Serpentine, Loop or Zigzag; Pen down picks one stroke per ruling or one per family (in-phase).' },
-  etfKang: { label: 'Flow Field', extra: 'Direction field picks Follows depth (Kang) or Designed defects.' },
+  etfKang: { label: 'Flow Field', extra: 'Direction field picks Follows the object (Kang) or Designed defects.' },
 };
 Object.keys(SURVIVOR_COPY).forEach((id) => {
   if (!BY_ID[id]) return;
@@ -371,7 +371,7 @@ const COLLAPSE = {
   etfKang: [{
     key: 'flowField', label: 'Direction field', default: 'depth',
     options: [
-      { value: 'depth', label: 'Follows depth (Kang)', law: 'etfKang' },
+      { value: 'depth', label: 'Follows the object (Kang)', law: 'etfKang' },
       { value: 'defects', label: 'Designed defects', law: 'defectSplit' },
     ],
   }],

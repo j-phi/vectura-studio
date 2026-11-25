@@ -33,14 +33,14 @@
   },
   "x64": {
     "box/hatch/etfKang": {
-      "hash": "7fa7bd11",
-      "paths": 249,
-      "pts": 14053
+      "hash": "ec3333e",
+      "paths": 250,
+      "pts": 13664
     },
     "sphere/hatch/etfKang": {
-      "hash": "b2689b20",
-      "paths": 285,
-      "pts": 13885
+      "hash": "c742534c",
+      "paths": 197,
+      "pts": 11896
     },
     "sphere/hatch/ladder": {
       "hash": "f51e7a34",

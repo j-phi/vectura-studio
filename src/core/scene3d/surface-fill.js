@@ -13265,6 +13265,8 @@
           chainMarks: opts.chainMarks,
           patternMaturity: opts.patternMaturity,
           stripeScale: opts.stripeScale,
+          // etfKang: the object-locked wrap axis (the Wrap origin pad); absent for every other law.
+          ...(TONE_ALGO === 'etfKang' ? { wrapAxis: MonoFill().wrapAxisWorld(fcNum('wrapOriginX'), fcNum('wrapOriginY'), t, applyTransform) } : {}),
         });
       } else if (contMapper) {
         // W-36c: crosshatch's family A now also reads the per-family budget

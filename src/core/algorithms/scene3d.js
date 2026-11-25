@@ -4003,6 +4003,11 @@
             chainMarks: styleParams.chainMarks,
             patternMaturity: styleParams.patternMaturity,
             stripeScale: styleParams.stripeScale,
+            // etfKang: the object-locked wrap axis (the Wrap origin pad), rotated by the object's own transform.
+            ...(algo === 'etfKang' ? { wrapAxis: M.wrapAxisWorld(
+              Vectura.SCENE_FILL_CONTROLS && Vectura.SCENE_FILL_CONTROLS.read(styleParams, 'wrapOriginX'),
+              Vectura.SCENE_FILL_CONTROLS && Vectura.SCENE_FILL_CONTROLS.read(styleParams, 'wrapOriginY'),
+              (objById.get(record.id) || {}).transform, Scene.applyObjectTransform) } : {}),
           });
         } catch (e) {
           return null; // a law that throws must not take the facet with it
@@ -5583,6 +5588,8 @@
                 chainMarks: sp.chainMarks,
                 patternMaturity: sp.patternMaturity,
                 stripeScale: sp.stripeScale,
+                wrapOriginX: sp.wrapOriginX,
+                wrapOriginY: sp.wrapOriginY,
                 nibAngleDeg: sp.nibAngleDeg,
                 nibContrast: sp.nibContrast,
                 taperLength: sp.taperLength,
