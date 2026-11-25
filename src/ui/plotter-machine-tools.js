@@ -623,7 +623,7 @@
       CAL.forEach((w) => {
         const l = launchers[w.key];
         const done = w.flag ? cal[w.flag] === true : false;
-        l.badge.textContent = done ? 'Done' : 'Recommended';
+        l.badge.textContent = done ? 'Done \u2713' : 'Recommended';
         l.badge.hidden = !w.flag;
         l.card.classList.toggle('is-done', done);
         setEnabled(l.card, ok, reasonText() || 'Busy.');

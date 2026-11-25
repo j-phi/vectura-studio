@@ -253,6 +253,79 @@ describe('Send to Plotter panel', () => {
     });
   });
 
+  describe('live pen marker is origin-relative (no double-counted origin offset)', () => {
+    test('origin at machine (10,10): WPos (0,0) sits on the origin cross; WPos (25,40) is 25/40 mm right/down', async () => {
+      const panel = STP.getPanel();
+      panel.setProfileOverride({ axes: { invertX: false, invertY: false, swapXY: false } });
+      STP.simOptions = { bannerDelayMs: 10, speed: 4000 };
+      await STP.connectSession('sim', panel.profile());
+      await waitFor(() => STP.getSession().controller?.state === 'idle');
+      const c = STP.getSession().controller;
+      c.wco = { x: 10, y: 10, z: 0 };
+      panel.recompute();
+      STP.getSession().status = { wpos: { x: 0, y: 0, z: 0 }, mpos: { x: 10, y: 10, z: 0 }, wco: { x: 10, y: 10, z: 0 } };
+      let v = panel.view();
+      expect(v.live.x).toBeCloseTo(0, 6);
+      expect(v.live.y).toBeCloseTo(0, 6);
+      // a status snapshot taken just before the origin was set still carries the old WPos: the marker must use MPos - WCO
+      STP.getSession().status = { wpos: { x: 10, y: 10, z: 0 }, mpos: { x: 10, y: 10, z: 0 }, wco: { x: 0, y: 0, z: 0 } };
+      v = panel.view();
+      expect(v.live.x).toBeCloseTo(0, 6);
+      expect(v.live.y).toBeCloseTo(0, 6);
+      STP.getSession().status = { wpos: { x: 25, y: 40, z: 0 }, mpos: { x: 35, y: 50, z: 0 }, wco: { x: 10, y: 10, z: 0 } };
+      v = panel.view();
+      expect(v.live.x).toBeCloseTo(25, 6);
+      expect(v.live.y).toBeCloseTo(40, 6);
+      panel.setProfileOverride({ axes: { invertX: false, invertY: true, swapXY: false } });
+      v = panel.view();
+      expect(v.live.x).toBeCloseTo(25, 6);
+      expect(v.live.y).toBeCloseTo(-40, 6);
+      panel.setProfileOverride({ axes: { invertX: false, invertY: false, swapXY: false } });
+      STP.getSession().status = null;
+      await STP.disconnectSession();
+    });
+  });
+
+  describe('visual-verification fixes: readout, caption, framing', () => {
+    test('formatFwOpt never prints an object', () => {
+      expect(STP.formatFwOpt({ flags: 'VZHDL', blocks: 15, rxBuffer: 128 })).toBe('VZHDL \u00b7 15 blocks \u00b7 RX 128 bytes');
+      expect(STP.formatFwOpt('V,15,128')).toBe('V,15,128');
+      expect(STP.formatFwOpt({ flags: '', blocks: NaN })).not.toMatch(/object/);
+    });
+
+    test('the Connect firmware table shows a formatted Options row', async () => {
+      const panel = STP.getPanel();
+      STP.simOptions = { bannerDelayMs: 10, speed: 4000 };
+      await STP.connectSession('sim', panel.profile());
+      await waitFor(() => STP.getSession().controller?.state === 'idle');
+      panel.showTab('connect');
+      panel.renderConnect();
+      const text = document.querySelector('.stp-fw')?.textContent || '';
+      expect(text).not.toContain('[object Object]');
+      await STP.disconnectSession();
+    });
+
+    test('the Setup preview caption describes the paper view', () => {
+      const src = require('fs').readFileSync(require('path').join(__dirname, '../../../src/ui/modals/send-to-plotter.js'), 'utf8');
+      expect(src).toContain('Paper view: as you see the sheet.');
+      expect(src).not.toContain('Machine view, relative to the origin');
+    });
+
+    test('previewBounds covers work area, sheet outline and path bbox (rotated sheet overflowing the area)', () => {
+      const v = {
+        area: { x: 0, y: 0, w: 420, h: 297 },
+        job: { bbox: { minX: 0, minY: 0, maxX: 297, maxY: 420 } },
+        doc: [{ x: 0, y: 0 }, { x: 297, y: 0 }, { x: 297, y: 420 }, { x: 0, y: 420 }, { x: 0, y: 0 }],
+      };
+      const b = STP.previewBounds(v);
+      expect(b.maxY).toBeGreaterThanOrEqual(420);
+      expect(b.maxX).toBeGreaterThanOrEqual(420);
+      expect(b.minX).toBeLessThanOrEqual(0);
+      const onlyDoc = STP.previewBounds({ area: { x: 0, y: 0, w: 10, h: 10 }, job: null, doc: [{ x: 0, y: 0 }, { x: 50, y: 80 }] });
+      expect(onlyDoc.maxY).toBeGreaterThanOrEqual(80);
+    });
+  });
+
   describe('dense documents (responsiveness)', () => {
     let panel;
     const manualYield = () => {

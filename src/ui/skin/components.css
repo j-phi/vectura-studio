@@ -18967,7 +18967,7 @@ body.touch-ui .pen-studio .pen-studio-matrix-row { min-height: calc(var(--touch-
 .stp-tab.is-active { background: var(--ui-ctrl); color: var(--ui-text); box-shadow: inset 2px 0 0 var(--ui-accent); }
 .stp-stage { flex: 1; min-width: 0; min-height: 0; position: relative; }
 .stp-pane { position: absolute; inset: 0; display: flex; min-height: 0; }
-.stp-tool-host { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.stp-tool-host { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 14px 16px; box-sizing: border-box; }
 .stp-placeholder { margin: auto; color: var(--ui-muted); font-size: 13px; }
 .stp-scroll { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 14px 16px; }
 
@@ -18991,17 +18991,17 @@ body.touch-ui .pen-studio .pen-studio-matrix-row { min-height: calc(var(--touch-
 .stp-note.is-error { border-color: var(--ui-danger); background: color-mix(in srgb, var(--ui-danger) 10%, transparent); color: var(--ui-danger-text, var(--ui-danger)); }
 .stp-note.is-ok { border-color: var(--stp-ok); background: color-mix(in srgb, var(--stp-ok) 10%, transparent); }
 
-.stp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
-.stp-card { position: relative; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 10px 8px 8px; background: var(--ui-panel-alt, var(--ui-ctrl)); border: 1px solid var(--ui-border); border-radius: var(--radius-md); color: inherit; cursor: pointer; overflow: hidden; transition: background-color 0.14s, border-color 0.14s, transform 0.14s; }
+.stp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; align-items: stretch; }
+.stp-card { position: relative; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 10px 8px 8px; background: var(--ui-panel-alt, var(--ui-ctrl)); border: 1px solid var(--ui-border); border-radius: var(--radius-md); color: inherit; cursor: pointer; overflow: hidden; transition: background-color 0.14s, border-color 0.14s, transform 0.14s; }
 .stp-card:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--stp-card-color, var(--ui-accent)); }
 .stp-card:disabled { opacity: 0.5; cursor: default; }
 .stp-card.is-current { background: linear-gradient(180deg, color-mix(in srgb, var(--stp-card-color, var(--ui-accent)) 14%, transparent) 0%, transparent 80%); box-shadow: 0 0 0 1px var(--stp-card-color, var(--ui-accent)) inset; }
 .stp-card-preview { display: flex; align-items: center; justify-content: center; aspect-ratio: 1.7; margin-bottom: 6px; background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: var(--radius-sm); color: var(--stp-card-color, var(--ui-accent)); }
 .stp-card-preview svg { width: 78%; height: 78%; }
-.stp-card-name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--ui-text); }
-.stp-card-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--stp-card-color, var(--ui-accent)); box-shadow: 0 0 6px var(--stp-card-color, var(--ui-accent)); }
+.stp-card-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-height: 2.6em; line-height: 1.3; font-size: 12px; font-weight: 700; color: var(--ui-text); overflow-wrap: anywhere; }
+.stp-card-dot { display: inline-block; vertical-align: middle; margin-right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--stp-card-color, var(--ui-accent)); box-shadow: 0 0 6px var(--stp-card-color, var(--ui-accent)); }
 .stp-card-tag { font-size: var(--font-size-xs); color: var(--ui-muted); line-height: 1.35; }
-.stp-badge { align-self: flex-start; margin-top: 4px; padding: 1px 7px; border-radius: 9999px; font-size: 10px; font-weight: 600; border: 1px solid var(--stp-card-color, var(--ui-border)); color: var(--stp-card-color, var(--ui-text-2)); }
+.stp-badge { align-self: flex-start; margin-top: auto; padding: 1px 7px; border-radius: 9999px; font-size: 10px; font-weight: 600; border: 1px solid var(--stp-card-color, var(--ui-border)); color: var(--stp-card-color, var(--ui-text-2)); }
 .stp-current-marker { position: absolute; top: 6px; right: 6px; display: none; padding: 2px 6px; border-radius: 9999px; background: var(--stp-card-color, var(--ui-accent)); color: #1a1a1a; font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; }
 .stp-card.is-current .stp-current-marker { display: inline-flex; }
 
@@ -19129,7 +19129,7 @@ textarea.stp-in { height: auto; padding: 4px 6px; font-family: var(--font-mono);
 .stp-mt-readout-val { min-width: 56px; color: var(--ui-text); }
 
 .stp-mt-jog { display: flex; flex-wrap: wrap; gap: var(--spacing-lg, 16px); align-items: flex-start; }
-.stp-mt-jog-side { display: flex; flex-direction: column; gap: var(--spacing-sm); min-width: 140px; flex: 1; }
+.stp-mt-jog-side { display: flex; flex-direction: column; gap: var(--spacing-sm); min-width: 140px; max-width: 260px; flex: 0 1 240px; }
 .stp-mt-dial {
   position: relative; width: 156px; height: 156px; flex: none;
   display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
@@ -19165,13 +19165,14 @@ textarea.stp-in { height: auto; padding: 4px 6px; font-family: var(--font-mono);
   background: color-mix(in srgb, var(--ui-warning, var(--ui-accent)) 14%, transparent);
 }
 
-.stp-mt-field { display: flex; flex-direction: column; gap: 2px; }
+.stp-mt-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .stp-mt-field-lbl { font-size: var(--font-size-xs); color: var(--ui-muted); }
 .stp-mt-num, .stp-mt-console-input {
   height: var(--row-height); padding: 0 var(--spacing-sm);
   background: var(--ui-ctrl); border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
   color: var(--ui-text); font-family: var(--font-mono); font-size: var(--font-size-sm);
 }
+.stp-mt-num { width: 100%; max-width: 180px; box-sizing: border-box; }
 .stp-mt-num:focus-visible, .stp-mt-console-input:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
 .stp-mt-zfield { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--spacing-sm); }
 .stp-mt-range { flex: 1; min-width: 120px; accent-color: var(--stp-mt-color); }
@@ -19183,25 +19184,28 @@ textarea.stp-in { height: auto; padding: 4px 6px; font-family: var(--font-mono);
 }
 
 /* calibration picture cards (Mirror picker language) */
-.stp-mt-cards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm); }
+.stp-mt-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-sm); }
+@container (min-width: 1100px) {
+  .stp-mt-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 .stp-mt-card {
-  position: relative; text-align: left; display: flex; flex-direction: column; gap: 4px;
-  padding: 10px 8px 8px; color: inherit; cursor: pointer; overflow: hidden;
+  position: relative; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 4px;
+  padding: 8px; color: inherit; cursor: pointer; overflow: hidden;
   background: var(--ui-panel-alt, var(--ui-ctrl)); border: 1px solid var(--ui-border); border-radius: var(--radius-md);
   transition: background-color 0.14s, border-color 0.14s, transform 0.14s;
 }
 .stp-mt-card:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--stp-mt-color); }
 .stp-mt-card.is-done { box-shadow: 0 0 0 1px var(--stp-mt-color) inset; }
 .stp-mt-card-pic {
-  display: flex; align-items: center; justify-content: center; aspect-ratio: 1.6;
+  display: flex; align-items: center; justify-content: center; height: 100px; min-width: 0; overflow: hidden;
   background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
   color: var(--stp-mt-color);
 }
-.stp-mt-card-pic svg { width: 70%; height: 70%; }
+.stp-mt-card-pic svg { height: 80%; width: auto; max-width: 80%; }
 .stp-mt-card-name { font-size: var(--font-size-sm); font-weight: 700; }
-.stp-mt-card-tag { font-size: var(--font-size-xs); color: var(--ui-muted); line-height: 1.35; }
+.stp-mt-card-tag { font-size: var(--font-size-xs); color: var(--ui-muted); line-height: 1.35; overflow-wrap: anywhere; }
 .stp-mt-card-badge {
-  position: absolute; top: 6px; right: 6px; padding: 1px 6px; border-radius: 9999px;
+  position: absolute; top: 12px; right: 12px; padding: 1px 6px; border-radius: 9999px;
   font-size: var(--font-size-xs); font-weight: 700;
   background: var(--stp-mt-color); color: var(--ui-on-accent);
 }

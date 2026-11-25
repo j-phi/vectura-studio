@@ -445,6 +445,34 @@
     return { groups, docSize: { width: isNum(prof.width) ? prof.width : 0, height: isNum(prof.height) ? prof.height : 0 }, error: null };
   }
 
+  // Firmware $I "[OPT:...]" parsed as { flags, blocks, rxBuffer } (or a raw string). Never print an object.
+  const formatFwOpt = (opt) => {
+    if (opt === null || opt === undefined) return '';
+    if (typeof opt !== 'object') return String(opt);
+    const parts = [];
+    if (opt.flags) parts.push(String(opt.flags));
+    if (isNum(opt.blocks)) parts.push(`${opt.blocks} blocks`);
+    if (isNum(opt.rxBuffer)) parts.push(`RX ${opt.rxBuffer} bytes`);
+    return parts.join(' \u00b7 ') || 'not reported';
+  };
+
+  // Preview framing: union of work area, origin, sheet outline and path bbox, in paper space.
+  const previewBounds = (v) => {
+    const a = v.area;
+    let minX = Math.min(a.x, 0); let minY = Math.min(a.y, 0);
+    let maxX = Math.max(a.x + a.w, 0); let maxY = Math.max(a.y + a.h, 0);
+    if (v.job && v.job.bbox) {
+      minX = Math.min(minX, v.job.bbox.minX); minY = Math.min(minY, v.job.bbox.minY);
+      maxX = Math.max(maxX, v.job.bbox.maxX); maxY = Math.max(maxY, v.job.bbox.maxY);
+    }
+    (v.doc || []).forEach((p) => {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    });
+    const m = Math.max(2, 0.02 * Math.max(maxX - minX, maxY - minY));
+    return { minX: minX - m, minY: minY - m, maxX: maxX + m, maxY: maxY + m };
+  };
+
   const originOffsetOf = (c) => (c && c.wco ? { x: c.wco.x, y: c.wco.y } : { x: 0, y: 0 });
 
   // ---- paper space (the sheet as the user sees it: origin top-left, x right, y down the page) ----
@@ -610,13 +638,8 @@
       ctx.clearRect(0, 0, cssW, cssH);
 
       const a = v.area;
-      let minX = Math.min(a.x, 0); let minY = Math.min(a.y, 0);
-      let maxX = Math.max(a.x + a.w, 0); let maxY = Math.max(a.y + a.h, 0);
-      if (v.job && v.job.bbox) {
-        minX = Math.min(minX, v.job.bbox.minX); minY = Math.min(minY, v.job.bbox.minY);
-        maxX = Math.max(maxX, v.job.bbox.maxX); maxY = Math.max(maxY, v.job.bbox.maxY);
-      }
-      const pad = 20;
+      const { minX, minY, maxX, maxY } = previewBounds(v);
+      const pad = 12;
       const sc = Math.min((cssW - pad * 2) / Math.max(1, maxX - minX), (cssH - pad * 2) / Math.max(1, maxY - minY));
       const ox = pad + ((cssW - pad * 2) - (maxX - minX) * sc) / 2 - minX * sc;
       const oy = pad + ((cssH - pad * 2) - (maxY - minY) * sc) / 2 - minY * sc;
@@ -1147,8 +1170,12 @@
       }
       let live = null;
       const st = session.status;
-      if (c && st && st.wpos && isNum(st.wpos.x)) {
-        const pp = toPaper(st.wpos, ax);
+      if (c && st && ((st.mpos && isNum(st.mpos.x)) || (st.wpos && isNum(st.wpos.x)))) {
+        // Work coordinates are already origin-relative (the origin cross is paper (0,0)): never add the WCO again.
+        // MPos minus the controller's current WCO is immune to a status snapshot taken before the origin moved.
+        const wp = st.mpos && isNum(st.mpos.x) && isNum(st.mpos.y)
+          ? { x: st.mpos.x - wco.x, y: st.mpos.y - wco.y } : st.wpos;
+        const pp = toPaper(wp, ax);
         live = { x: pp.x, y: pp.y, down: !!(st.mpos && isNum(st.mpos.z) && st.mpos.z > profile.pen.up + 0.3) };
       }
       return {
@@ -1396,7 +1423,7 @@
       const add = (k, v) => table.appendChild(h('tr', {}, h('th', { scope: 'row', text: k }), h('td', { text: v })));
       add('Firmware', fw.banner || fw.version || 'not reported');
       if (fw.ver) add('Version', String(fw.ver));
-      if (fw.opt) add('Options', String(fw.opt));
+      if (fw.opt) add('Options', formatFwOpt(fw.opt));
       FW_ROWS.forEach(([n, label, unit]) => {
         const v = c.fw ? c.fw[n] : undefined;
         add(`$${n} ${label}`, v === undefined ? 'not reported' : `${v}${unit ? ` ${unit}` : ''}`);
@@ -1507,7 +1534,7 @@
         h('span', { class: 'stp-spacer' }),
         btn('Refresh from canvas', () => this.refreshGeometry(), '', { id: 'stp-refresh', title: 'Re-read the document after changing it' }));
       const right = h('div', { class: 'stp-previewcol' }, bar, this.oobEl, this.setupPreview.el,
-        h('p', { class: 'stp-hint', text: 'Machine view, relative to the origin (cross). Dashed rectangle: the sheet at its placement. Red: outside the work area.' }));
+        h('p', { class: 'stp-hint', text: 'Paper view: as you see the sheet. Cross = origin. Dashed: the sheet at its placement. Red: outside the work area.' }));
       pane.appendChild(h('div', { class: 'stp-setup' }, left, right));
       this.setupPens = true;
       this.renderPens();
@@ -2014,6 +2041,8 @@
     getSession: () => session,
     getPanel: () => activePanel,
     jobOptions: null,
+    formatFwOpt,
+    previewBounds,
     paperSpace: { toPaper, fromPaper, paperAreaRect, assumedOriginOffset },
     connectSession,
     disconnectSession,
