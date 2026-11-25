@@ -351,6 +351,7 @@
     const on = (evt, fn) => session.unsubs.push(c.on(evt, fn));
     on('state', ({ state }) => {
       if (state !== 'penChange') session.penChange = null;
+      if (state === 'running' || state === 'paused' || state === 'penChange') session.jobSeen = true;
       if (state === 'running' && session.lastResult && session.lastResult.aborted) {
         session.lastResult = null;
         session.alarm = null;
@@ -365,6 +366,9 @@
     on('progress', (p) => { session.progress = p; notify('progress'); });
     on('penChange', (e) => { session.penChange = e; notify('penChange'); });
     on('done', (r) => {
+      // Remember whether a JOB (not a manual jog / pen move) produced this result: only jobs get a Resume card.
+      r = Object.assign({}, r, { fromJob: !!session.jobSeen });
+      session.jobSeen = false;
       session.lastResult = r;
       if (!r.aborted) {
         const total = (session.progress && session.progress.pathCount) || (r.pathCount || 0);
@@ -411,6 +415,7 @@
     session.profileId = profile.id;
     session.lastError = null;
     session.lastResult = null;
+    session.jobSeen = false;
     session.alarm = null;
     session.progress = null;
     session.run = null;
@@ -982,7 +987,7 @@
     build(body) {
       this.root = h('div', { class: 'stp-root' });
       this.head = h('header', { class: 'stp-head' });
-      this.liveNote = h('div', { class: 'stp-livenote', id: 'stp-live-note', role: 'status', 'aria-live': 'polite' });
+      this.liveNote = h('div', { class: 'stp-livenote sr-only', id: 'stp-live-note', role: 'status', 'aria-live': 'polite' });
       this.banner = h('div', { class: 'stp-banner', id: 'stp-banner' });
       this.runbar = h('div', { class: 'stp-runbar', hidden: true });
       this.rail = h('nav', { class: 'stp-rail', role: 'tablist', 'aria-orientation': 'vertical', 'aria-label': 'Send to Plotter sections' });
@@ -1000,6 +1005,10 @@
       });
       this.root.append(this.head, this.banner, this.runbar, h('div', { class: 'stp-main' }, this.rail, this.stage));
       body.appendChild(this.root);
+      // The next user action (pointer or key) dismisses the persistent emergency-stop note; capture runs
+      // before the handler that may set a fresh one.
+      this.root.addEventListener('pointerdown', () => this.clearPersistentNote(), true);
+      this.root.addEventListener('keydown', () => this.clearPersistentNote(), true);
       this.root.addEventListener('keydown', (e) => this.onKey(e));
       this.root.addEventListener('keyup', (e) => { if (this.isSpace(e) && !isTypingTarget(e.target) && liveController()) e.preventDefault(); });
       this.buildConnect();
@@ -1031,10 +1040,30 @@
       }
     }
 
+    // Transient note: screen-reader live region always, plus a small secondary line inside the banner for 6 s
+    // (then it fades). Persistent notes (emergency stop) stay until the user's next action.
+    note(text, o) {
+      if (this.destroyed || !this.liveNote) return;
+      const persist = !!(o && o.persist);
+      this.liveNote.textContent = text || '';
+      clearTimeout(this.noteFadeTimer); clearTimeout(this.noteTimer);
+      this.noteFadeTimer = this.noteTimer = null;
+      this.s.note = text ? { text, persist } : null;
+      if (text && !persist) {
+        this.noteFadeTimer = setTimeout(() => { const el = this.banner && this.banner.querySelector('.stp-step-note'); if (el) el.classList.add('is-fading'); }, 5600);
+        this.noteTimer = setTimeout(() => { this.s.note = null; this.renderBanner(); }, 6000);
+      }
+      this.renderBanner();
+    }
+
+    clearPersistentNote() {
+      if (this.s.note && this.s.note.persist) { this.s.note = null; this.renderBanner(); }
+    }
+
     emergencyStop() {
       const c = liveController();
       const tool = this.tools.machine;
-      this.liveNote.textContent = 'Emergency stop sent.';
+      this.note('Emergency stop sent.', { persist: true });
       if (tool && typeof tool.emergencyStop === 'function') return tool.emergencyStop();
       return emergencyStopOf(c);
     }
@@ -1094,9 +1123,10 @@
       if (!c) {
         const T0 = Vectura.PlotterTransports;
         const supported = !!(T0 && T0.WebSerialTransport && T0.WebSerialTransport.isSupported());
+        // The header button is the one canonical Connect: while disconnected the banner is text only.
         return supported
-          ? T('connect', 'Connect your plotter', 'Connect', () => this.headerConnect(), 'connect')
-          : T('connect', 'Connect your plotter, or practice with the simulator', 'Go to Connect', go('connect'), 'connect');
+          ? T('connect', 'Connect your plotter', null, null, 'connect')
+          : T('connect', 'Connect your plotter, or practice with the simulator', this.tab === 'connect' ? null : 'Go to Connect', this.tab === 'connect' ? null : go('connect'), 'connect');
       }
       if (c.state === 'connecting') return T('connecting', 'Connecting…', null, null, 'connect');
       if (c.state === 'alarm') {
@@ -1113,6 +1143,7 @@
       if (c.state === 'running' || c.state === 'paused') {
         const pct = clampNum(p.percent, 0, 100, 0);
         const txt = `${c.state === 'paused' ? 'Paused' : 'Plotting'}: ${pct}% · path ${Math.min((p.pathIndex || 0) + 1, p.pathCount || 0)} of ${p.pathCount || 0}`;
+        if (this.tab === 'plot') return T('running', txt, null, null, 'plot'); // Pause/Resume/Stop are in the pane
         return c.state === 'paused'
           ? T('running', txt, 'Resume', () => this.guard(() => c.resume()), 'plot')
           : T('running', txt, 'Pause', () => this.guard(() => c.pause()), 'plot');
@@ -1120,22 +1151,26 @@
       if (c.state === 'stopping') return T('stopping', 'Stopping…', null, null, 'plot');
       if (f.cornerBlocked) return T('corner', 'Confirm the start corner before moving the plotter.', null, null, 'connect');
       if (session.wcoMismatch) {
-        return T('wco', "The plotter's origin doesn't match what was set. Set the origin again.", 'Set origin here', () => this.guard(() => c.setOrigin()), 'machine');
+        return this.tab === 'machine'
+          ? T('wco', "The plotter's origin doesn't match what was set. Set the origin again.", null, null, 'machine')
+          : T('wco', "The plotter's origin doesn't match what was set. Set the origin again.", 'Set origin here', () => this.guard(() => c.setOrigin()), 'machine');
       }
       if (!f.sim && !f.cal.axisChecked) return T('axis', 'Check the axes (one-time)', 'Start axis check', startCheck('axis'), 'machine');
       if (!f.sim && !f.cal.penHeightChecked) return T('pen', 'Find the pen height (one-time)', 'Start pen height check', startCheck('pen'), 'machine');
       if (!f.originDone && !session.useMachineZero) {
         const text = "Jog the pen to the sheet's top-left corner, then set the origin";
+        // On the Machine tab "Set origin here" is already in view, so the banner is text only.
         return this.tab === 'machine'
-          ? T('origin', text, 'Set origin here', () => this.guard(() => c.setOrigin()), 'machine')
+          ? T('origin', text, null, null, 'machine')
           : T('origin', text, 'Go to Machine', go('machine'), 'machine');
       }
-      if (f.oob) return T('oob', "The plot doesn't fit — adjust placement", 'Go to Setup', go('setup'), 'setup');
+      if (f.oob) return this.tab === 'setup' ? T('oob', "The plot doesn't fit — adjust placement", null, null, 'setup') : T('oob', "The plot doesn't fit — adjust placement", 'Go to Setup', go('setup'), 'setup');
       if (this.s.building) return T('building', 'Preparing the plot…', null, null, 'setup');
       if (!this.s.job || !this.s.job.pens || !this.s.job.pens.length) return T('empty', 'Nothing to plot yet. Add a layer in the main window, then refresh.', 'Go to Setup', go('setup'), 'setup');
       const why = this.startBlockers();
       if (why.length) return T('blocked', why[0], null, null, 'plot');
-      return T('ready', 'Ready to plot', 'Start plot', () => { this.showTab('plot'); this.startPlot(); }, 'plot');
+      // The Plot pane carries the giant Start plot button, so the banner is text only there.
+      return this.tab === 'plot' ? T('ready', 'Ready to plot', null, null, 'plot') : T('ready', 'Ready to plot', 'Start plot', () => { this.showTab('plot'); this.startPlot(); }, 'plot');
     }
 
     headerConnect() {
@@ -1153,7 +1188,7 @@
       if (sim) { this.connectSim(); return; }
       const g = this.s.granted || [];
       if (g.length) this.connectUsb({ port: g[0] });
-      else this.liveNote.textContent = 'Disconnected. Press Connect when the plotter is powered on.';
+      else this.note('Disconnected. Press Connect when the plotter is powered on.');
     }
 
     // Moves to a tab only on success, never while the user is typing in a field.
@@ -1161,7 +1196,7 @@
       const ae = document.activeElement;
       if (isTypingTarget(ae) && this.root && this.root.contains(ae)) return false;
       this.showTab(tab);
-      if (msg) this.liveNote.textContent = msg;
+      if (msg) this.note(msg);
       return true;
     }
 
@@ -1175,8 +1210,8 @@
       this.s.pendingOriginAdvance = false;
       const job = this.s.job;
       if (!job || !job.pens || !job.pens.length || (job.bounds && !job.bounds.ok)) {
-        this.advance('setup', "Origin set. The plot doesn't fit or is not ready yet: check placement on the Setup tab.");
-      } else this.advance('plot', 'Origin set. Next: Plot. Press Start plot when ready.');
+        this.advance('setup', "Origin set. The plot doesn't fit or is not ready: check placement.");
+      } else this.advance('plot', 'Origin set. Moved to Plot.');
     }
 
     showTab(id) {
@@ -1224,10 +1259,13 @@
       const state = c ? c.state : 'disconnected';
       const profile = this.profile();
       this.head.textContent = '';
-      this.pill = h('span', { class: `stp-pill is-${state}`, role: 'status', 'aria-live': 'polite', dataset: { state }, text: STATE_LABEL[state] || state });
+      this.pill = h('span', { class: 'stp-pill', role: 'status', 'aria-live': 'polite' });
+      this.paintPill();
       // compact live readout: WPos (MPos on hover)
       const mk = (k) => h('span', { class: 'stp-ro-cell' }, h('span', { class: 'stp-ro-ax', text: k.toUpperCase() }), h('span', { class: 'stp-ro-val', dataset: { stpPos: `wpos-${k}` }, text: '–' }));
       this.readoutEl = h('span', { class: 'stp-readout', id: 'stp-readout', hidden: !c, 'aria-label': 'Work position in millimeters' }, mk('x'), mk('y'), mk('z'));
+      this.originChip = h('span', { class: 'stp-chip stp-origin-chip', id: 'stp-origin-chip', hidden: !c });
+      this.paintOriginChip();
       this.stopEl = h('button', { type: 'button', class: 'stp-btn stp-stop', id: 'stp-stop', 'aria-label': 'Emergency stop (Space or Escape)', hidden: !c }, 'EMERGENCY STOP');
       this.stopEl.addEventListener('pointerdown', (e) => { if (e.preventDefault) e.preventDefault(); this.stopAt = Date.now(); this.emergencyStop(); });
       this.stopEl.addEventListener('click', () => { if (Date.now() - (this.stopAt || 0) > 700) this.emergencyStop(); });
@@ -1245,6 +1283,7 @@
         h('span', { class: 'stp-profile-name', text: session.kind === 'sim' && c ? `${profile.name} (simulator)` : profile.name }),
         this.pill,
         this.readoutEl,
+        this.originChip,
         h('span', { class: 'stp-spacer' }),
         connBtn,
         this.stopEl,
@@ -1257,8 +1296,31 @@
       this.renderTabs();
     }
 
+    // "Moving" whenever a manual move is in flight or the controller is jogging.
+    paintPill() {
+      if (!this.pill) return;
+      const c = liveController();
+      const state = c ? c.state : 'disconnected';
+      const moving = !!c && (this.s.manualMoving || state === 'jogging');
+      const key = moving ? 'moving' : state;
+      this.pill.className = `stp-pill is-${key}`;
+      this.pill.dataset.state = key;
+      this.pill.textContent = moving ? 'Moving' : (STATE_LABEL[state] || state);
+    }
+
+    paintOriginChip() {
+      if (!this.originChip) return;
+      const c = liveController();
+      const set = !!(c && c.originSet);
+      this.originChip.hidden = !c;
+      this.originChip.className = `stp-chip stp-origin-chip${set ? ' is-set' : ''}`;
+      this.originChip.textContent = set ? 'Origin set' : 'No origin';
+    }
+
     // E-STOP: large red while motion is possible or in progress, neutral otherwise.
     updateStop() {
+      this.paintPill();
+      this.paintOriginChip();
       if (!this.stopEl) return;
       const armed = this.isMoving();
       this.stopEl.classList.toggle('is-armed', armed);
@@ -1316,11 +1378,19 @@
         const step = this.nextStep();
         const row = h('div', { class: `stp-step is-${step.kind}`, id: 'stp-next-step' },
           h('span', { class: 'stp-step-lbl', text: 'Next' }),
-          h('span', { class: 'stp-step-text', id: 'stp-banner-text', text: step.text }));
+          h('span', { class: 'stp-step-body' },
+            h('span', { class: 'stp-step-text', id: 'stp-banner-text', text: step.text }),
+            this.noteEl()));
         if (step.label && step.onClick) row.appendChild(btn(step.label, step.onClick, 'is-primary', { id: 'stp-banner-action' }));
         el.appendChild(row);
       }
+      if (cornerUnconfirmed(c) && c.state !== 'connecting') { const n = this.noteEl(); if (n) el.appendChild(n); }
       el.appendChild(this.liveNote);
+    }
+
+    noteEl() {
+      const n = this.s.note;
+      return n ? h('span', { class: `stp-step-note${n.persist ? ' is-persist' : ''}`, id: 'stp-banner-note', text: n.text }) : null;
     }
 
     confirmCorner() {
@@ -1387,7 +1457,7 @@
       if (w.has('disconnected')) { this.s.manualMoving = false; this.s.bannerErr = null; this.s.cornerHelp = false; }
       if (w.has('origin')) { const cc = liveController(); this.s.pendingOriginAdvance = !!(cc && cc.originSet); if (this.s.pendingOriginAdvance) this.s.bannerErr = null; }
       if (w.has('connected') && this.tab === 'connect' && liveController()) {
-        this.advance('machine', "Connected. Next: Machine \u2014 jog the pen to the sheet's top-left corner and set the origin.");
+        this.advance('machine', 'Connected. Moved to Machine.');
       }
       if (w.has('connected') || w.has('disconnected') || w.has('origin') || w.has('profile') || w.has('all')) this.scheduleRecompute();
       this.renderPlot();
@@ -1398,9 +1468,9 @@
       if ((w.has('penChange') || w.has('alarm')) && this.tab !== 'plot') this.showTab('plot');
       if (w.has('jogstop') && session.jogStop) {
         const why = session.jogStop.reason;
-        this.liveNote.textContent = why === 'deadman' ? 'Jog stopped: the pointer was released or lost.' : why === 'max-hold' ? 'Jog stopped: the hold reached its time limit.' : 'Jog stopped.';
+        this.note(why === 'deadman' ? 'Jog stopped: the pointer was released or lost.' : why === 'max-hold' ? 'Jog stopped: the hold reached its time limit.' : 'Jog stopped.');
       }
-      if (w.has('estop')) this.liveNote.textContent = 'Emergency stop active.';
+      if (w.has('estop')) this.note('Emergency stop active.', { persist: true });
       this.updateStop();
       this.renderTabs();
       this.evaluateAdvance();
@@ -1734,14 +1804,18 @@
 
       if (!c) {
         const busy = this.s.connectBusy;
-        const bar = h('div', { class: 'stp-btnrow' });
-        bar.appendChild(btn(busy ? 'Connecting…' : 'Connect (USB)', () => this.connectUsb({}), 'is-primary', { id: 'stp-connect-usb', disabled: !supported || busy }));
-        (this.s.granted || []).forEach((port, i) => {
+        // The header button is the one canonical Connect / Reconnect; this pane only names the last port.
+        const g = this.s.granted || [];
+        if (g.length) {
           let label = 'previous port';
-          try { const i2 = port.getInfo(); if (i2 && i2.usbVendorId != null) label = `USB ${i2.usbVendorId.toString(16)}:${(i2.usbProductId || 0).toString(16)}`; } catch (e) { /* ignore */ }
-          bar.appendChild(btn(`Reconnect ${label}`, () => this.connectUsb({ port }), '', { disabled: busy, dataset: { portIndex: String(i) } }));
-        });
-        if (supported) bar.appendChild(btn('Plotter not listed?', () => this.connectUsb({ showAll: true }), 'is-link', { disabled: busy }));
+          try { const i2 = g[0].getInfo(); if (i2 && i2.usbVendorId != null) label = `USB ${i2.usbVendorId.toString(16)}:${(i2.usbProductId || 0).toString(16)}`; } catch (e) { /* ignore */ }
+          sec.appendChild(h('p', { class: 'stp-lastport', id: 'stp-last-port', text: `Last port: ${label}` }));
+        } else if (supported) {
+          sec.appendChild(h('p', { class: 'stp-hint', id: 'stp-connect-hint', text: 'Press Connect at the top right and pick your plotter.' }));
+        }
+        const bar = h('div', { class: 'stp-btnrow' });
+        if (supported && g.length) bar.appendChild(btn('Choose a different port\u2026', () => this.connectUsb({}), 'is-link', { id: 'stp-choose-port', disabled: busy }));
+        if (supported) bar.appendChild(btn('Plotter not listed?', () => this.connectUsb({ showAll: true }), 'is-link', { id: 'stp-show-all', disabled: busy }));
         sec.appendChild(bar);
         sec.appendChild(h('p', { class: 'stp-hint', id: 'stp-uuna-hint', text: "Close the UUNA app first — only one program can use the plotter's port." }));
 
@@ -1854,11 +1928,11 @@
         rotRow.appendChild(b);
       });
       const place = section('Placement',
-        field('Mode', modeSeg, 'Document keeps the sheet corner at the origin. Fit and Center scale or center it in the work area.'),
-        h('div', { class: 'stp-fields' },
-          field('Offset X (mm)', ctlStep(pl.offsetX, { min: -5000, max: 5000, step: 1, ariaLabel: 'Offset X' }, (v) => this.saveSettings({ placement: { offsetX: v } }))),
-          field('Offset Y (mm)', ctlStep(pl.offsetY, { min: -5000, max: 5000, step: 1, ariaLabel: 'Offset Y' }, (v) => this.saveSettings({ placement: { offsetY: v } }))),
-          field('Scale', ctlStep(pl.scale, { min: 0.01, max: 100, step: 0.05, precision: 2, ariaLabel: 'Scale' }, (v) => this.saveSettings({ placement: { scale: v } })))),
+        field('Mode', modeSeg, 'Fit and Center scale to the work area.'),
+        h('div', { class: 'stp-placerow', id: 'stp-place-row' },
+          field('Offset X (mm)', ctlNum(pl.offsetX, { min: -5000, max: 5000, step: 1, ariaLabel: 'Offset X', fallback: 0 }, (v) => this.saveSettings({ placement: { offsetX: v } }))),
+          field('Offset Y (mm)', ctlNum(pl.offsetY, { min: -5000, max: 5000, step: 1, ariaLabel: 'Offset Y', fallback: 0 }, (v) => this.saveSettings({ placement: { offsetY: v } }))),
+          field('Scale', ctlNum(pl.scale, { min: 0.01, max: 100, step: 0.05, ariaLabel: 'Scale', fallback: 1 }, (v) => this.saveSettings({ placement: { scale: v } })))),
         field('Rotation', rotRow));
 
       // optimize
@@ -2197,8 +2271,11 @@
     },
 
     appendEndCards(el, c, state, sim) {
-      const res = session.lastResult;
+      let res = session.lastResult;
       const alarm = session.alarm;
+      // A jog / manual-move emergency stop is not a stopped job: no Resume card (the banner note says it).
+      if (res && res.aborted && !res.fromJob && !alarm) return;
+      if (res && res.aborted && !res.fromJob) res = null;
       const lost = !!((res && res.positionLost) || (alarm && alarm.positionLost));
       if (res && !res.aborted) {
         el.appendChild(h('div', { class: 'stp-note is-ok', id: 'stp-done', role: 'status' },

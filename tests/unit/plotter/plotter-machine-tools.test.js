@@ -80,7 +80,7 @@ describe('no controller', () => {
     expect(m.q('[data-stp-field="pen-z"]').disabled).toBe(true);
     m.qa('[data-stp-wizard]').forEach((b) => expect(b.disabled).toBe(true));
     expect(m.host.textContent).toMatch(/Connect to a plotter/);
-    expect(m.host.textContent).toMatch(/Not connected/);
+    expect(m.host.textContent).not.toMatch(/Not connected|Origin not set/); // state and origin chips live in the panel header
   });
 
   test('console input and quick buttons are disabled', () => {
@@ -763,16 +763,23 @@ describe('v2 safety and layout (spec 12)', () => {
       expect(s.ctrl.state).toBe('idle');
     });
 
-    test('the emergency stop button also shows near the dial while moving and calls the same path', async () => {
+    test('motion start inserts nothing around the dial: no in-pane stop bar, only class/hidden toggles (the dial never shifts)', async () => {
       const s = await connectedWithOrigin();
       const m = mountMachine(s);
-      expect(act(m, 'stop').hidden).toBe(true);
+      const padEl = m.q('[data-stp-pad]');
+      const sib = () => {
+        const out = [];
+        for (let n = padEl; n; n = n.parentElement) out.push(Array.from(n.parentElement ? n.parentElement.children : []).indexOf(n));
+        return out.concat([m.host.querySelectorAll('*').length]);
+      };
+      const before = sib();
+      expect(m.host.textContent).not.toMatch(/EMERGENCY STOP/);
+      expect(m.host.querySelector('[data-stp-act="stop"]')).toBeNull();
       s.ctrl.emergencyStop = vi.fn(async () => ({}));
       await hold(s, m, stubHandle());
-      expect(act(m, 'stop').hidden).toBe(false);
-      expect(act(m, 'stop').textContent).toMatch(/EMERGENCY STOP/);
-      act(m, 'stop').click();
-      expect(s.ctrl.emergencyStop).toHaveBeenCalledTimes(1);
+      expect(sib()).toEqual(before); // same ancestry indexes and same element count: only hidden toggles
+      expect(m.host.textContent).not.toMatch(/EMERGENCY STOP/);
+      expect(act(m, 'dial-stop').hidden).toBe(false); // the dial-centre stop sign is the in-pane stop
     });
   });
 

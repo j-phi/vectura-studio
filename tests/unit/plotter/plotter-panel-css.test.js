@@ -120,4 +120,35 @@ describe('v2 scale fixes (spec 12.5)', () => {
     expect(decls('.stp-btn.stp-stop.is-armed')).toMatch(/background:\s*var\(--ui-danger\)/);
     expect(decls('.stp-btn.stp-stop')).toMatch(/min-height:\s*var\(--stp-stop-h\)/);
   });
+
+  describe('v2 review fixes', () => {
+    test('every disclosure summary has a chevron, a 52px row and a hover state', () => {
+      expect(decls('.stp-root details > summary')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(decls('.stp-root details > summary')).toMatch(/cursor:\s*pointer/);
+      expect(decls('.stp-root details > summary::before')).toMatch(/content:\s*'\\25B8'/);
+      expect(decls('.stp-root details[open] > summary::before')).toMatch(/content:\s*'\\25BE'/);
+      expect(css).toMatch(/\.stp-root details > summary:hover\s*\{/);
+    });
+    test('placement: tall mode segments, three compact inputs in a row', () => {
+      expect(decls('.stp-root .tog-btn')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(Number(/font-size:\s*(\d+)px/.exec(decls('.stp-root .tog-btn'))[1])).toBeGreaterThanOrEqual(17);
+      expect(decls('.stp-placerow')).toMatch(/repeat\(3,\s*minmax\(0,\s*140px\)\)/);
+      expect(decls('.stp-in')).toMatch(/background:\s*var\(--ui-bg\)/);
+    });
+    test('the live region is sr-only; the Moving pill pulse respects reduced motion', () => {
+      expect(decls('.stp-root .sr-only')).toMatch(/clip:\s*rect\(0, 0, 0, 0\)/);
+      expect(css).toMatch(/\.stp-pill\.is-moving::before\s*\{[^}]*animation:\s*stp-pulse/);
+      expect(css).toMatch(/prefers-reduced-motion: reduce\)\s*\{\s*\.stp-pill\.is-moving::before\s*\{\s*animation:\s*none/);
+    });
+    test('no text under 15px in the Send to Plotter CSS', () => {
+      const a = css.indexOf('/* ==== Send to Plotter (shell)');
+      const sect = css.slice(a, css.indexOf('/* ==== end Send to Plotter', a)) + css.slice(css.indexOf('/* ==== Send to Plotter (machine tools)'));
+      const small = (sect.match(/font(?:-size)?:\s*(?:\d+\s+)?(\d+)px/g) || []).map((m) => Number(/(\d+)px/.exec(m)[1])).filter((n) => n < 15);
+      expect(small).toEqual([]);
+    });
+    test('the machine tools no longer render an in-pane emergency stop bar or state chips', () => {
+      expect(tools).not.toMatch(/EMERGENCY STOP/);
+      expect(tools).not.toMatch(/stp-mt-pill/);
+    });
+  });
 });

@@ -256,17 +256,10 @@
     root.appendChild(alarmBox);
 
     root.appendChild(msgEl);
-    const stopBtn = button('EMERGENCY STOP', 'is-danger stp-mt-stop', 'stop');
-    stopBtn.hidden = true;
     const reasonEl = h('div', 'stp-mt-reason');
     root.appendChild(reasonEl);
 
-    // state + origin pills (the live position readout lives in the panel header)
-    const pill = h('span', 'stp-mt-pill', 'Not connected');
-    const originPill = h('span', 'stp-mt-pill stp-mt-origin-pill', 'Origin not set');
-    const pillRow = h('div', 'stp-mt-row stp-mt-pills');
-    pillRow.append(pill, originPill);
-    root.appendChild(pillRow);
+    // State pill, origin chip and live readout live in the panel header (no duplicate chips here).
 
     // jog
     const sJog = section('Jog');
@@ -319,7 +312,7 @@
     const speedNote = h('span', 'stp-mt-hint');
     jogSide.append(speed.wrap, speedNote);
     jogWrap.append(pad, jogSide);
-    sJog.append(stopBtn, jogWrap, limitEl);
+    sJog.append(jogWrap, limitEl);
     sJog.appendChild(h('p', 'stp-mt-hint', 'Tap to step, press and hold to keep moving. Directions are relative to the paper.'));
 
     // pen + origin (primary block, right column next to the dial)
@@ -387,12 +380,6 @@
       const why = reasonText();
       reasonEl.textContent = why;
       reasonEl.hidden = !why;
-      // readout
-      const label = !c ? 'Not connected' : (c.state === 'idle' && st.machineState ? st.machineState : c.state);
-      pill.textContent = label.charAt(0).toUpperCase() + label.slice(1);
-      pill.className = 'stp-mt-pill' + (c ? ' is-' + String(c.state).toLowerCase() : '');
-      originPill.textContent = c && c.originSet ? 'Origin set' : 'Origin not set';
-      originPill.className = 'stp-mt-pill stp-mt-origin-pill' + (c && c.originSet ? ' is-set' : '');
       // alarm
       const inAlarm = !!c && c.state === 'alarm';
       if (!inAlarm) S.alarm = null;
@@ -424,11 +411,11 @@
       if (document.activeElement !== zRange && Number.isFinite(curZ)) zRange.value = String(curZ);
       zVal.textContent = Number.isFinite(curZ) ? fix(Number(zRange.value), 2) : '—';
       // enablement
-      // motion in flight: the dial centre turns into a stop sign and the emergency stop appears
+      // motion in flight: the dial centre turns into a stop sign. Nothing is inserted around the dial
+      // (the header E-STOP is the other stop), so the dial never shifts under the finger mid-jog.
       const moving = isMoving();
       stopSign.hidden = !moving;
       hub.hidden = moving;
-      stopBtn.hidden = !moving;
       if (moving !== S.moving) { S.moving = moving; if (ctx.reportMotion) ctx.reportMotion(moving); }
       // calibration disclosure: open while first-run checks are outstanding
       const calP = prof().calibration || {};
@@ -647,7 +634,6 @@
         .then(() => (typeof c.stop === 'function' && c.state !== 'idle' && c.state !== 'disconnected' ? callSafe(() => c.stop()) : null))
         .then(refresh);
     };
-    B.on(stopBtn, 'click', () => estop());
     B.on(stopSign, 'pointerdown', (e) => {
       if (e.preventDefault) e.preventDefault();
       if (e.stopPropagation) e.stopPropagation();

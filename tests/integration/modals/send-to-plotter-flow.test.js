@@ -70,8 +70,74 @@ describe('Send to Plotter v2 flow', () => {
     expect(glyph('setup')).toBe('✓');
   });
 
-  test('banner: disconnected says to connect', () => {
+  test('banner: disconnected says to connect, text only (the header button is the one Connect)', () => {
     expect(bannerText()).toMatch(/Connect your plotter/);
+    expect(document.getElementById('stp-banner-action')).toBeNull();
+    expect(document.getElementById('stp-hdr-connect')).toBeTruthy();
+  });
+
+  test('Connect pane: no duplicate connect buttons; last port line + Choose a different port', async () => {
+    const panel = STP.getPanel();
+    click('[data-tab="connect"]');
+    expect(document.getElementById('stp-connect-usb')).toBeNull();
+    expect(Array.from(document.querySelectorAll('#stp-pane-connect button')).some((b) => /Connect \(USB\)|Reconnect USB/.test(b.textContent))).toBe(false);
+    const WS = window.Vectura.PlotterTransports.WebSerialTransport;
+    const was = WS.isSupported;
+    WS.isSupported = () => true;
+    panel.s.granted = [{ getInfo: () => ({ usbVendorId: 0x1a86, usbProductId: 0x7523 }) }];
+    panel.renderConnect();
+    WS.isSupported = was;
+    expect(document.getElementById('stp-last-port').textContent).toBe('Last port: USB 1a86:7523');
+    const choose = document.getElementById('stp-choose-port');
+    expect(choose.textContent).toMatch(/Choose a different port/);
+    expect(choose.classList.contains('is-primary')).toBe(false);
+    expect(document.getElementById('stp-uuna-hint')).toBeTruthy();
+  });
+
+  test('header: Moving pill while a manual move is in flight; origin chip tracks the origin; no chips in the Machine pane', async () => {
+    const c = await connectSim();
+    if (c.confirmMachineCorner) await c.confirmMachineCorner();
+    const panel = STP.getPanel();
+    const pill = () => document.querySelector('.stp-pill');
+    expect(pill().textContent).not.toBe('Moving');
+    expect(document.getElementById('stp-origin-chip').textContent).toBe('No origin');
+    panel.ctx.reportMotion(true);
+    expect(pill().textContent).toBe('Moving');
+    expect(pill().classList.contains('is-moving')).toBe(true);
+    panel.ctx.reportMotion(false);
+    expect(pill().textContent).not.toBe('Moving');
+    await c.setOrigin();
+    await waitFor(() => document.getElementById('stp-origin-chip').textContent === 'Origin set');
+    click('[data-tab="machine"]');
+    expect(document.querySelector('.stp-mt-pill')).toBeNull();
+    expect(document.querySelector('.stp-mt-stop')).toBeNull();
+  });
+
+  test('Plot: an emergency stop outside a job shows no Stopped/Resume card; a stopped job does', async () => {
+    const c = await connectSim();
+    if (c.confirmMachineCorner) await c.confirmMachineCorner();
+    await c.setOrigin();
+    click('[data-tab="plot"]');
+    c.emit('done', { aborted: true, reason: 'estop', message: 'Emergency stop.', resumePoint: { pathIndex: 0, pathCount: 3 } });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.getElementById('stp-resume')).toBeNull();
+    c.emit('state', { state: 'running' });
+    c.emit('done', { aborted: true, reason: 'stopped', message: 'Stopped by user.', resumePoint: { pathIndex: 0, pathCount: 3 } });
+    await waitFor(() => document.getElementById('stp-resume'));
+  });
+
+  test('notes: the aria-live region is visually hidden; transient notes show inside the banner; emergency stop persists until the next action', async () => {
+    const panel = STP.getPanel();
+    const live = document.getElementById('stp-live-note');
+    expect(live.classList.contains('sr-only')).toBe(true);
+    panel.note('Jog stopped.');
+    expect(document.getElementById('stp-banner-note').textContent).toBe('Jog stopped.');
+    expect(document.getElementById('stp-banner').contains(document.getElementById('stp-banner-note'))).toBe(true);
+    expect(live.textContent).toBe('Jog stopped.');
+    panel.note('Emergency stop active.', { persist: true });
+    expect(document.getElementById('stp-banner-note').classList.contains('is-persist')).toBe(true);
+    document.querySelector('.stp-rail').dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    expect(document.getElementById('stp-banner-note')).toBeNull();
   });
 
   test('auto-advances Connect -> Machine after connect; Machine -> Plot after the origin is set; glyphs follow', async () => {
@@ -85,13 +151,15 @@ describe('Send to Plotter v2 flow', () => {
     await waitFor(() => status('connect') === 'done');
     expect(status('machine')).toBe('attention');
     expect(bannerText()).toMatch(/top-left corner, then set the origin/);
-    expect(document.getElementById('stp-banner-action').textContent).toBe('Set origin here');
+    expect(document.getElementById('stp-banner-action')).toBeNull(); // Set origin here is in the pane: banner is text only
     await c.setOrigin();
     await waitFor(() => STP.getPanel().tab === 'plot');
     expect(live.textContent).toMatch(/Origin set/);
     expect(status('machine')).toBe('done');
     expect(status('plot')).toBe('attention');
     expect(bannerText()).toBe('Ready to plot');
+    expect(document.getElementById('stp-banner-action')).toBeNull(); // the Plot pane has the giant Start plot
+    click('[data-tab="setup"]');
     expect(document.getElementById('stp-banner-action').textContent).toBe('Start plot');
   });
 
@@ -250,6 +318,7 @@ describe('Send to Plotter v2 flow', () => {
     const c = await connectSim();
     if (c.confirmMachineCorner) await c.confirmMachineCorner();
     await c.setOrigin();
+    click('[data-tab="setup"]');
     c.emit('wco-mismatch', { device: { x: 1, y: 1 }, expected: { x: 0, y: 0 } });
     await waitFor(() => /origin doesn't match/.test(bannerText()));
     expect(document.getElementById('stp-banner-action').textContent).toBe('Set origin here');
