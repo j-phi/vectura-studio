@@ -318,3 +318,65 @@ G-code file export (cheap follow-up: `toGcode` → download; may add if trivial)
 - Axis direction / origin corner unverified across sources → **Axis check wizard is mandatory on first use** too.
 - Vendor tools end with `$SLP` (motors off); we do not (blocked); motors stay energized, which also keeps registration between pens.
 - Max rates on an iDraw A4 dump are 15000; our cap 11000 stays (Nib's measured-safe value).
+
+## 12. UX redesign (v2) — guided, distance-readable, dense where it matters
+
+Goal: every pane focuses attention on the ONE next action; rarely used controls live in collapsed
+"Advanced" sections; the panel walks the user through the session and auto-advances.
+
+### 12.1 Session flow and tab order
+Rail order = the order of a session: **1 Connect → 2 Machine → 3 Setup → 4 Plot**, then a divider,
+then **Console** (labeled "Advanced"). Each numbered tab shows a status glyph: ✓ done,
+● needs attention (accent), – not yet reachable (dimmed, still clickable). Status rules:
+- Connect ✓ when connected (and start corner confirmed, see 12.3).
+- Machine ✓ when required calibration is done for this profile AND origin is set this session.
+- Setup ✓ when the job is computed and fits the work area (● when out of bounds).
+- Plot ● when everything above is ✓ (the "Start plot" CTA is the next action).
+Auto-advance (only on success, never mid-edit; a single toast/aria-live line explains it):
+connect succeeds → Machine; origin set (and calibration done) → Setup if job out of bounds/not
+computed, else Plot. Users can always click any tab.
+
+### 12.2 Persistent header ("command bar"), single row
+Title · profile name · state pill · **compact live readout** `X 12.30  Y 4.00  Z 0.00` (mono,
+~17px, WPos; MPos on hover/tooltip) · **Connect / Reconnect / Disconnect** (pinned here; primary
+when disconnected) · **EMERGENCY STOP** (always present while connected; large red when any motion
+is possible/in progress, i.e. states jogging/running/paused/penChange or a manual move in flight;
+neutral-outlined otherwise) · Close. Keyboard: Space or Escape = emergency stop while the panel has
+focus and focus is not in a text input (Escape in an input first blurs it). The header never
+scrolls.
+Below the header: a **Next step banner** (one line + one primary button) computed from state:
+Disconnected → "Connect your plotter" [Connect] · corner unconfirmed → 12.3 card · calibration
+missing → "Check the axes (one-time)" [Start axis check] → "Find the pen height (one-time)" ·
+origin not set → "Jog the pen to the sheet's top-left corner, then set the origin" [Go to Machine] /
+on Machine tab: [Set origin here] · out of bounds → "The plot doesn't fit — adjust placement"
+[Go to Setup] · ready → "Ready to plot" [Start plot] · running → progress summary [Pause] ·
+penChange → "Insert <pen name>" [Continue] · alarm → recovery text [Unlock] or power-cycle steps.
+
+### 12.3 Start-corner confirmation (safety)
+Right after connect, before any motion: card "Was the carriage at its start corner when you
+connected? The plotter measures its limits from that point." [Yes, it was] → controller.
+confirmMachineCorner() · [No / not sure] → steps: power off, move the carriage gently to the corner,
+power on, Reconnect (button). Until confirmed, motion is limited to ±15 mm (controller enforces).
+
+### 12.4 Pane contents (primary first; Advanced = collapsed <details> remembered per session)
+- **Connect**: the selected profile as one compact summary row (mini icon, name, size, tested badge,
+  [Change]); [Change] expands a compact grid of smaller profile cards (~180 px wide, 72 px preview).
+  Connection status line + hint "Close the UUNA app first". Collapsed: "Practice with the simulator"
+  (button + speed); "Firmware details" ($I, $$ table); "Profile settings" (Duplicate/edit).
+- **Machine**: first-run checklist cards ONLY while calibration is incomplete (then collapse to a
+  one-line "Calibration ✓ · Re-run…" disclosure). Primary block in one view at 1280×800 without
+  scrolling: jog dial (≈280 px) | step chips (large, 52 px) + jog speed; **[Set origin here]**
+  primary; [Go to origin] [Frame] secondary; Pen [Up] [Down]. Collapsed "Advanced": live pen-height
+  slider (large thumb ≥28 px, track ≥8 px), Home (only if $22=1), custom step.
+- **Setup**: preview dominates (≥55% width); placement mode + rotation picture toggles + offsets;
+  per-pen rows compact (enable, swatch, name, speed, pen-down height); per-pen "More" disclosure for
+  dwell, passes, order, reload/dip; collapsed "Optimization" and "Registration marks"; stats line.
+- **Plot**: giant [Start plot] (or the reason it can't start, each reason a link to the fixing
+  tab); run options Air plot / Return to origin; preview + progress; collapsed "Tests & checks"
+  (Frame, Scale check, Test swatches) and "Advanced" (Use machine zero).
+- **Console** (Advanced tab): unchanged features.
+
+### 12.5 Density/scale
+Keep ≥52 px hit targets and ≥17 px body text, but remove dead space: section headings 14 px caps
+with 8 px gap, readouts moved to the header, cards smaller, two-column layouts where width allows
+(container queries). Each pane's primary action must be visible without scrolling at 1280×800.
