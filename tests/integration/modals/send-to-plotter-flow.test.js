@@ -334,7 +334,7 @@ describe('Send to Plotter v2 flow', () => {
     const panel = STP.getPanel();
     const real = panel.profile;
     panel.profile = () => Object.assign({}, real.call(panel), { limits: { edgeMargin: 2 } });
-    expect(panel.overflowMessage({ ok: false, overflow: { left: 0, right: 1.5, top: 0, bottom: 0 } })).toMatch(/\(2 mm safety margin from the frame\)/);
+    expect(panel.overflowMessage({ ok: false, overflow: { left: 0, right: 1.5, top: 0, bottom: 0 } })).toMatch(/\(2 mm \(0\.08 in\) safety margin from the frame\)/);
     expect(panel.overflowMessage({ ok: false, overflow: { left: 0, right: 30, top: 0, bottom: 0 } })).not.toMatch(/safety margin/);
     panel.profile = real;
   });
@@ -394,6 +394,24 @@ describe('Send to Plotter v2 flow', () => {
         click('#stp-refresh');
         expect(dims(0).w).toBeGreaterThan(dims(0).h);
       } finally { panel.ui.getExportSnapshot = orig; }
+    });
+  });
+
+  describe('metric and imperial side by side', () => {
+    test('profile summary row and overflow message in both unit modes', () => {
+      const S = window.Vectura.SETTINGS;
+      const prev = S.documentUnits;
+      const panel = STP.getPanel();
+      try {
+        S.documentUnits = 'metric';
+        panel.renderConnect();
+        expect(document.getElementById('stp-selected-profile').textContent).toMatch(/420 \u00d7 297 mm \(16\.5 \u00d7 11\.7 in\)/);
+        expect(panel.overflowMessage({ overflow: { left: 25.4 } })).toMatch(/left 25\.4 mm \(1\.00 in\)/);
+        S.documentUnits = 'imperial';
+        panel.renderConnect();
+        expect(document.getElementById('stp-selected-profile').textContent).toMatch(/16\.5 \u00d7 11\.7 in \(420 \u00d7 297 mm\)/);
+        expect(panel.overflowMessage({ overflow: { left: 25.4 } })).toMatch(/left 1\.00 in \(25\.4 mm\)/);
+      } finally { S.documentUnits = prev; panel.renderConnect(); }
     });
   });
 });

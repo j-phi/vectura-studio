@@ -94,7 +94,42 @@
     return t.content.firstChild;
   };
 
-  const fmtMm = (mm) => (mm >= 10000 ? `${(mm / 1000).toFixed(1)} m` : mm >= 1000 ? `${(mm / 1000).toFixed(2)} m` : `${mm.toFixed(0)} mm`);
+  // ---- length formatting: metric + imperial side by side ----
+  // documentUnits 'imperial' leads with inches and shows mm in parentheses; anything else leads with mm.
+  const MM_PER_IN = 25.4;
+  const unitsMode = () => {
+    const S = (typeof Vectura !== 'undefined' && Vectura && Vectura.SETTINGS) || {};
+    const UU = (Vectura && Vectura.UnitUtils) || {};
+    const u = UU.normalizeDocumentUnits ? UU.normalizeDocumentUnits(S.documentUnits) : (`${S.documentUnits || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric');
+    return u;
+  };
+  const trimNum = (n, d) => String(Number(n.toFixed(d)));
+  const inchDecimals = (precision) => (precision > 0 ? 2 : 1);
+  // [mm text, in text] for one or several values, no units attached.
+  const lenPair = (vals, precision) => ({
+    mm: vals.map((v) => trimNum(v, precision)).join(' \u00d7 '),
+    inch: vals.map((v) => (v / MM_PER_IN).toFixed(inchDecimals(precision))).join(' \u00d7 '),
+  });
+  const fmtSize = (w, hh, o) => {
+    const precision = o && isNum(o.precision) ? o.precision : 0;
+    const t = lenPair([w, hh], precision);
+    return unitsMode() === 'imperial' ? `${t.inch} in (${t.mm} mm)` : `${t.mm} mm (${t.inch} in)`;
+  };
+  const fmtLen = (mm, o) => {
+    if (!isNum(mm)) return '–';
+    const precision = o && isNum(o.precision) ? o.precision : 0;
+    const t = lenPair([mm], precision);
+    return unitsMode() === 'imperial' ? `${t.inch} in (${t.mm} mm)` : `${t.mm} mm (${t.inch} in)`;
+  };
+  // Distances that can get long (draw/travel): mm and in below 1 m, m and ft above.
+  const fmtDist = (mm) => {
+    if (!isNum(mm)) return '–';
+    if (Math.abs(mm) < 1000) return fmtLen(mm);
+    const d = mm >= 10000 ? 1 : 2;
+    const m = `${(mm / 1000).toFixed(d)} m`;
+    const ft = `${(mm / 304.8).toFixed(d)} ft`;
+    return unitsMode() === 'imperial' ? `${ft} (${m})` : `${m} (${ft})`;
+  };
   const fmtTime = (sec) => {
     if (!isNum(sec) || sec < 0) return '–';
     const s = Math.round(sec);
@@ -1628,11 +1663,11 @@
 
     overflowMessage(b) {
       const parts = [];
-      ['left', 'right', 'top', 'bottom'].forEach((k) => { if (b.overflow && b.overflow[k] > 0) parts.push(`${k} ${fmtN(b.overflow[k], 1)} mm`); });
+      ['left', 'right', 'top', 'bottom'].forEach((k) => { if (b.overflow && b.overflow[k] > 0) parts.push(`${k} ${fmtLen(b.overflow[k], { precision: 1 })}`); });
       const lim = (this.profile() || {}).limits || {};
       const margin = isNum(lim.edgeMargin) && lim.edgeMargin > 0 ? lim.edgeMargin : 0;
       const within = margin > 0 && ['left', 'right', 'top', 'bottom'].every((k) => !(b.overflow && b.overflow[k] > margin + 1e-6));
-      const note = within ? ` (${fmtN(margin, 1)} mm safety margin from the frame)` : '';
+      const note = within ? ` (${fmtLen(margin, { precision: 1 })} safety margin from the frame)` : '';
       return `Out of bounds: the plot extends past the work area${note} (${parts.join(', ')}). Move, scale or rotate it.`;
     }
   }
@@ -1716,7 +1751,7 @@
       const cur = this.profile();
       const kindOf = (p) => (p.user ? 'custom' : (p.tested ? 'tested' : 'untested'));
       const kindText = (k) => (k === 'tested' ? 'Tested' : k === 'custom' ? 'Custom' : 'Untested profile');
-      const sizeText = (p) => `${fmtN(p.workArea.width, 0)} \u00d7 ${fmtN(p.workArea.height, 0)} mm \u00b7 ${p.pen.mechanism === 'z' ? 'Z-axis pen' : p.pen.mechanism === 'servo' ? 'Servo pen' : 'Custom pen'}`;
+      const sizeText = (p) => `${fmtSize(p.workArea.width, p.workArea.height)} \u00b7 ${p.pen.mechanism === 'z' ? 'Z-axis pen' : p.pen.mechanism === 'servo' ? 'Servo pen' : 'Custom pen'}`;
       const curKind = kindOf(cur);
       const selRow = h('div', { class: 'stp-selrow', id: 'stp-selected-profile', style: `--stp-card-color:${CARD_COLORS[curKind]}` },
         h('span', { class: 'stp-selrow-icon' }, bedIcon(cur)),
@@ -1847,7 +1882,7 @@
           btn('Open Machine tab', () => this.showTab('machine'), 'is-link', { id: 'stp-goto-machine' })));
       } else {
         const o = c.originMachine || { x: 0, y: 0 };
-        sec.appendChild(h('p', { class: 'stp-hint', text: `Origin set at machine position ${fmtN(o.x, 2)}, ${fmtN(o.y, 2)} mm.` }));
+        sec.appendChild(h('p', { class: 'stp-hint', text: `Origin set at machine position ${fmtN(o.x, 2)}, ${fmtN(o.y, 2)} mm (${fmtN(o.x / MM_PER_IN, 3)}, ${fmtN(o.y / MM_PER_IN, 3)} in).` }));
       }
       sec.appendChild(this.fwAdv(c));
       const active = isActiveJob();
@@ -1874,7 +1909,7 @@
       if (fw.opt) add('Options', formatFwOpt(fw.opt));
       FW_ROWS.forEach(([n, label, unit]) => {
         const v = c.fw ? c.fw[n] : undefined;
-        add(`$${n} ${label}`, v === undefined ? 'not reported' : `${v}${unit ? ` ${unit}` : ''}`);
+        add(`$${n} ${label}`, v === undefined ? 'not reported' : (unit === 'mm' && isNum(Number(v)) ? fmtLen(Number(v), { precision: 1 }) : `${v}${unit ? ` ${unit}` : ''}`));
       });
       return adv('fw', 'Firmware details', table);
     },
@@ -1980,7 +2015,7 @@
       const optimize = adv('optimize', 'Optimization', optBody);
 
       const regmark = adv('regmark', 'Registration marks',
-        row('Registration mark', ctlSwitch(s.registrationMark, (v) => this.saveSettings({ registrationMark: v }), 'Registration mark'), 'A 10 mm cross at the top-left, drawn by every pen, to check color alignment.'));
+        row('Registration mark', ctlSwitch(s.registrationMark, (v) => this.saveSettings({ registrationMark: v }), 'Registration mark'), `A ${fmtLen(10)} cross at the top-left, drawn by every pen, to check color alignment.`));
       const betweenPens = field('Between pens', ctlSeg([{ value: 'pause', label: 'Pause for pen change' }, { value: 'continue', label: 'Keep going' }], s.penChange, (v) => this.saveSettings({ penChange: v }), 'Pen change behavior'));
 
       left.append(place, section('Pens', this.penBox, betweenPens), optimize, regmark, section('Estimate', this.statsEl));
@@ -2098,8 +2133,8 @@
       if (alt) el.appendChild(h('p', { class: 'stp-hint', text: `Showing the ${alt.label}. Clear it on the Plot tab to see your artwork again.` }));
       const dl = h('dl', { class: 'stp-statlist' });
       const add = (k, v, id) => dl.append(h('dt', { text: k }), h('dd', { text: v, id }));
-      add('Draw length', fmtMm(st.drawLength), 'stp-stat-draw');
-      add('Travel', fmtMm(st.travelLength), 'stp-stat-travel');
+      add('Draw length', fmtDist(st.drawLength), 'stp-stat-draw');
+      add('Travel', fmtDist(st.travelLength), 'stp-stat-travel');
       add('Pen lifts', String(st.penLifts), 'stp-stat-lifts');
       add('Paths', String(st.pathCount), 'stp-stat-paths');
       add('Estimated time', fmtTime(st.estSeconds), 'stp-stat-time');
@@ -2143,11 +2178,11 @@
       };
       this.auxBtns = {
         frame: btn('Frame', () => this.runFrame(), '', { id: 'stp-frame', title: 'Trace the plot outline with the pen up' }),
-        scale: btn('Scale check', () => this.runScaleCheck(), '', { id: 'stp-scale-check', title: 'Draw a 100 mm square with a cross, to measure with a ruler' }),
+        scale: btn('Scale check', () => this.runScaleCheck(), '', { id: 'stp-scale-check', title: `Draw a ${fmtLen(100)} square with a cross, to measure with a ruler` }),
       };
       const tools = adv('tests', 'Tests & checks',
         h('div', { class: 'stp-btnrow' }, this.auxBtns.frame, this.auxBtns.scale),
-        h('p', { class: 'stp-hint', text: 'Frame moves the pen up around the outline of your plot. Scale check draws a 100 mm square and a cross.' }),
+        h('p', { class: 'stp-hint', text: `Frame moves the pen up around the outline of your plot. Scale check draws a ${fmtLen(100)} square and a cross.` }),
         h('p', { class: 'stp-sub-lbl', text: 'Test swatches (speed × pen-down height)' }),
         h('div', { class: 'stp-fields' },
           inp('rows', 'Speeds (mm/min, rows)'), inp('cols', 'Pen-down heights (mm, columns)'), field('Pattern', pattern),
@@ -2202,7 +2237,7 @@
       if (this.s.altJob) el.appendChild(h('div', { class: 'stp-note', text: `Previewing the ${this.s.altJob.label}. Start plots your artwork; "Plot swatches" plots this pattern.` }));
 
       if (job && job.stats) {
-        el.appendChild(h('p', { class: 'stp-summary', id: 'stp-plot-summary', text: `${job.stats.pathCount} paths · ${fmtMm(job.stats.drawLength)} drawn · about ${fmtTime(job.stats.estSeconds)}${job.airPlot ? ' · air plot' : ''}` }));
+        el.appendChild(h('p', { class: 'stp-summary', id: 'stp-plot-summary', text: `${job.stats.pathCount} paths · ${fmtDist(job.stats.drawLength)} drawn · about ${fmtTime(job.stats.estSeconds)}${job.airPlot ? ' · air plot' : ''}` }));
       }
 
       const active = ACTIVE_STATES.includes(state);
@@ -2510,6 +2545,9 @@
     paperSpace: { toPaper, fromPaper, paperAreaRect, assumedOriginOffset },
     connectSession,
     disconnectSession,
+    fmtLen,
+    fmtSize,
+    fmtDist,
     simOptions: null,
     installOn(proto) {
       proto.bindSendToPlotterButton = function () { return bindSendToPlotterButton.call(this); };

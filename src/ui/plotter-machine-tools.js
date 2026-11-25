@@ -12,6 +12,7 @@
 (() => {
   'use strict';
   const Vectura = (window.Vectura = window.Vectura || {});
+  const L = (mm) => { const M = Vectura.UI && Vectura.UI.Modals && Vectura.UI.Modals.SendToPlotter; return M && M.fmtLen ? M.fmtLen(mm) : mm + ' mm'; };
 
   const HOLD_MS = 280;
   const KEEPALIVE_MS = 150; // the controller drops a hold that is not refreshed within ~350 ms
@@ -167,7 +168,7 @@
     { key: 'axis', title: 'Axis check', icon: ICONS.axis, flag: 'axisChecked', blurb: 'Confirm that right and down on the pad match the plotter.' },
     { key: 'pen', title: 'Pen height', icon: ICONS.pen, flag: 'penHeightChecked', blurb: 'Find where the pen touches the paper.' },
     { key: 'origin', title: 'Origin & paper', icon: ICONS.origin, flag: null, blurb: 'Set the sheet corner as the origin and frame it.' },
-    { key: 'scale', title: 'Scale check', icon: ICONS.scale, flag: null, blurb: 'Draw a 100 mm square and measure it.' },
+    { key: 'scale', title: 'Scale check', icon: ICONS.scale, flag: null, get blurb() { return 'Draw a ' + L(100) + ' square and measure it.'; } },
   ];
   const ANS4 = [['right', 'Right'], ['left', 'Left'], ['down', 'Toward me (down the page)'], ['up', 'Away from me (up the page)']];
 
@@ -829,7 +830,7 @@
       }
       // scale
       switch (w.step) {
-        case 'intro': return { n: 1, of: 3, title: 'Place the test square', text: 'The plotter draws a 100 mm square with a cross. Choose where its top-left corner goes, relative to the origin. Use fresh paper with the pen set up.', fields: [{ label: 'Offset X (mm)', key: 'ox', def: 10, min: 0 }, { label: 'Offset Y (mm)', key: 'oy', def: 10, min: 0 }], buttons: [{ label: 'Draw square', act: 'draw', primary: true, need: 'origin', onClick: () => wAct(async (ww) => {
+        case 'intro': return { n: 1, of: 3, title: 'Place the test square', text: 'The plotter draws a ' + L(100) + ' square with a cross. Choose where its top-left corner goes, relative to the origin. Use fresh paper with the pen set up.', fields: [{ label: 'Offset X (mm)', key: 'ox', def: 10, min: 0 }, { label: 'Offset Y (mm)', key: 'oy', def: 10, min: 0 }], buttons: [{ label: 'Draw square', act: 'draw', primary: true, need: 'origin', onClick: () => wAct(async (ww) => {
           const job = Vectura.PlotJob.scaleCheckJob(prof(), { offsetX: num(ww.data.ox, 10), offsetY: num(ww.data.oy, 10), firmware: c.fw, originOffset: ctx.getOriginOffset ? ctx.getOriginOffset() : null });
           go(ww, 'drawing'); renderWizard();
           await runJob(job, 'The test square');
@@ -838,7 +839,7 @@
         case 'drawing': return { n: 2, of: 3, title: 'Drawing', text: 'Drawing the test square. Use Stop or Cancel to abort.', buttons: [] };
         default: {
           const fw = fwOf(c);
-          return { n: 3, of: 3, title: 'Measure it', text: 'Measure the square with a ruler. It should be 100 mm on each side. If it is off, steps per mm can only be changed in the vendor app or the Advanced console. This tool never writes it.', extra: 'Steps per mm (read only): $100 = ' + (fw[100] != null ? fw[100] : 'unknown') + ', $101 = ' + (fw[101] != null ? fw[101] : 'unknown'), buttons: [finishBtn()], noCancel: true };
+          return { n: 3, of: 3, title: 'Measure it', text: 'Measure the square with a ruler. It should be ' + L(100) + ' on each side. If it is off, steps per mm can only be changed in the vendor app or the Advanced console. This tool never writes it.', extra: 'Steps per mm (read only): $100 = ' + (fw[100] != null ? fw[100] : 'unknown') + ', $101 = ' + (fw[101] != null ? fw[101] : 'unknown'), buttons: [finishBtn()], noCancel: true };
         }
       }
     };
