@@ -55,4 +55,41 @@ describe('Send to Plotter panel CSS contract', () => {
     expect(decls('.stp-card')).toMatch(/min-width:\s*0/);
     expect(decls('.stp-mt-card')).toMatch(/min-width:\s*0/);
   });
+
+  describe('distance-readable scale (panel-scoped tokens)', () => {
+    const root = decls('.vectura-modal.stp-dialog');
+    const tok = (name) => {
+      const m = new RegExp(`${esc(name)}:\\s*(\\d+(?:\\.\\d+)?)px`).exec(root);
+      return m ? Number(m[1]) : 0;
+    };
+    test('tokens meet the minimums', () => {
+      expect(tok('--stp-font')).toBeGreaterThanOrEqual(17);
+      expect(tok('--stp-font-small')).toBeGreaterThanOrEqual(15);
+      expect(tok('--stp-font-heading')).toBeGreaterThanOrEqual(22);
+      expect(tok('--stp-font-readout')).toBeGreaterThanOrEqual(22);
+      expect(tok('--stp-hit')).toBeGreaterThanOrEqual(48);
+      expect(tok('--stp-stop-h')).toBeGreaterThanOrEqual(64);
+      expect(tok('--stp-dial')).toBeGreaterThanOrEqual(300);
+      expect(tok('--stp-dir-hit')).toBeGreaterThanOrEqual(56);
+    });
+    test('controls are driven by the tokens', () => {
+      expect(decls('.stp-btn')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(decls('.stp-mt-btn')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(decls('.stp-tab')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(decls('.stp-in')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(decls('.stp-mt-num')).toMatch(/min-height:\s*var\(--stp-hit\)/);
+      expect(decls('.stp-btn.stp-stop')).toMatch(/min-height:\s*var\(--stp-stop-h\)/);
+      expect(decls('.stp-btn.stp-stop-big')).toMatch(/min-height:\s*var\(--stp-stop-h\)/);
+      expect(decls('.stp-mt-dial')).toMatch(/width:\s*var\(--stp-dial\)/);
+      expect(decls('.stp-mt-readout')).toMatch(/font-size:\s*var\(--stp-font-readout\)/);
+      expect(decls('.stp-pill')).toMatch(/font-size:\s*var\(--stp-font-pill\)/);
+      expect(decls('.stp-runtext')).toMatch(/font-size:\s*var\(--stp-font-readout\)/);
+      expect(decls('.stp-mt-wiz-title')).toMatch(/font-size:\s*var\(--stp-font-heading\)/);
+      expect(decls('.stp-mt-wiz-text, .stp-mt-wiz-extra')).toMatch(/font-size:\s*var\(--stp-font\)/);
+    });
+    test('the dialog uses most of the viewport', () => {
+      expect(root).toMatch(/width:\s*min\(1500px,\s*96vw\)/);
+      expect(root).toMatch(/92vh/);
+    });
+  });
 });
