@@ -1,0 +1,425 @@
+# Send to Plotter — Design Spec (v1)
+
+Status: approved for implementation by the orchestrator. This is the contract every implementer
+works against. Do not change a contract here without telling the orchestrator.
+
+## 0. Goals
+
+- File → **Send to Plotter…** streams the current document straight to a pen plotter from the
+  browser (Chrome/Edge on Windows and macOS) using the **Web Serial API**. No local server.
+- First plotter: **UUNATEK 3.0 A3** (GRBL/FluidNC firmware, CH340 USB serial, 115200 8N1,
+  pen lifted on the **Z axis**). Built on a **plotter profile registry + driver registry** so
+  more plotters (A2/A1/A0 UUNATEK, generic GRBL servo, future AxiDraw/EBB driver) plug in
+  without touching the UI.
+- Full customizability for artistic work (per-pen speed, pressure, dwell, passes, placement,
+  pen-change pauses, test swatches) and manual machine tools (jog, pen up/down, set origin,
+  frame, calibration wizards, console).
+- **Hardware safety is the top priority** (section 2). When in doubt, refuse and explain.
+
+## 1. Facts about the UUNATEK 3.0 (sources: vendor UUNA.app plaintext config, Nib project,
+vendor product page)
+
+| Fact | Value | Source |
+|---|---|---|
+| Transport | USB serial (CH340, VID 0x1a86 PID 0x7523), 115200 baud 8N1, `\n` line ending | Nib, UUNA.app |
+| Firmware | GRBL 1.1-compatible (FluidNC on recent units). Status `<Idle|MPos:..|FS:..>`, `ok`, `error:N`, `ALARM:N` | Nib, UUNA.app |
+| RX buffer | 127 bytes usable for character counting (GRBL 128) | Nib, GRBL wiki |
+| Pen | Z axis, mm. **Up = 0** (UUNA zOff=0; Nib up 0.5). **Down = 3.5** (UUNA zOn=3.5; Nib 5.0). Firmware Z range 0–12 mm, 0 = fully up. Z feed 6000 mm/min. | UUNA.app, Nib |
+| Work area A3 | 420 × 297 mm (firmware max). A2 594×420, A1 841×594, A0 1189×841 (untested) | Nib, product page |
+| Origin | Machine zero is the **power-on corner**. No homing switches assumed. Users jog to the sheet's top-left and **Set origin** (`G92 X0 Y0`). | Nib, UUNA.app |
+| Axes | Nib (tested on this machine) uses no inversion, sheet Y-down = machine +Y. UUNA app stores `axe_reverse_y=true` in its own internal frame. **Unverified → resolved by the Axis Check wizard** (§6.3); default = Nib's mapping. | Nib, UUNA.app |
+| Speeds | Nib caps on connect: XY 11000, Z 5000 mm/min; warns travel ≥ 8000 can lose steps. Vendor: XY up to 15000. UUNA defaults: draw 12000 (user had 1500), jog 2500. | Nib, product page |
+| Vendor app | Must be **closed** (only one program can own the port). | Nib |
+
+## 2. Safety rules (non-negotiable, enforced in core, unit-tested)
+
+1. **Never write firmware settings.** The sender never sends `$N=…`, `$RST`, `$SLP`, `$I=`, `$N0=`/`$N1=`
+   (startup blocks), `G10 L2`/`G10 L20` (EEPROM work offsets), `G28.1`/`G30.1` (EEPROM positions),
+   or `$Config/…` writes. Origin uses volatile `G92` only. Read-only queries allowed: `$$`, `$I`,
+   `$G`, `$#`, `?`.
+   The console (§6.5) goes through the same filter. An "Advanced: allow firmware writes" switch may
+   unblock `$N=value` **only** after a typed confirmation, and `$RST` stays blocked always.
+2. **Bounds.** Every XY target the sender emits (job, frame, jog, go-to) must lie inside the
+   **effective work area** = profile `workArea` ∩ firmware `$130/$131` (if reported, take smaller),
+   expressed in machine coordinates relative to the current work origin (use `WCO` / G92 offset to
+   convert). A job with any point outside → **refused before the first byte is sent**, with the
+   overflow amount shown. Jog targets are **clamped**, never refused silently (UI shows "at limit").
+3. **Z range.** Pen heights clamp to profile `pen.zMin..zMax` (UUNATEK 0..10; firmware 12, keep
+   2 mm headroom) and to `$132` if reported. Pen-down > zMax is impossible to configure.
+4. **Feeds.** All F words clamp to `min(profile.limits.maxFeedXY, $110, $111)` for XY and
+   `min(profile.limits.maxFeedZ, $112)` for Z. Defaults are conservative (§3).
+5. **No homing unless the machine has it.** `$H` is only offered when `$22=1` is reported, behind a
+   confirm. UUNATEK default: hidden.
+6. **Unlock (`$X`) only on explicit user click**, with a warning: "Position may be wrong after an
+   alarm. Check the pen is clear of the paper edge before moving."
+7. **Stop = safe stop**: feed hold `!` → wait for `Hold:0`/`Idle` (≤3 s) → soft reset `0x18` →
+   wait for banner → if `ALARM`, report and **do not auto-unlock** unless the stop came from our own
+   Stop button (then `$X`, restore origin with `G92`, raise pen `G1 Z<up>`). Pen is always raised
+   before any XY move after a stop.
+8. **Pen up before travel, always.** The builder guarantees every travel move is preceded by a
+   pen-up and every job ends pen-up. Postamble: pen up, then optional return to origin.
+9. **Disconnect / tab close / error mid-job** → send `!` (feed hold) best-effort. Never leave the
+   pen down on purpose.
+10. **ALARM or unexpected banner mid-job** → abort job, clear queue, show the alarm text, keep a
+    resume point.
+11. **Dry run first-class**: Simulator transport (§4.4) and "Air plot" (pen held up the whole job).
+12. **Single owner**: only one controller instance per tab; refuse to open a second port.
+13. Nothing ever moves on connect. Connecting only performs read-only queries.
+
+Unit tests must prove each rule (e.g. builder refuses an out-of-bounds job; command filter blocks
+`$110=5000`, `G10 L20 P1 X0`, `$RST=*`; feed clamp; Z clamp).
+
+## 3. Plotter profile registry — `src/config/plotters.js`
+
+`window.Vectura.PLOTTER_PROFILES` (array, ordered) + `window.Vectura.PLOTTER_DEFAULTS`.
+Also `module.exports` when available (for unit tests). Profile schema:
+
+```js
+{
+  id: 'uunatek-3-a3',                // stable, kebab-case
+  name: 'UUNATEK 3.0 A3',
+  vendor: 'UUNATEK',
+  driver: 'grbl',                    // key into PLOTTER_DRIVERS (src/core/plotter/drivers)
+  tested: true,                      // false → UI shows "untested profile" badge
+  serial: { baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none',
+            filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],  // CH340; picker also allows "any"
+            rxBuffer: 127, lineEnding: '\n' },
+  workArea: { width: 420, height: 297 },          // mm, machine travel
+  axes: { invertX: false, invertY: false, swapXY: false },  // sheet→machine, default per Nib
+  pen: {
+    mechanism: 'z',                  // 'z' | 'servo' (M3 S… / M5) | 'custom' (template strings)
+    up: 0, down: 3.5, zMin: 0, zMax: 10, zFeed: 5000,
+    // servo variant fields (unused for z): servoUp: 'M3 S0', servoDown: 'M3 S1000'
+    downDelay: 0.05, upDelay: 0.0,   // seconds → G4 P<s> (GRBL P is seconds)
+  },
+  motion: { drawFeed: 3000, travelFeed: 6000, jogFeed: 2500 },     // mm/min, conservative
+  limits: { maxFeedXY: 11000, maxFeedZ: 5000, maxJogFeed: 6000 },
+  gcode: { preamble: ['G21', 'G90'], postamble: [], decimals: 3, compact: false },
+  capabilities: { homing: false, statusBufferReport: 'optional' },
+}
+```
+
+Ship: `uunatek-3-a3` (tested:true), `uunatek-3-a2`, `uunatek-3-a1`, `uunatek-3-a0`
+(tested:false, same as A3 but bigger workArea), `generic-grbl-servo` (tested:false,
+mechanism 'servo', M3 S30 up / M3 S90 down? → use `M5` up and `M3 S1000` down as editable
+templates, workArea 300×200). User-created profiles: duplicated from a built-in, stored in
+localStorage via a small store (`vectura_plotter_profiles`, try/catch, model on UserLibraryStore)
+and validated by `PlotSafety.validateProfile` (rejects negative/NaN, zMax>12 for z mechanism,
+feeds > 20000, workArea > 4000 mm).
+
+## 4. Core modules (pure, `module.exports` + `window.Vectura.*`, no DOM)
+
+All under `src/core/plotter/`. Load in index.html after `optimization-utils.js` / `path-draw.js`,
+before `engine.js` is fine (no engine dependency).
+
+### 4.1 `plot-safety.js` → `Vectura.PlotSafety`
+- `classifyCommand(line, {allowFirmwareWrites}) → {ok, reason, kind}` kind ∈ motion|query|
+  realtime|setting|blocked. Implements rule 1.
+- `effectiveWorkArea(profile, firmwareSettings) → {width,height}`.
+- `clampFeedXY(f, profile, fw)`, `clampFeedZ`, `clampZ(z, profile, fw)`.
+- `checkJobBounds(job, area) → {ok, overflow:{left,right,top,bottom}, bbox}`.
+- `validateProfile(p) → {ok, errors[]}`; `normalizeProfile(p)` fills defaults from PLOTTER_DEFAULTS.
+
+### 4.2 `plot-job.js` → `Vectura.PlotJob` (geometry → job)
+Input: `penGroups = [{penId, pen:{id,name,color,width}, polylines:[[{x,y}..]]}]` in **document mm,
+origin top-left, y down** (from §4.6) + `settings` (§5) + `profile` + `docSize {width,height}`.
+Steps, in order:
+1. Filter to `settings.enabledPens` (default all), apply `settings.penOrder`.
+2. Optimize per pen (toggleable): simplify (RDP, tol `optimize.simplify`, default 0.02 mm),
+   drop paths shorter than `optimize.minLength`, dedupe (incl. reversed), greedy nearest-neighbour
+   sort with reversal (`optimize.sort`), merge end→start within `optimize.mergeTol` (0.1 mm).
+   Reuse `OptimizationUtils` helpers where they fit; keep algorithms deterministic.
+3. Placement: `placement = {mode:'document'|'fit'|'center', offsetX, offsetY, scale, rotate:0|90|180|270}`.
+   'document' = doc (0,0) at origin + offset. Rotation is about the doc's center then re-anchored
+   to top-left. Then axes transform (invertX/Y relative to workArea, swapXY).
+4. Passes: `pens[penId].passes` (1–10) repeats each path (alternate direction optional).
+5. Emit `job = { units:'mm', pens:[{penId, pen, settings:{drawFeed,travelFeed,down,up,downDelay,
+   upDelay}, paths:[[{x,y}..]] (machine coords) }], bbox, stats }`.
+6. `stats = {drawLength, travelLength, penLifts, estSeconds, pathCount}`; estimate =
+   lengths/feeds ×1.15 + lifts×(z time + delays).
+`toGcode(job, profile, opts) → { lines:[string], penChangeIndices:[lineIndex], pathStartIndices:
+[lineIndex] }` — preamble, pen up, per pen: (pause marker between pens is NOT a G-code; the
+controller pauses at `penChangeIndices`), per path: pen up (if down), `G0`→ use **`G1 X Y F<travel>`**
+for travel (G0 ignores F on GRBL and runs at max rate — unsafe), pen down (`G1 Z<down> F<zFeed>`
++ `G4 P<downDelay>` if >0), first draw seg with F, rest without F; pen up; postamble; optional
+return `G1 X0 Y0 F<travel>`. Servo mechanism uses template strings instead of Z lines. Every
+emitted line passes `PlotSafety.classifyCommand` (assert in tests). Numbers formatted to
+`decimals`, trailing zeros stripped.
+Also: `frameJob(bbox, profile)` (pen-up rectangle trace), `testSwatchJob(spec, profile)` (§6.4),
+`airPlot(job)` (forces pen-up heights = up).
+
+### 4.3 `grbl-protocol.js` → `Vectura.GrblProtocol` (pure parsers + streamer state machine)
+- `parseLine(str) → {type:'ok'|'error'|'alarm'|'status'|'banner'|'setting'|'msg'|'other', ...}`.
+  Status: state, subState, mpos, wpos, wco, fs {feed, speed}, bf {planner, rx}, pn. Handles merged
+  junk like `ok<Idle|..>`.
+- `parseSettings(lines) → {130: 420, 110: 11000, …}` (numbers).
+- `class CharCountingStreamer({write, rxBuffer=127, onProgress, onError})`: `enqueue(lines)`,
+  `onResponse(parsedOk|Error)`, `pump()`, `pauseAt(index)` boundaries, `cancel()`. Never exceeds
+  rxBuffer bytes in flight. Pure: no timers inside except via injected scheduler.
+- Realtime bytes constants: STATUS `?`, HOLD `!`, RESUME `~`, RESET `0x18`, JOG_CANCEL `0x85`.
+
+### 4.4 `serial-transport.js` → `Vectura.PlotterTransports`
+- `WebSerialTransport({profile})`: `isSupported()`, `requestPort()` (user gesture, with filters +
+  fallback "show all ports"), `getGrantedPorts()`, `open()`, `close()`, `writeLine(str)`,
+  `writeRealtime(byte)`, `onLine(cb)` (TextDecoder stream, split on `\r?\n`), `onDisconnect(cb)`.
+  Handles `navigator.serial` 'disconnect' event and read loop errors.
+- `SimulatorTransport({profile, speed})`: in-memory GRBL emulator implementing the same interface:
+  banner `Grbl 1.1h ['$' for help]`, `$$` with 130=420,131=297,132=12,110=11000,111=11000,
+  112=5000,22=0, char-counting with a 127-byte RX buffer, planner simulation of motion time
+  (scaled by `speed`), status reports, `!`/`~`/`0x18`/`0x85`, `G92`, alarm on soft-limit violation
+  (`$20` simulated on), `error:N` on unknown commands. Used by the UI "Simulator" port, unit tests and
+  e2e. Exposes `getTrace()` (pen-down segments drawn) so tests/e2e can assert what would have been
+  drawn.
+
+### 4.5 `plotter-controller.js` → `Vectura.PlotterController` + `Vectura.PLOTTER_DRIVERS`
+Driver registry: `PLOTTER_DRIVERS.grbl = { createController(profile, transport) }`. Future EBB
+drivers register here. `PlotterController` (event emitter: `state`, `status`, `log`, `progress`,
+`penChange`, `alarm`, `done`, `error`):
+- `connect(transport)`: open, wait banner (1.5 s) else `\r\n` + `$I`; then `$$` (read-only) and
+  `$G`; start status polling (`?` every 250 ms idle, 400 ms running). **No motion.**
+- `disconnect()` (hold first if running).
+- Manual: `jog(dx, dy, feed)` → `$J=G21G91X..Y..F..` clamped to bounds using current WPos;
+  `jogCancel()`; `penUp()`, `penDown()`, `setPenHeight(z)` (calibration, clamped); `setOrigin()` →
+  `G92 X0 Y0` (keeps `originSet=true` and stores machine offset); `goToOrigin()` (pen up first);
+  `goTo(x,y)`; `unlock()`; `home()` only if capability.
+- Job: `run(gcodeResult, {startLine=0, penChange:'pause'|'continue'})` → streams via
+  CharCountingStreamer; at `penChangeIndices` waits for buffer drain + Idle, raises pen, moves to
+  `settings.penChangePosition` (default origin), emits `penChange {pen, index}` and waits for
+  `continuePenChange()`; `pause()` (`!`), `resume()` (`~`), `stop()` (§2 rule 7). Resume point =
+  last fully acknowledged **path start index** (`pathStartIndices`); `resumeFrom(pathIndex)`
+  re-sends preamble + pen up + travel to that path start.
+- Refuses `run` if: not connected, `!originSet` (unless user ticks "use machine zero"), job out of
+  bounds, state not Idle.
+
+### 4.6 Geometry source — `ExportSvgBuilder.buildPlotPolylines(snapshot, {tolerance=0.05})`
+Add to `src/ui/export-svg-builder.js`. From `snapshot.groups` (already optimized, pen-grouped,
+margin-clipped): for each item, circles (`meta.kind==='circle'`) → expand to polyline (≥72 steps,
+adaptive by radius so chord error ≤ tolerance); everything else → `PathDraw.toPolyline(path,
+{useCurves:item.useCurves, sharpEdges:item.sharpEdges}, tolerance)`; closed paths end at their
+start. Returns `[{penId, pen, polylines}]` in document mm. UI obtains the snapshot through
+`UI.getExportSnapshot()`.
+
+## 5. Plot settings (persisted) — `SETTINGS.plotter` defaults live in `src/config/plotters.js`
+(`PLOTTER_DEFAULTS.settings`), merged into `getPreferenceSnapshot()` under key `plotter`
+(trimmed from the cookie; localStorage only).
+```
+{ profileId:'uunatek-3-a3',
+  placement:{mode:'document', offsetX:0, offsetY:0, scale:1, rotate:0},
+  optimize:{enabled:true, simplify:0.02, minLength:0, dedupe:true, sort:true, merge:true, mergeTol:0.1},
+  pens:{ [penId]: {enabled:true, drawFeed:null, down:null, downDelay:null, passes:1} }, // null = profile
+  penOrder:null, penChange:'pause', penChangePosition:'origin', returnToOrigin:true,
+  airPlot:false, profileOverrides:{} }
+```
+Pen settings are keyed by Vectura pen id so "brush pen = slow + lighter pressure" survives
+sessions. Per-plot overrides never mutate built-in profiles.
+
+## 6. UI — `src/ui/modals/send-to-plotter.js` (+ CSS in `src/ui/skin/components.css`)
+
+Large panel opened from File → **Send to Plotter…** (`#btn-send-to-plotter`, after
+`#btn-export-animated`; enabled when document has content; shortcut none for v1). Uses the
+existing modal primitive, Mirror visual language (picture toggle cards, category color, dial)
+where it explains something, existing components (`tog-grp`, `num-step`, `slider`, `sw-toggle`,
+`select`). American English. Sections as tabs (left rail):
+
+1. **Connect** — browser support check (if no `navigator.serial`: "Use Chrome or Edge on Windows
+   or macOS" + Simulator still works), profile picker (cards: name, work area, tested badge),
+   Connect (USB) / Simulator buttons, firmware info (`$I`, key `$$` values read-only), state pill
+   (Idle/Run/Hold/Alarm), "Close the UUNA app first" hint, Disconnect.
+2. **Setup** — preview canvas: work area rectangle, sheet/document rectangle at placement,
+   pen-colored paths, travel moves dashed (toggle), out-of-bounds in red with message; placement
+   controls (mode, offset X/Y, scale, rotation as 0/90/180/270 picture toggles); per-pen table
+   (enabled, color swatch, order drag/arrows, draw speed, pen-down height, dwell, passes); optimize
+   toggles; stats (draw length, travel, lifts, estimated time).
+3. **Machine** (manual + calibration) — jog pad (±X ±Y, diagonals, step 0.1/1/10/50 mm,
+   jog speed), keyboard arrows when focused (Shift = ×10), pen up/down buttons + live Z
+   height slider (calibration, clamped), **Set origin here**, Go to origin, **Frame** (trace bbox
+   pen-up), Unlock (alarm only), live position readout (WPos/MPos), current feed.
+   Calibration wizards:
+   - **Axis check**: jog +X 10 mm → "Did the pen move right?" → +Y 10 mm → "Did it move toward
+     you (down the page)?" → sets invertX/invertY in the profile override. Swap if X moved
+     vertically.
+   - **Pen height**: start at up height, step down by 0.25 mm with "Touching paper?" — record
+     touch Z, suggest down = touch + 0.5 mm (spring-loaded holder) and up = 0; clamps apply.
+   - **Origin & paper**: jog to sheet top-left, set origin, then Frame to verify.
+   - **Scale check**: draw a 100 × 100 mm square + 50 mm cross (test job) to measure with a ruler;
+     optional steps/mm note (read-only display of $100/$101; never written).
+4. **Plot** — Start (Air plot toggle, Return to origin toggle), Pause/Resume, **Stop** (big,
+   always visible while running, also Esc), progress bar + current pen + path n/N + elapsed/ETA,
+   live pen position drawn on the preview, pen-change prompt card (pen name + color swatch +
+   "Continue"), resume-from-path field after a stop, test swatch generator (§6.4).
+5. **Console** — log of sent/received (filterable), input line for G-code/queries through
+   `PlotSafety.classifyCommand` (blocked commands shown with reason), Advanced switch (§2.1).
+
+### 6.4 Test swatch (artistic development)
+`testSwatchJob({rows: speeds[], cols: downHeights[], size: 15mm, gap: 5mm, pattern:'hatch'|
+'zigzag'|'circle'})` — grid of small patches across a speed × pressure matrix with labels-free
+layout, placed at a chosen offset, so artists can pick per-pen settings. Uses the same safety path.
+
+## 7. Tests (RGR; queue-wrapped commands only)
+- Unit: `tests/unit/plotter/plot-safety.test.js`, `plot-job.test.js`, `grbl-protocol.test.js`,
+  `simulator-transport.test.js`, `plotter-controller.test.js` (controller ↔ simulator: connect
+  sends no motion; jog clamps; run streams whole job and simulator trace matches job paths; pause/
+  resume; stop raises pen; pen-change pause; out-of-bounds refused; firmware-write blocked),
+  `plotters-config.test.js`, `build-plot-polylines.test.js`.
+- Integration: `tests/integration/modals/send-to-plotter.test.js` (open modal from menu, simulator
+  connect, preview stats, settings persisted).
+- E2E: `tests/e2e/send-to-plotter.spec.js` — load app, add a layer, open File → Send to Plotter,
+  Simulator connect, set origin, Air plot / plot to completion, assert progress 100 % and trace
+  path count; screenshots via evidence helper.
+- Check `architecture-contract.test.js`, `runtime-loader-contract.test.js`, runtime profiles and
+  `docs-command-drift` for registration requirements when adding files.
+
+## 8. Docs
+README (feature group + help), in-app help guide entry, CHANGELOG Unreleased, plans.md,
+`docs/plotter-send.md` (user guide: browser support, closing UUNA app, first-run calibration,
+safety behaviors, adding a profile/driver).
+
+## 9. Out of scope v1
+EBB/AxiDraw driver (registry slot only), WiFi/Bluetooth UUNA modes, firmware config writes,
+G-code file export (cheap follow-up: `toGcode` → download; may add if trivial).
+
+## 10. Addendum (orchestrator review of A0 + forum research)
+
+1. **Console motion is bounds-checked by the controller.** `classifyCommand` is syntactic only.
+   `PlotterController.sendConsole(line)` must additionally: reject `G91` relative moves and
+   `G2`/`G3` arcs from the console (use Jog instead); for lines with X/Y/Z words compute absolute
+   work-coordinate targets (using last known WPos for missing axes) and reject unless
+   `checkJobBounds`-equivalent passes and Z is within `clampZ` range (no silent clamp in console —
+   refuse with reason); `G53` targets are checked against the machine area (0..workArea);
+   `$J=` lines from the console are parsed the same way (G90/G91 inside the jog honored) and
+   refused if out of bounds. Feeds above the cap are refused, not clamped.
+2. **G0 is never emitted** by the builder or controller (GRBL G0 runs at max rate). Travel uses
+   `G1 … F<travel>`. Console may send G0 only if its target passes bounds.
+3. **Jog cancel**: after `0x85`, send `G4 P0` and wait for its `ok` before the next jog/command
+   (0x85 can be missed when jogs are queued). Continuous (press-and-hold) jog = repeated short
+   `$J=` segments ≤ 0.25 s of travel each, cancelled on release / blur / Escape.
+4. **Web Serial lifecycle**: close = `reader.cancel()` → release reader/writer locks → `port.close()`;
+   handle `navigator.serial` 'disconnect' and `port.readable === null` as fatal; reconnect via
+   `navigator.serial.getPorts()` (no prompt) for a previously granted port; line splitting must
+   tolerate chunk boundaries mid-line and `\r\n`.
+5. **Pen change UX**: at each pen change offer (a) "Re-check pen height" (pen-down at the change
+   position for a touch test, adjustable, then up) and (b) optional "Registration mark" — a small
+   10 mm cross at the job's top-left corner drawn by every pen so color alignment can be checked
+   (toggle in Setup, default off).
+6. **Brush / dip support (artistic)**: per-pen `reload: {everyMm: 0 (off), position:{x,y},
+   dips: 1, dipDepth: <z>, dwell: s}` — the builder splits paths so pen-down length between reloads
+   ≤ everyMm, inserting pen up → travel to reload position → dip (Z down/up × dips, clamped) →
+   travel back → continue. Reload position must pass bounds. Off by default.
+7. **Path order options** per pen: `optimized` (default), `document`, `reverse`, `random` (seeded) —
+   random helps even ink coverage; seeded by `Vectura.RNG` style seed in settings.
+
+## 11. Addendum — DrawCore hardware facts (GitHub research: Leggin/stiftwerk, plotterbench, Nib, uunatek_3_software)
+
+- Firmware is **"Grbl 1.1h DrawCore"** (banner `Grbl 1.1h DrawCore V2.12 ['$' for help]`, `$I` → `[VER:1.1h DrawCore V2.12.…:]` `[OPT:VZHDL,15,128]`). RX buffer 128 → use 127.
+- **Opening the port resets the board (DTR)**: banner ≈1.2 s later, anything sent earlier is lost, position → 0 and G92 cleared. Connect waits for the banner; `originSet=false` after every connect/reset; a mid-session banner = reset → abort + "re-set origin" message.
+- USB: WCH vendor 0x1A86, PIDs 0x7523 and 0x8040 seen → vendor-only filter.
+- Some units have homing switches (`$22=1`); homing stays opt-in and firmware-gated.
+- Pen Z conventions differ across sources (0/3.5 UUNA app, 0.5/5 Nib/stiftwerk, 0/10 another tool). Default stays conservative (up 0, down 3.5) — the **Pen height wizard is mandatory on first use** of a profile (UI nudges until done; stored per profile).
+- Axis direction / origin corner unverified across sources → **Axis check wizard is mandatory on first use** too.
+- Vendor tools end with `$SLP` (motors off); we do not (blocked); motors stay energized, which also keeps registration between pens.
+- Max rates on an iDraw A4 dump are 15000; our cap 11000 stays (Nib's measured-safe value).
+
+## 12. UX redesign (v2) — guided, distance-readable, dense where it matters
+
+Goal: every pane focuses attention on the ONE next action; rarely used controls live in collapsed
+"Advanced" sections; the panel walks the user through the session and auto-advances.
+
+### 12.1 Session flow and tab order
+Rail order = the order of a session: **1 Connect → 2 Machine → 3 Setup → 4 Plot**, then a divider,
+then **Console** (labeled "Advanced"). Each numbered tab shows a status glyph: ✓ done,
+● needs attention (accent), – not yet reachable (dimmed, still clickable). Status rules:
+- Connect ✓ when connected (and start corner confirmed, see 12.3).
+- Machine ✓ when required calibration is done for this profile AND origin is set this session.
+- Setup ✓ when the job is computed and fits the work area (● when out of bounds).
+- Plot ● when everything above is ✓ (the "Start plot" CTA is the next action).
+Auto-advance (only on success, never mid-edit; a single toast/aria-live line explains it):
+connect succeeds → Machine; origin set (and calibration done) → Setup if job out of bounds/not
+computed, else Plot. Users can always click any tab.
+
+### 12.2 Persistent header ("command bar"), single row
+Title · profile name · state pill · **compact live readout** `X 12.30  Y 4.00  Z 0.00` (mono,
+~17px, WPos; MPos on hover/tooltip) · **Connect / Reconnect / Disconnect** (pinned here; primary
+when disconnected) · **EMERGENCY STOP** (always present while connected; large red when any motion
+is possible/in progress, i.e. states jogging/running/paused/penChange or a manual move in flight;
+neutral-outlined otherwise) · Close. Keyboard: Space or Escape = emergency stop while the panel has
+focus and focus is not in a text input (Escape in an input first blurs it). The header never
+scrolls.
+Below the header: a **Next step banner** (one line + one primary button) computed from state:
+Disconnected → "Connect your plotter" [Connect] · corner unconfirmed → 12.3 card · calibration
+missing → "Check the axes (one-time)" [Start axis check] → "Find the pen height (one-time)" ·
+origin not set → "Jog the pen to the sheet's top-left corner, then set the origin" [Go to Machine] /
+on Machine tab: [Set origin here] · out of bounds → "The plot doesn't fit — adjust placement"
+[Go to Setup] · ready → "Ready to plot" [Start plot] · running → progress summary [Pause] ·
+penChange → "Insert <pen name>" [Continue] · alarm → recovery text [Unlock] or power-cycle steps.
+
+### 12.3 Start-corner confirmation (safety)
+Right after connect, before any motion: card "Was the carriage at its start corner when you
+connected? The plotter measures its limits from that point." [Yes, it was] → controller.
+confirmMachineCorner() · [No / not sure] → steps: power off, move the carriage gently to the corner,
+power on, Reconnect (button). Until confirmed, motion is limited to ±15 mm (controller enforces).
+
+### 12.4 Pane contents (primary first; Advanced = collapsed <details> remembered per session)
+- **Connect**: the selected profile as one compact summary row (mini icon, name, size, tested badge,
+  [Change]); [Change] expands a compact grid of smaller profile cards (~180 px wide, 72 px preview).
+  Connection status line + hint "Close the UUNA app first". Collapsed: "Practice with the simulator"
+  (button + speed); "Firmware details" ($I, $$ table); "Profile settings" (Duplicate/edit).
+- **Machine**: first-run checklist cards ONLY while calibration is incomplete (then collapse to a
+  one-line "Calibration ✓ · Re-run…" disclosure). Primary block in one view at 1280×800 without
+  scrolling: jog dial (≈280 px) | step chips (large, 52 px) + jog speed; **[Set origin here]**
+  primary; [Go to origin] [Frame] secondary; Pen [Up] [Down]. Collapsed "Advanced": live pen-height
+  slider (large thumb ≥28 px, track ≥8 px), Home (only if $22=1), custom step.
+- **Setup**: preview dominates (≥55% width); placement mode + rotation picture toggles + offsets;
+  per-pen rows compact (enable, swatch, name, speed, pen-down height); per-pen "More" disclosure for
+  dwell, passes, order, reload/dip; collapsed "Optimization" and "Registration marks"; stats line.
+- **Plot**: giant [Start plot] (or the reason it can't start, each reason a link to the fixing
+  tab); run options Air plot / Return to origin; preview + progress; collapsed "Tests & checks"
+  (Frame, Scale check, Test swatches) and "Advanced" (Use machine zero).
+- **Console** (Advanced tab): unchanged features.
+
+### 12.5 Density/scale
+Keep ≥52 px hit targets and ≥17 px body text, but remove dead space: section headings 14 px caps
+with 8 px gap, readouts moved to the header, cards smaller, two-column layouts where width allows
+(container queries). Each pane's primary action must be visible without scrolling at 1280×800.
+
+## 13. Speed range (research-backed, v2)
+
+Sources: vendor speed-mode tables (user-supplied from uunatek.com: High-speed 20000/accel 6000-2000-4000,
+Standard 15000/8000 Z, Drawing 12000, Silence 10000/8000 Z), LordKromdar/uunatek_3_software (boards
+"rated 12000", draw default 10000, accel usually the real limit), Nib (draw 6000 / travel 12000; cap 11000),
+stiftwerk (2000/8000), idraw_ui (warn >4000 draw, >10000 travel), AxiDraw docs (pen speed presets as % of max;
+pen delays normally 0; constant speed reduces pooling). No UUNATEK step-loss reports found.
+
+### 13.1 Limits (UUNATEK 3.0 profiles)
+- `limits.maxFeedXY` 11000 → **15000** (vendor Standard = factory default); `limits.maxFeedZ` 5000 → **8000**.
+  `limits.maxJogFeed` stays **6000** (jogging is hands-near-the-machine).
+- Every feed is still clamped to the firmware's `$110/$111` (XY) and `$112` (Z) — unchanged rule.
+- **High-speed mode** (new, opt-in, per profile): raises the XY cap to **20000** (Z stays 8000) **only if**
+  the connected firmware reports `$110` and `$111` ≥ the requested feed. Enabling requires a confirm dialog
+  quoting the vendor warning (noise, lower precision, possible step loss/stalling) and noting that Vectura never
+  changes firmware acceleration. Shown as a "High-speed" badge in the header while on. Simulator: allowed.
+- Profile `speedTiers` drives soft UI tips (never blocks): draw > 6000 → "quality tip: fine lines may thin or
+  skip"; travel > 12000 → "step-loss tip: watch registration"; anything above 15000 only in High-speed mode.
+
+### 13.2 Defaults
+- `motion.drawFeed` 3000 → **4000**, `motion.travelFeed` 6000 → **10000**, `pen.zFeed` 5000 (unchanged).
+
+### 13.3 Pen-type presets (per pen in Setup; fill speed + pen-down dwell; values stay editable)
+| Preset | Draw mm/min | Down dwell s |
+|---|---|---|
+| Fineliner (Micron, pigment liner) | 4000 | 0 |
+| Gel pen | 2500 | 0 |
+| Ballpoint | 4000 | 0 |
+| Fountain pen | 3000 | 0 |
+| Brush / watercolor | 2000 | 0.15 |
+| Paint marker (Posca) | 2500 | 0.15 |
+| Technical pen | 2500 | 0 |
+| Pencil / graphite | 4500 | 0 |
+| Metallic / white gel on dark paper | 2000 | 0.1 |
+| Custom | (user) | (user) |
+Presets are labeled "starting points" (community-derived, see sources). Each pen row shows its preset; changing
+speed/dwell manually switches it to Custom.
+
+### 13.4 Visibility
+Specs panel "Speed modes" table highlights which vendor mode the connected firmware's `$110–$122` most closely
+matches, and the Setup per-pen speed field shows the effective clamped value + the cap source
+("capped by your firmware at 12000" / "profile limit 15000" / "High-speed mode").

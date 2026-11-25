@@ -490,6 +490,11 @@
           ${section('Start Page · Arrange plates',
             row(OPT + k('↑ / ↓'),   'Move the focused plate up or down', 'While arranging the Plates section; Esc or Done returns focus to Arrange')
           )}
+          ${section('Send to Plotter · Machine tab',
+            row(k('Arrow keys'),    'Jog the pen', 'Shift = 10x the step, Alt = 0.1x') +
+            row(k('PageUp') + ' / ' + k('PageDown'), 'Pen up / pen down') +
+            row(k('Esc'),           'Stop a running plot', 'Safe stop: feed hold, reset, pen raised')
+          )}
           ${section('Help',
             row(k('F1'),            'Help Guide') +
             row(k('?'),             'Keyboard shortcuts')
@@ -507,7 +512,8 @@
         </ul>
         A live preview shows pen-order color coding before you download.
       `)}
-      ${callout('<strong>Export Animated SVG…</strong> is a separate File action for the harmonograph/Pendula family — it emits a self-contained, looping <em>draw-on</em> SVG (the strokes draw themselves on repeat) for sharing the figure drawing itself. The canonical Export SVG stays clean and static.')}`;
+      ${callout('<strong>Export Animated SVG…</strong> is a separate File action for the harmonograph/Pendula family — it emits a self-contained, looping <em>draw-on</em> SVG (the strokes draw themselves on repeat) for sharing the figure drawing itself. The canonical Export SVG stays clean and static.')}
+      ${callout('<strong>Send to Plotter…</strong> (File menu) streams the document to a UUNATEK 3.0 pen plotter from Chrome or Edge over USB (it needs <code>http://localhost</code> or <code>https</code>, and the vendor app must be closed). First run: Connect (the board restarts, so set the origin after every connect), Axis check, Pen height, Origin &amp; paper, Frame. The Setup tab sets placement and per-pen speed, height, dwell, passes, path order and brush re-dip; try Air plot or the Simulator first. Stop (or Esc) is a safe stop, and a Resume from path is offered afterward. Firmware settings are never written. Full guide: <code>docs/plotter-send.md</code>.')}`;
 
     /* -- Touch -- */
     const t = (name) => `<strong>${name}</strong>`;
