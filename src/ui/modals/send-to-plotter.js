@@ -322,6 +322,9 @@
     unsubs: [],
     listeners: new Set(),
     hooked: false,
+    wcoMismatch: null,
+    estop: null,
+    jogStop: null,
   };
   const notify = (what) => {
     session.listeners.forEach((fn) => { try { fn(what); } catch (e) { /* a panel must not break the session */ } });
@@ -371,7 +374,11 @@
     });
     on('alarm', (a) => { session.alarm = a; notify('alarm'); });
     on('error', (e) => { session.lastError = e; notify('error'); });
-    on('origin', () => notify('origin'));
+    on('origin', () => { if (c.originSet) session.wcoMismatch = null; notify('origin'); });
+    on('corner', () => notify('corner'));
+    on('wco-mismatch', (e) => { session.wcoMismatch = e || {}; notify('wco'); });
+    on('estop', (e) => { session.estop = e || {}; notify('estop'); });
+    on('jogstop', (e) => { session.jogStop = e || {}; notify('jogstop'); });
   };
 
   const simOptionsOverride = () => (Modals.SendToPlotter && Modals.SendToPlotter.simOptions) || {};
@@ -408,6 +415,7 @@
     session.progress = null;
     session.run = null;
     session.useMachineZero = false;
+    session.wcoMismatch = null;
     bindController(controller);
     hookPageHide();
     notify('connecting');
@@ -438,6 +446,7 @@
     session.alarm = null;
     session.lastResult = null;
     session.status = null;
+    session.wcoMismatch = null;
     notify('disconnected');
   }
 
@@ -664,6 +673,13 @@
       ctx.fillRect(X(a.x), Y(a.y), a.w * sc, a.h * sc);
       ctx.strokeStyle = v.overflow ? cDanger : cBorder;
       ctx.strokeRect(X(a.x) + 0.5, Y(a.y) + 0.5, a.w * sc, a.h * sc);
+      if (isNum(v.margin) && v.margin > 0 && a.w > 2 * v.margin && a.h > 2 * v.margin) {
+        // thin inner dashed line: the safety margin kept from the frame for manual moves and jobs
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = cBorder;
+        ctx.strokeRect(X(a.x + v.margin) + 0.5, Y(a.y + v.margin) + 0.5, (a.w - 2 * v.margin) * sc, (a.h - 2 * v.margin) * sc);
+        ctx.setLineDash([]);
+      }
 
       // sheet / document rectangle at its placement
       if (v.doc && v.doc.length > 2) {
@@ -794,18 +810,41 @@
   const row = (label, control, hint) => h('div', { class: 'stp-row' },
     h('span', { class: 'stp-row-lbl' }, label, hint ? h('span', { class: 'stp-hint', text: hint }) : null), control);
   const section = (title, ...kids) => h('section', { class: 'stp-sec' }, h('h3', { class: 'stp-sec-h', text: title }), ...kids);
+  // Collapsed "Advanced" disclosure; the open state is remembered for the browser session (not persisted).
+  const ADV_OPEN = {};
+  const adv = (id, title, ...kids) => {
+    const d = h('details', { class: 'stp-details stp-adv', dataset: { adv: id } }, h('summary', { text: title }), ...kids);
+    d.open = ADV_OPEN[id] === true;
+    d.addEventListener('toggle', () => { ADV_OPEN[id] = d.open; });
+    return d;
+  };
+  // Controller safety API (feature-detected: the panel works with controllers that lack any of these).
+  const MOVING_STATES = ['jogging', 'running', 'paused', 'penChange', 'stopping'];
+  const cornerUnconfirmed = (c) => !!c && typeof c.confirmMachineCorner === 'function' && c.machineCornerConfirmed === false;
+  const callSafe = (fn) => { try { return Promise.resolve(fn()).catch(() => null); } catch (e) { return Promise.resolve(null); } };
+  const emergencyStopOf = (c) => {
+    if (!c) return Promise.resolve();
+    if (typeof c.emergencyStop === 'function') return callSafe(() => c.emergencyStop());
+    // Fallback for controllers without emergencyStop(): cancel any jog first, then stop what is still active.
+    return (typeof c.jogCancel === 'function' ? callSafe(() => c.jogCancel()) : Promise.resolve())
+      .then(() => (typeof c.stop === 'function' && c.state !== 'idle' && c.state !== 'disconnected' ? callSafe(() => c.stop()) : null));
+  };
+  const isTypingTarget = (t) => !!t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable === true);
   const btn = (label, onClick, cls, attrs) => h('button', Object.assign({ type: 'button', class: `stp-btn ${cls || ''}`.trim(), onclick: onClick }, attrs || {}), label);
 
   // ---------------------------------------------------------------------------
   // Panel
   // ---------------------------------------------------------------------------
+  // Session order: Connect -> Machine -> Setup -> Plot, then Console (Advanced) after a divider.
   const TABS = [
-    { id: 'connect', label: 'Connect' },
-    { id: 'setup', label: 'Setup' },
-    { id: 'machine', label: 'Machine' },
-    { id: 'plot', label: 'Plot' },
-    { id: 'console', label: 'Console' },
+    { id: 'connect', label: 'Connect', n: 1 },
+    { id: 'machine', label: 'Machine', n: 2 },
+    { id: 'setup', label: 'Setup', n: 3 },
+    { id: 'plot', label: 'Plot', n: 4 },
+    { id: 'console', label: 'Console', sub: 'Advanced' },
   ];
+  const GLYPH = { done: '\u2713', attention: '\u25cf', idle: '\u2013' };
+  const GLYPH_WORD = { done: 'done', attention: 'needs attention', idle: 'not reachable yet' };
   let activePanel = null;
 
   class Panel {
@@ -816,7 +855,7 @@
       this.tools = { machine: null, console: null };
       this.previews = [];
       this.timers = {};
-      this.s = { geometry: null, job: null, jobError: null, building: false, altJob: null, connectMsg: null, connectBusy: false, plotMsg: null, confirmClose: false, profileErrors: null, simSpeedLabel: null };
+      this.s = { geometry: null, job: null, jobError: null, building: false, altJob: null, connectMsg: null, connectBusy: false, plotMsg: null, confirmClose: false, profileErrors: null, simSpeedLabel: null, manualMoving: false, bannerErr: null, cornerHelp: false, pendingOriginAdvance: false, profilePicker: false };
       this.onSession = (what) => this.queueRefresh(what);
       this.refreshQueued = null;
       this.destroyed = false;
@@ -886,6 +925,10 @@
           if (c && typeof c.emit === 'function') c.emit('log', { dir: level === 'warn' || level === 'error' ? 'warn' : 'info', text: String(msg) });
         },
         requestTab: (name) => self.showTab(name),
+        emergencyStop: () => emergencyStopOf(liveController()),
+        reportMotion: (m) => { self.s.manualMoving = !!m; self.updateStop(); },
+        reportError: (e) => { self.s.bannerErr = (e && e.message) || String(e); if (!self.destroyed) self.renderBanner(); },
+        requestCorner: () => { self.s.cornerHelp = false; if (!self.destroyed) self.renderBanner(); },
       };
     }
 
@@ -908,9 +951,9 @@
       this.modal.open();
       this.refreshGeometry();
       this.refreshAll();
-      // Land on the most useful tab: Plot when a job is live, Connect when not connected, else Setup.
+      // Land on the most useful tab: Plot when a job is live, Connect when not connected, else the next step.
       const c = liveController();
-      this.showTab(isActiveJob() ? 'plot' : (c ? 'setup' : 'connect'));
+      this.showTab(isActiveJob() ? 'plot' : (c ? (this.nextStep().tab || 'machine') : 'connect'));
     }
 
     requestClose() {
@@ -939,37 +982,201 @@
     build(body) {
       this.root = h('div', { class: 'stp-root' });
       this.head = h('header', { class: 'stp-head' });
+      this.liveNote = h('div', { class: 'stp-livenote', id: 'stp-live-note', role: 'status', 'aria-live': 'polite' });
+      this.banner = h('div', { class: 'stp-banner', id: 'stp-banner' });
       this.runbar = h('div', { class: 'stp-runbar', hidden: true });
       this.rail = h('nav', { class: 'stp-rail', role: 'tablist', 'aria-orientation': 'vertical', 'aria-label': 'Send to Plotter sections' });
       this.stage = h('div', { class: 'stp-stage' });
       TABS.forEach((t) => {
-        const b = h('button', { type: 'button', class: 'stp-tab', role: 'tab', id: `stp-tab-${t.id}`, 'aria-controls': `stp-pane-${t.id}`, dataset: { tab: t.id }, onclick: () => this.showTab(t.id) }, t.label);
+        if (t.id === 'console') this.rail.appendChild(h('div', { class: 'stp-rail-div', role: 'separator' }));
+        const b = h('button', { type: 'button', class: 'stp-tab', role: 'tab', id: `stp-tab-${t.id}`, 'aria-controls': `stp-pane-${t.id}`, dataset: { tab: t.id }, onclick: () => this.showTab(t.id) },
+          t.n ? h('span', { class: 'stp-tab-num', 'aria-hidden': 'true', text: String(t.n) }) : null,
+          h('span', { class: 'stp-tab-lbl' }, t.label, t.sub ? h('small', { class: 'stp-tab-sub', text: t.sub }) : null),
+          t.n ? h('span', { class: 'stp-tab-glyph', 'aria-hidden': 'true' }) : null);
         this.rail.appendChild(b);
         const pane = h('div', { class: 'stp-pane', role: 'tabpanel', id: `stp-pane-${t.id}`, 'aria-labelledby': `stp-tab-${t.id}`, dataset: { pane: t.id }, hidden: true });
         this.panes[t.id] = pane;
         this.stage.appendChild(pane);
       });
-      this.root.append(this.head, this.runbar, h('div', { class: 'stp-main' }, this.rail, this.stage));
+      this.root.append(this.head, this.banner, this.runbar, h('div', { class: 'stp-main' }, this.rail, this.stage));
       body.appendChild(this.root);
       this.root.addEventListener('keydown', (e) => this.onKey(e));
+      this.root.addEventListener('keyup', (e) => { if (this.isSpace(e) && !isTypingTarget(e.target) && liveController()) e.preventDefault(); });
       this.buildConnect();
       this.buildSetup();
       this.buildPlot();
       this.renderHeader();
+      this.renderTabs();
     }
 
+    isSpace(e) { return e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space'; }
+
+    // Space and Escape are the emergency stop while the panel has focus and nobody is typing in a field.
     onKey(e) {
       // Keep app shortcuts (Delete, undo, tool keys) out while the panel holds focus.
       e.stopPropagation();
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
       const c = liveController();
-      if (c && ACTIVE_STATES.includes(c.state)) { this.stopJob(); return; }
-      // The panel handles Escape first (it stops propagation), so a press-and-hold jog must be cancelled here.
-      if (c && c.state === 'jogging') { c.jogCancel().catch(() => null); return; }
+      const typing = isTypingTarget(e.target) || isTypingTarget(document.activeElement);
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        const ae = document.activeElement;
+        if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) { ae.blur(); return; }
+        if (c && (c.state !== 'idle' || this.s.manualMoving)) { this.emergencyStop(); return; }
+        this.requestClose();
+        return;
+      }
+      if (this.isSpace(e) && !typing && !e.repeat && c) {
+        e.preventDefault();
+        this.emergencyStop();
+      }
+    }
+
+    emergencyStop() {
+      const c = liveController();
+      const tool = this.tools.machine;
+      this.liveNote.textContent = 'Emergency stop sent.';
+      if (tool && typeof tool.emergencyStop === 'function') return tool.emergencyStop();
+      return emergencyStopOf(c);
+    }
+
+    isMoving() {
+      const c = liveController();
+      return !!c && (MOVING_STATES.includes(c.state) || this.s.manualMoving);
+    }
+
+    // ---- session flow (tab status glyphs, next step) ----
+    flow() {
+      const c = liveController();
+      const sim = session.kind === 'sim';
+      const job = this.s.job;
+      const cal = this.calibration();
+      const calDone = sim || (cal.axisChecked && cal.penHeightChecked);
+      const connectDone = !!c && !cornerUnconfirmed(c);
+      const originDone = !!(c && c.originSet);
+      const machineDone = !!c && calDone && originDone;
+      const oob = !!(job && job.bounds && !job.bounds.ok);
+      const setupDone = !!job && !oob && !this.s.building && !!(job.pens && job.pens.length);
+      return { c, sim, calDone, cal, connectDone, originDone, machineDone, oob, setupDone, cornerBlocked: cornerUnconfirmed(c) };
+    }
+
+    tabStatus() {
+      const f = this.flow();
+      return {
+        connect: f.connectDone ? 'done' : 'attention',
+        machine: !f.c ? 'idle' : (f.machineDone ? 'done' : 'attention'),
+        setup: f.oob ? 'attention' : (f.setupDone ? 'done' : 'idle'),
+        plot: f.connectDone && f.machineDone && f.setupDone ? 'attention' : 'idle',
+      };
+    }
+
+    renderTabs() {
+      if (!this.rail || this.destroyed) return;
+      const st = this.tabStatus();
+      TABS.forEach((t) => {
+        if (!t.n) return;
+        const b = this.rail.querySelector(`[data-tab="${t.id}"]`);
+        if (!b) return;
+        b.dataset.status = st[t.id];
+        const g = b.querySelector('.stp-tab-glyph');
+        if (g) g.textContent = GLYPH[st[t.id]];
+        b.setAttribute('aria-label', `${t.n} ${t.label}, ${GLYPH_WORD[st[t.id]]}`);
+      });
+    }
+
+    // One line + one primary button for whatever the user should do next.
+    nextStep() {
+      const f = this.flow();
+      const c = f.c;
+      const p = session.progress || {};
+      const go = (tab) => () => this.showTab(tab);
+      const startCheck = (key) => () => { this.showTab('machine'); const t = this.tools.machine; if (t && typeof t.startWizard === 'function') t.startWizard(key); };
+      const T = (kind, text, label, onClick, tab) => ({ kind, text, label: label || null, onClick: onClick || null, tab: tab || null });
+      if (!c) {
+        const T0 = Vectura.PlotterTransports;
+        const supported = !!(T0 && T0.WebSerialTransport && T0.WebSerialTransport.isSupported());
+        return supported
+          ? T('connect', 'Connect your plotter', 'Connect', () => this.headerConnect(), 'connect')
+          : T('connect', 'Connect your plotter, or practice with the simulator', 'Go to Connect', go('connect'), 'connect');
+      }
+      if (c.state === 'connecting') return T('connecting', 'Connecting…', null, null, 'connect');
+      if (c.state === 'alarm') {
+        const a = session.alarm || {};
+        return a.positionLost
+          ? T('alarm', 'Position lost. Power-cycle the plotter, reconnect, then set the origin again.', null, null, 'plot')
+          : T('alarm', `${a.message || 'The plotter is in alarm.'} Check the pen is clear of the paper, then unlock.`, 'Unlock', () => this.guard(() => c.unlock()), 'plot');
+      }
+      if (c.state === 'penChange') {
+        const pc = session.penChange;
+        const pen = pc && (pc.pen && pc.pen.pen ? pc.pen.pen : (pc.pen || {}));
+        return T('penChange', `Insert ${(pen && (pen.name || pen.id)) || 'the next pen'}`, 'Continue', () => this.guard(() => c.continuePenChange()), 'plot');
+      }
+      if (c.state === 'running' || c.state === 'paused') {
+        const pct = clampNum(p.percent, 0, 100, 0);
+        const txt = `${c.state === 'paused' ? 'Paused' : 'Plotting'}: ${pct}% · path ${Math.min((p.pathIndex || 0) + 1, p.pathCount || 0)} of ${p.pathCount || 0}`;
+        return c.state === 'paused'
+          ? T('running', txt, 'Resume', () => this.guard(() => c.resume()), 'plot')
+          : T('running', txt, 'Pause', () => this.guard(() => c.pause()), 'plot');
+      }
+      if (c.state === 'stopping') return T('stopping', 'Stopping…', null, null, 'plot');
+      if (f.cornerBlocked) return T('corner', 'Confirm the start corner before moving the plotter.', null, null, 'connect');
+      if (session.wcoMismatch) {
+        return T('wco', "The plotter's origin doesn't match what was set. Set the origin again.", 'Set origin here', () => this.guard(() => c.setOrigin()), 'machine');
+      }
+      if (!f.sim && !f.cal.axisChecked) return T('axis', 'Check the axes (one-time)', 'Start axis check', startCheck('axis'), 'machine');
+      if (!f.sim && !f.cal.penHeightChecked) return T('pen', 'Find the pen height (one-time)', 'Start pen height check', startCheck('pen'), 'machine');
+      if (!f.originDone && !session.useMachineZero) {
+        const text = "Jog the pen to the sheet's top-left corner, then set the origin";
+        return this.tab === 'machine'
+          ? T('origin', text, 'Set origin here', () => this.guard(() => c.setOrigin()), 'machine')
+          : T('origin', text, 'Go to Machine', go('machine'), 'machine');
+      }
+      if (f.oob) return T('oob', "The plot doesn't fit — adjust placement", 'Go to Setup', go('setup'), 'setup');
+      if (this.s.building) return T('building', 'Preparing the plot…', null, null, 'setup');
+      if (!this.s.job || !this.s.job.pens || !this.s.job.pens.length) return T('empty', 'Nothing to plot yet. Add a layer in the main window, then refresh.', 'Go to Setup', go('setup'), 'setup');
+      const why = this.startBlockers();
+      if (why.length) return T('blocked', why[0], null, null, 'plot');
+      return T('ready', 'Ready to plot', 'Start plot', () => { this.showTab('plot'); this.startPlot(); }, 'plot');
+    }
+
+    headerConnect() {
+      const c = liveController();
+      if (c) return this.disconnect();
+      const g = this.s.granted || [];
+      return this.connectUsb(g.length ? { port: g[0] } : {});
+    }
+
+    // Disconnect, then connect again (the start-corner steps end here).
+    async reconnect() {
+      const sim = session.kind === 'sim';
+      await this.disconnect();
+      if (this.destroyed) return;
+      if (sim) { this.connectSim(); return; }
+      const g = this.s.granted || [];
+      if (g.length) this.connectUsb({ port: g[0] });
+      else this.liveNote.textContent = 'Disconnected. Press Connect when the plotter is powered on.';
+    }
+
+    // Moves to a tab only on success, never while the user is typing in a field.
+    advance(tab, msg) {
       const ae = document.activeElement;
-      if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) { ae.blur(); return; }
-      this.requestClose();
+      if (isTypingTarget(ae) && this.root && this.root.contains(ae)) return false;
+      this.showTab(tab);
+      if (msg) this.liveNote.textContent = msg;
+      return true;
+    }
+
+    evaluateAdvance() {
+      if (!this.s.pendingOriginAdvance || this.destroyed) return;
+      const c = liveController();
+      if (!c || !c.originSet || this.tab !== 'machine') { this.s.pendingOriginAdvance = false; return; }
+      const f = this.flow();
+      if (!f.calDone) { this.s.pendingOriginAdvance = false; return; }
+      if (this.s.building || (this.s.job && !this.jobReady())) return; // wait for the job to land
+      this.s.pendingOriginAdvance = false;
+      const job = this.s.job;
+      if (!job || !job.pens || !job.pens.length || (job.bounds && !job.bounds.ok)) {
+        this.advance('setup', "Origin set. The plot doesn't fit or is not ready yet: check placement on the Setup tab.");
+      } else this.advance('plot', 'Origin set. Next: Plot. Press Start plot when ready.');
     }
 
     showTab(id) {
@@ -984,6 +1191,8 @@
       if (id === 'machine' || id === 'console') this.mountTool(id);
       if (id === 'setup' || id === 'plot') this.previews.forEach((p) => p.invalidate());
       if (id === 'plot') this.renderPlot();
+      this.renderBanner();
+      this.renderTabs();
     }
 
     mountTool(id) {
@@ -1008,7 +1217,7 @@
       }
     }
 
-    // ---- header: state pill, Stop, run bar, close ----
+    // ---- header command bar: one row, never scrolls ----
     renderHeader() {
       if (!this.head) return;
       const c = liveController();
@@ -1016,23 +1225,114 @@
       const profile = this.profile();
       this.head.textContent = '';
       this.pill = h('span', { class: `stp-pill is-${state}`, role: 'status', 'aria-live': 'polite', dataset: { state }, text: STATE_LABEL[state] || state });
-      const stop = btn('Stop', () => this.stopJob(), 'stp-stop', { 'aria-label': 'Stop the plot (Escape)', hidden: !ACTIVE_STATES.includes(state) && state !== 'stopping', disabled: state === 'stopping' });
-      stop.id = 'stp-stop';
+      // compact live readout: WPos (MPos on hover)
+      const mk = (k) => h('span', { class: 'stp-ro-cell' }, h('span', { class: 'stp-ro-ax', text: k.toUpperCase() }), h('span', { class: 'stp-ro-val', dataset: { stpPos: `wpos-${k}` }, text: '–' }));
+      this.readoutEl = h('span', { class: 'stp-readout', id: 'stp-readout', hidden: !c, 'aria-label': 'Work position in millimeters' }, mk('x'), mk('y'), mk('z'));
+      this.stopEl = h('button', { type: 'button', class: 'stp-btn stp-stop', id: 'stp-stop', 'aria-label': 'Emergency stop (Space or Escape)', hidden: !c }, 'EMERGENCY STOP');
+      this.stopEl.addEventListener('pointerdown', (e) => { if (e.preventDefault) e.preventDefault(); this.stopAt = Date.now(); this.emergencyStop(); });
+      this.stopEl.addEventListener('click', () => { if (Date.now() - (this.stopAt || 0) > 700) this.emergencyStop(); });
+      const g = this.s.granted || [];
+      const T0 = Vectura.PlotterTransports;
+      const supported = !!(T0 && T0.WebSerialTransport && T0.WebSerialTransport.isSupported());
+      const connLabel = c ? 'Disconnect' : (state === 'connecting' || this.s.connectBusy ? 'Connecting…' : (g.length ? 'Reconnect' : 'Connect'));
+      const connBtn = btn(connLabel, () => this.headerConnect(), c ? 'stp-hdr-conn is-warn' : 'stp-hdr-conn is-primary', {
+        id: c ? 'stp-hdr-disconnect' : 'stp-hdr-connect',
+        disabled: c ? (isActiveJob() || state === 'stopping') : (!supported || this.s.connectBusy),
+        title: c ? (isActiveJob() ? 'Stop the job before disconnecting' : null) : (!supported ? 'Use Chrome or Edge, or try the simulator on the Connect tab' : null),
+      });
       this.head.append(
         h('h2', { class: 'stp-title', text: 'Send to Plotter' }),
         h('span', { class: 'stp-profile-name', text: session.kind === 'sim' && c ? `${profile.name} (simulator)` : profile.name }),
         this.pill,
+        this.readoutEl,
         h('span', { class: 'stp-spacer' }),
-        stop,
+        connBtn,
+        this.stopEl,
         btn('Close', () => this.requestClose(), 'stp-close', { 'aria-label': 'Close Send to Plotter' }),
       );
+      this.updateStop();
+      this.renderReadout();
+      this.renderBanner();
+      this.renderRunbar();
+      this.renderTabs();
+    }
+
+    // E-STOP: large red while motion is possible or in progress, neutral otherwise.
+    updateStop() {
+      if (!this.stopEl) return;
+      const armed = this.isMoving();
+      this.stopEl.classList.toggle('is-armed', armed);
+      this.stopEl.dataset.armed = armed ? 'true' : 'false';
+      this.stopEl.hidden = !liveController();
+      this.stopEl.disabled = false;
+    }
+
+    renderReadout() {
+      if (!this.readoutEl) return;
+      const st = session.status;
+      const w = st && st.wpos;
+      ['x', 'y', 'z'].forEach((k) => {
+        const el = this.readoutEl.querySelector(`[data-stp-pos="wpos-${k}"]`);
+        if (el) el.textContent = w && isNum(w[k]) ? w[k].toFixed(2) : '–';
+      });
+      const m = st && st.mpos;
+      this.readoutEl.title = m && isNum(m.x) ? `Machine position  X ${fmtN(m.x, 2)}  Y ${fmtN(m.y, 2)}  Z ${fmtN(m.z, 2)}` : 'Machine position unknown';
+    }
+
+    // ---- next-step banner, start-corner card, close confirmation ----
+    renderBanner() {
+      if (!this.banner || this.destroyed) return;
+      const el = this.banner;
+      el.textContent = '';
+      const c = liveController();
       if (this.s.confirmClose) {
-        this.head.appendChild(h('div', { class: 'stp-confirm', role: 'alertdialog', 'aria-label': 'Close while plotting' },
+        el.appendChild(h('div', { class: 'stp-confirm', role: 'alertdialog', 'aria-label': 'Close while plotting' },
           h('span', { text: 'A plot is running. Closing this panel does not stop it; reopen Send to Plotter to watch or stop it.' }),
-          btn('Keep open', () => { this.s.confirmClose = false; this.renderHeader(); }, ''),
+          btn('Keep open', () => { this.s.confirmClose = false; this.renderBanner(); }, ''),
           btn('Close panel', () => { this.s.confirmClose = false; this.close(); }, 'is-warn', { id: 'stp-confirm-close' })));
       }
-      this.renderRunbar();
+      if (this.s.bannerErr) {
+        el.appendChild(h('div', { class: 'stp-banner-err', id: 'stp-banner-err', role: 'alert' },
+          h('span', { text: this.s.bannerErr }),
+          btn('Dismiss', () => { this.s.bannerErr = null; this.renderBanner(); }, 'is-link')));
+      }
+      if (cornerUnconfirmed(c) && c.state !== 'connecting') {
+        const card = h('div', { class: 'stp-corner', id: 'stp-corner', role: 'group', 'aria-label': 'Start corner' },
+          h('strong', { class: 'stp-corner-q', text: 'Was the carriage at its start corner when you connected?' }),
+          h('p', { class: 'stp-hint', text: 'The plotter measures its limits from that point. Until you confirm, motion is limited to ±15 mm.' }),
+          h('div', { class: 'stp-btnrow' },
+            btn('Yes, it was', () => this.confirmCorner(), 'is-primary', { id: 'stp-corner-yes' }),
+            btn('No / not sure', () => { this.s.cornerHelp = true; this.renderBanner(); }, '', { id: 'stp-corner-no' })));
+        if (this.s.cornerHelp) {
+          card.appendChild(h('ol', { class: 'stp-corner-steps', id: 'stp-corner-steps' },
+            h('li', { text: 'Power the plotter off.' }),
+            h('li', { text: 'Move the carriage gently to the start corner (the top-left home position).' }),
+            h('li', { text: 'Power it on again.' }),
+            h('li', { text: 'Press Reconnect.' })));
+          card.appendChild(h('div', { class: 'stp-btnrow' }, btn('Reconnect', () => { this.s.cornerHelp = false; this.reconnect(); }, 'is-primary', { id: 'stp-corner-reconnect' })));
+        }
+        el.appendChild(card);
+      } else {
+        const step = this.nextStep();
+        const row = h('div', { class: `stp-step is-${step.kind}`, id: 'stp-next-step' },
+          h('span', { class: 'stp-step-lbl', text: 'Next' }),
+          h('span', { class: 'stp-step-text', id: 'stp-banner-text', text: step.text }));
+        if (step.label && step.onClick) row.appendChild(btn(step.label, step.onClick, 'is-primary', { id: 'stp-banner-action' }));
+        el.appendChild(row);
+      }
+      el.appendChild(this.liveNote);
+    }
+
+    confirmCorner() {
+      const c = liveController();
+      if (!c || typeof c.confirmMachineCorner !== 'function') return Promise.resolve();
+      let r;
+      try { r = c.confirmMachineCorner(); } catch (e) { r = Promise.reject(e); }
+      return Promise.resolve(r).then(() => {
+        this.s.cornerHelp = false;
+        this.s.bannerErr = null;
+        notify('corner');
+      }, (e) => { this.s.bannerErr = (e && e.message) || String(e); this.renderBanner(); });
     }
 
     renderRunbar() {
@@ -1071,6 +1371,7 @@
 
     refreshLive() {
       this.previews.forEach((p) => p.invalidate());
+      this.renderReadout();
       this.renderRunbar();
       ['machine', 'console'].forEach((k) => { if (this.tools[k] && this.tab === k) { try { this.tools[k].update(); } catch (e) { /* ignore */ } } });
       if (this.tab === 'plot') this.renderPlotLive();
@@ -1080,8 +1381,13 @@
       if (this.destroyed) return;
       const w = whats || new Set(['all']);
       this.renderHeader();
-      if (w.has('all') || w.has('state') || w.has('connected') || w.has('disconnected') || w.has('connecting') || w.has('error') || w.has('origin') || w.has('profile') || w.has('alarm')) {
+      if (w.has('all') || w.has('state') || w.has('connected') || w.has('disconnected') || w.has('connecting') || w.has('error') || w.has('origin') || w.has('profile') || w.has('alarm') || w.has('corner') || w.has('wco')) {
         this.renderConnect();
+      }
+      if (w.has('disconnected')) { this.s.manualMoving = false; this.s.bannerErr = null; this.s.cornerHelp = false; }
+      if (w.has('origin')) { const cc = liveController(); this.s.pendingOriginAdvance = !!(cc && cc.originSet); if (this.s.pendingOriginAdvance) this.s.bannerErr = null; }
+      if (w.has('connected') && this.tab === 'connect' && liveController()) {
+        this.advance('machine', "Connected. Next: Machine \u2014 jog the pen to the sheet's top-left corner and set the origin.");
       }
       if (w.has('connected') || w.has('disconnected') || w.has('origin') || w.has('profile') || w.has('all')) this.scheduleRecompute();
       this.renderPlot();
@@ -1090,6 +1396,14 @@
       this.previews.forEach((p) => p.invalidate());
       // Needs attention: bring Plot forward for a pen change or alarm.
       if ((w.has('penChange') || w.has('alarm')) && this.tab !== 'plot') this.showTab('plot');
+      if (w.has('jogstop') && session.jogStop) {
+        const why = session.jogStop.reason;
+        this.liveNote.textContent = why === 'deadman' ? 'Jog stopped: the pointer was released or lost.' : why === 'max-hold' ? 'Jog stopped: the hold reached its time limit.' : 'Jog stopped.';
+      }
+      if (w.has('estop')) this.liveNote.textContent = 'Emergency stop active.';
+      this.updateStop();
+      this.renderTabs();
+      this.evaluateAdvance();
     }
 
     // ---- geometry + job ----
@@ -1146,6 +1460,7 @@
           if (!this.s.jobError || /^Could not build/.test(this.s.jobError)) this.s.jobError = null;
         }
         this.renderStats(); this.renderPlot(); this.previews.forEach((p) => p.invalidate());
+        this.renderTabs(); this.renderBanner(); this.evaluateAdvance();
       };
       const opts = jobOptions();
       const threshold = isNum(opts.asyncPointThreshold) ? opts.asyncPointThreshold : ASYNC_POINT_THRESHOLD;
@@ -1199,35 +1514,44 @@
         job: job ? paperJobOf(job, ax) : null,
         doc, live,
         showTravel: this.settings().showTravel,
+        margin: isNum(profile.limits && profile.limits.edgeMargin) ? profile.limits.edgeMargin : 0,
         overflow: !!(job && job.bounds && !job.bounds.ok),
       };
     }
 
-    // Why Start is unavailable; empty array = ready.
-    startBlockers() {
+    // Why Start is unavailable (with the tab that fixes it); empty array = ready.
+    startBlockerItems() {
       const c = liveController();
       const out = [];
+      const add = (text, tab) => out.push({ text, tab: tab || null });
       const sim = session.kind === 'sim';
-      if (!c) { out.push('Connect to a plotter first (Connect tab).'); return out; }
-      if (this.s.building || (this.s.job && this.s.jobKey !== this.jobKey())) out.push('Preparing the plot…');
-      if (c.state !== 'idle') out.push(`The plotter is ${STATE_LABEL[c.state] ? STATE_LABEL[c.state].toLowerCase() : c.state}.`);
+      if (!c) { add('Connect to a plotter first (Connect tab).', 'connect'); return out; }
+      if (this.s.building || (this.s.job && this.s.jobKey !== this.jobKey())) add('Preparing the plot\u2026');
+      if (cornerUnconfirmed(c)) add('Confirm the plotter was at its start corner (see the card at the top).');
+      if (c.state !== 'idle') add(`The plotter is ${STATE_LABEL[c.state] ? STATE_LABEL[c.state].toLowerCase() : c.state}.`);
       const job = this.s.job;
-      if (!job || !job.pens || !job.pens.length) out.push('There is nothing to plot. Add geometry or enable a pen.');
-      if (job && job.bounds && !job.bounds.ok) out.push(this.overflowMessage(job.bounds));
-      if (!c.originSet && !sim && !session.useMachineZero) out.push('Set the origin first (Machine tab), or tick "Use machine zero".');
+      if (!job || !job.pens || !job.pens.length) add('There is nothing to plot. Add geometry or enable a pen.', 'setup');
+      if (job && job.bounds && !job.bounds.ok) add(this.overflowMessage(job.bounds), 'setup');
+      if (!c.originSet && !sim && !session.useMachineZero) add('Set the origin first (Machine tab), or tick "Use machine zero".', 'machine');
       if (!sim) {
         const cal = this.calibration();
-        if (!cal.axisChecked) out.push('Run the Axis check once (Machine tab).');
-        if (!cal.penHeightChecked) out.push('Run the Pen height check once (Machine tab).');
+        if (!cal.axisChecked) add('Run the Axis check once (Machine tab).', 'machine');
+        if (!cal.penHeightChecked) add('Run the Pen height check once (Machine tab).', 'machine');
       }
-      if (this.s.altJob && this.s.altJob.job.bounds && !this.s.altJob.job.bounds.ok) out.push('The test pattern does not fit the work area.');
+      if (this.s.altJob && this.s.altJob.job.bounds && !this.s.altJob.job.bounds.ok) add('The test pattern does not fit the work area.', 'setup');
       return out;
     }
+
+    startBlockers() { return this.startBlockerItems().map((i) => i.text); }
 
     overflowMessage(b) {
       const parts = [];
       ['left', 'right', 'top', 'bottom'].forEach((k) => { if (b.overflow && b.overflow[k] > 0) parts.push(`${k} ${fmtN(b.overflow[k], 1)} mm`); });
-      return `Out of bounds: the plot extends past the work area (${parts.join(', ')}). Move, scale or rotate it.`;
+      const lim = (this.profile() || {}).limits || {};
+      const margin = isNum(lim.edgeMargin) && lim.edgeMargin > 0 ? lim.edgeMargin : 0;
+      const within = margin > 0 && ['left', 'right', 'top', 'bottom'].every((k) => !(b.overflow && b.overflow[k] > margin + 1e-6));
+      const note = within ? ` (${fmtN(margin, 1)} mm safety margin from the frame)` : '';
+      return `Out of bounds: the plot extends past the work area${note} (${parts.join(', ')}). Move, scale or rotate it.`;
     }
   }
 
@@ -1287,7 +1611,7 @@
         const t = new T.WebSerialTransport({ profile: this.profile() });
         this.s.granted = await t.getGrantedPorts();
       } catch (e) { this.s.granted = []; }
-      if (!this.destroyed && !liveController()) this.renderConnect();
+      if (!this.destroyed && !liveController()) { this.renderConnect(); this.renderHeader(); }
     },
 
     renderConnect() {
@@ -1305,29 +1629,43 @@
           h('span', { text: ' This browser has no Web Serial support. You can still try everything with the simulator.' })));
       }
 
-      // profile cards
+      // selected profile: one compact row; [Change] opens a small card grid
       const profiles = Store.allProfiles();
       const cur = this.profile();
-      const cards = h('div', { class: 'stp-cards', role: 'radiogroup', 'aria-label': 'Plotter profile' });
-      profiles.forEach((p) => {
-        const kind = p.user ? 'custom' : (p.tested ? 'tested' : 'untested');
-        const selected = p.id === cur.id;
-        const card = h('button', {
-          type: 'button', class: `stp-card${selected ? ' is-current' : ''}`, role: 'radio', 'aria-checked': String(selected),
-          style: `--stp-card-color:${CARD_COLORS[kind]}`, dataset: { profileId: p.id }, disabled: !!c && !selected,
-          title: c && !selected ? 'Disconnect to change the plotter profile' : null,
-          onclick: () => { this.saveSettings({ profileId: p.id }); this.s.profileErrors = null; this.renderConnect(); this.renderHeader(); this.previews.forEach((x) => x.invalidate()); },
-        },
-        h('span', { class: 'stp-card-preview' }, bedIcon(p)),
-        h('span', { class: 'stp-card-name' }, h('i', { class: 'stp-card-dot' }), p.name),
-        h('span', { class: 'stp-card-tag', text: `${fmtN(p.workArea.width, 0)} × ${fmtN(p.workArea.height, 0)} mm · ${p.pen.mechanism === 'z' ? 'Z-axis pen' : p.pen.mechanism === 'servo' ? 'Servo pen' : 'Custom pen'}` }),
-        h('span', { class: `stp-badge is-${kind}`, text: kind === 'tested' ? 'Tested' : kind === 'custom' ? 'Custom' : 'Untested profile' }),
-        h('span', { class: 'stp-current-marker', text: 'SELECTED' }));
-        cards.appendChild(card);
-      });
-      el.appendChild(section('Plotter profile', cards, this.profileTools(cur, !!c)));
+      const kindOf = (p) => (p.user ? 'custom' : (p.tested ? 'tested' : 'untested'));
+      const kindText = (k) => (k === 'tested' ? 'Tested' : k === 'custom' ? 'Custom' : 'Untested profile');
+      const sizeText = (p) => `${fmtN(p.workArea.width, 0)} \u00d7 ${fmtN(p.workArea.height, 0)} mm \u00b7 ${p.pen.mechanism === 'z' ? 'Z-axis pen' : p.pen.mechanism === 'servo' ? 'Servo pen' : 'Custom pen'}`;
+      const curKind = kindOf(cur);
+      const selRow = h('div', { class: 'stp-selrow', id: 'stp-selected-profile', style: `--stp-card-color:${CARD_COLORS[curKind]}` },
+        h('span', { class: 'stp-selrow-icon' }, bedIcon(cur)),
+        h('span', { class: 'stp-selrow-name', text: cur.name }),
+        h('span', { class: 'stp-hint', text: sizeText(cur) }),
+        h('span', { class: `stp-badge is-${curKind}`, text: kindText(curKind) }),
+        h('span', { class: 'stp-spacer' }),
+        btn(this.s.profilePicker ? 'Done' : 'Change', () => { this.s.profilePicker = !this.s.profilePicker; this.renderConnect(); }, '', { id: 'stp-change-profile', disabled: !!c, title: c ? 'Disconnect to change the plotter profile' : null, 'aria-expanded': String(!!this.s.profilePicker) }));
+      const profSec = section('Plotter', selRow);
+      if (this.s.profilePicker && !c) {
+        const cards = h('div', { class: 'stp-cards', role: 'radiogroup', 'aria-label': 'Plotter profile' });
+        profiles.forEach((p) => {
+          const kind = kindOf(p);
+          const selected = p.id === cur.id;
+          cards.appendChild(h('button', {
+            type: 'button', class: `stp-card${selected ? ' is-current' : ''}`, role: 'radio', 'aria-checked': String(selected),
+            style: `--stp-card-color:${CARD_COLORS[kind]}`, dataset: { profileId: p.id },
+            onclick: () => { this.saveSettings({ profileId: p.id }); this.s.profileErrors = null; this.s.profilePicker = false; this.renderConnect(); this.renderHeader(); this.previews.forEach((x) => x.invalidate()); },
+          },
+          h('span', { class: 'stp-card-preview' }, bedIcon(p)),
+          h('span', { class: 'stp-card-name' }, h('i', { class: 'stp-card-dot' }), p.name),
+          h('span', { class: 'stp-card-tag', text: sizeText(p) }),
+          h('span', { class: `stp-badge is-${kind}`, text: kindText(kind) }),
+          h('span', { class: 'stp-current-marker', text: 'SELECTED' })));
+        });
+        profSec.appendChild(cards);
+      }
+      el.appendChild(profSec);
 
       el.appendChild(this.connectionSection(c, supported, cur));
+      el.appendChild(adv('profile', 'Profile settings', this.profileTools(cur, !!c)));
       el.scrollTop = keepScroll;
     },
 
@@ -1336,7 +1674,7 @@
       const bar = h('div', { class: 'stp-btnrow' });
       bar.appendChild(btn('Duplicate profile', () => {
         const dup = Store.duplicate(cur.id);
-        if (dup) { this.saveSettings({ profileId: dup.id }); this.s.profileOpen = true; this.renderConnect(); this.renderHeader(); }
+        if (dup) { this.saveSettings({ profileId: dup.id }); ADV_OPEN.profile = true; this.renderConnect(); this.renderHeader(); }
       }, '', { id: 'stp-duplicate', disabled: connected }));
       if (cur.user) {
         bar.appendChild(btn('Delete profile', () => {
@@ -1385,10 +1723,7 @@
         }
         grid.appendChild(h('label', { class: `stp-field${f.wide ? ' is-wide' : ''}` }, h('span', { class: 'stp-field-lbl', text: f.label }), control));
       });
-      const det = h('details', { class: 'stp-details', id: 'stp-profile-editor' }, h('summary', { text: 'Edit profile' }), grid, errBox);
-      if (this.s.profileOpen) det.open = true;
-      det.addEventListener('toggle', () => { this.s.profileOpen = det.open; });
-      wrap.appendChild(det);
+      wrap.appendChild(h('div', { id: 'stp-profile-editor' }, grid, errBox));
       return wrap;
     },
 
@@ -1410,13 +1745,7 @@
         sec.appendChild(bar);
         sec.appendChild(h('p', { class: 'stp-hint', id: 'stp-uuna-hint', text: "Close the UUNA app first — only one program can use the plotter's port." }));
 
-        const speed = h('input', { type: 'range', min: 1, max: 200, step: 1, value: String(session.simSpeed), 'aria-label': 'Simulator speed' });
-        const speedLbl = h('span', { class: 'stp-speed', text: `${session.simSpeed}×` });
-        speed.addEventListener('input', () => { session.simSpeed = Number(speed.value); speedLbl.textContent = `${session.simSpeed}×`; });
-        sec.appendChild(h('div', { class: 'stp-sim' },
-          h('div', { class: 'stp-btnrow' }, btn('Use simulator', () => this.connectSim(), '', { id: 'stp-connect-sim', disabled: busy })),
-          h('label', { class: 'stp-simspeed' }, h('span', { text: 'Speed' }), speed, speedLbl),
-          h('span', { class: 'stp-hint', text: 'The simulator is a virtual plotter. Nothing moves and no port is opened.' })));
+        sec.appendChild(this.simAdv(busy));
         return sec;
       }
 
@@ -1434,6 +1763,23 @@
         const o = c.originMachine || { x: 0, y: 0 };
         sec.appendChild(h('p', { class: 'stp-hint', text: `Origin set at machine position ${fmtN(o.x, 2)}, ${fmtN(o.y, 2)} mm.` }));
       }
+      sec.appendChild(this.fwAdv(c));
+      const active = isActiveJob();
+      sec.appendChild(h('div', { class: 'stp-btnrow' }, btn('Disconnect', () => this.disconnect(), 'is-warn', { id: 'stp-disconnect', disabled: active || state === 'stopping', title: active ? 'Stop the job before disconnecting' : null })));
+      return sec;
+    },
+
+    simAdv(busy) {
+        const speed = h('input', { type: 'range', min: 1, max: 200, step: 1, value: String(session.simSpeed), 'aria-label': 'Simulator speed' });
+        const speedLbl = h('span', { class: 'stp-speed', text: `${session.simSpeed}×` });
+        speed.addEventListener('input', () => { session.simSpeed = Number(speed.value); speedLbl.textContent = `${session.simSpeed}×`; });
+        return adv('sim', 'Practice with the simulator', h('div', { class: 'stp-sim' },
+          h('div', { class: 'stp-btnrow' }, btn('Use simulator', () => this.connectSim(), '', { id: 'stp-connect-sim', disabled: busy })),
+          h('label', { class: 'stp-simspeed' }, h('span', { text: 'Speed' }), speed, speedLbl),
+          h('span', { class: 'stp-hint', text: 'The simulator is a virtual plotter. Nothing moves and no port is opened.' })));
+    },
+
+    fwAdv(c) {
       const fw = c.firmware || {};
       const table = h('table', { class: 'stp-fw', 'aria-label': 'Firmware information' });
       const add = (k, v) => table.appendChild(h('tr', {}, h('th', { scope: 'row', text: k }), h('td', { text: v })));
@@ -1444,10 +1790,7 @@
         const v = c.fw ? c.fw[n] : undefined;
         add(`$${n} ${label}`, v === undefined ? 'not reported' : `${v}${unit ? ` ${unit}` : ''}`);
       });
-      sec.appendChild(table);
-      const active = isActiveJob();
-      sec.appendChild(h('div', { class: 'stp-btnrow' }, btn('Disconnect', () => this.disconnect(), 'is-warn', { id: 'stp-disconnect', disabled: active || state === 'stopping', title: active ? 'Stop the job before disconnecting' : null })));
-      return sec;
+      return adv('fw', 'Firmware details', table);
     },
 
     errorText(err) {
@@ -1531,15 +1874,13 @@
         optToggle('dedupe', 'Remove duplicate paths'),
         optToggle('sort', 'Sort to shorten travel'),
         optToggle('merge', 'Merge touching paths'));
-      const optimize = section('Optimize', optBody);
+      const optimize = adv('optimize', 'Optimization', optBody);
 
-      const options = section('Options',
-        row('Registration mark', ctlSwitch(s.registrationMark, (v) => this.saveSettings({ registrationMark: v }), 'Registration mark'), 'A 10 mm cross at the top-left, drawn by every pen, to check color alignment.'),
-        row('Air plot', ctlSwitch(s.airPlot, (v) => this.saveSettings({ airPlot: v }), 'Air plot'), 'Runs the whole job with the pen held up.'),
-        row('Return to origin', ctlSwitch(s.returnToOrigin, (v) => this.saveSettings({ returnToOrigin: v }), 'Return to origin'), 'After the last path, with the pen up.'),
-        field('Between pens', ctlSeg([{ value: 'pause', label: 'Pause for pen change' }, { value: 'continue', label: 'Keep going' }], s.penChange, (v) => this.saveSettings({ penChange: v }), 'Pen change behavior')));
+      const regmark = adv('regmark', 'Registration marks',
+        row('Registration mark', ctlSwitch(s.registrationMark, (v) => this.saveSettings({ registrationMark: v }), 'Registration mark'), 'A 10 mm cross at the top-left, drawn by every pen, to check color alignment.'));
+      const betweenPens = field('Between pens', ctlSeg([{ value: 'pause', label: 'Pause for pen change' }, { value: 'continue', label: 'Keep going' }], s.penChange, (v) => this.saveSettings({ penChange: v }), 'Pen change behavior'));
 
-      left.append(place, section('Pens', this.penBox), optimize, options, section('Estimate', this.statsEl));
+      left.append(place, section('Pens', this.penBox, betweenPens), optimize, regmark, section('Estimate', this.statsEl));
 
       // preview column
       this.setupPreview = new Preview(this);
@@ -1615,18 +1956,20 @@
             h('span', { class: 'stp-spacer' }),
             btn('↑', () => move(-1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} earlier`, disabled: idx === 0 }),
             btn('↓', () => move(1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} later`, disabled: idx === ids.length - 1 })),
-          h('div', { class: 'stp-pen-grid' },
+          h('div', { class: 'stp-pen-grid is-primary' },
             field('Draw speed (mm/min)', ctlNum(cfg.drawFeed, { ariaLabel: `${pen.name} draw speed`, min: 50, max: 20000, nullable: true, placeholder: prof.motion.drawFeed }, (v) => save({ drawFeed: v }))),
-            field('Pen-down height (mm)', ctlNum(cfg.down, { ariaLabel: `${pen.name} pen-down height`, min: 0, max: 12, step: 0.05, nullable: true, placeholder: prof.pen.down }, (v) => save({ down: v }))),
-            field('Down dwell (s)', ctlNum(cfg.downDelay, { ariaLabel: `${pen.name} down dwell`, min: 0, max: 10, step: 0.05, nullable: true, placeholder: prof.pen.downDelay }, (v) => save({ downDelay: v }))),
-            field('Passes', ctlNum(cfg.passes, { ariaLabel: `${pen.name} passes`, min: 1, max: 10, step: 1, fallback: 1 }, (v) => save({ passes: Math.round(v) }))),
-            field('Path order', (() => {
-              const sel = h('select', { class: 'stp-in', 'aria-label': `${pen.name} path order` }, ORDER_MODES.map((m) => h('option', { value: m, text: m[0].toUpperCase() + m.slice(1) })));
-              sel.value = cfg.order;
-              sel.addEventListener('change', () => save({ order: sel.value }));
-              return sel;
-            })())),
-          h('details', { class: 'stp-details' }, h('summary', { text: 'Reload / dip (brush, ink)' }),
+            field('Pen-down height (mm)', ctlNum(cfg.down, { ariaLabel: `${pen.name} pen-down height`, min: 0, max: 12, step: 0.05, nullable: true, placeholder: prof.pen.down }, (v) => save({ down: v })))),
+          adv(`pen-more-${id}`, 'More',
+            h('div', { class: 'stp-pen-grid' },
+              field('Down dwell (s)', ctlNum(cfg.downDelay, { ariaLabel: `${pen.name} down dwell`, min: 0, max: 10, step: 0.05, nullable: true, placeholder: prof.pen.downDelay }, (v) => save({ downDelay: v }))),
+              field('Passes', ctlNum(cfg.passes, { ariaLabel: `${pen.name} passes`, min: 1, max: 10, step: 1, fallback: 1 }, (v) => save({ passes: Math.round(v) }))),
+              field('Path order', (() => {
+                const sel = h('select', { class: 'stp-in', 'aria-label': `${pen.name} path order` }, ORDER_MODES.map((m) => h('option', { value: m, text: m[0].toUpperCase() + m.slice(1) })));
+                sel.value = cfg.order;
+                sel.addEventListener('change', () => save({ order: sel.value }));
+                return sel;
+              })())),
+            h('p', { class: 'stp-sub-lbl', text: 'Reload / dip (brush, ink)' }),
             h('div', { class: 'stp-pen-grid' },
               field('Reload every (mm, 0 = off)', ctlNum(rl.everyMm, { ariaLabel: `${pen.name} reload distance`, min: 0, max: 100000, fallback: 0 }, (v) => saveReload({ everyMm: v }))),
               field('Dips', ctlNum(rl.dips, { ariaLabel: `${pen.name} dips`, min: 1, max: 20, step: 1, fallback: 1 }, (v) => saveReload({ dips: Math.round(v) }))),
@@ -1699,10 +2042,10 @@
         frame: btn('Frame', () => this.runFrame(), '', { id: 'stp-frame', title: 'Trace the plot outline with the pen up' }),
         scale: btn('Scale check', () => this.runScaleCheck(), '', { id: 'stp-scale-check', title: 'Draw a 100 mm square with a cross, to measure with a ruler' }),
       };
-      const tools = section('Test and check',
+      const tools = adv('tests', 'Tests & checks',
         h('div', { class: 'stp-btnrow' }, this.auxBtns.frame, this.auxBtns.scale),
         h('p', { class: 'stp-hint', text: 'Frame moves the pen up around the outline of your plot. Scale check draws a 100 mm square and a cross.' }),
-        h('h4', { class: 'stp-sub', text: 'Test swatches (speed × pen-down height)' }),
+        h('p', { class: 'stp-sub-lbl', text: 'Test swatches (speed × pen-down height)' }),
         h('div', { class: 'stp-fields' },
           inp('rows', 'Speeds (mm/min, rows)'), inp('cols', 'Pen-down heights (mm, columns)'), field('Pattern', pattern),
           inp('size', 'Patch size (mm)', { num: true }), inp('offsetX', 'Offset X (mm)', { num: true }), inp('offsetY', 'Offset Y (mm)', { num: true })),
@@ -1714,9 +2057,9 @@
         this.plotDyn,
         section('Run options',
           row('Air plot', ctlSwitch(s.airPlot, (v) => this.saveSettings({ airPlot: v }), 'Air plot'), 'Pen stays up. Good for a dry run.'),
-          row('Return to origin', ctlSwitch(s.returnToOrigin, (v) => this.saveSettings({ returnToOrigin: v }), 'Return to origin')),
-          mzRow),
-        tools);
+          row('Return to origin', ctlSwitch(s.returnToOrigin, (v) => this.saveSettings({ returnToOrigin: v }), 'Return to origin'))),
+        tools,
+        adv('plot-adv', 'Advanced', mzRow));
       pane.appendChild(h('div', { class: 'stp-plot' }, left, h('div', { class: 'stp-previewcol' }, this.plotPreview.el)));
       this.renderPlot();
     },
@@ -1761,21 +2104,18 @@
 
       const active = ACTIVE_STATES.includes(state);
       if (!active && state !== 'stopping') {
-        // readiness checklist
-        const cal = this.calibration();
-        const list = h('ul', { class: 'stp-checklist', id: 'stp-checklist' });
-        list.appendChild(this.checkItem(!!c, c ? 'Connected' : 'Not connected', c ? null : btn('Connect', () => this.showTab('connect'), 'is-link')));
-        list.appendChild(this.checkItem(!!(c && (c.originSet || sim || session.useMachineZero)), sim ? 'Origin (not needed in the simulator)' : 'Origin set', (!c || c.originSet || sim) ? null : btn('Set origin', () => this.showTab('machine'), 'is-link')));
-        list.appendChild(this.checkItem(!(job && job.bounds && !job.bounds.ok), 'Plot fits the work area', job && job.bounds && !job.bounds.ok ? btn('Adjust placement', () => this.showTab('setup'), 'is-link') : null));
-        list.appendChild(this.checkItem(sim || cal.axisChecked, sim ? 'Axis check (skipped in the simulator)' : 'Axis check done', (sim || cal.axisChecked) ? null : btn('Open Machine tab', () => this.showTab('machine'), 'is-link')));
-        list.appendChild(this.checkItem(sim || cal.penHeightChecked, sim ? 'Pen height check (skipped in the simulator)' : 'Pen height check done', (sim || cal.penHeightChecked) ? null : btn('Open Machine tab', () => this.showTab('machine'), 'is-link')));
-        el.appendChild(list);
-
+        // giant Start; every reason it cannot start links to the tab that fixes it
         const startBtn = btn(this.s.altJob ? 'Start artwork plot' : 'Start plot', () => this.startPlot(), 'is-primary stp-start', { id: 'stp-start', disabled: blockers.length > 0 });
         el.appendChild(h('div', { class: 'stp-btnrow' }, startBtn));
-        if (blockers.length) {
+        const items = this.startBlockerItems();
+        if (items.length) {
+          const TAB_LABEL = { connect: 'Connect', machine: 'Machine', setup: 'Setup' };
           const why = h('ul', { class: 'stp-why', id: 'stp-start-why' });
-          blockers.forEach((b) => why.appendChild(h('li', { text: b })));
+          items.forEach((it) => {
+            const li = h('li', { text: it.text });
+            if (it.tab) li.appendChild(btn(`Go to ${TAB_LABEL[it.tab] || it.tab}`, () => this.showTab(it.tab), 'is-link', { dataset: { fixTab: it.tab } }));
+            why.appendChild(li);
+          });
           el.appendChild(why);
         }
       }
@@ -1942,6 +2282,7 @@
       return Promise.resolve(p).catch((err) => {
         session.run = null;
         this.s.plotMsg = err.message;
+        if (err && err.code) this.s.bannerErr = err.message; // refusals (corner, position) show in the banner
         if (!this.destroyed) { this.renderPlot(); this.renderHeader(); }
       });
     },
@@ -1952,6 +2293,7 @@
       const sim = session.kind === 'sim';
       if (!c) return 'Connect to a plotter first (Connect tab).';
       if (c.state !== 'idle') return `The plotter is ${STATE_LABEL[c.state] ? STATE_LABEL[c.state].toLowerCase() : c.state}.`;
+      if (cornerUnconfirmed(c)) return 'Confirm the plotter was at its start corner first.';
       if (!(c.originSet || sim || session.useMachineZero)) return 'Set the origin first (Machine tab).';
       if (!sim && !(this.calibration().axisChecked && this.calibration().penHeightChecked)) return 'Run the Axis check and the Pen height check once (Machine tab).';
       return '';

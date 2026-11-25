@@ -60,7 +60,7 @@ describe('Send to Plotter panel', () => {
     click('#btn-send-to-plotter');
     expect(document.querySelector('.stp-dialog')).toBeTruthy();
     const tabs = Array.from(document.querySelectorAll('.stp-tab')).map((t) => t.dataset.tab);
-    expect(tabs).toEqual(['connect', 'setup', 'machine', 'plot', 'console']);
+    expect(tabs).toEqual(['connect', 'machine', 'setup', 'plot', 'console']); // session order (spec 12.1)
     click('[data-tab="machine"]');
     expect(document.querySelector('[data-pane="machine"]').hidden).toBe(false);
     expect(document.querySelector('[data-pane="machine"]').textContent.length).toBeGreaterThan(0);
@@ -90,6 +90,7 @@ describe('Send to Plotter panel', () => {
     await waitFor(() => document.getElementById('stp-connected'));
     const c = STP.getSession().controller;
     expect(c.state).toBe('idle');
+    if (c.confirmMachineCorner) await c.confirmMachineCorner();
     expect(document.getElementById('stp-origin-note')).toBeTruthy();
     expect(document.querySelector('.stp-pill').dataset.state).toBe('idle');
     await c.setOrigin();
@@ -132,7 +133,7 @@ describe('Send to Plotter panel', () => {
     expect(s.progress.percent).toBe(100);
     expect(s.controller.state).toBe('idle');
     expect(s.transport.getPolylines().length).toBeGreaterThan(0);
-    expect(document.getElementById('stp-stop')?.hidden ?? true).toBe(true);
+    expect(document.getElementById('stp-stop').dataset.armed).toBe('false'); // E-STOP stays, but is neutral while idle
   }, 40000);
 
 
@@ -144,7 +145,8 @@ describe('Send to Plotter panel', () => {
     click('#stp-connect-sim');
     await waitFor(() => STP.getSession().controller?.state === 'idle');
     const c = STP.getSession().controller;
-    await c.setOrigin();
+    if (c.confirmMachineCorner) await c.confirmMachineCorner();
+   await c.setOrigin();
     click('[data-tab="plot"]');
     await waitFor(() => { const s = document.getElementById('stp-start'); return s && !s.disabled; });
     click('#stp-start');
@@ -176,6 +178,7 @@ describe('Send to Plotter panel', () => {
     const c = STP.getSession().controller;
     if (c.state !== 'idle') await c.stop();
     await waitFor(() => c.state === 'idle');
+    if (c.confirmMachineCorner) await c.confirmMachineCorner();
     await c.setOrigin();
     const lines = ['G21', 'G90', 'G1 Z0 F5000',
       'G1 X10 Y10 F6000', 'G1 Z3.5 F5000', 'G1 X20 Y10 F3000', 'G1 Z0 F5000',
@@ -386,6 +389,7 @@ describe('Send to Plotter panel', () => {
       await STP.connectSession('sim', panel.profile());
       await waitFor(() => STP.getSession().controller?.state === 'idle');
       const c = STP.getSession().controller;
+      if (c.confirmMachineCorner) await c.confirmMachineCorner();
       await c.setOrigin();
       const settle = async () => {
         const t00 = Date.now();

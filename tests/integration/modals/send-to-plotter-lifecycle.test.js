@@ -33,6 +33,7 @@ describe('Send to Plotter lifecycle and gating', () => {
     await STP.connectSession('sim', STP.getPanel().profile());
     const c = STP.getSession().controller;
     await waitFor(() => c.state === 'idle');
+    if (c.confirmMachineCorner) await c.confirmMachineCorner();
     await c.setOrigin();
     return c;
   };

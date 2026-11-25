@@ -10,6 +10,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 #### Added
 - **Send to Plotter.** `File > Send to Plotter...` streams the document to a UUNATEK 3.0 (GRBL / DrawCore) pen plotter from Chrome or Edge over Web Serial, with a plotter profile and driver registry, per-pen speed, height, dwell, passes, brush re-dip and path order, jog and calibration wizards, a bounds-checked console, and a Simulator. User guide: `docs/plotter-send.md`; documented in the README (new Send to Plotter feature group), the in-app Help Guide and the shortcut list (Machine tab keys).
+- **Send to Plotter guided flow (v2).** Tabs now follow a session (1 Connect, 2 Machine, 3 Setup, 4 Plot, then Console as Advanced) with status glyphs and auto-advance; a persistent header carries the live WPos readout, Connect/Disconnect and an EMERGENCY STOP (Space or Escape); a Next-step banner and a start-corner confirmation card guide the session; rarely used controls sit in collapsed Advanced sections. While anything moves, the jog dial centre becomes a stop sign. Press-and-hold jogs use a deadman (keep-alive, ends on wheel, leave, blur, key, tab hidden) and key auto-repeat is ignored. Controller safety methods (`emergencyStop`, `confirmMachineCorner`, jog handles) are feature-detected.
 
 ### Touch: Shading row target fix (v1.5.30)
 
