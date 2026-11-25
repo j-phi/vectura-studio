@@ -773,6 +773,10 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Flaky-test cleanup
+- **Scene 3D group move arrow is reliable.** Dragging a combined shape's move arrow right after grabbing it no longer occasionally does nothing.
+- **Steadier CI.** Six intermittently failing tests now wait for the real condition (or tolerate real timing variance) and still fail when the feature breaks.
+
 ### Unreleased - Bottom pane tidy
 - **Document Overview no longer overlaps.** The stats and the Plot Physics table stack, and long values in the Mathematical Model wrap instead of widening the pane.
 - **Copy the Mathematical Model.** A Copy button at the top right of the formula block copies the formula, every value and the seed as plain text.

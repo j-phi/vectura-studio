@@ -35,13 +35,21 @@ const state = (page) => page.evaluate(() => {
   return { minX, maxX, t: bl.params.transform || null, hist: window.app.history.length,
     opA: JSON.stringify(eng.getLayerById(window.__a).params.transform), opB: JSON.stringify(eng.getLayerById(window.__b).params.transform) };
 });
+// The scene is quiet when no draft regen, release settle or worker compose is pending. A drag releases into an async
+// worker compose that swaps the draft ink for the exact ink later, so "the ink stopped changing for a moment" is not a
+// readiness signal: under load the draft sits still while the settle is still in flight.
+const sceneIdle = (page) => page.evaluate(() => {
+  const r = window.app.renderer; const g = window.app.engine.getLayerById(window.__gid);
+  return !r._sceneSettle && !r._sceneSettleAsync && r._sceneDragRegenRaf == null && !(g && g._sceneAsyncHandle);
+});
 const settle = async (page) => {
+  await expect.poll(() => sceneIdle(page), { timeout: 45000, intervals: [100, 250, 500] }).toBe(true);
   let prev = '';
   for (let i = 0; i < 25; i += 1) {
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(300);
     const s = await state(page);
     const cur = `${s.minX.toFixed(2)}|${s.maxX.toFixed(2)}`;
-    if (cur === prev && Number.isFinite(s.minX)) return s;
+    if (cur === prev && Number.isFinite(s.minX) && await sceneIdle(page)) return s;
     prev = cur;
   }
   throw new Error('scene never settled');
@@ -63,17 +71,23 @@ test('dragging the combined shape move arrow moves the whole carved shape (group
   const before = await settle(page);
   expect(before.t).toBeNull();
   await layoutStable(page);
-  const tip = await page.evaluate(() => {
-    const r = window.app.renderer; const g = r.getSceneObjectGizmo(r._sceneLightLayer());
+  const readTip = () => page.evaluate(() => {
+    const r = window.app.renderer; const layer = r._sceneLightLayer(); const g = r.getSceneObjectGizmo(layer);
+    if (!g) return null;
     const ax = g.axes.find((x) => x.key === 'x'); const rect = r.canvas.getBoundingClientRect(); const q = r.worldToScreen(ax.tip.x, ax.tip.y);
-    return { x: q.x + rect.left, y: q.y + rect.top, dirx: ax.dir.x, diry: ax.dir.y, s: r.scale };
+    const hit = r.hitSceneObjectGizmo(q.x, q.y, layer);
+    return { x: q.x + rect.left, y: q.y + rect.top, dirx: ax.dir.x, diry: ax.dir.y, s: r.scale, hit: hit ? `${hit.type}:${hit.axis}` : null };
   });
+  // the grab point must really hit the group's move arrow (gizmo built, canvas laid out, ink centre final)
+  await expect.poll(async () => (await readTip() || {}).hit, { timeout: 15000 }).toBe('move:x');
+  const tip = await readTip();
   await page.mouse.move(tip.x, tip.y);
   await page.mouse.down();
   await page.mouse.move(tip.x + tip.dirx * 20, tip.y + tip.diry * 20, { steps: 4 });
   await page.mouse.move(tip.x + tip.dirx * 50, tip.y + tip.diry * 50, { steps: 4 });
   await page.mouse.up();
   const after = await settle(page);
+  expect(after.t, 'the drag must write a group transform').not.toBeNull();
   expect(Math.abs(after.t.x)).toBeGreaterThan(5);
   expect(after.hist).toBe(before.hist + 1);
   expect(after.opA).toBe(before.opA);
@@ -84,4 +98,29 @@ test('dragging the combined shape move arrow moves the whole carved shape (group
   await page.evaluate(() => window.app.undo());
   const undone = await settle(page);
   expect(undone.t).toBeNull();
+});
+
+test('a regen between grabbing the move arrow and the first move does not kill the drag (group transform bag is lazy)', async ({ page }) => {
+  await open(page);
+  await settle(page);
+  await layoutStable(page);
+  const out = await page.evaluate(() => {
+    const r = window.app.renderer; const layer = r._sceneLightLayer(); const g = r.getSceneObjectGizmo(layer);
+    const ax = g.axes.find((x) => x.key === 'x'); const rect = r.canvas.getBoundingClientRect(); const q = r.worldToScreen(ax.tip.x, ax.tip.y);
+    const hit = r.hitSceneObjectGizmo(q.x, q.y, layer);
+    const cx = q.x + rect.left; const cy = q.y + rect.top;
+    const begun = r.beginSceneObjectGizmoDrag(hit, { clientX: cx, clientY: cy });
+    const grp = window.app.engine.getLayerById(window.__bg);
+    const hadBag = !!grp.params.transform;
+    delete grp.params.transform; // what a params normalize does to an identity bag after the grab
+    r._applySceneObjectGizmoDrag({ clientX: cx + ax.dir.x * 50, clientY: cy + ax.dir.y * 50 });
+    const alive = !!r._sceneObjectGizmoDrag;
+    const t = grp.params.transform || null;
+    r._endSceneObjectGizmoDrag();
+    return { begun, hadBag, alive, tx: t ? t.x : null };
+  });
+  expect(out.begun).toBe(true);
+  expect(out.hadBag).toBe(true);
+  expect(out.alive).toBe(true);
+  expect(Math.abs(out.tx)).toBeGreaterThan(5);
 });
