@@ -89,7 +89,7 @@ describe('curved CSG carve reads as a bowl / bore (U7c)', () => {
       const n = face.normalWorld;
       const poly = rec.faceIndexArrays[fi].map((k) => rec.projected[k]);
       const I = R.shade(n, { x: 0, y: 0, z: 0 }, pr.lights, { model: 'v2', eye: null, ambient: tone.ambient, bounce: tone.bounce }).L;
-      faces.push({ key: `${Math.round(n.x * 20)}_${Math.round(n.y * 20)}_${Math.round(n.z * 20)}`, I, band: R.band(I, tone), poly: withBox(poly) });
+      faces.push({ key: `${Math.round(n.x * 20)}_${Math.round(n.y * 20)}_${Math.round(n.z * 20)}`, n, I, band: R.band(I, tone), poly: withBox(poly) });
     });
     const count = {}; faces.forEach((f) => { count[f.key] = (count[f.key] || 0) + 1; });
     faces.forEach((f) => { f.plane = count[f.key] >= 100; });
@@ -154,8 +154,8 @@ describe('curved CSG carve reads as a bowl / bore (U7c)', () => {
     if (u < 0 || u > 1 || v < 0 || v > 1) return null;
     return { u, v, ang: Math.acos(Math.min(1, Math.abs(r.x * t.x + r.y * t.y) / (Math.hypot(r.x, r.y) * Math.hypot(t.x, t.y)))) * 180 / Math.PI };
   };
-  const bowlOf = (mapper, light) => {
-    const { g } = build({ cutter: 'sphere', yaw: -35, pitch: 30, mapper });
+  const bowlOf = (mapper, light, cutter = 'sphere') => {
+    const { g } = build({ cutter, yaw: -35, pitch: 30, mapper });
     const pr = params(g, light);
     const faces = bandedFaces(pr);
     return { pr, faces, bowl: faces.filter((f) => !f.plane), ink: polyline(fillInk(gen(pr))) };
@@ -257,5 +257,29 @@ describe('curved CSG carve reads as a bowl / bore (U7c)', () => {
     });
     expect(inn).toBeGreaterThan(200);
     expect(out / (inn + out)).toBeLessThanOrEqual(0.04);
+  });
+
+  // U7f — the bore follows the same rule: analytic circles (rings) and straight generators, no polygonal strokes.
+  ['hatch', 'crosshatch'].forEach((mapper) => {
+    test(`bore ${mapper}: strokes are smooth (max turning angle < 6 degrees) and clipped to the bore`, () => {
+      const { bowl: all, ink } = bowlOf(mapper, { az: 90, el: 30 }, 'cylinder');
+      const bowl = all.filter((f) => Math.abs(f.n.y) < 0.15); // the cylinder runs along world y: its wall faces have no y component
+      const r = maxTurn(bowl, ink);
+      require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `boreturn ${mapper} ${r.worst.toFixed(2)} strokes ${r.strokes}\n`);
+      const polysB = bowl.map((f) => f.poly);
+      const curved = ink.filter((p) => p.length >= 20 && covers(polysB, p[Math.floor(p.length / 2)].x, p[Math.floor(p.length / 2)].y)).length;
+      require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `borecurved ${mapper} ${curved}\n`);
+      expect(curved).toBeGreaterThanOrEqual(6); // the bore is ruled by long curved rings (previous build: straight flat hatch, 0)
+      expect(r.worst).toBeLessThan(6);
+      const polys = bowl.map((f) => f.poly);
+      let inn = 0; let out = 0;
+      ink.forEach((p) => {
+        const mid = p[Math.floor(p.length / 2)];
+        if (!covers(polys, mid.x, mid.y)) return;
+        p.forEach((q) => { if (covers(polys, q.x, q.y)) inn += 1; else out += 1; });
+      });
+      require('fs').appendFileSync(process.env.BOWL_LOG || '/dev/null', `boreclip ${mapper} ${(out / Math.max(1, inn + out)).toFixed(3)} n=${inn}\n`);
+      expect(out / (inn + out)).toBeLessThanOrEqual(0.04);
+    });
   });
 });

@@ -5641,7 +5641,7 @@
                   (W1.z - W0.z) * (W2.x - W0.x) - (W1.x - W0.x) * (W2.z - W0.z),
                   (W1.x - W0.x) * (W2.y - W0.y) - (W1.y - W0.y) * (W2.x - W0.x)) / 2;
                 const pa = Math.abs((P1.x - P0.x) * (P2.y - P0.y) - (P2.x - P0.x) * (P1.y - P0.y)) / 2;
-                tris.push({ t, band, wa, pa });
+                tris.push({ t, band, wa, pa, nrm: face.normalWorld });
                 for (let k = 0; k < 3; k += 1) {
                   const a = rec.world[t[k]]; const b = rec.world[t[(k + 1) % 3]];
                   const A = rec.projected[t[k]]; const B = rec.projected[t[(k + 1) % 3]];
@@ -5707,42 +5707,139 @@
               return { c, R, a: { x: ax.x / al, y: ax.y / al, z: ax.z / al } };
             })();
             const planeVals = (fam) => (tr) => tr.t.map((vi) => { const w = rec.world[vi]; return w.x * fam.n.x + w.y * fam.n.y + w.z * fam.n.z; });
-            if (sphereFit && typeof scene.projectWorld === 'function') {
-              const lines = (() => {
+            // U7f — a CYLINDRICAL carve (bore) gets the same treatment: axis from the wall normals (the direction they never
+            // point along), then a least-squares circle of the vertices projected across it. Rings are true circles at equal
+            // steps along the axis, crosshatch lines are true straight generators; both sampled, projected and depth-clipped.
+            const cylFit = (() => {
+              if (sphereFit) return null;
+              // Axis = the direction the wall normals never point along (smallest eigenvector of their covariance); a second pass
+              // keeps only the wall triangles, so a stray cap sliver cannot tilt it.
+              const axisOf = (keep) => {
+                const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+                tris.forEach((tr) => {
+                  const n = tr.nrm; if (!n || !keep(n)) return;
+                  const l = Math.hypot(n.x, n.y, n.z); if (!(l > 0.5)) return;
+                  const q = [n.x / l, n.y / l, n.z / l];
+                  for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) M[i][j] += tr.wa * q[i] * q[j];
+                });
+                const trc = M[0][0] + M[1][1] + M[2][2];
+                if (!(trc > 0)) return null;
+                let ax = [0.57735, 0.57735, 0.57735];
+                for (let it = 0; it < 200; it += 1) {
+                  const nx = [0, 0, 0];
+                  for (let i = 0; i < 3; i += 1) { nx[i] = trc * ax[i]; for (let j = 0; j < 3; j += 1) nx[i] -= M[i][j] * ax[j]; }
+                  const l = Math.hypot(nx[0], nx[1], nx[2]); if (!(l > 1e-12)) return null;
+                  ax = [nx[0] / l, nx[1] / l, nx[2] / l];
+                }
+                return { x: ax[0], y: ax[1], z: ax[2] };
+              };
+              let A = axisOf(() => true);
+              if (!A) return null;
+              A = axisOf((n) => Math.abs((n.x * A.x + n.y * A.y + n.z * A.z) / (Math.hypot(n.x, n.y, n.z) || 1)) < 0.25) || A;
+              // the wall normals must really be perpendicular to the axis (a flat or doubly curved patch is not a bore)
+              let perp = 0; let tot = 0;
+              tris.forEach((tr) => { const n = tr.nrm; if (!n) return; const l = Math.hypot(n.x, n.y, n.z); if (!(l > 0.5)) return; perp += tr.wa * Math.abs((n.x * A.x + n.y * A.y + n.z * A.z) / l); tot += tr.wa; });
+              if (!(tot > 0) || perp / tot > 0.03) return null;
+              const ref = Math.abs(A.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+              let U = { x: A.y * ref.z - A.z * ref.y, y: A.z * ref.x - A.x * ref.z, z: A.x * ref.y - A.y * ref.x };
+              const ul2 = Math.hypot(U.x, U.y, U.z); U = { x: U.x / ul2, y: U.y / ul2, z: U.z / ul2 };
+              const V3 = { x: A.y * U.z - A.z * U.y, y: A.z * U.x - A.x * U.z, z: A.x * U.y - A.y * U.x };
+              const seen = new Set(); const P = [];
+              // Only the wall triangles (normal ~perpendicular to the axis) sit on the cylinder; the odd cap sliver does not.
+              tris.forEach((tr) => { const n = tr.nrm; if (!n) return; const l = Math.hypot(n.x, n.y, n.z); if (!(l > 0.5) || Math.abs((n.x * A.x + n.y * A.y + n.z * A.z) / l) > 0.25) return; tr.t.forEach((vi) => { if (!seen.has(vi)) { seen.add(vi); const w = rec.world[vi]; P.push({ x: w.x * U.x + w.y * U.y + w.z * U.z, y: w.x * V3.x + w.y * V3.y + w.z * V3.z, h: w.x * A.x + w.y * A.y + w.z * A.z }); } }); });
+              if (P.length < 12) return null;
+              const N3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; const r3 = [0, 0, 0];
+              P.forEach((q) => { const row = [2 * q.x, 2 * q.y, 1]; const y = q.x * q.x + q.y * q.y; for (let i = 0; i < 3; i += 1) { r3[i] += row[i] * y; for (let j = 0; j < 3; j += 1) N3[i][j] += row[i] * row[j]; } });
+              for (let i = 0; i < 3; i += 1) {
+                let piv = i; for (let r = i + 1; r < 3; r += 1) if (Math.abs(N3[r][i]) > Math.abs(N3[piv][i])) piv = r;
+                if (Math.abs(N3[piv][i]) < 1e-9) return null;
+                [N3[i], N3[piv]] = [N3[piv], N3[i]]; [r3[i], r3[piv]] = [r3[piv], r3[i]];
+                for (let r = i + 1; r < 3; r += 1) { const f = N3[r][i] / N3[i][i]; for (let c2 = i; c2 < 3; c2 += 1) N3[r][c2] -= f * N3[i][c2]; r3[r] -= f * r3[i]; }
+              }
+              const xs = [0, 0, 0];
+              for (let i = 2; i >= 0; i -= 1) { let v = r3[i]; for (let j = i + 1; j < 3; j += 1) v -= N3[i][j] * xs[j]; xs[i] = v / N3[i][i]; }
+              const R2 = xs[2] + xs[0] * xs[0] + xs[1] * xs[1];
+              if (!(R2 > 0)) return null;
+              const R = Math.sqrt(R2);
+              let err = 0; let hMin = Infinity; let hMax = -Infinity;
+              P.forEach((q) => { const e = Math.hypot(q.x - xs[0], q.y - xs[1]) - R; err += e * e; hMin = Math.min(hMin, q.h); hMax = Math.max(hMax, q.h); });
+              if (Math.sqrt(err / P.length) > 0.004 * R || !(hMax > hMin)) return null;
+              const O = { x: xs[0] * U.x + xs[1] * V3.x, y: xs[0] * U.y + xs[1] * V3.y, z: xs[0] * U.z + xs[1] * V3.z };
+              return { O, A, U, V: V3, R, hMin, hMax };
+            })();
+            // One descriptor per analytic surface: pointAt(a, b) -> world point + outward-of-solid normal; rings sit at a = k*dA
+            // (b sweeps the full turn), lines sit at b = m/Nmax of a turn (a sweeps [aLo, aHi]).
+            const dsArc0 = 0.36 * spcBase / scale; // surface (arc) pitch of the finest ring
+            const analytic = (() => {
+              if (sphereFit) {
                 const { c, R, a } = sphereFit;
                 const ref = Math.abs(a.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
                 let e1 = { x: a.y * ref.z - a.z * ref.y, y: a.z * ref.x - a.x * ref.z, z: a.x * ref.y - a.y * ref.x };
                 const el = Math.hypot(e1.x, e1.y, e1.z); e1 = { x: e1.x / el, y: e1.y / el, z: e1.z / el };
                 const e2 = { x: a.y * e1.z - a.z * e1.y, y: a.z * e1.x - a.x * e1.z, z: a.x * e1.y - a.y * e1.x };
-                const dsArc = 0.36 * spcBase / scale; // surface (arc) pitch of the finest ring
-                const depthAt = csgSurfaceDepthFn(rec, g.faces);
-                if (!depthAt) return null;
                 let thMax = 0;
                 tris.forEach((tr) => tr.t.forEach((vi) => {
                   const w = rec.world[vi]; const vx = w.x - c.x; const vy = w.y - c.y; const vz = w.z - c.z;
                   thMax = Math.max(thMax, Math.acos(clamp((vx * a.x + vy * a.y + vz * a.z) / (Math.hypot(vx, vy, vz) || 1), -1, 1)));
                 }));
+                const dA = dsArc0 / R;
+                return {
+                  R, dA, kLo: 1, kHi: Math.floor((thMax + 1e-6) / dA), aLo: 1e-4, aHi: thMax, aStep: 0.5 * Math.PI / 180,
+                  pointAt: (th, psi) => {
+                    const st = Math.sin(th); const ct = Math.cos(th); const cp = Math.cos(psi); const sp2 = Math.sin(psi);
+                    const dx = ct * a.x + st * (cp * e1.x + sp2 * e2.x); const dy = ct * a.y + st * (cp * e1.y + sp2 * e2.y); const dz = ct * a.z + st * (cp * e1.z + sp2 * e2.z);
+                    return { w: { x: c.x + R * dx, y: c.y + R * dy, z: c.z + R * dz }, n: { x: -dx, y: -dy, z: -dz } };
+                  },
+                  lineKeep: (q, m, Nmax, stride, ratio) => {
+                    if (R * q.a < 0.6 * dsArc0) return false; // the pole is left to the innermost ring
+                    const n = (2 * Math.PI * R * Math.sin(q.a)) / (dsArc0 * stride * ratio);
+                    const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
+                    return m % (Nmax / cnt) === 0;
+                  },
+                };
+              }
+              if (cylFit) {
+                const { O, A, U, V, R, hMin, hMax } = cylFit;
+                return {
+                  R, dA: dsArc0, kLo: Math.ceil(hMin / dsArc0), kHi: Math.floor(hMax / dsArc0), aLo: hMin, aHi: hMax, aStep: Math.max(0.05, (hMax - hMin) / 200),
+                  pointAt: (h, psi) => {
+                    const cp = Math.cos(psi); const sp2 = Math.sin(psi);
+                    const rx = cp * U.x + sp2 * V.x; const ry = cp * U.y + sp2 * V.y; const rz = cp * U.z + sp2 * V.z;
+                    return { w: { x: O.x + h * A.x + R * rx, y: O.y + h * A.y + R * ry, z: O.z + h * A.z + R * rz }, n: { x: -rx, y: -ry, z: -rz } };
+                  },
+                  lineKeep: (q, m, Nmax, stride, ratio) => {
+                    const n = (2 * Math.PI * R) / (dsArc0 * stride * ratio);
+                    const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
+                    return m % (Nmax / cnt) === 0;
+                  },
+                };
+              }
+              return null;
+            })();
+            if (analytic && typeof scene.projectWorld === 'function') {
+              const lines = (() => {
+                const { R, dA, kLo, kHi, aLo, aHi, aStep, pointAt, lineKeep } = analytic;
+                const dsArc = dsArc0;
+                const depthAt = csgSurfaceDepthFn(rec, g.faces);
+                if (!depthAt) return null;
                 const tolZ = 0.05 * R * scale;
                 const EPS = 1e-3 * R;
-                // One analytic surface sample at (theta, psi): its screen point, whether it lies on the carved front surface,
-                // and its tone stride (band x foreshortening), exactly the quantities the old per-triangle path used.
-                const sampleAt = (th, psi) => {
-                  const st = Math.sin(th); const ct = Math.cos(th); const cp = Math.cos(psi); const sp2 = Math.sin(psi);
-                  const dx = ct * a.x + st * (cp * e1.x + sp2 * e2.x); const dy = ct * a.y + st * (cp * e1.y + sp2 * e2.y); const dz = ct * a.z + st * (cp * e1.z + sp2 * e2.z);
-                  const w = { x: c.x + R * dx, y: c.y + R * dy, z: c.z + R * dz };
+                // One analytic surface sample: its screen point, whether it lies on the carved front surface, and its tone
+                // stride (band x foreshortening), exactly the quantities the old per-triangle path used.
+                const sampleAt = (a, b) => {
+                  const { w, n } = pointAt(a, b);
                   const P = scene.projectWorld(w);
                   if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y)) return null;
                   const Z = depthAt(P.x, P.y);
                   const inside = Z !== null && Math.abs(Z - P.z) < tolZ;
                   if (!inside) return { x: P.x, y: P.y, inside: false };
-                  const n = { x: -dx, y: -dy, z: -dz }; // outward-of-solid normal of the concave surface
                   const Pn = scene.projectWorld({ x: w.x + n.x * EPS, y: w.y + n.y * EPS, z: w.z + n.z * EPS });
                   const fore = clamp(Pn ? Math.abs(Pn.z - P.z) / EPS : 1, 0.35, 1);
                   const band = (toneOn && typeof intensityFn === 'function') ? Regions.band(intensityFn(n, w), p.tone) : 0;
                   // Fractional stride (ring k is drawn when it crosses a multiple of it), so the tone ladder is not rounded to whole rings;
                   // the tone ratio is shaped (^1.5) so the dark side reads clearly denser than the lit side, and foreshortening is
                   // corrected by its square root (full correction over-thins the steep wall).
-                  return { x: P.x, y: P.y, inside: true, stride: Math.max(1, Math.round(2 * (spcOf(band) / spcBase) ** 1.5 / Math.sqrt(fore)) / 2), th }; // half-ring steps, so a ring does not flicker along its length
+                  return { x: P.x, y: P.y, inside: true, stride: Math.max(1, Math.round(2 * (spcOf(band) / spcBase) ** 1.5 / Math.sqrt(fore)) / 2), a }; // half-ring steps, so a ring does not flicker along its length
                 };
                 const out = [];
                 // Split a sampled curve into runs where `keep` holds; the ends of a run sit on the last kept sample, so strokes
@@ -5759,32 +5856,20 @@
                   // A stroke shorter than ~1.5 pen widths is a fleck, not a mark.
                   return runs.filter((r) => { let len = 0; for (let i = 1; i < r.length; i += 1) len += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y); return len >= 1.5 * penWidth + 0.3; });
                 };
-                const dTh = dsArc / R;
-                const nRing = Math.floor((thMax + 1e-6) / dTh);
                 const DPSI = Math.PI / 180;
-                const ringSamples = [];
-                for (let k = 1; k <= nRing; k += 1) {
+                for (let k = kLo; k <= kHi; k += 1) {
                   const row = [];
-                  for (let i = 0; i <= 360; i += 1) row.push(sampleAt(k * dTh, i * DPSI));
-                  ringSamples.push({ k, row });
-                }
-                ringSamples.forEach(({ k, row }) => {
+                  for (let i = 0; i <= 360; i += 1) row.push(sampleAt(k * dA, i * DPSI));
                   runsOf(row, (q) => Math.floor(k / q.stride + 1e-9) > Math.floor((k - 1) / q.stride + 1e-9), true).forEach((r) => out.push(r));
-                });
+                }
                 if (cross) {
                   const Nmax = clamp(2 ** Math.ceil(Math.log2(Math.max(2, 2 * Math.PI * R / (dsArc * crossRatio)))), 2, 256);
+                  const nA = Math.max(2, Math.ceil((aHi - aLo) / aStep));
                   for (let m = 0; m < Nmax; m += 1) {
                     const row = [];
                     const psi = (2 * Math.PI * m) / Nmax;
-                    const nTh = Math.max(2, Math.ceil(thMax / (0.5 * Math.PI / 180)));
-                    for (let i = 0; i <= nTh; i += 1) row.push(sampleAt(Math.max(1e-4, (thMax * i) / nTh), psi));
-                    const keep = (q) => {
-                      if (R * q.th < 0.6 * dsArc) return false; // the pole is left to the innermost ring
-                      const n = (2 * Math.PI * R * Math.sin(q.th)) / (dsArc * q.stride * crossRatio);
-                      const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
-                      return m % (Nmax / cnt) === 0;
-                    };
-                    runsOf(row, keep, false).forEach((r) => out.push(r));
+                    for (let i = 0; i <= nA; i += 1) row.push(sampleAt(aLo + ((aHi - aLo) * i) / nA, psi));
+                    runsOf(row, (q) => lineKeep(q, m, Nmax, q.stride, crossRatio), false).forEach((r) => out.push(r));
                   }
                 }
                 return out;
