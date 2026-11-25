@@ -428,7 +428,7 @@ describe('Send to Plotter v2 flow', () => {
       await waitFor(() => c.originSet);
       expect(c.machineCornerConfirmed).toBe(true);
       expect(g92().map((e) => e.data)).toEqual(['G92 X0 Y0']);
-      await waitFor(() => /Origin set at the start corner\. If your sheet's top-left corner is elsewhere, jog there and press Set origin here\./.test(document.getElementById('stp-banner-note')?.textContent || ''));
+      await waitFor(() => /Origin is at the start corner\. If your sheet's top-left corner is elsewhere, go to Machine, jog there and press Set origin here\./.test(document.getElementById('stp-origin-reminder')?.textContent || ''));
       click('[data-tab="machine"]');
       await waitFor(() => { const b = document.querySelector('[data-stp-act="goto-origin"]'); return b && !b.disabled; });
       expect(status('connect')).toBe('done');
@@ -604,6 +604,135 @@ describe('Send to Plotter v2 flow', () => {
       expect(document.querySelectorAll('#stp-spec-speeds tr.is-closest').length).toBe(1);
       expect(document.querySelector('#stp-spec-speeds tr.is-closest').textContent).toMatch(/Closest to your firmware/);
       click('#stp-specs-close');
+    });
+  });
+
+  describe('polish pass (header null, origin reminder, plurals, specs, presets, empty job)', () => {
+    const unconfirm = (c) => { c.machineCornerConfirmed = false; c.emit('corner', { confirmed: false }); };
+
+    test('the header never renders "null" or "undefined", disconnected or connected', async () => {
+      const head = () => document.querySelector('.stp-head').textContent;
+      expect(head()).not.toMatch(/null|undefined/);
+      await connectSim();
+      expect(head()).not.toMatch(/null|undefined/);
+    });
+
+    test('pluralize: 1 path, 2 paths', () => {
+      expect(STP.pluralize(1, 'path')).toBe('1 path');
+      expect(STP.pluralize(0, 'path')).toBe('0 paths');
+      expect(STP.pluralize(2, 'path')).toBe('2 paths');
+      const panel = STP.getPanel();
+      const job = panel.s.job;
+      const saved = job.stats.pathCount;
+      try {
+        job.stats.pathCount = 1;
+        panel.renderPlot();
+        expect(document.getElementById('stp-plot-summary').textContent).toMatch(/^1 path ·/);
+      } finally { job.stats.pathCount = saved; panel.renderPlot(); }
+    });
+
+    test('after Yes it was auto-sets the origin, a persistent reminder with Go to Machine survives the auto-advance', async () => {
+      const c = await connectSim();
+      unconfirm(c);
+      await waitFor(() => document.getElementById('stp-corner'));
+      click('#stp-corner-yes');
+      await waitFor(() => c.originSet);
+      await waitFor(() => document.getElementById('stp-origin-reminder'));
+      const rem = () => document.getElementById('stp-origin-reminder');
+      expect(rem().textContent).toMatch(/Origin is at the start corner\. If your sheet's top-left corner is elsewhere, go to Machine, jog there and press Set origin here\./);
+      // a later user action does not dismiss it
+      document.querySelector('.stp-root').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+      STP.getPanel().showTab('plot');
+      expect(rem()).toBeTruthy();
+      click('#stp-origin-reminder-go');
+      expect(STP.getPanel().tab).toBe('machine');
+      expect(rem()).toBeTruthy();
+      await waitFor(() => document.querySelector('[data-stp-act="set-origin"]'));
+      click('[data-stp-act="set-origin"]');
+      await waitFor(() => !rem());
+    });
+
+    test('starting a plot clears the origin reminder', async () => {
+      const c = await connectSim();
+      unconfirm(c);
+      await waitFor(() => document.getElementById('stp-corner'));
+      click('#stp-corner-yes');
+      await waitFor(() => document.getElementById('stp-origin-reminder'));
+      STP.getPanel().s.originReminder && (STP.getPanel().s.originReminder = true);
+      STP.getPanel().clearOriginReminder();
+      expect(document.getElementById('stp-origin-reminder')).toBeNull();
+    });
+
+    test('Escape and Space trigger the emergency stop while the specs dialog is open and motion is possible', async () => {
+      const c = await connectSim();
+      c.emergencyStop = vi.fn(async () => ({}));
+      click('#stp-specs-btn');
+      const dlg = document.getElementById('stp-specs');
+      expect(dlg).toBeTruthy();
+      await c.jogContinuousStart({ x: 1, y: 0 }, 600).catch(() => null);
+      await waitFor(() => c.state === 'jogging');
+      key(dlg, 'Escape');
+      expect(c.emergencyStop).toHaveBeenCalledTimes(1);
+      expect(document.getElementById('stp-specs')).toBeTruthy(); // motion safety first: dialog stays
+      key(dlg, ' ');
+      expect(c.emergencyStop).toHaveBeenCalledTimes(2);
+      await c.jogCancel();
+      await waitFor(() => c.state === 'idle');
+      key(dlg, 'Escape'); // idle: closes the dialog
+      expect(document.getElementById('stp-specs')).toBeNull();
+      expect(c.emergencyStop).toHaveBeenCalledTimes(2);
+    });
+
+    test('specs: Frame, Base plate and Design & build are under Tool & hardware; speed cells are labelled Speed / Accel', () => {
+      click('#stp-specs-btn');
+      const secs = Array.from(document.querySelectorAll('#stp-specs .stp-spec-sec'));
+      const sec = (t) => secs.find((x) => x.querySelector('.stp-spec-h').textContent.startsWith(t));
+      const tool = sec('Tool & hardware').textContent;
+      ['Frame', 'Base plate', 'Design & build'].forEach((k) => {
+        expect(tool).toContain(k);
+        expect(sec('Electronics & power').textContent).not.toContain(k);
+      });
+      const cell = document.querySelector('#stp-spec-speeds tbody td');
+      expect(cell.textContent).toMatch(/Speed 20000 mm\/min \(787 in\/min\)/);
+      expect(cell.textContent).toMatch(/Accel 6000 mm\/s² \(236 in\/s²\)/);
+      expect(cell.querySelectorAll('.stp-spec-val').length).toBe(2);
+      click('#stp-specs-close');
+    });
+
+    test('unconfigured pens show Fineliner; a pen whose speed and dwell match a preset shows it', () => {
+      click('[data-tab="setup"]');
+      const panel = STP.getPanel();
+      const sel = () => document.querySelector('.stp-pen .stp-pen-preset');
+      const id = document.querySelector('.stp-pen').dataset.penId;
+      panel.saveSettings({ pens: { [id]: { preset: null, drawFeed: null, downDelay: null } } });
+      panel.renderPens();
+      expect(sel().value).toBe('fineliner');
+      panel.saveSettings({ pens: { [id]: { preset: null, drawFeed: 2500, downDelay: 0 } } });
+      panel.renderPens();
+      expect(['gel', 'technical']).toContain(sel().value);
+      panel.saveSettings({ pens: { [id]: { preset: null, drawFeed: 3333, downDelay: 0 } } });
+      panel.renderPens();
+      expect(sel().value).toBe('custom');
+    });
+
+    test('a document with no plottable paths shows – on Setup and a Nothing to plot message', async () => {
+      const c = await connectSim();
+      if (c.confirmMachineCorner) await c.confirmMachineCorner();
+      await c.setOrigin();
+      const panel = STP.getPanel();
+      await waitFor(() => !panel.s.building && panel.s.job);
+      const job = panel.s.job;
+      const saved = job.stats.pathCount;
+      const savedPens = job.pens;
+      try {
+        job.stats.pathCount = 0;
+        job.pens = savedPens.map((p) => Object.assign({}, p, { paths: [] }));
+        panel.renderTabs();
+        expect(status('setup')).toBe('idle');
+        expect(glyph('setup')).toBe('–');
+        panel.showTab('setup');
+        expect(panel.nextStep().text).toBe('Nothing to plot — add artwork to the canvas, then Refresh from canvas.');
+      } finally { job.stats.pathCount = saved; job.pens = savedPens; panel.renderTabs(); }
     });
   });
 });

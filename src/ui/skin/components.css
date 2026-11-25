@@ -19033,7 +19033,7 @@ textarea.stp-in { height: auto; padding: 10px 12px; font-family: var(--font-mono
 
 .stp-rotcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .stp-rotcard { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: calc(var(--stp-hit) + 36px); padding: 10px 4px; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--ui-panel-alt, var(--ui-ctrl)); color: var(--ui-text-2); font-size: var(--stp-font-small); font-weight: 600; cursor: pointer; transition: background-color 0.14s, border-color 0.14s, color 0.14s; }
-.stp-rotcard svg { width: 44px; height: 44px; }
+.stp-rotcard svg { width: 48px; height: 48px; }
 .stp-rotcard:hover { border-color: var(--ui-accent); }
 .stp-rotcard.is-current { color: var(--ui-text); border-color: var(--ui-accent); box-shadow: 0 0 0 1px var(--ui-accent) inset; }
 
@@ -19323,10 +19323,17 @@ textarea.stp-in { height: auto; padding: 10px 12px; font-family: var(--font-mono
 .stp-adv > summary { color: var(--ui-text-2); font-weight: 600; font-size: var(--stp-font-small); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
 .stp-sub-lbl { margin: 10px 0 0; font-size: var(--stp-font-small); font-weight: 600; color: var(--ui-text-2); }
 /* selected profile row */
-.stp-selrow { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 12px; border: 1px solid var(--stp-card-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--ui-panel-alt, var(--ui-ctrl)); }
+.stp-selrow { display: flex; align-items: center; flex-wrap: nowrap; min-width: 0; gap: 12px; padding: 8px 12px; border: 1px solid var(--stp-card-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--ui-panel-alt, var(--ui-ctrl)); }
 .stp-selrow-icon { width: 56px; height: 34px; color: var(--stp-card-color, var(--ui-accent)); }
 .stp-selrow-icon svg { width: 100%; height: 100%; }
-.stp-selrow-name { font-weight: 700; font-size: var(--stp-font); }
+.stp-selrow-name { flex: none; font-weight: 700; font-size: var(--stp-font); white-space: nowrap; }
+.stp-selrow > * { min-width: 0; }
+.stp-selrow-icon, .stp-selrow .stp-badge, .stp-selrow-actions { flex: none; }
+.stp-selrow-size { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stp-selrow-actions { display: flex; align-items: center; gap: 8px; }
+.stp-selrow .stp-spacer { flex: 1 1 0; min-width: 0; }
+.stp-origin-reminder { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--ui-accent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--ui-accent) 12%, transparent); }
+.stp-origin-reminder-text { flex: 1 1 320px; font-size: var(--stp-font); }
 .stp-selrow .stp-badge { margin-top: 0; align-self: center; }
 .stp-pen-grid.is-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 6px 0; }
 .stp-pen { padding: 8px 12px; margin-bottom: 8px; }
@@ -19382,10 +19389,11 @@ textarea.stp-in { height: auto; padding: 10px 12px; font-family: var(--font-mono
 .stp-specs-title { font-size: calc(var(--stp-font) + 2px); }
 .stp-spec-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 16px 16px; }
 .stp-spec-h { margin: 14px 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ui-text-2); }
-.stp-spec-list { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 6px 16px; margin: 0; }
-.stp-spec-list dt { color: var(--ui-text-2); }
+.stp-spec-list { font-size: 16px; display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 6px 16px; margin: 0; }
+.stp-spec-list dt { font-size: 15px; color: var(--ui-text-2); }
 .stp-spec-list dd { margin: 0; color: var(--ui-text); }
-.stp-spec-speeds { width: 100%; border-collapse: collapse; }
+.stp-spec-speeds { width: 100%; font-size: 16px; border-collapse: collapse; }
+.stp-spec-val { white-space: nowrap; }
 .stp-spec-speeds th, .stp-spec-speeds td { padding: 6px 8px; border-bottom: 1px solid var(--ui-border); text-align: left; vertical-align: top; }
 .stp-spec-speeds td span, .stp-spec-speeds th span { display: block; }
 .stp-spec-speeds tr.is-closest { background: color-mix(in srgb, var(--ui-accent) 14%, transparent); }

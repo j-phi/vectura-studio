@@ -151,4 +151,18 @@ describe('v2 scale fixes (spec 12.5)', () => {
       expect(tools).not.toMatch(/stp-mt-pill/);
     });
   });
+
+  test('specs dialog is distance-readable and the profile row and rotation icons keep their layout', () => {
+    const px = (sel, prop) => { const m = new RegExp(`${prop}:\\s*(\\d+)px`).exec(decls(sel)); return m && Number(m[1]); };
+    expect(px('.stp-spec-list', 'font-size')).toBeGreaterThanOrEqual(16);
+    expect(px('.stp-spec-list dt', 'font-size')).toBeGreaterThanOrEqual(15);
+    expect(px('.stp-spec-speeds', 'font-size')).toBeGreaterThanOrEqual(16);
+    expect(decls('.stp-spec-val')).toMatch(/white-space:\s*nowrap/);
+    expect(decls('.stp-spec-body')).toMatch(/overflow:\s*auto/);
+    expect(decls('.stp-selrow')).toMatch(/flex-wrap:\s*nowrap/);
+    expect(decls('.stp-selrow')).not.toMatch(/flex-wrap:\s*wrap/);
+    expect(decls('.stp-selrow-actions')).toMatch(/display:\s*flex/);
+    expect(px('.stp-rotcard svg', 'width')).toBeGreaterThanOrEqual(40);
+    expect(px('.stp-rotcard svg', 'width')).toBeLessThanOrEqual(48);
+  });
 });

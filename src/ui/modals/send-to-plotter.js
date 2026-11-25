@@ -185,6 +185,16 @@
   };
 
   const penPresets = () => Vectura.PLOTTER_PEN_PRESETS || [];
+  const pluralize = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  // The pen type to show: a stored choice wins; an unconfigured pen is a Fineliner; otherwise the preset whose
+  // speed and dwell match exactly, else Custom.
+  const presetFor = (cfg) => {
+    if (cfg.preset) return cfg.preset;
+    if (cfg.drawFeed == null && cfg.downDelay == null) return 'fineliner';
+    const hit = penPresets().find((x) => x.id !== 'custom' && x.drawFeed === cfg.drawFeed && x.downDelay === (cfg.downDelay == null ? 0 : cfg.downDelay));
+    return hit ? hit.id : 'custom';
+  };
+  const jobHasPaths = (job) => !!job && (job.stats && isNum(job.stats.pathCount) ? job.stats.pathCount > 0 : !!(job.pens && job.pens.some((p) => p.paths && p.paths.length)));
   const sanitizePen = (raw) => {
     const r = raw && typeof raw === 'object' ? raw : {};
     const optNum = (v, lo, hi) => (isNum(v) ? Math.min(hi, Math.max(lo, v)) : null);
@@ -907,6 +917,8 @@
     { id: 'plot', label: 'Plot', n: 4 },
     { id: 'console', label: 'Console', sub: 'Advanced' },
   ];
+  const NOTHING_TO_PLOT = 'Nothing to plot \u2014 add artwork to the canvas, then Refresh from canvas.';
+  const ORIGIN_REMINDER = "Origin is at the start corner. If your sheet's top-left corner is elsewhere, go to Machine, jog there and press Set origin here.";
   const GLYPH = { done: '\u2713', attention: '\u25cf', idle: '\u2013' };
   const GLYPH_WORD = { done: 'done', attention: 'needs attention', idle: 'not reachable yet' };
   let activePanel = null;
@@ -1068,6 +1080,8 @@
       // before the handler that may set a fresh one.
       this.root.addEventListener('pointerdown', () => this.clearPersistentNote(), true);
       this.root.addEventListener('keydown', () => this.clearPersistentNote(), true);
+      // A manual Set origin here (button or wizard step) replaces the start-corner origin: the reminder is done.
+      this.root.addEventListener('click', (e) => { const t = e.target && e.target.closest ? e.target.closest('[data-stp-act="set-origin"]') : null; if (t) this.clearOriginReminder(); }, true);
       this.root.addEventListener('keydown', (e) => this.onKey(e));
       this.root.addEventListener('keyup', (e) => { if (this.isSpace(e) && !isTypingTarget(e.target) && liveController()) e.preventDefault(); });
       this.buildConnect();
@@ -1080,6 +1094,21 @@
     isSpace(e) { return e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space'; }
 
     // Space and Escape are the emergency stop while the panel has focus and nobody is typing in a field.
+    // Motion safety beats closing a dialog: while the plotter is moving (or a move is in flight) Escape is the
+    // emergency stop; Space is the emergency stop whenever connected and not typing. True when handled.
+    safetyKey(e) {
+      const c = liveController();
+      if (!c) return false;
+      const typing = isTypingTarget(e.target) || isTypingTarget(document.activeElement);
+      if (e.key === 'Escape' && (c.state !== 'idle' || this.s.manualMoving)) {
+        const ae = document.activeElement;
+        if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) { e.preventDefault(); ae.blur(); return true; }
+        e.preventDefault(); this.emergencyStop(); return true;
+      }
+      if (this.isSpace(e) && !typing && !e.repeat) { e.preventDefault(); this.emergencyStop(); return true; }
+      return false;
+    }
+
     onKey(e) {
       // Keep app shortcuts (Delete, undo, tool keys) out while the panel holds focus.
       e.stopPropagation();
@@ -1143,8 +1172,9 @@
       const originDone = !!(c && c.originSet);
       const machineDone = !!c && calDone && originDone;
       const oob = !!(job && job.bounds && !job.bounds.ok);
-      const setupDone = !!job && !oob && !this.s.building && !!(job.pens && job.pens.length);
-      return { c, sim, calDone, cal, connectDone, originDone, machineDone, oob, setupDone, cornerBlocked: cornerUnconfirmed(c) };
+      const empty = !!job && !jobHasPaths(job);
+      const setupDone = !!job && !oob && !this.s.building && !empty && !!(job.pens && job.pens.length);
+      return { c, sim, calDone, cal, connectDone, originDone, machineDone, oob, empty, setupDone, cornerBlocked: cornerUnconfirmed(c) };
     }
 
     tabStatus() {
@@ -1225,7 +1255,7 @@
       }
       if (f.oob) return this.tab === 'setup' ? T('oob', "The plot doesn't fit — adjust placement", null, null, 'setup') : T('oob', "The plot doesn't fit — adjust placement", 'Go to Setup', go('setup'), 'setup');
       if (this.s.building) return T('building', 'Preparing the plot…', null, null, 'setup');
-      if (!this.s.job || !this.s.job.pens || !this.s.job.pens.length) return T('empty', 'Nothing to plot yet. Add a layer in the main window, then refresh.', 'Go to Setup', go('setup'), 'setup');
+      if (!this.s.job || !this.s.job.pens || !this.s.job.pens.length || !jobHasPaths(this.s.job)) return T('empty', NOTHING_TO_PLOT, this.tab === 'setup' ? null : 'Go to Setup', this.tab === 'setup' ? null : go('setup'), 'setup');
       const why = this.startBlockers();
       if (why.length) return T('blocked', why[0], null, null, 'plot');
       // The Plot pane carries the giant Start plot button, so the banner is text only there.
@@ -1337,7 +1367,7 @@
         disabled: c ? (isActiveJob() || state === 'stopping') : (!supported || this.s.connectBusy),
         title: c ? (isActiveJob() ? 'Stop the job before disconnecting' : null) : (!supported ? 'Use Chrome or Edge, or try the simulator on the Connect tab' : null),
       });
-      this.head.append(
+      this.head.append(...[
         h('h2', { class: 'stp-title', text: 'Send to Plotter' }),
         h('span', { class: 'stp-profile-name', text: session.kind === 'sim' && c ? `${profile.name} (simulator)` : profile.name }),
         this.pill,
@@ -1348,7 +1378,7 @@
         connBtn,
         this.stopEl,
         btn('Close', () => this.requestClose(), 'stp-close', { 'aria-label': 'Close Send to Plotter' }),
-      );
+      ].filter(Boolean));
       this.updateStop();
       this.renderReadout();
       this.renderBanner();
@@ -1445,7 +1475,18 @@
         el.appendChild(row);
       }
       if (cornerUnconfirmed(c) && c.state !== 'connecting') { const n = this.noteEl(); if (n) el.appendChild(n); }
+      if (this.s.originReminder && c && !cornerUnconfirmed(c)) {
+        el.appendChild(h('div', { class: 'stp-origin-reminder', id: 'stp-origin-reminder', role: 'note' },
+          h('span', { class: 'stp-origin-reminder-text', text: ORIGIN_REMINDER }),
+          btn('Go to Machine', () => this.showTab('machine'), '', { id: 'stp-origin-reminder-go' })));
+      }
       el.appendChild(this.liveNote);
+    }
+
+    clearOriginReminder() {
+      if (!this.s.originReminder) return;
+      this.s.originReminder = false;
+      this.renderBanner();
     }
 
     noteEl() {
@@ -1470,7 +1511,8 @@
         if (atZero && c.state === 'idle' && !c.originSet && typeof c.setOrigin === 'function') {
           try {
             await c.setOrigin();
-            this.note("Origin set at the start corner. If your sheet's top-left corner is elsewhere, jog there and press Set origin here.", { persist: true });
+            this.s.originReminder = true;
+            this.renderBanner();
           } catch (e) { this.s.bannerErr = (e && e.message) || String(e); this.renderBanner(); }
         }
       }, (e) => { this.s.bannerErr = (e && e.message) || String(e); this.renderBanner(); });
@@ -1525,7 +1567,7 @@
       if (w.has('all') || w.has('state') || w.has('connected') || w.has('disconnected') || w.has('connecting') || w.has('error') || w.has('origin') || w.has('profile') || w.has('alarm') || w.has('corner') || w.has('wco')) {
         this.renderConnect();
       }
-      if (w.has('disconnected')) { this.s.manualMoving = false; this.s.bannerErr = null; this.s.cornerHelp = false; }
+      if (w.has('disconnected')) { this.s.originReminder = false; this.s.manualMoving = false; this.s.bannerErr = null; this.s.cornerHelp = false; }
       if (w.has('origin')) { const cc = liveController(); this.s.pendingOriginAdvance = !!(cc && cc.originSet); if (this.s.pendingOriginAdvance) this.s.bannerErr = null; }
       if (w.has('connected') && this.tab === 'connect' && liveController()) {
         this.advance('machine', 'Connected. Moved to Machine.');
@@ -1685,7 +1727,7 @@
       if (cornerUnconfirmed(c)) add('Confirm the plotter was at its start corner (see the card at the top).');
       if (c.state !== 'idle') add(`The plotter is ${STATE_LABEL[c.state] ? STATE_LABEL[c.state].toLowerCase() : c.state}.`);
       const job = this.s.job;
-      if (!job || !job.pens || !job.pens.length) add('There is nothing to plot. Add geometry or enable a pen.', 'setup');
+      if (!job || !job.pens || !job.pens.length || !jobHasPaths(job)) add(NOTHING_TO_PLOT, 'setup');
       if (job && job.bounds && !job.bounds.ok) add(this.overflowMessage(job.bounds), 'setup');
       if (!c.originSet && !sim && !session.useMachineZero) add('Set the origin first (Machine tab), or tick "Use machine zero".', 'machine');
       if (!sim) {
@@ -1794,11 +1836,12 @@
       const selRow = h('div', { class: 'stp-selrow', id: 'stp-selected-profile', style: `--stp-card-color:${CARD_COLORS[curKind]}` },
         h('span', { class: 'stp-selrow-icon' }, bedIcon(cur)),
         h('span', { class: 'stp-selrow-name', text: cur.name }),
-        h('span', { class: 'stp-hint', text: sizeText(cur) }),
+        h('span', { class: 'stp-hint stp-selrow-size', text: sizeText(cur), title: sizeText(cur) }),
         h('span', { class: `stp-badge is-${curKind}`, text: kindText(curKind) }),
         h('span', { class: 'stp-spacer' }),
+        h('span', { class: 'stp-selrow-actions' },
         cur.specs ? btn('\u24d8 Specs', () => this.openSpecs(cur, 'row'), '', { id: 'stp-specs-btn', title: `Manufacturer specifications for ${cur.name}`, 'aria-label': `Specifications for ${cur.name}`, dataset: { specsFor: cur.id } }) : null,
-        btn(this.s.profilePicker ? 'Done' : 'Change', () => { this.s.profilePicker = !this.s.profilePicker; this.renderConnect(); }, '', { id: 'stp-change-profile', disabled: !!c, title: c ? 'Disconnect to change the plotter profile' : null, 'aria-expanded': String(!!this.s.profilePicker) }));
+        btn(this.s.profilePicker ? 'Done' : 'Change', () => { this.s.profilePicker = !this.s.profilePicker; this.renderConnect(); }, '', { id: 'stp-change-profile', disabled: !!c, title: c ? 'Disconnect to change the plotter profile' : null, 'aria-expanded': String(!!this.s.profilePicker) })));
       const profSec = section('Plotter', selRow);
       if (this.s.profilePicker && !c) {
         const cards = h('div', { class: 'stp-cards', role: 'radiogroup', 'aria-label': 'Plotter profile' });
@@ -1852,6 +1895,9 @@
         tool.motors ? ['Stepper motors', `X: ${tool.motors.x}; Y: ${tool.motors.y}; Z: ${tool.motors.z}`] : null,
         tool.limitSwitches ? ['Limit switches', tool.limitSwitches] : null,
         tool.laser ? ['Laser', tool.laser] : null,
+        el.frame ? ['Frame', el.frame] : null,
+        el.basePlate ? ['Base plate', el.basePlate] : null,
+        el.design ? ['Design & build', el.design] : null,
       ]), h('p', { class: 'stp-hint', text: 'Limit switches: integrated \u2014 Vectura only homes when the firmware reports homing enabled ($22=1).' })));
       body.appendChild(sec('Physical (this model)', dl([
         phys.writingAreaMm ? ['Writing area', fmtSize(phys.writingAreaMm.width, phys.writingAreaMm.height)] : null,
@@ -1862,15 +1908,12 @@
         isNum(phys.netWeightKg) ? ['Net weight', fmtMass(phys.netWeightKg)] : null,
       ])));
       body.appendChild(sec('Electronics & power', dl([
-        el.frame ? ['Frame', el.frame] : null,
-        el.basePlate ? ['Base plate', el.basePlate] : null,
         el.board ? ['Motherboard', el.board] : null,
         isNum(el.ratedPowerW) ? ['Rated power', `${el.ratedPowerW} W${el.ratedPowerNote ? ` (${el.ratedPowerNote})` : ''}`] : null,
         el.operatingVoltage ? ['Operating voltage', el.operatingVoltage] : null,
         el.adapterInput ? ['Adapter input', el.adapterInput] : null,
         el.adapterOutput ? ['Adapter output', el.adapterOutput] : null,
         el.operatingTempC ? ['Operating temperature', fmtTempRange(el.operatingTempC)] : null,
-        el.design ? ['Design & build', el.design] : null,
       ])));
       body.appendChild(sec('Software & control', dl([
         sw.controlSoftware ? ['Control software', sw.controlSoftware.join(', ')] : null,
@@ -1886,7 +1929,7 @@
           h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Mode' }), ...['X', 'Y', 'Z'].map((a) => h('th', { scope: 'col', text: `${a} max speed / acceleration` })))),
           h('tbody', {}, ...sp.speedModes.map((m) => h('tr', { class: closest && closest.id === m.id ? 'is-closest' : '' },
             h('th', { scope: 'row' }, h('strong', { text: m.name }), closest && closest.id === m.id ? h('span', { class: 'stp-spec-closest', text: 'Closest to your firmware' }) : null, m.note ? h('span', { class: 'stp-hint', text: m.note }) : null),
-            ...['x', 'y', 'z'].map((a) => h('td', {}, h('span', { text: fmtFeed(m.axes[a].maxFeed) }), h('span', { text: fmtAccel(m.axes[a].maxAccel) })))))));
+            ...['x', 'y', 'z'].map((a) => h('td', {}, h('span', { class: 'stp-spec-val', text: `Speed ${fmtFeed(m.axes[a].maxFeed)}` }), h('span', { class: 'stp-spec-val', text: `Accel ${fmtAccel(m.axes[a].maxAccel)}` })))))));
         const cap = profile.limits && isNum(profile.limits.maxFeedXY) ? profile.limits.maxFeedXY : null;
         body.appendChild(sec('Speed modes', table,
           h('p', { class: 'stp-hint', id: 'stp-spec-fw', text: `Your plotter's firmware: max rates $110/$111/$112 = ${fwVals([110, 111, 112])}, acceleration $120/$121/$122 = ${fwVals([120, 121, 122])}` }),
@@ -1900,6 +1943,7 @@
           body));
       dlg.addEventListener('keydown', (e) => {
         e.stopPropagation();
+        if (this.safetyKey(e)) return;
         if (e.key === 'Escape') { e.preventDefault(); this.closeSpecs(true); return; }
         if (e.key === 'Tab') { // keep focus inside the dialog
           const f = Array.from(dlg.querySelectorAll('button, [tabindex="0"]'));
@@ -2096,7 +2140,7 @@
   const rotIconMarkup = (deg, docW, docH) => {
     const known = isNum(docW) && isNum(docH) && docW > 0 && docH > 0;
     const aspect = known ? docW / docH : 0.7;
-    const MAX = 28;
+    const MAX = 34;
     const uw = aspect >= 1 ? MAX : MAX * aspect; // unrotated page size
     const uh = aspect >= 1 ? MAX / aspect : MAX;
     const swap = deg === 90 || deg === 270;
@@ -2286,7 +2330,7 @@
           this.renderPens();
         };
         const presetSel = h('select', { class: 'stp-in stp-pen-preset', 'aria-label': `${pen.name} pen type` }, penPresets().map((x) => h('option', { value: x.id, text: x.name })));
-        presetSel.value = cfg.preset || 'custom';
+        presetSel.value = presetFor(cfg);
         presetSel.addEventListener('change', () => {
           const pr = penPresets().find((x) => x.id === presetSel.value);
           if (!pr || pr.id === 'custom') { save({ preset: 'custom' }); return; }
@@ -2299,7 +2343,7 @@
             ctlSwitch(cfg.enabled, (v) => { save({ enabled: v }); card.classList.toggle('is-off', !v); }, `Plot ${pen.name || id}`),
             h('span', { class: 'stp-swatch', style: `background:${safeColor(pen.color)}`, 'aria-hidden': 'true' }),
             h('span', { class: 'stp-pen-name', text: pen.name || id }),
-            h('span', { class: 'stp-hint', text: `${(grp && grp.polylines.length) || 0} paths` }),
+            h('span', { class: 'stp-hint', text: pluralize((grp && grp.polylines.length) || 0, 'path') }),
             h('span', { class: 'stp-spacer' }),
             btn('↑', () => move(-1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} earlier`, disabled: idx === 0 }),
             btn('↓', () => move(1), 'stp-icon', { 'aria-label': `Move ${pen.name || id} later`, disabled: idx === ids.length - 1 })),
@@ -2340,6 +2384,7 @@
       if (this.s.building) el.appendChild(h('p', { class: 'stp-hint', text: 'Preparing…' }));
       if (!job || !job.stats) { if (!this.s.jobError) el.appendChild(h('p', { class: 'stp-hint', text: 'No plot yet.' })); return; }
       const st = job.stats;
+      if (!jobHasPaths(job)) el.appendChild(h('p', { class: 'stp-note is-error', id: 'stp-nothing', text: NOTHING_TO_PLOT }));
       if (alt) el.appendChild(h('p', { class: 'stp-hint', text: `Showing the ${alt.label}. Clear it on the Plot tab to see your artwork again.` }));
       const dl = h('dl', { class: 'stp-statlist' });
       const add = (k, v, id) => dl.append(h('dt', { text: k }), h('dd', { text: v, id }));
@@ -2447,7 +2492,7 @@
       if (this.s.altJob) el.appendChild(h('div', { class: 'stp-note', text: `Previewing the ${this.s.altJob.label}. Start plots your artwork; "Plot swatches" plots this pattern.` }));
 
       if (job && job.stats) {
-        el.appendChild(h('p', { class: 'stp-summary', id: 'stp-plot-summary', text: `${job.stats.pathCount} paths · ${fmtDist(job.stats.drawLength)} drawn · about ${fmtTime(job.stats.estSeconds)}${job.airPlot ? ' · air plot' : ''}` }));
+        el.appendChild(h('p', { class: 'stp-summary', id: 'stp-plot-summary', text: `${pluralize(job.stats.pathCount, 'path')} · ${fmtDist(job.stats.drawLength)} drawn · about ${fmtTime(job.stats.estSeconds)}${job.airPlot ? ' · air plot' : ''}` }));
       }
 
       const active = ACTIVE_STATES.includes(state);
@@ -2554,7 +2599,7 @@
       if (res && !res.aborted) {
         el.appendChild(h('div', { class: 'stp-note is-ok', id: 'stp-done', role: 'status' },
           h('strong', { text: 'Plot complete. ' }),
-          h('span', { text: `${res.pathCount || 0} paths in ${fmtTime((res.elapsedMs || 0) / 1000)}.` })));
+          h('span', { text: `${pluralize(res.pathCount || 0, 'path')} in ${fmtTime((res.elapsedMs || 0) / 1000)}.` })));
         return;
       }
       if (!res && !alarm) return;
@@ -2593,6 +2638,7 @@
       const why = this.startBlockers();
       if (!c || why.length) { this.s.plotMsg = why[0] || 'Not ready.'; this.renderPlot(); return null; }
       this.s.plotMsg = null;
+      this.clearOriginReminder();
       const settings = this.settings();
       const profile = this.profile();
       let job;
@@ -2756,6 +2802,7 @@
     connectSession,
     disconnectSession,
     closestSpeedMode,
+    pluralize,
     fmtLen,
     fmtDims,
     fmtFeed,
