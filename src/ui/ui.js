@@ -1480,6 +1480,9 @@
     if (typeof this.bindExportButton === 'function') {
       this.bindExportButton();
     }
+    if (typeof this.bindSendToPlotterButton === 'function') {
+      this.bindSendToPlotterButton();
+    }
     if (typeof this.bindFileIoListeners === 'function') {
       this.bindFileIoListeners();
     }
@@ -2004,6 +2007,15 @@
   }
   if (window.Vectura?.UI?.Modals?.ExportSvg?.installOn) {
     window.Vectura.UI.Modals.ExportSvg.installOn(UI.prototype);
+  }
+
+  // Send to Plotter panel (File > Send to Plotter...): connect, setup preview, plot. The Machine and
+  // Console tabs are mounted from window.Vectura.PlotterMachineTools when it is present.
+  if (window.Vectura?.UI?.Modals?.SendToPlotter?.bind) {
+    window.Vectura.UI.Modals.SendToPlotter.bind({ getEl, SETTINGS });
+  }
+  if (window.Vectura?.UI?.Modals?.SendToPlotter?.installOn) {
+    window.Vectura.UI.Modals.SendToPlotter.installOn(UI.prototype);
   }
 
   // (Vectura aliased above)

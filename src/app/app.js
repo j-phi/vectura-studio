@@ -50,7 +50,7 @@
   // cookiePreferencesEnabled and startPage.showOnLaunch / motionStill are never dropped.
   const PREFERENCE_COOKIE_BUDGET = 3900;
   const COOKIE_TRIM_STARTPAGE_TEXT = ['name', 'practiceLine', 'customWord'];
-  const COOKIE_TRIM_KEYS = ['uiSections', 'autoColorization', 'contextBar', 'pens'];
+  const COOKIE_TRIM_KEYS = ['plotter', 'uiSections', 'autoColorization', 'contextBar', 'pens'];
   const buildPreferenceCookieValue = (snapshot) => {
     const wrap = (data) => encodePrefsCookie(JSON.stringify({ version: 1, data }));
     let value = wrap(snapshot);
@@ -633,6 +633,8 @@
         scissorMode: SETTINGS.scissorMode,
         penMode: SETTINGS.penMode,
         pens: Array.isArray(SETTINGS.pens) ? clone(SETTINGS.pens) : [],
+        // Send to Plotter plot settings (localStorage only: trimmed from the cookie mirror).
+        plotter: SETTINGS.plotter ? clone(SETTINGS.plotter) : null,
         paneLeftWidth: SETTINGS.paneLeftWidth,
         paneRightWidth: SETTINGS.paneRightWidth,
         showTourOnFirstLaunch: SETTINGS.showTourOnFirstLaunch === true,
@@ -825,6 +827,11 @@
       }
       if (snapshot.autoColorizationCollapsed !== undefined) {
         SETTINGS.autoColorizationCollapsed = snapshot.autoColorizationCollapsed === true;
+      }
+      // Send to Plotter settings: validated field by field by the panel module (unknown keys dropped).
+      if (snapshot.plotter && typeof snapshot.plotter === 'object') {
+        const stp = window.Vectura?.UI?.Modals?.SendToPlotter;
+        if (stp && typeof stp.sanitizeSettings === 'function') SETTINGS.plotter = stp.sanitizeSettings(snapshot.plotter);
       }
       if (snapshot.pensCollapsed !== undefined) {
         SETTINGS.pensCollapsed = snapshot.pensCollapsed === true;
