@@ -50,7 +50,8 @@
     JIT_FRAC: 0.2,          // phaseBlue: peak-to-peak sideways shift, x the finest ruling pitch (keeps the 0.8 bar)
     CAP_ORD_MAX: 4095,      // A21: ruling ordinal range of the cap word (low 12 bits)
     CAP_RHO_STEPS: 8,       // A21: local pitch ratio resolution of the cap word (high 4 bits, 1/8 steps, 15/8 max)
-    V2_DUTY_SEP: 1.08,       // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
+    V2_DUTY_SEP: 1.0,        // tone model v2 dutyConst: the screen ruling spacing (x the nominal ruling pitch; ~ the baked face-on pitch) at which the cell fraction is the target
+    V2_SCRIB_KEY: 0.92,      // tone model v2 mkScribble: scales the tone key of each wave level (< 1 draws more at one tone)
     V2_DUTY_GUARD_PEN: 1.05, // tone model v2 dutyConst: crowd guard, in pens (ink width + a hair: lines may touch, never overlap)
     V2_DASH_GROUP_MM: 12,    // tone model v2 dutyConst: cells keyed in groups this long (screen mm)
     V2_DASH_MIN_CELLS: 5,   // ... never fewer cells than this per group
@@ -60,6 +61,12 @@
     RAMP_PERIOD_MARKS: 5,   // D1 mkDashRamp: cell period, x the minimum mark (the dot core, a third of it, must clear it)
     BUNDLE_N: 3,            // D1 bundleCount: passes per bundle at full tone
     BUNDLE_GAP_PEN: 1.25,   // D1 bundleCount: pass spacing, x the pen
+    WEIGHT_TOP: 1.9, WEIGHT_STEP: 0.1, WEIGHT_PAPER_BAND: 0.04, // WD-D3 weightModulated: width at the dark end (x the pen), width quantum, tone range that rolls off to paper
+    AMP_SHARE: 0.4, AMP_MM_MIN: 0.34, AMP_MM_MAX: 0.6, AMP_LAMBDA_AMP: 12, AMP_LAMBDA_MIN_MM: 3.2, AMP_STEPS: 10, // WD-D1 ampSpacing wave
+    PEN_MM_0: 0.26, PEN_MM_1: 0.52, PEN_MM_2: 0.93, // WD-D2 the three nibs' MEASURED widths (surface-fill PEN_MM, private there)
+    PEN_DEEP_AREA: 0.93, PEN_LIGHT_AREA: 0.005, PEN_BLEND: 0.18, // WD-D2 pen laws: dark / light ink area, tier handoff window
+    PEN_INTER_PITCH_PEN: 2.2, PEN_INTER_NEED: 1.2, PEN_RES_PITCH_PEN: 3.0, PEN_RES_U_BIAS: 0.07, PEN_CROSS_PAPER_I: 0.93, PEN_CROSS_PITCH_MM: 2.5, PEN_CROSS_FULL_I: 0.8, PEN_CROSS_B_FRAC: 0.35, // WD-D2 full grid pitch (x the broad nib; Interleave: its own plot floor), Cross medium family pitch (mm), tone below which Cross is full, broad family share of the medium grid
+    PEN_CROSS_DEG: 60, PEN_RES_FINE_FRAC: 0.08, PRES_PERIOD: 1 / 12, PRES_DUTY: 0.3, // WD-D2 penCross angle; penReserve fine-family share, reserve period and white share of a period
     MAX_VERTS: 200000,      // contract §2 budget
     HATCH_D_MAX: 100,
     GOLDEN: 0.6180339887498949,
@@ -72,6 +79,15 @@
   // Wave D1 (light realism): mark laws baked as fractions of marks along the locked rulings. v2 scenes ONLY (`spec.toneModel === 'v2'`,
   // contract A20): a legacy / saved scene keeps its exact pose output, so no SCENE_VERSION migration is needed.
   const MARK_LAW_IDS = ['mkTick', 'mkDotScreen', 'mkDashRamp', 'mkScribble', 'bundleCount'];
+  // WD-D1 (contract A27): Amplitude Spacing is the ladder's pitch law (tone = ruling spacing) drawn on wave-displaced rulings. v2 only.
+  const AMP_LAW_IDS = ['ampSpacing'];
+  // WD-D2 (contract A28): the three-pen laws whose tone is the pen mix. Pen assignment is baked as runPen; the mix follows the tone through
+  // each run's tone band (MarkSet.runBand). v2 only; hatch only (the crossing family of penCross / penReserve is the law's own).
+  const PEN_LAW_IDS = ['penInterleave', 'penReserve', 'penCross'];
+  // WD-D3 (contract A29): weightModulated = one even grid (the ladder's level-0 rulings at the sparse-end pitch) with the tone carried by line width.
+  const WEIGHT_LAW_IDS = ['weightModulated'];
+  // dragPreviewOnly rows (owner decision, contract A28 / A29): the bake draws the light-following fill WHILE A 3D DRAG / ORBIT IS IN PROGRESS
+  // only (`spec.dragPreview === true`, set from `bounds.dragPreview`); settled and export output is the pose compose, byte for byte.
   const FIT = Object.freeze([Object.freeze({
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(LAW_IDS.slice()),
@@ -81,6 +97,26 @@
     v2Only: true,
     mappers: Object.freeze(FIT_MAPPERS.slice()),
     laws: Object.freeze(MARK_LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(AMP_LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    dragPreviewOnly: true,
+    mappers: Object.freeze(['hatch']),
+    laws: Object.freeze(PEN_LAW_IDS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    dragPreviewOnly: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(WEIGHT_LAW_IDS.slice()),
     primitives: Object.freeze(FIT_PRIMITIVES.slice()),
     refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
   })]);
@@ -198,9 +234,14 @@
     };
   };
 
+  // The ladder spec underneath ampSpacing: the plain Default ladder at the user's own Density (the wave is drawn on its rulings).
+  const ampLadderSpec = (spec) => Object.assign({}, spec, { toneLaw: 'ladder' });
   const toneLUT = (spec, toneCtx) => {
     sync();
     const law = spec && spec.toneLaw;
+    if (AMP_LAW_IDS.indexOf(law) !== -1) return ladder().toneLUT(ampLadderSpec(spec), toneCtx);
+    if (PEN_LAW_IDS.indexOf(law) !== -1) return penLUT(spec, toneCtx);
+    if (WEIGHT_LAW_IDS.indexOf(law) !== -1) return weightLUT(spec, toneCtx);
     const T = toneParams(spec, (MARK_LAW_IDS.indexOf(law) !== -1 || law === 'dutyConst' || law === 'endShorten') && lutIsV2(spec, toneCtx));
     const size = cfg().TONE_LUT_SIZE || 256;
     const lut = new Float32Array(size + 1);
@@ -235,6 +276,7 @@
     const style = spec.style || {};
     return FIT.some((row) => row.laws.indexOf(spec.toneLaw) !== -1
       && (!row.v2Only || bakeIsV2(spec))
+      && (!row.dragPreviewOnly || spec.dragPreview === true)
       && row.mappers.indexOf(spec.mapper) !== -1
       && row.primitives.indexOf(prim) !== -1
       && !Object.keys(row.refuse).some((k) => row.refuse[k].indexOf(style[k]) !== -1));
@@ -637,7 +679,7 @@
             pts.push(offsetPt(F.P, F.s, (k % 2 ? -1 : 1) * amp * j / SCRIB_LEVELS * (x < 0 || x > R.total ? 0 : 1)));
           }
           // drop the zero-amplitude clamped end points that duplicate the ruling's ends
-          emitP(pts, rho * (cum + u * inc), fam, 0, capRank);
+          emitP(pts, rho * (cum + u * inc) * (T.v2 ? K.V2_SCRIB_KEY : 1), fam, 0, capRank);
           cum += inc;
         }
       } else { // bundleCount
@@ -667,11 +709,278 @@
     return ms;
   };
 
+  // ---- WD-D1 ampSpacing: the ladder's rulings, each displaced sideways (in the tangent plane) by a sine of its arc length ----------------
+  // Every ruling takes the same phase at the same arc length, so neighbours stay parallel: the spacing (the tone) is the ladder's, and the
+  // wave only gives the line its character. The amplitude is the pose law's: a share of the ruling pitch, bounded in mm (WV6_AMP_*).
+  const bakeAmp = (spec) => {
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const L = ladder();
+    const ls = ampLadderSpec(spec);
+    if (!L || !L.supports(ls)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec');
+    const lad = L.bake(ls);
+    const SM = MS();
+    const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const out = [0, 0, 0]; const tmp = { count: 0 };
+    const p0 = finite(lad.meta.p0, 1);
+    const amp = clamp(K.AMP_SHARE * p0 * scaleRef, K.AMP_MM_MIN, K.AMP_MM_MAX) / scaleRef;
+    const lam0 = Math.max(K.AMP_LAMBDA_AMP * amp * scaleRef, K.AMP_LAMBDA_MIN_MM) / scaleRef;
+    const steps = Math.max(4, Math.round(K.AMP_STEPS));
+    for (let r = 0; r < lad.runCount; r++) {
+      const flags = lad.runFlags[r];
+      if (flags & SM.FLAG.DOT) { copyRun(B, lad, r, keyOfRun(lad, r), lad.runFamily[r], tmp); continue; }
+      const closed = (flags & SM.FLAG.CLOSED) !== 0;
+      const R = readRun(lad, r, out);
+      if (!(R.total > 1e-9)) continue;
+      // A closed run takes a whole number of waves so the seam closes; an open run keeps the nominal wavelength.
+      const lam = closed ? R.total / Math.max(1, Math.round(R.total / lam0)) : lam0;
+      const nSeg = Math.max(2, Math.ceil(R.total / (lam / steps)));
+      B.beginRun(lad.runLevel[r], SM.rankOf(lad, r), lad.runFamily[r], flags);
+      const nEmit = closed ? nSeg : nSeg + 1;
+      for (let i = 0; i < nEmit; i++) {
+        const x = R.total * i / nSeg;
+        const F = frameAt(R, x);
+        const d = amp * Math.sin(2 * Math.PI * x / lam);
+        B.vertex(F.P[0] + F.s[0] * d, F.P[1] + F.s[1] * d, F.P[2] + F.s[2] * d, F.P[3], F.P[4], F.P[5]);
+      }
+      tmp.count += nEmit;
+      B.endRun();
+      if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+    }
+    const ms = B.finish();
+    ms.bakerId = 'laws';
+    ms.meta = Object.assign({}, lad.meta, { lawId: 'ampSpacing', ampMM: amp * scaleRef, ampLambdaMM: lam0 * scaleRef });
+    return ms;
+  };
+
+
+  // ---- WD-D2 three-pen laws: penInterleave / penReserve / penCross (contract A28) -------------------------------------------------------
+  // The pose laws deal every ruling a nib (fine / medium / broad) from the tone: u = the real-valued tier coordinate (0 fine alone .. 2
+  // broad alone); a ruling with a low-discrepancy phase theta takes tier floor(u) + (theta < frac(u)). Written for the lock:
+  //   * the pen of a ruling is baked as runPen (tier + 1) and runWeight (the nib's width over the document pen), so frame() emits it;
+  //   * a ruling is baked once per nib, each copy with a tone BAND [lo, hi] on I (runBand) in which that nib is in the holder: the pen mix
+  //     follows the light while dragging with no rebake. The bands are nested and monotone, so the copies never draw together;
+  //   * the LUT carries the grid density (the fraction of the full grid drawn), exactly the pose law's coverage leg.
+  // penInterleave: ONE even grid at the medium nib's own plot floor, tone = the pen mix until the fine nib alone runs out of range, then the grid
+  // opens. penCross: a medium family and a broad family (every other ruling of the same ladder at +60 deg), both thinning with the tone.
+  // penReserve: the mixed-nib ground cut by transverse reserves (a fixed sweep parameter on every ruling, 12 per ruling), plus a sparse fine
+  // family at 90 deg. Only two reserve widths are baked (always-ink core, and an extension that switches on below a tone gate).
+  const penTone = (spec, grid) => {
+    const PEN = Math.max(0.02, finite(spec.penWidth, 0.3));
+    const mm = [K.PEN_MM_0, K.PEN_MM_1, K.PEN_MM_2];
+    const ink = mm.map((v) => v * (1 + K.INK_SPREAD));
+    const floorP = v2FloorPen() * PEN;
+    const maxArea = ink.map((v) => clamp(v / Math.max(v, floorP), 0.02, 0.98));
+    const dark = clamp(Math.min(maxArea[2], K.PEN_DEEP_AREA), 0.02, 0.98);
+    const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
+    const invL = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
+    const Ll = Lstar(1 - K.PEN_LIGHT_AREA); const Ld = Lstar(1 - dark);
+    const areaOf = (I) => clamp(1 - invL(Ld + (Ll - Ld) * clamp(finite(I, 0), 0, 1)), K.PEN_LIGHT_AREA, dark);
+    const pE = grid.pE;
+    const sm5 = (t) => { const x = clamp(t, 0, 1); return x * x * x * (x * (6 * x - 15) + 10); };
+    const tierU = (A) => {
+      const a = clamp(A, 0, 0.99); const h0 = maxArea[0]; const h1 = maxArea[1];
+      if (a <= h0) return sm5((a - h0 * (1 - K.PEN_BLEND)) / Math.max(1e-6, h0 * K.PEN_BLEND));
+      if (a <= h1) return 1 + sm5((a - h1 * (1 - K.PEN_BLEND)) / Math.max(1e-6, (h1 - h0) * K.PEN_BLEND + 1e-6));
+      return 2;
+    };
+    const inkU = (u) => { const uu = clamp(u, 0, 2); const b = Math.floor(uu); return b >= 2 ? ink[2] : ink[b] + (ink[b + 1] - ink[b]) * (uu - b); };
+    // per tone: the grid fraction s (0..1 of the full grid) and the tier coordinate u (0 fine .. 2 broad)
+    const mixAt = (law, I) => {
+      const A = areaOf(I);
+      if (law === 'penInterleave') { // tone = the pen mix on one even grid; below the fine nib's range the grid opens
+        const need = A * pE * K.PEN_INTER_NEED;
+        if (need <= ink[0]) return { s: clamp(need / ink[0], 0, 1), u: 0, A };
+        return { s: 1, u: need <= ink[1] ? (need - ink[0]) / Math.max(1e-6, ink[1] - ink[0]) : 1 + clamp((need - ink[1]) / Math.max(1e-6, ink[2] - ink[1]), 0, 1), A };
+      }
+      if (law === 'penReserve') { const u = tierU(A + K.PEN_RES_U_BIAS); return { s: clamp(A * pE / inkU(u), 0, 1), u, A }; }
+      const aLo = areaOf(K.PEN_CROSS_PAPER_I);
+      return { s: clamp((A - aLo) / Math.max(1e-6, areaOf(K.PEN_CROSS_FULL_I) - aLo), 0, 1), u: 1, A }; // penCross: both families full to the light end's roll-off, paper at PEN_CROSS_PAPER_I
+    };
+    return { PEN, mm, ink, areaOf, pE, mixAt, mmWeight: (k) => mm[k] / PEN };
+  };
+  // The ladder underneath: the plain v2 ladder baked as if the pen were `kPen` times the document pen, so its dark pitch (the full grid)
+  // is the pen law's grid pitch. Two refinements fit kPen by the tone LUT alone (cheap, no bake).
+  const penPitchOf = (law) => (law === 'penReserve' ? K.PEN_RES_PITCH_PEN * K.PEN_MM_2 : law === 'penCross' ? K.PEN_CROSS_PITCH_MM : K.PEN_INTER_PITCH_PEN * K.PEN_MM_2);
+  const penGrid = (spec, law) => {
+    const L = ladder();
+    const target = penPitchOf(law);
+    const ctx = { tone: { enabled: true } };
+    const mk = (kp) => Object.assign({}, spec, { toneLaw: 'ladder', penWidth: spec.penWidth * kp });
+    const fullOf = (sp) => L.toneLUT(sp, ctx).lut[0];
+    let kp = 2;
+    for (let i = 0; i < 3; i++) { const f = fullOf(mk(kp)); if (f > 0) kp = clamp(kp * target * f, 0.5, 30); }
+    const spec2 = mk(kp);
+    const lutFull = fullOf(spec2);
+    return { spec2, kp, lutFull, pE: lutFull > 0 ? 1 / lutFull : target };
+  };
+  const penLUT = (spec, toneCtx) => {
+    const law = spec.toneLaw; const g = penGrid(spec, law);
+    if (toneIsOff(toneCtx)) { const off = ladder().toneLUT(g.spec2, toneCtx); return { lut: off.lut, scaleFn: null }; }
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const M = penTone(spec, g);
+    const lut = new Float32Array(size + 1);
+    for (let k = 0; k <= size; k++) lut[k] = g.lutFull * M.mixAt(law, k / size).s;
+    return { lut, scaleFn: null };
+  };
+  // the bands of the three nibs of a ruling with phase theta, as I intervals [lo, hi] (null = empty)
+  const tierBands = (uAt, theta, size) => {
+    // uAt[k] = u at I = k / size, non-increasing in I. tier 0: u <= theta; tier 1: theta < u <= 1 + theta; tier 2: u > 1 + theta.
+    const firstLE = (v) => { // the least I with u(I) <= v
+      if (uAt[size] > v) return 1.0000001;
+      let lo = 0; let hi = size;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (uAt[mid] <= v) hi = mid; else lo = mid + 1; }
+      return lo / size;
+    };
+    const i0 = firstLE(theta); const i1 = firstLE(1 + theta);
+    const bands = [[i0, 1], [i1, i0], [0, i1]];
+    return bands.map((b, k) => ({ lo: b[0], hi: b[1], k })).filter((b) => b.hi - b.lo >= 0.5 / 255);
+  };
+  const bakePen = (spec) => {
+    const law = spec.toneLaw;
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const L = ladder(); const SM = MS();
+    const g = penGrid(spec, law);
+    const M = penTone(spec, g);
+    const bakeAt = (sp) => { if (!L.supports(sp)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec'); return L.bake(sp); };
+    const lad = bakeAt(g.spec2);
+    const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const out = [0, 0, 0]; const tmp = { count: 0 };
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const uAt = new Float64Array(size + 1);
+    for (let k = 0; k <= size; k++) { const m = M.mixAt(law, k / size); uAt[k] = law === 'penCross' ? 0 : m.u; }
+    const weight = (k) => Math.min(255, Math.round(M.mmWeight(k) * SM.WEIGHT_UNIT));
+    const piece = (R, sa, sb, run, fam, tier, lo, hi) => {
+      if (!(sb - sa > 1e-6)) return;
+      const at = (x) => { let a = 0; let b = R.n - 2; while (a < b) { const mid = (a + b + 1) >> 1; if (R.s[mid] <= x) a = mid; else b = mid - 1; } return a; };
+      const pt = (x) => {
+        const i = at(x); const d = R.s[i + 1] - R.s[i]; const u = d > 0 ? clamp((x - R.s[i]) / d, 0, 1) : 0;
+        let ax = R.nx[i] + (R.nx[i + 1] - R.nx[i]) * u; let ay = R.ny[i] + (R.ny[i + 1] - R.ny[i]) * u; let az = R.nz[i] + (R.nz[i + 1] - R.nz[i]) * u;
+        const l = Math.hypot(ax, ay, az) || 1; ax /= l; ay /= l; az /= l;
+        B.vertex(R.px[i] + (R.px[i + 1] - R.px[i]) * u, R.py[i] + (R.py[i + 1] - R.py[i]) * u, R.pz[i] + (R.pz[i + 1] - R.pz[i]) * u, ax, ay, az);
+      };
+      B.beginRun(run.level, run.rank, fam, 0, undefined, tier + 1, weight(tier), lo, hi);
+      pt(sa);
+      for (let i = at(sa) + 1; i < R.n && R.s[i] < sb - 1e-9; i++) if (R.s[i] > sa + 1e-9) B.vertex(R.px[i], R.py[i], R.pz[i], R.nx[i], R.ny[i], R.nz[i]);
+      pt(sb);
+      tmp.count += 3;
+      B.endRun();
+    };
+    const family = (ms, fam, tierFixed, keepRank, ordPhase, reserve) => {
+      const ord = rulingOrdinals(ms, ms.levels, false).ord;
+      for (let r = 0; r < ms.runCount; r++) {
+        if (ms.runFlags[r] & SM.FLAG.DOT) continue;
+        const rank = SM.rankOf(ms, r);
+        if (keepRank !== null && !(rank < keepRank)) continue;
+        const R = readRun(ms, r, out);
+        if (!(R.total > 1e-9)) continue;
+        const run = { level: ms.runLevel[r], rank };
+        let bands;
+        if (tierFixed !== null) bands = [{ lo: 0, hi: 1, k: tierFixed }];
+        else bands = tierBands(uAt, vdc2((ord[r] >= 0 ? ord[r] : r) + 1), size);
+        bands.forEach((b) => {
+          if (!reserve) { piece(R, 0, R.total, run, fam, b.k, b.lo, b.hi); return; }
+          // reserves: ink where |frac(t / period) - 1/2| >= d / 2 (t the sweep fraction of the ruling): dashes centred on the period
+          // boundaries, PRES_DUTY (the pose duty's mid-range: 0.3 darkest .. 0.6) of each period white
+          const P = K.PRES_PERIOD; const nb = Math.round(1 / P);
+          const c0 = 0.5 - K.PRES_DUTY / 2;
+          for (let j = 0; j <= nb; j++) {
+            const t = j * P * R.total;
+            piece(R, Math.max(0, t - c0 * P * R.total), Math.min(R.total, t + c0 * P * R.total), run, fam, b.k, b.lo, b.hi);
+          }
+        });
+        if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+      }
+    };
+    if (law === 'penInterleave') family(lad, 0, null, null, 0, false);
+    else if (law === 'penReserve') {
+      family(lad, 0, null, null, 0, true);
+      const sb = Object.assign({}, g.spec2, { style: Object.assign({}, g.spec2.style, { fillAngle: finite(g.spec2.style && g.spec2.style.fillAngle, 45) + 90 }) });
+      family(bakeAt(sb), 1, 0, K.PEN_RES_FINE_FRAC, 0, false);
+    } else { // penCross
+      family(lad, 0, 1, null, 0, false);
+      // (the ladder bakes nothing at some angles, e.g. a sphere at 105 deg: the crossing family falls back to the mirrored angle)
+      let ladB = null;
+      [K.PEN_CROSS_DEG, 180 - K.PEN_CROSS_DEG, 90].some((d) => {
+        const sb = Object.assign({}, g.spec2, { style: Object.assign({}, g.spec2.style, { fillAngle: finite(g.spec2.style && g.spec2.style.fillAngle, 45) + d }) });
+        ladB = bakeAt(sb);
+        return ladB.runCount > 0;
+      });
+      family(ladB, 1, 2, K.PEN_CROSS_B_FRAC, 0, false);
+    }
+    const ms = B.finish();
+    ms.bakerId = 'laws';
+    ms.meta = Object.assign({}, lad.meta, { lawId: law, penTiers: true, penGridKPen: g.kp, penGridMM: g.pE, minMarkMM: Math.max(K.MIN_MARK_MM, K.MIN_MARK_PEN * M.PEN) }); // the ladder's minimum mark scales with its stretched pen: the pen law's is the document pen's
+    return ms;
+  };
+
+  // ---- WD-D3 weightModulated (contract A29) -------------------------------------------------------------------------------------------
+  // The pose law holds the GEOMETRY constant (one even pitch, the sparse end) and carries the tone as line width: w(I) = top + (1 - top) * ease(I),
+  // 1 pen in the light up to `top` in the shadow. Written for the lock: the plain v2 ladder of the spec supplies the grid (its level-0 rulings, at
+  // the sparse-end pitch p0); the LUT is flat (a screen-mm pitch, so the grid keeps its spacing at any zoom) and rolls off to paper over the lightest
+  // WEIGHT_PAPER_BAND of the tone by thinning rulings (a spatially even subset). The width is quantised into WEIGHT_STEP steps; each ruling is baked
+  // once per step with that width (runWeight) and the tone band in which w(I) rounds to the step (runBand), so the frame draws, at every vertex, the
+  // width the light asks for: the width follows the light while dragging with no rebake. Bands tile [0, 1], so tone OFF (I = 1) draws the lightest.
+  const weightTop = () => clamp(K.WEIGHT_TOP, 1, 6);
+  const weightAt = (I) => { const top = weightTop(); const u = clamp(finite(I, 0), 0, 1); return top + (1 - top) * (u * u * u * (u * (6 * u - 15) + 10)); };
+  const weightP0 = (spec) => { const lad = ladder().bake(ampLadderSpec(spec)); return finite(lad.meta.p0, 1); };
+  const weightLUT = (spec, toneCtx) => {
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const lut = new Float32Array(size + 1);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const flat = 1.001 / (weightP0(spec) * scaleRef);
+    const band = Math.max(1e-3, K.WEIGHT_PAPER_BAND);
+    const off = toneIsOff(toneCtx);
+    for (let k = 0; k <= size; k++) { const u = clamp((1 - k / size) / band, 0, 1); lut[k] = off ? flat : flat * u * u * (3 - 2 * u); }
+    return { lut, scaleFn: null };
+  };
+  const bakeWeight = (spec) => {
+    const L = ladder(); const SM = MS();
+    const ls = ampLadderSpec(spec);
+    if (!L || !L.supports(ls)) throw new Error('SurfaceLockLaws.bake: the ladder does not support this spec');
+    const lad = L.bake(ls);
+    const B = SM.createBuilder({ bakerId: 'laws', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const out = [0, 0, 0]; const tmp = { count: 0 };
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const step = clamp(K.WEIGHT_STEP, 0.02, 1); const top = weightTop();
+    const nb = Math.max(1, Math.round((top - 1) / step) + 1);
+    const bandOf = (I) => clamp(Math.round((weightAt(I) - 1) / step), 0, nb - 1);
+    // the I interval [lo, hi] of each band (w decreases with I: band 0 is the lightest)
+    const lo = new Array(nb).fill(Infinity); const hi = new Array(nb).fill(-Infinity);
+    for (let k = 0; k <= size; k++) { const b = bandOf(k / size); lo[b] = Math.min(lo[b], (k - 0.5) / size); hi[b] = Math.max(hi[b], (k + 0.5) / size); }
+    for (let r = 0; r < lad.runCount; r++) {
+      if (lad.runLevel[r] !== 0) continue;
+      const flags = lad.runFlags[r];
+      if (flags & SM.FLAG.DOT) continue;
+      const rank = SM.rankOf(lad, r);
+      const n = lad.runStart[r + 1] - lad.runStart[r]; if (n < 2) continue;
+      for (let b = 0; b < nb; b++) {
+        if (!(hi[b] >= lo[b])) continue;
+        const w = Math.min(255, Math.round((1 + b * step) * SM.WEIGHT_UNIT));
+        B.beginRun(0, rank, lad.runFamily[r], flags, undefined, 0, w, Math.max(0, lo[b]), Math.min(1, hi[b]));
+        const v0 = lad.runStart[r];
+        for (let i = 0; i < n; i++) {
+          SM.octDecode(lad.normals, 2 * (v0 + i), out);
+          B.vertex(lad.positions[3 * (v0 + i)], lad.positions[3 * (v0 + i) + 1], lad.positions[3 * (v0 + i) + 2], out[0], out[1], out[2]);
+        }
+        tmp.count += n;
+        B.endRun();
+      }
+      if (tmp.count > K.MAX_VERTS) throw new Error('SurfaceLockLaws.bake: vertex budget exceeded');
+    }
+    const ms = B.finish();
+    ms.bakerId = 'laws';
+    ms.meta = Object.assign({}, lad.meta, { lawId: 'weightModulated', weightTop: top, weightP0: lad.meta.p0 });
+    return ms;
+  };
+
   // ---- the bake ----------------------------------------------------------------------------------------------
   const bake = (spec) => {
     sync();
     const law = spec && spec.toneLaw;
     if (!supports(spec)) throw new Error(`SurfaceLockLaws.bake: unsupported spec (law ${law})`);
+    if (AMP_LAW_IDS.indexOf(law) !== -1) return bakeAmp(spec);
+    if (PEN_LAW_IDS.indexOf(law) !== -1) return bakePen(spec);
+    if (WEIGHT_LAW_IDS.indexOf(law) !== -1) return bakeWeight(spec);
     if (MARK_LAW_IDS.indexOf(law) !== -1) return bakeMarks(spec);
     const T = toneParams(spec, (law === 'dutyConst' || law === 'endShorten') && bakeIsV2(spec));
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;

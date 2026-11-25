@@ -244,6 +244,230 @@
     return faceTags ? { vertices: mesh.vertices, faces, faceTags } : { vertices: mesh.vertices, faces };
   };
 
+  // ── T-junction repair (curved carves only). ────────────────────────────────
+  // A BSP split leaves vertices that sit on the INTERIOR of a neighbouring
+  // triangle's edge (and dropSlivers removes the collinear triangles that used to
+  // bridge them), so the welded mesh has cracks: count-1 edges all along the cut
+  // rim. Edge classification then calls the rim a 'boundary' and the carve loses
+  // its outline. Split every triangle edge that carries such a vertex so the
+  // surface is crack-free. Tags ride along; winding is preserved.
+  const edgeCounts = (faces) => {
+    const m = new Map();
+    faces.forEach((f) => {
+      for (let k = 0; k < 3; k++) {
+        const a = f[k]; const b = f[(k + 1) % 3];
+        const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+        m.set(key, (m.get(key) || 0) + 1);
+      }
+    });
+    return m;
+  };
+
+  // Does the mesh contain a smooth (shallow-dihedral) crease? A box-box / flat-faceted carve only has 90° and 0°
+  // edges, so it never qualifies and its output stays byte-identical.
+  const isCurvedMesh = (mesh) => {
+    const normals = mesh.faces.map((f) => {
+      const a = mesh.vertices[f[0]]; const b = mesh.vertices[f[1]]; const c = mesh.vertices[f[2]];
+      const n = cross(sub(b, a), sub(c, a));
+      const l = length(n);
+      return l > 0 ? { x: n.x / l, y: n.y / l, z: n.z / l } : null;
+    });
+    const byEdge = new Map();
+    mesh.faces.forEach((f, i) => {
+      for (let k = 0; k < 3; k++) {
+        const a = f[k]; const b = f[(k + 1) % 3];
+        const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+        const l = byEdge.get(key);
+        if (l) l.push(i); else byEdge.set(key, [i]);
+      }
+    });
+    let curved = false;
+    byEdge.forEach((l) => {
+      if (curved || l.length !== 2) return;
+      const n0 = normals[l[0]]; const n1 = normals[l[1]];
+      if (!n0 || !n1) return;
+      const d = n0.x * n1.x + n0.y * n1.y + n0.z * n1.z;
+      if (d < 0.99999 && d > 0.766) curved = true; // between ~0.25° and ~40°
+    });
+    return curved;
+  };
+
+  // Triangles thinner than this (relative to mesh extent) have no reliable normal — a 1e-5 weld wobble tilts it by tens
+  // of degrees — so they are removed and the T-junction repair re-stitches their neighbours onto the vertex they carried.
+  const SLENDER_TOL = 2e-4;
+  // Merge vertices closer than the slender tolerance (the BSP leaves 0.005 mm edges that no 1e-5 weld catches and that
+  // otherwise survive as cracks); drops the triangles that collapse.
+  const weldCoarse = (mesh) => {
+    let maxAbs = 1;
+    for (let i = 0; i < mesh.vertices.length; i++) {
+      const p = mesh.vertices[i];
+      maxAbs = Math.max(maxAbs, Math.abs(p.x), Math.abs(p.y), Math.abs(p.z));
+    }
+    const tol = maxAbs * SLENDER_TOL;
+    const cells = new Map();
+    const remap = new Array(mesh.vertices.length);
+    const out = [];
+    mesh.vertices.forEach((p, i) => {
+      const cx = Math.floor(p.x / tol); const cy = Math.floor(p.y / tol); const cz = Math.floor(p.z / tol);
+      let found = -1;
+      for (let dx = -1; dx <= 1 && found < 0; dx++) for (let dy = -1; dy <= 1 && found < 0; dy++) for (let dz = -1; dz <= 1 && found < 0; dz++) {
+        const list = cells.get(`${cx + dx},${cy + dy},${cz + dz}`);
+        if (!list) continue;
+        for (let k = 0; k < list.length; k++) {
+          const q = out[list[k]];
+          if (Math.abs(q.x - p.x) <= tol && Math.abs(q.y - p.y) <= tol && Math.abs(q.z - p.z) <= tol) { found = list[k]; break; }
+        }
+      }
+      if (found < 0) {
+        found = out.length; out.push(p);
+        const key = `${cx},${cy},${cz}`;
+        if (cells.has(key)) cells.get(key).push(found); else cells.set(key, [found]);
+      }
+      remap[i] = found;
+    });
+    const tags = Array.isArray(mesh.faceTags) ? mesh.faceTags : null;
+    const faces = []; const faceTags = tags ? [] : null;
+    mesh.faces.forEach((f, i) => {
+      const a = remap[f[0]]; const b = remap[f[1]]; const c = remap[f[2]];
+      if (a === b || b === c || a === c) return;
+      faces.push([a, b, c]); if (faceTags) faceTags.push(tags[i] || null);
+    });
+    return faceTags ? { vertices: out, faces, faceTags } : { vertices: out, faces };
+  };
+
+  // Last resort: a triangle left with 2+ open (count-1) edges is a floating flap of the slender-drop cascade — remove it
+  // (iterated) so no stray cracks remain; the flaps are ~0.01 mm² so nothing visible is lost.
+  const dropFlaps = (mesh) => {
+    let cur = mesh;
+    for (let pass = 0; pass < 6; pass++) {
+      const counts = edgeCounts(cur.faces);
+      const open = (a, b) => counts.get(a < b ? `${a}_${b}` : `${b}_${a}`) === 1;
+      const tags = Array.isArray(cur.faceTags) ? cur.faceTags : null;
+      const faces = []; const faceTags = tags ? [] : null;
+      cur.faces.forEach((f, i) => {
+        const n = (open(f[0], f[1]) ? 1 : 0) + (open(f[1], f[2]) ? 1 : 0) + (open(f[2], f[0]) ? 1 : 0);
+        if (n >= 2) return;
+        faces.push(f); if (faceTags) faceTags.push(tags[i] || null);
+      });
+      if (faces.length === cur.faces.length) break;
+      cur = faceTags ? { vertices: cur.vertices, faces, faceTags } : { vertices: cur.vertices, faces };
+    }
+    return cur;
+  };
+
+  const dropSlender = (mesh) => {
+    let maxAbs = 1;
+    for (let i = 0; i < mesh.vertices.length; i++) {
+      const p = mesh.vertices[i];
+      maxAbs = Math.max(maxAbs, Math.abs(p.x), Math.abs(p.y), Math.abs(p.z));
+    }
+    const tol = maxAbs * SLENDER_TOL;
+    const tags = Array.isArray(mesh.faceTags) ? mesh.faceTags : null;
+    const faces = []; const faceTags = tags ? [] : null;
+    mesh.faces.forEach((f, i) => {
+      const a = mesh.vertices[f[0]]; const b = mesh.vertices[f[1]]; const c = mesh.vertices[f[2]];
+      const lab = length(sub(b, a)); const lbc = length(sub(c, b)); const lca = length(sub(a, c));
+      const longest = Math.max(lab, lbc, lca);
+      const h = longest > 0 ? triArea2(a, b, c) / longest : 0;
+      if (longest >= 4 * tol && h < tol) return;
+      faces.push(f); if (faceTags) faceTags.push(tags[i] || null);
+    });
+    return faceTags ? { vertices: mesh.vertices, faces, faceTags } : { vertices: mesh.vertices, faces };
+  };
+
+  const repairTJunctions = (mesh) => {
+    let cur = mesh;
+    for (let pass = 0; pass < 4; pass++) {
+      const counts = edgeCounts(cur.faces);
+      const open = new Set();
+      counts.forEach((c, key) => { if (c === 1) open.add(key); });
+      if (!open.size) break;
+      const V = cur.vertices;
+      let maxAbs = 1;
+      for (let i = 0; i < V.length; i++) maxAbs = Math.max(maxAbs, Math.abs(V[i].x), Math.abs(V[i].y), Math.abs(V[i].z));
+      const tol = maxAbs * SLENDER_TOL;
+      const cand = new Set();
+      open.forEach((key) => { const [a, b] = key.split('_'); cand.add(+a); cand.add(+b); });
+      const cv = Array.from(cand).sort((a, b) => V[a].x - V[b].x);
+      const xs = cv.map((i) => V[i].x);
+      const lowerBound = (x) => { let lo = 0; let hi = xs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (xs[m] < x) lo = m + 1; else hi = m; } return lo; };
+      // Per open edge: the candidate vertices lying on its interior, ordered along it.
+      const splits = new Map();
+      open.forEach((key) => {
+        const [sa, sb] = key.split('_');
+        const ia = +sa; const ib = +sb;
+        const A = V[ia]; const B = V[ib];
+        const d = sub(B, A);
+        const L2 = d.x * d.x + d.y * d.y + d.z * d.z;
+        if (!(L2 > 0)) return;
+        const lo = lowerBound(Math.min(A.x, B.x) - tol);
+        const hits = [];
+        for (let k = lo; k < cv.length && xs[k] <= Math.max(A.x, B.x) + tol; k++) {
+          const iq = cv[k];
+          if (iq === ia || iq === ib) continue;
+          const q = V[iq];
+          const t = ((q.x - A.x) * d.x + (q.y - A.y) * d.y + (q.z - A.z) * d.z) / L2;
+          if (t <= 0 || t >= 1) continue;
+          const dx = A.x + t * d.x - q.x; const dy = A.y + t * d.y - q.y; const dz = A.z + t * d.z - q.z;
+          if (dx * dx + dy * dy + dz * dz > tol * tol) continue;
+          if (t * Math.sqrt(L2) < tol || (1 - t) * Math.sqrt(L2) < tol) continue;
+          hits.push({ iq, t });
+        }
+        if (hits.length) { hits.sort((p, q) => p.t - q.t); splits.set(key, { ia, hits }); }
+      });
+      if (!splits.size) break;
+      const faces = [];
+      const tags = Array.isArray(cur.faceTags) ? cur.faceTags : null;
+      const faceTags = tags ? [] : null;
+      cur.faces.forEach((f, fi) => {
+        let ring = null;
+        for (let k = 0; k < 3; k++) {
+          const a = f[k]; const b = f[(k + 1) % 3];
+          const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+          const sp = splits.get(key);
+          if (!sp) continue;
+          if (!ring) ring = [];
+          ring.push({ k, pts: (a === sp.ia ? sp.hits : sp.hits.slice().reverse()).map((h) => h.iq) });
+        }
+        if (!ring) { faces.push(f); if (faceTags) faceTags.push(tags[fi] || null); return; }
+        const poly = [];
+        for (let k = 0; k < 3; k++) {
+          poly.push(f[k]);
+          const r = ring.find((x) => x.k === k);
+          if (r) r.pts.forEach((p) => poly.push(p));
+        }
+        // Convex polygon (a triangle with points on its edges): clip the largest-area non-degenerate ear until a triangle is left.
+        const P = poly.slice();
+        const area = (i0, i1, i2) => triArea2(V[i0], V[i1], V[i2]);
+        const polyArea = (ring) => {
+          let sx = 0; let sy = 0; let sz = 0;
+          for (let i = 0; i < ring.length; i++) {
+            const c = cross(V[ring[i]], V[ring[(i + 1) % ring.length]]);
+            sx += c.x; sy += c.y; sz += c.z;
+          }
+          return Math.sqrt(sx * sx + sy * sy + sz * sz);
+        };
+        while (P.length > 3) {
+          let best = -1; let bestA = -1;
+          const total = polyArea(P);
+          for (let i = 0; i < P.length; i++) {
+            const ar = area(P[(i + P.length - 1) % P.length], P[i], P[(i + 1) % P.length]);
+            // never clip an ear that leaves a collinear (zero-area) remainder
+            if (ar > bestA && total - ar > total * 1e-9) { bestA = ar; best = i; }
+          }
+          if (best < 0) break;
+          const i0 = P[(best + P.length - 1) % P.length]; const i1 = P[best]; const i2 = P[(best + 1) % P.length];
+          faces.push([i0, i1, i2]); if (faceTags) faceTags.push(tags[fi] || null);
+          P.splice(best, 1);
+        }
+        if (P.length === 3) { faces.push([P[0], P[1], P[2]]); if (faceTags) faceTags.push(tags[fi] || null); }
+        else { for (let i = 1; i + 1 < P.length; i++) { faces.push([P[0], P[i], P[i + 1]]); if (faceTags) faceTags.push(tags[fi] || null); } }
+      });
+      cur = faceTags ? { vertices: V, faces, faceTags } : { vertices: V, faces };
+    }
+    return cur;
+  };
+
   // Tag-preserving weld — a MIRROR of Scene3D.Mesh.weldMesh (same 1e-5-of-extent
   // quantisation + repeated-index degenerate drop, so the geometry is
   // byte-identical) that filters a parallel `faceTags` array in lockstep.
@@ -315,6 +539,17 @@
     mesh = getMesh().weldMesh ? weldTagged(mesh) : mesh;
     mesh = dropSlivers(mesh);
     if (!mesh.faces.length) return null;
+    if (isCurvedMesh(mesh)) {
+      mesh = repairTJunctions(dropSlender(weldCoarse(mesh)));
+      for (let i = 0; i < 10; i++) {
+        const dropped = dropSlender(mesh);
+        const calm = dropped.faces.length === mesh.faces.length;
+        mesh = repairTJunctions(dropped);
+        if (calm) break;
+      }
+      mesh = dropFlaps(mesh);
+      if (!mesh.faces.length) return null;
+    }
     return { vertices: mesh.vertices, faces: mesh.faces, faceTags: mesh.faceTags };
   };
 

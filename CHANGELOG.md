@@ -6,6 +6,27 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Scene3D: surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching (v1.5.43)
+
+One release that finishes the surface-locked fills, anchors Etf Kang to the object and makes carved shapes read as carved solids. Saved scenes and presets keep their old look unless noted; every new key is written only when it is off its default.
+
+#### Added
+- **Surface-locked fills no longer flatten on release.** Maze, Voronoi and Turing Stripe now follow the object at rest, in export and while dragging, the same drawing in all three (they used to swap to a flat screen pattern on release). A torus with a ground shadow stays wrapped too (non-convex shadow casters are supported). Turing Stripe reads as long smooth labyrinth stripes. Amendments A32-A35 in `docs/surface-lock-contract.md`.
+- **Faster turning for the heavy fills.** The surface texture is baked once at rest and kept (idle prewarm), and the first drag frame of a Voronoi uses a coarser texture when the full one is not ready yet (`sceneBakeLod`, on by default).
+- **Etf Kang rings are anchored to the object** ("Follows the object (Kang)"), with a **Wrap origin** XY pad that sets where the rings are centred (top pole by default). The rings close on themselves, spacing follows the surface, and a cylinder keeps its cap and side separate at the rim.
+- **Pen laws preview while dragging.** Pen Interleave / Reserve / Cross, Weight Modulated and Amplitude + Spacing show their look while you orbit or drag (the settled and exported drawing is unchanged for the pen laws; Amplitude + Spacing follows the light with no rebake). A28, A29.
+- **Multi-object gizmo and sun handle.** Several selected objects move, rotate and scale together on the selection centroid, the object inspector keeps a multi-object selection, and the directional-light sun handle follows the Scene group's transform.
+- **Raised ground occludes.** Geometry below a raised ground (Height Y) no longer draws.
+- **Tone-model v2 audits (U8)** for the mkTick spacing tone; mkTick continuation ticks no longer hook at the hub near the limb (U9).
+
+#### Fixed
+- **Carved dimples and holes follow the curve.** A curved carve (a sphere or cylinder cut out of a box) is hatched with smooth analytic rings and great-circle arcs instead of polygons, reads as a bowl or bore, shades each source face by its own light, and gets a crack-free rim crease (U7, U7b-U7e).
+- **Duty Cycle and Scribble (v2) retuned** (separation 1.0; Scribble key 0.92); surface-lock preparation skips provably dead runs and back-facing blocks (U1).
+
+#### Notes
+- Taper (`taperedEnds`) is not part of this release.
+- In-app help has a Wrap origin entry.
+
 ### Fixed: flaky tests, and a group move-gizmo drag that could die silently
 - **Group move arrow (Scene 3D).** Grabbing the move arrow of a combined (boolean) shape creates its transform lazily, and an identity transform is dropped again on the next params normalize. If that happened between the grab and the first move, the drag was abandoned: nothing moved and no undo step was recorded. The drag now rebuilds the transform from its grab-time start (`src/render/renderer.js`), with a deterministic regression test.
 - **Deflaked tests.** Six tests that failed and passed on the same commit in CI now wait for the real condition or tolerate real variability, and each still fails when the feature breaks (mutation-checked):

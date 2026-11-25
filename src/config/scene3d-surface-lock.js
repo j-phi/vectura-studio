@@ -14,7 +14,7 @@
 
   Vectura.SCENE3D_SURFACE_LOCK = Object.freeze({
     // Bumped whenever a baker's output for the same bake key changes. Part of every bake key.
-    BAKE_VERSION: 4,
+    BAKE_VERSION: 6,
     // Contract §6 — a vertex whose facing cosine c = n·view is below this is culled (crossing interpolated).
     NZ_CULL: 0.08,
     // Contract §5 — the tone look-up table has TONE_LUT_SIZE + 1 entries for I = k / TONE_LUT_SIZE.
@@ -186,8 +186,54 @@
       DUTY_PERIOD_FLOOR: 2.0,  // dutyConst mark period, x plot floor
       DUTY_PITCH_FLOOR: 1.05,  // dutyConst ruling pitch, x plot floor
       END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+      AMP_SHARE: 0.4,  // WD-D1 ampSpacing: wave amplitude as a share of the baked ruling pitch (pose WV6 aMax)
+      AMP_MM_MIN: 0.34,  // WD-D1 ampSpacing: amplitude floor (screen mm; pose WV6_AMP_MIN_MM)
+      AMP_MM_MAX: 0.6,  // WD-D1 ampSpacing: amplitude cap (screen mm; the pose WV6_AMP_MAX_MM is 0.8: a lock wave this size keeps the ruling arc length within ~7 % of the ladder's, so the tone stays the ladder's)
+      AMP_LAMBDA_AMP: 12,  // WD-D1 ampSpacing: wavelength, x the amplitude (a fixed visual shape; never under AMP_LAMBDA_MIN_MM)
+      AMP_LAMBDA_MIN_MM: 3.2,  // WD-D1 ampSpacing: wavelength floor (screen mm)
+      PEN_MM_0: 0.26,  // WD-D2 pen laws: the fine nib's measured width, mm (surface-fill PEN_MM)
+      PEN_MM_1: 0.52,  // WD-D2: the medium nib
+      PEN_MM_2: 0.93,  // WD-D2: the broad nib
+      PEN_DEEP_AREA: 0.93,  // WD-D2: the darkest ink area the pen laws ask for (surface-fill PEN_DEEP_AREA)
+      PEN_LIGHT_AREA: 0.005,  // WD-D2: the lightest ink area (tone model v2: paper)
+      PEN_INTER_PITCH_PEN: 2.2,  // WD-D2 penInterleave: the one even grid's pitch, x the broad nib (= its own plot floor; calibrated to the pose compose, whose coverage sits flat at the broad nib on this grid)
+      PEN_INTER_NEED: 1.2,  // WD-D2 penInterleave: the ink width the tone asks for = area x grid pitch x this (calibrated to the pose compose, whose nib mix stays on the broad nib deeper into the lights)
+      PEN_RES_U_BIAS: 0.07,  // WD-D2 penReserve: added to the tone's ink area before the tier coordinate (calibrated to the pose compose, whose broad nib holds deeper into the mids)
+      PEN_CROSS_PAPER_I: 0.93,  // WD-D2 penCross: the tone at and above which the law draws nothing (paper)
+      PEN_RES_PITCH_PEN: 3.0,  // WD-D2 penReserve: the ground grid's pitch, x the broad nib (calibrated to the pose compose)
+      PEN_CROSS_PITCH_MM: 2.5,  // WD-D2 penCross: the medium family's pitch, screen mm (calibrated to the pose compose)
+      PEN_CROSS_FULL_I: 0.8,  // WD-D2 penCross: the tone at and below which both families draw their full grid
+      PEN_CROSS_B_FRAC: 0.35,  // WD-D2 penCross: the broad family's share of the medium grid
+      PEN_CROSS_DEG: 60,  // WD-D2 penCross: the broad family's angle from the medium family
+      PEN_RES_FINE_FRAC: 0.08,  // WD-D2 penReserve: the fine crossing family's share of the grid
+      PRES_PERIOD: 1 / 12,  // WD-D2 penReserve: transverse reserves per ruling, as a share of its length (surface-fill PRES_PERIOD)
+      PRES_DUTY: 0.3,  // WD-D2 penReserve: the white share of each reserve period (the pose duty runs 0.3 darkest .. 0.6; surface-fill PRES_DUTY_MAX)
+      WEIGHT_TOP: 1.9,  // WD-D3 weightModulated: line width at the dark end, x the document pen (the pose ribbon reaches ~1.7; the lock rulings foreshorten so the ink sits ~0.7x of the pose: +12 %)
+      WEIGHT_STEP: 0.1,  // WD-D3 weightModulated: width quantum (each ruling is baked once per step, with a tone band)
+      WEIGHT_PAPER_BAND: 0.04,  // WD-D3 weightModulated: the lightest share of the tone range that thins to paper (the pose law is paper above L 0.9)
+      MAZE_PAPER_DENS: 0.03,  // D5-maze mazeFill (A32): relative density at and below which the pose maze draws nothing
+      MAZE_PITCH_X: 0.6,  // D5-maze: pose cell = max(floor, this x pitchOfDens) x MAZE_CELL_X
+      MAZE_CELL_X: 1.05,  // D5-maze: see MAZE_PITCH_X
+      MAZE_V2_PITCH_X: 2,  // D5-maze: the v2 sparse end runs to this x the legacy lit pitch (pose V2_PITCH_X)
+      MAZE_OFF_DENS: 0.5,  // D5-maze: tone OFF draws the uniform maze of this relative density
+      MAZE_LEVEL_MAX: 5,  // D5-maze: finest division level
+      MAZE_THIN: 0.6,  // D5-maze: chambers thinner / wider than this ratio drop the wall across their short side (poles, torus inner equator)
+      MAZE_STEP_MM: 1.2,  // D5-maze: longest polyline segment of a wall (screen mm)
+      MAZE_FLOOR_PEN: 0.7,  // D5-maze: the frame's plot-floor cap (meta.floorPitchPen), in pens: a maze wall may sit this close before the cap bites
+      MAZE_KNEE_N: 4,  // D5-maze: the pose cell is max(floor, 0.6 x pitch); the lock takes the smooth maximum (p^n + floor^n)^(1/n), so the dark end keeps grading
+      MAZE_FINE: 1.1,  // D5-maze: the finest baked cell is the floor cell / this (lock walls are shorter per cell than the pose's: the pose ink at the dark end)
+      MAZE_INK_X: 1,  // D5-maze: LUT calibration x (1 / pose cell)
+      MAZE_MAX_VERTS: 150000,  // D5-maze: the finest level is lowered until the vertex estimate fits
+      MAZE_SURVEY: 25,  // D5-maze: chart survey grid
+      MAZE_RANK_JITTER: 0.3,  // D5-maze: random share of a chamber's rank
+      MAZE_ROOT_MAX: 6000,  // D5-maze: most root chambers
+      MAZE_RUN: 4,  // D5-maze: longest straight wall in cells of the tone it is drawn at; longer walls are drawn as runs of this many cells with a one-cell gap (tone bands)
+      MAZE_RING_OPEN: 0.2,  // D5-maze: share of the ring / lane walls on the thin side of the chart (poles, torus inner equator) that keep their gap; the rest are closed rings
+      AMP_STEPS: 10,  // WD-D1 ampSpacing: polyline samples per wavelength
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
+      V2_DUTY_SEP: 1.0,  // tone model v2 dutyConst: screen ruling spacing (x the nominal ruling pitch) at which the cell fraction is the target; <= 1.04 keeps the even-fill bars (p90/p10 < 1.45) with margin, 1.08 straddled the cap word's 1/8 steps (A22a)
+      V2_SCRIB_KEY: 0.92,  // tone model v2 mkScribble: scales the tone key of each wave level (< 1 draws more at one tone); retuned with V2_DUTY_SEP 1.0 so Scribble follows the dutyConst v2 target within 0.07 (max 0.049)
       V2_END_PITCH_FLOOR: 0.95,  // tone model v2 endShorten ruling pitch, x the v2 plot floor
       END_RETRACT: 0.84,  // endShorten: fraction of a ruling spent at full light
       MERGE_PERIOD_FLOOR: 1.8,  // mergeLadder mark period, x plot floor
@@ -219,6 +265,17 @@
       ZOOM_HEADROOM: 1.5,  // as the top-level key: finest baked level reaches the darkest pitch at this multiple of the bake scale
       DOT_SEGS: 8,  // tone model v2 stipple: dot polygon segments
       SPIRAL_MIN_S: 0.03,  // tone model v2 spiral: stop when the scale toward the face centre drops under this
+    }),
+    // surface-fill-mono.js etfKang: strokes are spaced by SURFACE distance (screen gap = pitch x foreshortening |N.V|).
+    ETF: Object.freeze({
+      SURFACE_K: 0.5,  // gap = pitch x m^K, m = |N.V| foreshortening: 1 = full surface spacing (A), 0.5 = partial (B), 0 = even SCREEN spacing (the old look)
+      GAP_FLOOR_X: 1,  // ink floor: compression never takes the gap under this x the plot-floor pitch (0 = off; B uses 1)
+      GAP_MIN: 0.3,  // settled: the foreshortening floor (the limb, |N.V| -> 0, cannot run away into a flood)
+      WRAP_LO: 0.015,  // wrap rings: |a x n| (sin of the angle off the wrap axis) under this = a straight-line face (cap, box top, the pole)
+      WRAP_HI: 0.07,  // ... and over this = full rings; between the two the stroke blends from straight to ring
+      EDGE_DEG: 30,  // wrap rings, edge-aware: a normal turn over this between neighbouring cells is a crease (cylinder rim): differences go one-sided and smoothing never mixes the two faces (0 = off)
+      REGION_DEG: 45,  // ... and cells whose neighbours' normals stay within this belong to one face; a stroke ends where it would step onto another
+      GAP_MIN_DRAFT: 0.5,  // law-tier drag draft: a higher floor keeps the first drag frame under the flat-fallback budget
     }),
     // surface-lock-visibility.js (mesh visibility, per-frame outline).
     VISIBILITY: Object.freeze({

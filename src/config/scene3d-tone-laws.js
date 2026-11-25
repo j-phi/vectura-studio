@@ -682,7 +682,7 @@
     "mechanism": "Builds a genuine direction field over the body rather than picking a fixed or scheduled ruling angle: the initial tangent is perpendicular to the screen gradient of camera depth, then smoothed by Kang's unsigned rule (the neighbour's contribution is signed by phi = sign(t.t') and weighted by wd = |t.t'|), which stops a plain vector diffusion from manufacturing swirl at a degenerate point. Confidence is the field's own anisotropy, so a place with no preferred direction is dominated by its neighbours. Rulings are then placed as the field's own depth isocontours, at an evenly-spaced separation driven by the tone.",
     "strengths": "The first law in the mono roster to construct a genuine direction field rather than a fixed or scheduled angle; on sphere·hatch it posts R2 0.470 with a wide span (33.6), and it reaches its darkest at the plot floor on every cell.",
     "weaknesses": "Confidence weighting can still be dominated by neighbours at a degenerate point; it carries the highest off-the-line deviation of the direction-field group on sphere·hatch (14.0%, against defectSplit’s and mezzoRegion’s 2.1%), and on sphere·crosshatch that rises to 23.1% once a second family is composed on top of the flow.",
-    "chooseWhen": "Choose it when the body's own depth field should visibly steer the ruling curvature — a form where direction itself should read as shape, not just density. Direction field picks Follows depth (Kang) or Designed defects.",
+    "chooseWhen": "Choose it when the body's own depth field should visibly steer the ruling curvature — a form where direction itself should read as shape, not just density. Direction field picks Follows the object (Kang) or Designed defects.",
     "caveat": null,
     "caveatKind": null,
     "simulated": false,
@@ -1378,7 +1378,7 @@
       "options": [
         {
           "value": "depth",
-          "label": "Follows depth (Kang)",
+          "label": "Follows the object (Kang)",
           "law": "etfKang"
         },
         {

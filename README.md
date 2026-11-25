@@ -773,6 +773,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.5.43 - Surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching
+- **Maze, Voronoi and Turing Stripe no longer flatten on release.** They follow the object at rest, in export and while you drag, including a torus with a ground shadow; dragging is faster (baked once, idle prewarm, coarser first frame for Voronoi).
+- **Etf Kang rings are anchored to the object** ("Follows the object (Kang)") with a **Wrap origin** XY pad for where the rings are centred; a cylinder keeps cap and side apart at the rim.
+- **Carved dimples and holes follow the curve:** smooth analytic rings, a bowl or bore look, per-face tone and a clean rim.
+- **Pen laws preview while dragging.** Also: multi-object move / rotate / scale gizmo, sun handle follows Scene Transform, a raised ground hides what is below it. Taper is not included.
+
 ### Unreleased - Flaky-test cleanup
 - **Scene 3D group move arrow is reliable.** Dragging a combined shape's move arrow right after grabbing it no longer occasionally does nothing.
 - **Steadier CI.** Six intermittently failing tests now wait for the real condition (or tolerate real timing variance) and still fail when the feature breaks.

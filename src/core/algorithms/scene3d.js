@@ -1471,6 +1471,135 @@
     return out;
   };
 
+  // U7 — front-region boundary of a CURVED CSG carve, from a robust polygon union of the front faces' projected
+  // polygons (coords snapped to 1e-6 first, so the sweep never sees near-coincident T-junction vertices). The edge-count
+  // boundary above treats every BSP T-junction as a boundary edge and the even-odd scanline then shreds the region. Returns
+  // [[p0,p1],…] ring edges (outer + holes), or null on ANY failure/empty result so the caller keeps today's boundary.
+  const csgFrontUnionBoundary = (record, faceIndices, areaOut, snapUnit, snapOrigin) => {
+    const FB = Vectura.FillBoolean;
+    if (!FB || typeof FB.union !== 'function' || typeof FB.ringToMultiPolygon !== 'function') return null;
+    try {
+      if (typeof FB.consumeLastOpError === 'function') FB.consumeLastOpError();
+      // U7b: an optional coarser snap (retry of a failed sweep); absent = the historic 1e-6 grid, byte-identical.
+      // The coarse grid is anchored at `snapOrigin` (a point of the object itself) so a rigid screen translation of the
+      // object leaves the snapped geometry unchanged: the fill must translate with its group.
+      const snapAt = (v, o) => Math.round((v - o) / snapUnit) * snapUnit + o;
+      const ox = snapOrigin ? snapOrigin.x : 0; const oy = snapOrigin ? snapOrigin.y : 0;
+      const snap = Number.isFinite(snapUnit) ? null : (v) => Math.round(v * 1e6) / 1e6;
+      const geoms = [];
+      faceIndices.forEach((fi) => {
+        const idx = record.faceIndexArrays[fi];
+        if (!Array.isArray(idx) || idx.length < 3) return;
+        const ring = [];
+        for (let i = 0; i < idx.length; i += 1) {
+          const pt = record.projected[idx[i]];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+          const sx = snap ? snap(pt.x) : snapAt(pt.x, ox); const sy = snap ? snap(pt.y) : snapAt(pt.y, oy);
+          if (Number.isFinite(snapUnit) && ring.length && ring[ring.length - 1].x === sx && ring[ring.length - 1].y === sy) continue;
+          ring.push({ x: sx, y: sy });
+        }
+        if (Number.isFinite(snapUnit) && ring.length < 3) return;
+        const mp = FB.ringToMultiPolygon(ring);
+        if (mp.length) geoms.push(mp);
+      });
+      if (!geoms.length) return null;
+      const merged = FB.union(...geoms);
+      if (typeof FB.consumeLastOpError === 'function' && FB.consumeLastOpError()) return null;
+      if (!Array.isArray(merged) || !merged.length) return null;
+      const out = [];
+      merged.forEach((poly) => (poly || []).forEach((ring, ri) => {
+        // Drop sub-visible slivers/specks (T-junction residue): they break a hatch line into sub-mm fragments and appear or
+        // vanish with float noise, so they would make the fill depend on where the object sits on the page.
+        if (Math.abs(FB.ringArea(ring)) < 4) return;
+        if (areaOut) areaOut.area = (areaOut.area || 0) + (ri === 0 ? 1 : -1) * Math.abs(FB.ringArea(ring)); // U7b: net region area (outer - holes)
+        for (let i = 0; i + 1 < ring.length; i += 1) {
+          out.push([{ x: ring[i][0], y: ring[i][1] }, { x: ring[i + 1][0], y: ring[i + 1][1] }]);
+        }
+      }));
+      return out.length ? out : null;
+    } catch (err) {
+      return null;
+    }
+  };
+
+  // U7 — a flat-fallback fill line of a non-convex CSG carve carries ONE depth (the group's nearZ, i.e. its farthest
+  // centroid), so the carve's own near faces hid it entirely under self-occlusion. This returns the carve's front-surface
+  // depth at a screen point (largest plane depth over the front faces covering it — the visible surface, bore walls
+  // included) so the line is clipped as if it lay ON that surface. null when no face has a usable plane.
+  const csgSurfaceDepthFn = (record, faceIndices) => {
+    const cells = new Map();
+    const CELL = 8;
+    const planes = [];
+    faceIndices.forEach((fi) => {
+      const face = record.faces[fi];
+      if (!face || !Array.isArray(face.polygon)) return;
+      const plane = Vectura.Scene3D.HLR.fitSupportPlane(face.polygon);
+      if (!plane) return;
+      let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+      face.polygon.forEach((q) => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+      if (![x0, y0, x1, y1].every(Number.isFinite)) return;
+      const entry = { poly: face.polygon, plane, x0, y0, x1, y1 };
+      const k = planes.push(entry) - 1;
+      for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx += 1) {
+        for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy += 1) {
+          const key = `${cx}_${cy}`;
+          const arr = cells.get(key);
+          if (arr) arr.push(k); else cells.set(key, [k]);
+        }
+      }
+    });
+    if (!planes.length) return null;
+    const inPoly = (x, y, poly) => {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i]; const b = poly[j];
+        if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+      return inside;
+    };
+    return (x, y) => {
+      const arr = cells.get(`${Math.floor(x / CELL)}_${Math.floor(y / CELL)}`);
+      let best = -Infinity;
+      if (arr) {
+        for (let i = 0; i < arr.length; i += 1) {
+          const e = planes[arr[i]];
+          if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1 || !inPoly(x, y, e.poly)) continue;
+          const d = e.plane.A * x + e.plane.B * y + e.plane.C;
+          if (d > best) best = d;
+        }
+      }
+      return best === -Infinity ? null : best;
+    };
+  };
+
+  // Bridge hairline cracks in a carve's scanline hatch: consecutive 2-point lines whose end/start are closer than `tol`
+  // become one line. A crack between two union output polygons appears or vanishes with float noise (so the fill would
+  // depend on where the object sits on the page); anything under a pen width is not a visible gap anyway.
+  const mergeHairlineGaps = (lines, tol) => {
+    const out = [];
+    lines.forEach((ln) => {
+      const prev = out[out.length - 1];
+      if (prev && prev.length === 2 && ln.length === 2
+        && Math.hypot(ln[0].x - prev[1].x, ln[0].y - prev[1].y) < tol) {
+        out[out.length - 1] = [prev[0], ln[1]];
+      } else out.push(ln);
+    });
+    return out;
+  };
+
+  // Resample a polyline so consecutive samples are at most `step` apart (depth varies along a line over a carve).
+  const densifyLine = (line, step) => {
+    const out = [];
+    for (let i = 0; i < line.length; i += 1) {
+      const b = line[i];
+      if (i === 0) { out.push(b); continue; }
+      const a = line[i - 1];
+      const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step)));
+      for (let k = 1; k <= n; k += 1) out.push({ x: a.x + (b.x - a.x) * (k / n), y: a.y + (b.y - a.y) * (k / n) });
+    }
+    return out;
+  };
+
   // Scanline hatch across the region bounded by `segments` (an arbitrary set of
   // 2D edges forming one or more closed loops), even-odd rule so holes stay
   // empty. Returns [[p0,p1],…]. Continuous across the whole surface, unlike
@@ -1479,7 +1608,7 @@
   // `minSpacing` (optional, default 1 — the historic hard floor) lets a
   // density-driven caller ask for sub-1mm spacing. Every existing call site
   // omits it, so behavior is byte-identical unless a caller opts in.
-  const hatchSegments = (segments, angleDeg, spacing, minSpacing) => {
+  const hatchSegments = (segments, angleDeg, spacing, minSpacing, phase0) => {
     if (!segments.length) return [];
     const ang = finite(angleDeg, 45) * Math.PI / 180;
     const dirX = Math.cos(ang); const dirY = Math.sin(ang);
@@ -1493,6 +1622,8 @@
       });
     });
     if (!Number.isFinite(pMin)) return [];
+    // U7b: an optional group-wide phase origin so per-tone-cluster hatches share one lattice origin (absent = today).
+    if (Number.isFinite(phase0) && phase0 < pMin) pMin = phase0;
     const sp = Math.max(Math.max(0, finite(minSpacing, 1)), spacing);
     const count = Math.min(3000, Math.floor((pMax - pMin) / sp));
     const out = [];
@@ -1626,6 +1757,7 @@
       scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
       seed: G3.snapshotSeedState(),
       ...(p.tone && p.tone.model === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(bounds && bounds.dragPreview === true ? { dragPreview: true } : {}),
       ...(shadeDarkOf(p) !== undefined ? { toneDarkness: shadeDarkOf(p) } : {}),
     };
   };
@@ -1785,7 +1917,14 @@
       for (let ri = 0; ri < runs.length; ri++) {
         const run = runs[ri];
         if (floor && runLength(run.pts) < MIN_RUN_MM) continue;
-        const meta = treat.active ? { ...baseMeta } : baseMeta;
+        // WD-D2: a locked run may carry its own nib (penTier / penId) and width (weightScale), as the pose emit does
+        const rp = run.pen || null;
+        const meta = (treat.active || rp) ? { ...baseMeta } : baseMeta;
+        if (rp) {
+          if (Number.isFinite(rp.weightScale) && rp.weightScale !== 1) meta.weightScale = Math.round(Math.min(6, Math.max(0.1, rp.weightScale)) * 1000) / 1000;
+          if (Number.isInteger(rp.penTier)) meta.penTier = rp.penTier;
+          if (typeof rp.penId === 'string' && rp.penId) meta.penId = rp.penId;
+        }
         const pts = applyStrokeTreatment(run.pts, treat, meta, false);
         const path = levelSPath(pts, meta);
         if (path.length < 2) continue;
@@ -1960,6 +2099,15 @@
           });
         });
       });
+      // U4: a RAISED floor (finite non-zero ground.y) hides scene geometry below it. Only when the camera sees its top
+      // side; ground ink/shadows carry objectId 'ground' and are coplanar (inside the depth bias), so they are not clipped.
+      // ground.y absent/0: no occluder, byte-identical to before.
+      if (scene.ground && Number.isFinite((p.ground || {}).y) && p.ground.y !== 0) {
+        scene.ground.faces.forEach((face) => {
+          if (!face.front || !(face.normalWorld && face.normalWorld.y > 0)) return;
+          occluderFaces.push({ id: face.key, objectId: 'ground', polygon: face.polygon, onlyOwnObject: false });
+        });
+      }
       // P5 (draft-only coarser HLR sampling): `bounds.fastPreview` is a
       // `generate()` argument, set once by its caller and never reassigned
       // before this point (verified — the only other `bounds` identifier in
@@ -3866,6 +4014,11 @@
             chainMarks: styleParams.chainMarks,
             patternMaturity: styleParams.patternMaturity,
             stripeScale: styleParams.stripeScale,
+            // etfKang: the object-locked wrap axis (the Wrap origin pad), rotated by the object's own transform.
+            ...(algo === 'etfKang' ? { wrapAxis: M.wrapAxisWorld(
+              Vectura.SCENE_FILL_CONTROLS && Vectura.SCENE_FILL_CONTROLS.read(styleParams, 'wrapOriginX'),
+              Vectura.SCENE_FILL_CONTROLS && Vectura.SCENE_FILL_CONTROLS.read(styleParams, 'wrapOriginY'),
+              (objById.get(record.id) || {}).transform, Scene.applyObjectTransform) } : {}),
           });
         } catch (e) {
           return null; // a law that throws must not take the facet with it
@@ -4692,6 +4845,44 @@
         // which is exactly why the two drew the same segments (§5.7). The
         // structural edge pass (further down) is now the sole reader.
         const classified = Edges.classifyEdges(record, {});
+        // E2 — "cut-surface" faces of a CURVED carve: a face with a shallow-dihedral (smooth, sub-crease-angle) neighbour.
+        // The flat box planes have none. Drives (a) which creases draw as the carve RIM and (b) the per-source-face fill
+        // regions (flat planes vs the curved cut). Null for every non-CSG / faceted-CSG record (byte-identical there).
+        const csgCurvedFaces = (() => {
+          if (record.primitive !== 'csg' || record.csgFaceted) return null;
+          const cosCrease = Math.cos(Edges.DEFAULT_CREASE_ANGLE * Math.PI / 180);
+          const curved = new Set();
+          record.edges.forEach((e) => {
+            if (!e.faces || e.faces.length !== 2) return;
+            const n0 = record.faces[e.faces[0]] && record.faces[e.faces[0]].normalWorld;
+            const n1 = record.faces[e.faces[1]] && record.faces[e.faces[1]].normalWorld;
+            if (!n0 || !n1) return;
+            const l0 = Math.hypot(n0.x, n0.y, n0.z); const l1 = Math.hypot(n1.x, n1.y, n1.z);
+            if (!(l0 > 0.5) || !(l1 > 0.5)) return;
+            const d = (n0.x * n1.x + n0.y * n1.y + n0.z * n1.z) / (l0 * l1);
+            if (d < 0.99999 && d >= cosCrease) { curved.add(e.faces[0]); curved.add(e.faces[1]); }
+          });
+          return curved;
+        })();
+        // E2 — sliver triangles the BSP leaves (zero-thickness fins) have no trustworthy normal, so a "silhouette" between one
+        // and its neighbour is noise, not form. Their edges never draw and they never join a fill region.
+        const csgThinFaces = (() => {
+          if (!csgCurvedFaces) return null;
+          let maxAbs = 1;
+          record.world.forEach((q) => { maxAbs = Math.max(maxAbs, Math.abs(q.x), Math.abs(q.y), Math.abs(q.z)); });
+          const tol = maxAbs * 2.4e-4;
+          const thin = new Set();
+          record.faceIndexArrays.forEach((idx, fi) => {
+            if (!Array.isArray(idx) || idx.length !== 3) return;
+            const a = record.world[idx[0]]; const b = record.world[idx[1]]; const c = record.world[idx[2]];
+            const ux = b.x - a.x; const uy = b.y - a.y; const uz = b.z - a.z;
+            const vx = c.x - a.x; const vy = c.y - a.y; const vz = c.z - a.z;
+            const ar = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+            const L = Math.max(Math.hypot(ux, uy, uz), Math.hypot(vx, vy, vz), Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z));
+            if (L >= 4 * tol && ar / L < tol) thin.add(fi);
+          });
+          return thin.size ? thin : null;
+        })();
         // ── W-32 Rank 4 — refine the outline onto the TRUE silhouette ──────
         // (W-32r4-plan.md §3.2/§3.3). `silRefine(entry, aScr, bScr)` returns a
         // polyline replacing a straight silhouette/boundary chord, or null to
@@ -5263,6 +5454,7 @@
             // plane and is unaffected — byte-identical for every existing
             // torus/sphere/box/CSG fixture that doesn't hit this knife-edge.
             if (!HLR.fitSupportPlane(face.polygon)) return;
+            if (csgThinFaces && csgThinFaces.has(idx)) return;
             const st = styleOf(face);
             if (!SURFACE_FILL.has(st.mapper)) return;
             const sp = st.params || {};
@@ -5278,11 +5470,493 @@
             if (!g) { g = { style: st, faces: [] }; groups.set(key, g); }
             g.faces.push(idx);
           });
+          // E2 — a curved carve's fill splits per SOURCE FACE: every flat box plane is its own region hatched in that
+          // plane's own orientation (the way a plain box hatches), and the smooth cut surface is one more region.
+          if (csgCurvedFaces && groups.size) {
+            const faceArea = (fi) => {
+              const idx = record.faceIndexArrays[fi];
+              let a2 = 0;
+              for (let i = 0; i < idx.length; i += 1) {
+                const P0 = record.projected[idx[i]]; const P1 = record.projected[idx[(i + 1) % idx.length]];
+                a2 += P0.x * P1.y - P1.x * P0.y;
+              }
+              return Math.abs(a2) / 2;
+            };
+            const split = new Map();
+            groups.forEach((g, gkey) => {
+              const parts = new Map();
+              g.faces.forEach((fi) => {
+                const f = record.faces[fi];
+                const n = f.normalWorld;
+                let ck = 'c';
+                if (!csgCurvedFaces.has(fi) && n && Math.hypot(n.x, n.y, n.z) > 0.5) {
+                  const c = faceWorldCentroid(f);
+                  ck = `p${Math.round(n.x * 100)},${Math.round(n.y * 100)},${Math.round(n.z * 100)}:${Math.round((n.x * c.x + n.y * c.y + n.z * c.z) * 2)}`;
+                }
+                if (!parts.has(ck)) parts.set(ck, []);
+                parts.get(ck).push(fi);
+              });
+              parts.forEach((faces, ck) => {
+                const sub = { style: g.style, faces };
+                if (ck === 'c') sub.csgBowl = true;
+                if (ck !== 'c') {
+                  let rep = faces[0]; let best = -1;
+                  faces.forEach((fi) => { const a = faceArea(fi); if (a > best) { best = a; rep = fi; } });
+                  const sp = g.style.params || {};
+                  const angleRef = styleWrapFlat(sp, 'hatch') ? 'screen'
+                    : (sp.angleRef === 'worldUp' ? 'worldUp' : (sp.angleRef === 'light' ? 'light' : 'face'));
+                  const rf = record.faces[rep];
+                  const scaf = (angleRef === 'screen' || !(best > 0)) ? null : faceUVScaffold(rf, rf.normalWorld);
+                  if (scaf) {
+                    const base = finite(sp.fillAngle, 45) + ((angleRef === 'worldUp' || angleRef === 'light') ? refAngleInUV(angleRef, scaf) : 0);
+                    const r = base * Math.PI / 180;
+                    const p0 = scaf.toScreen({ x: 0, y: 0 });
+                    const p1 = scaf.toScreen({ x: Math.cos(r) * 10, y: Math.sin(r) * 10 });
+                    if (p0 && p1 && Number.isFinite(p0.x) && Number.isFinite(p1.x) && Math.hypot(p1.x - p0.x, p1.y - p0.y) > 1e-4) {
+                      sub.angleOverride = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+                    }
+                  }
+                }
+                split.set(`${gkey}|${ck}`, sub);
+              });
+            });
+            groups.clear();
+            split.forEach((v, kk) => groups.set(kk, v));
+          }
+          // U7b — per-face tone on a CURVED CSG carve: each front face reads its OWN light (threshold band of its own
+          // normal), faces of one band share a region (polygon union) hatched at that band's spacing on one group-wide
+          // lattice origin. Returns merged lines, or null for ANY doubt (a union fails, area lost, > 8 clusters) so the
+          // caller keeps today's single region byte-identically.
+          const CSG_SNAPS = [1e-3, 1e-2];
+          const csgToneClusterLines = (rec, g, sp, angleDeg, boundary) => {
+            const byBand = new Map();
+            g.faces.forEach((fi) => {
+              const face = rec.faces[fi];
+              if (!face || !face.normalWorld) return;
+              const I = intensityFn(face.normalWorld, faceWorldCentroid(face));
+              const b = Regions.band(I, p.tone);
+              if (!byBand.has(b)) byBand.set(b, []);
+              byBand.get(b).push(fi);
+            });
+            if (!byBand.size || byBand.size > 8) return null;
+            // Reference area: the plain sum of the front faces' projected polygon areas (the whole-group union can fail on
+            // a dense BSP mesh, and any overlap between faces only lowers the union below this sum, which the guard catches).
+            let single = 0;
+            g.faces.forEach((fi) => {
+              const idx = rec.faceIndexArrays[fi];
+              if (!Array.isArray(idx) || idx.length < 3) return;
+              let a2 = 0;
+              for (let i = 0; i < idx.length; i += 1) {
+                const P0 = rec.projected[idx[i]]; const P1 = rec.projected[idx[(i + 1) % idx.length]];
+                a2 += P0.x * P1.y - P1.x * P0.y;
+              }
+              single += Math.abs(a2) / 2;
+            });
+            if (!(single > 0)) return null;
+            const f0 = rec.faceIndexArrays[g.faces[0]];
+            const snapOrigin = f0 && rec.projected[f0[0]] ? { x: rec.projected[f0[0]].x, y: rec.projected[f0[0]].y } : { x: 0, y: 0 };
+            const order = Array.from(byBand.keys()).sort((a, b) => a - b);
+            const parts = [];
+            let sum = 0;
+            for (let i = 0; i < order.length; i += 1) {
+              const meta = {};
+              let bnd = null;
+              for (let k = 0; k < CSG_SNAPS.length && !bnd; k += 1) {
+                meta.area = 0;
+                bnd = csgFrontUnionBoundary(rec, byBand.get(order[i]), meta, CSG_SNAPS[k], snapOrigin);
+              }
+              if (!bnd) return null;
+              sum += meta.area || 0;
+              parts.push({ band: order[i], bnd });
+            }
+            if (sum < 0.95 * single) return null;
+            const projMin = (ang) => {
+              const r = ang * Math.PI / 180;
+              let m = Infinity;
+              boundary.forEach(([a, b]) => [a, b].forEach((pt) => { m = Math.min(m, pt.x * -Math.sin(r) + pt.y * Math.cos(r)); }));
+              return m;
+            };
+            const delta = clamp(finite(sp.crossAngleDelta, 90), 10, 170);
+            const ratio = clamp(finite(sp.crossDensityRatio, 1), 0.25, 2);
+            const cross = g.style.mapper === 'crosshatch';
+            const ph0 = projMin(angleDeg);
+            const phB = cross ? projMin(angleDeg + delta) : 0;
+            const phT = cross && sp.tripleHatch === true ? projMin(angleDeg + 45) : 0;
+            const out = [];
+            parts.forEach(({ band, bnd }) => {
+              const spc = Math.max(penWidth, hatchSpacing(sp.fillDensity) / coverageGain(band));
+              let ls = hatchSegments(bnd, angleDeg, spc, hatchFloorFor(sp.fillDensity), ph0);
+              if (cross) {
+                hatchSegments(bnd, angleDeg + delta, spc * ratio, undefined, phB).forEach((l) => ls.push(l));
+                if (sp.tripleHatch === true && band === 0) {
+                  hatchSegments(bnd, angleDeg + 45, spc * ratio, undefined, phT).forEach((l) => ls.push(l));
+                }
+              }
+              if (ls.length) ls = mergeHairlineGaps(ls, 0.35);
+              ls.forEach((l) => out.push(l));
+            });
+            const stats = (Vectura.scene3dStats = Vectura.scene3dStats || {});
+            stats.csgToneClusters = parts.length;
+            stats.csgToneGroups = (stats.csgToneGroups || 0) + 1;
+            return out;
+          };
+          // U7c — the carved CURVED surface reads as a bowl / bore: instead of one screen-straight hatch family it is ruled by
+          // parallel WORLD planes cut through its own triangles (planes parallel to the carved face give concentric rings
+          // around a dimple / stacked rings down a bore; crosshatch adds the perpendicular plane family). Ring pitch follows each
+          // triangle's own tone band (a stride over the finest lattice), so the lit inner wall is sparse and the far wall dense.
+          // Returns null for any doubt so the caller keeps the flat hatch.
+          const csgBowlLines = (rec, g, sp, cross) => {
+            const faceSet = new Set(g.faces);
+            const votes = new Map();
+            (rec.edges || []).forEach((e) => {
+              if (!e.faces || e.faces.length !== 2) return;
+              const a = faceSet.has(e.faces[0]); const b = faceSet.has(e.faces[1]);
+              if (a === b) return;
+              const fo = rec.faces[a ? e.faces[1] : e.faces[0]];
+              const n = fo && fo.normalWorld;
+              if (!n || Math.abs(Math.hypot(n.x, n.y, n.z) - 1) > 0.05) return;
+              if (csgCurvedFaces && csgCurvedFaces.has(a ? e.faces[1] : e.faces[0])) return;
+              const key = `${Math.round(n.x * 50)},${Math.round(n.y * 50)},${Math.round(n.z * 50)}`;
+              const v = votes.get(key) || { n: { x: 0, y: 0, z: 0 }, c: 0 };
+              v.n.x += n.x; v.n.y += n.y; v.n.z += n.z; v.c += 1;
+              votes.set(key, v);
+            });
+            let best = null;
+            votes.forEach((v) => { if (!best || v.c > best.c) best = v; });
+            if (!best) return null;
+            const bl = Math.hypot(best.n.x, best.n.y, best.n.z);
+            if (!(bl > 1e-6)) return null;
+            const n0 = { x: best.n.x / bl, y: best.n.y / bl, z: best.n.z / bl };
+            const tris = [];
+            let wl = 0; let pl = 0;
+            g.faces.forEach((fi) => {
+              const idx = rec.faceIndexArrays[fi];
+              const face = rec.faces[fi];
+              if (!Array.isArray(idx) || idx.length < 3 || !face || !face.normalWorld) return;
+              const band = (toneOn && typeof intensityFn === 'function')
+                ? Regions.band(intensityFn(face.normalWorld, faceWorldCentroid(face)), p.tone) : 0;
+              for (let i = 1; i + 1 < idx.length; i += 1) {
+                const t = [idx[0], idx[i], idx[i + 1]];
+                // Foreshortening of this triangle on screen (projected area / world area, relative to the group's mean scale):
+                // a wall seen edge-on packs the same ring ink into little screen area, so its ring stride grows to keep the
+                // INK PER SCREEN AREA following the tone band rather than the viewing slant.
+                const W0 = rec.world[t[0]]; const W1 = rec.world[t[1]]; const W2 = rec.world[t[2]];
+                const P0 = rec.projected[t[0]]; const P1 = rec.projected[t[1]]; const P2 = rec.projected[t[2]];
+                const wa = Math.hypot((W1.y - W0.y) * (W2.z - W0.z) - (W1.z - W0.z) * (W2.y - W0.y),
+                  (W1.z - W0.z) * (W2.x - W0.x) - (W1.x - W0.x) * (W2.z - W0.z),
+                  (W1.x - W0.x) * (W2.y - W0.y) - (W1.y - W0.y) * (W2.x - W0.x)) / 2;
+                const pa = Math.abs((P1.x - P0.x) * (P2.y - P0.y) - (P2.x - P0.x) * (P1.y - P0.y)) / 2;
+                tris.push({ t, band, wa, pa, nrm: face.normalWorld });
+                for (let k = 0; k < 3; k += 1) {
+                  const a = rec.world[t[k]]; const b = rec.world[t[(k + 1) % 3]];
+                  const A = rec.projected[t[k]]; const B = rec.projected[t[(k + 1) % 3]];
+                  wl += Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z); pl += Math.hypot(A.x - B.x, A.y - B.y);
+                }
+              }
+            });
+            if (!tris.length || !(wl > 0) || !(pl > 0)) return null;
+            const scale = pl / wl;
+            // Relative foreshortening per triangle (1 = as facing the camera as the group's best-facing triangle).
+            let foreMax = 0;
+            tris.forEach((tr) => { tr.fore = tr.wa > 0 ? tr.pa / (tr.wa * scale * scale) : 0; foreMax = Math.max(foreMax, tr.fore); });
+            if (!(foreMax > 0)) return null;
+            tris.forEach((tr) => { tr.fore = clamp(tr.fore / foreMax, 0.35, 1); });
+            const spcOf = (band) => Math.max(penWidth, hatchSpacing(sp.fillDensity) / (toneOn ? coverageGain(band) : 1));
+            let spcBase = Infinity;
+            tris.forEach((tr) => { spcBase = Math.min(spcBase, spcOf(tr.band)); });
+            const ds = 0.5 * spcBase / scale; // rings are foreshortened on screen: pitch them tighter than a flat family
+            const up = Math.abs(n0.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+            let u = { x: n0.y * up.z - n0.z * up.y, y: n0.z * up.x - n0.x * up.z, z: n0.x * up.y - n0.y * up.x };
+            const ul = Math.hypot(u.x, u.y, u.z);
+            u = { x: u.x / ul, y: u.y / ul, z: u.z / ul };
+            const crossRatio = clamp(finite(sp.crossDensityRatio, 1), 0.25, 2);
+            // U7d — a SPHERICAL carve (dimple) is ruled by SURFACE distance, not plane offset: rings at equal arc length from
+            // the bowl's deepest point (so the floor fills as evenly as the wall) and, for crosshatch, meridians through the
+            // bowl axis, thinned toward the pole (halving the count at each octave) so the grid stays even. Any other curved
+            // carve (bore) keeps the plane family above, untouched. A least-squares sphere fit that does not hold (residual) falls back.
+            const sphereFit = (() => {
+              const seen = new Set(); const P = [];
+              tris.forEach((tr) => tr.t.forEach((vi) => { if (!seen.has(vi)) { seen.add(vi); P.push(rec.world[vi]); } }));
+              if (P.length < 12) return null;
+              const M = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]; const rhs = [0, 0, 0, 0];
+              P.forEach((q) => {
+                const row = [2 * q.x, 2 * q.y, 2 * q.z, 1]; const y = q.x * q.x + q.y * q.y + q.z * q.z;
+                for (let i = 0; i < 4; i += 1) { rhs[i] += row[i] * y; for (let j = 0; j < 4; j += 1) M[i][j] += row[i] * row[j]; }
+              });
+              for (let i = 0; i < 4; i += 1) {
+                let piv = i;
+                for (let r = i + 1; r < 4; r += 1) if (Math.abs(M[r][i]) > Math.abs(M[piv][i])) piv = r;
+                if (Math.abs(M[piv][i]) < 1e-9) return null;
+                [M[i], M[piv]] = [M[piv], M[i]]; [rhs[i], rhs[piv]] = [rhs[piv], rhs[i]];
+                for (let r = i + 1; r < 4; r += 1) {
+                  const f = M[r][i] / M[i][i];
+                  for (let c2 = i; c2 < 4; c2 += 1) M[r][c2] -= f * M[i][c2];
+                  rhs[r] -= f * rhs[i];
+                }
+              }
+              const x = [0, 0, 0, 0];
+              for (let i = 3; i >= 0; i -= 1) {
+                let v = rhs[i];
+                for (let j = i + 1; j < 4; j += 1) v -= M[i][j] * x[j];
+                x[i] = v / M[i][i];
+              }
+              const R2 = x[3] + x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
+              if (!(R2 > 0)) return null;
+              const R = Math.sqrt(R2); const c = { x: x[0], y: x[1], z: x[2] };
+              let err = 0; let mx = { x: 0, y: 0, z: 0 };
+              P.forEach((q) => { const e = Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z) - R; err += e * e; mx = { x: mx.x + q.x, y: mx.y + q.y, z: mx.z + q.z }; });
+              if (Math.sqrt(err / P.length) > 0.004 * R) return null;
+              const ax = { x: mx.x / P.length - c.x, y: mx.y / P.length - c.y, z: mx.z / P.length - c.z };
+              const al = Math.hypot(ax.x, ax.y, ax.z);
+              if (!(al > 1e-6)) return null;
+              return { c, R, a: { x: ax.x / al, y: ax.y / al, z: ax.z / al } };
+            })();
+            const planeVals = (fam) => (tr) => tr.t.map((vi) => { const w = rec.world[vi]; return w.x * fam.n.x + w.y * fam.n.y + w.z * fam.n.z; });
+            // U7f — a CYLINDRICAL carve (bore) gets the same treatment: axis from the wall normals (the direction they never
+            // point along), then a least-squares circle of the vertices projected across it. Rings are true circles at equal
+            // steps along the axis, crosshatch lines are true straight generators; both sampled, projected and depth-clipped.
+            const cylFit = (() => {
+              if (sphereFit) return null;
+              // Axis = the direction the wall normals never point along (smallest eigenvector of their covariance); a second pass
+              // keeps only the wall triangles, so a stray cap sliver cannot tilt it.
+              const axisOf = (keep) => {
+                const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+                tris.forEach((tr) => {
+                  const n = tr.nrm; if (!n || !keep(n)) return;
+                  const l = Math.hypot(n.x, n.y, n.z); if (!(l > 0.5)) return;
+                  const q = [n.x / l, n.y / l, n.z / l];
+                  for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) M[i][j] += tr.wa * q[i] * q[j];
+                });
+                const trc = M[0][0] + M[1][1] + M[2][2];
+                if (!(trc > 0)) return null;
+                let ax = [0.57735, 0.57735, 0.57735];
+                for (let it = 0; it < 200; it += 1) {
+                  const nx = [0, 0, 0];
+                  for (let i = 0; i < 3; i += 1) { nx[i] = trc * ax[i]; for (let j = 0; j < 3; j += 1) nx[i] -= M[i][j] * ax[j]; }
+                  const l = Math.hypot(nx[0], nx[1], nx[2]); if (!(l > 1e-12)) return null;
+                  ax = [nx[0] / l, nx[1] / l, nx[2] / l];
+                }
+                return { x: ax[0], y: ax[1], z: ax[2] };
+              };
+              let A = axisOf(() => true);
+              if (!A) return null;
+              A = axisOf((n) => Math.abs((n.x * A.x + n.y * A.y + n.z * A.z) / (Math.hypot(n.x, n.y, n.z) || 1)) < 0.25) || A;
+              // the wall normals must really be perpendicular to the axis (a flat or doubly curved patch is not a bore)
+              let perp = 0; let tot = 0;
+              tris.forEach((tr) => { const n = tr.nrm; if (!n) return; const l = Math.hypot(n.x, n.y, n.z); if (!(l > 0.5)) return; perp += tr.wa * Math.abs((n.x * A.x + n.y * A.y + n.z * A.z) / l); tot += tr.wa; });
+              if (!(tot > 0) || perp / tot > 0.03) return null;
+              const ref = Math.abs(A.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+              let U = { x: A.y * ref.z - A.z * ref.y, y: A.z * ref.x - A.x * ref.z, z: A.x * ref.y - A.y * ref.x };
+              const ul2 = Math.hypot(U.x, U.y, U.z); U = { x: U.x / ul2, y: U.y / ul2, z: U.z / ul2 };
+              const V3 = { x: A.y * U.z - A.z * U.y, y: A.z * U.x - A.x * U.z, z: A.x * U.y - A.y * U.x };
+              const seen = new Set(); const P = [];
+              // Only the wall triangles (normal ~perpendicular to the axis) sit on the cylinder; the odd cap sliver does not.
+              tris.forEach((tr) => { const n = tr.nrm; if (!n) return; const l = Math.hypot(n.x, n.y, n.z); if (!(l > 0.5) || Math.abs((n.x * A.x + n.y * A.y + n.z * A.z) / l) > 0.25) return; tr.t.forEach((vi) => { if (!seen.has(vi)) { seen.add(vi); const w = rec.world[vi]; P.push({ x: w.x * U.x + w.y * U.y + w.z * U.z, y: w.x * V3.x + w.y * V3.y + w.z * V3.z, h: w.x * A.x + w.y * A.y + w.z * A.z }); } }); });
+              if (P.length < 12) return null;
+              const N3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; const r3 = [0, 0, 0];
+              P.forEach((q) => { const row = [2 * q.x, 2 * q.y, 1]; const y = q.x * q.x + q.y * q.y; for (let i = 0; i < 3; i += 1) { r3[i] += row[i] * y; for (let j = 0; j < 3; j += 1) N3[i][j] += row[i] * row[j]; } });
+              for (let i = 0; i < 3; i += 1) {
+                let piv = i; for (let r = i + 1; r < 3; r += 1) if (Math.abs(N3[r][i]) > Math.abs(N3[piv][i])) piv = r;
+                if (Math.abs(N3[piv][i]) < 1e-9) return null;
+                [N3[i], N3[piv]] = [N3[piv], N3[i]]; [r3[i], r3[piv]] = [r3[piv], r3[i]];
+                for (let r = i + 1; r < 3; r += 1) { const f = N3[r][i] / N3[i][i]; for (let c2 = i; c2 < 3; c2 += 1) N3[r][c2] -= f * N3[i][c2]; r3[r] -= f * r3[i]; }
+              }
+              const xs = [0, 0, 0];
+              for (let i = 2; i >= 0; i -= 1) { let v = r3[i]; for (let j = i + 1; j < 3; j += 1) v -= N3[i][j] * xs[j]; xs[i] = v / N3[i][i]; }
+              const R2 = xs[2] + xs[0] * xs[0] + xs[1] * xs[1];
+              if (!(R2 > 0)) return null;
+              const R = Math.sqrt(R2);
+              let err = 0; let hMin = Infinity; let hMax = -Infinity;
+              P.forEach((q) => { const e = Math.hypot(q.x - xs[0], q.y - xs[1]) - R; err += e * e; hMin = Math.min(hMin, q.h); hMax = Math.max(hMax, q.h); });
+              if (Math.sqrt(err / P.length) > 0.004 * R || !(hMax > hMin)) return null;
+              const O = { x: xs[0] * U.x + xs[1] * V3.x, y: xs[0] * U.y + xs[1] * V3.y, z: xs[0] * U.z + xs[1] * V3.z };
+              return { O, A, U, V: V3, R, hMin, hMax };
+            })();
+            // One descriptor per analytic surface: pointAt(a, b) -> world point + outward-of-solid normal; rings sit at a = k*dA
+            // (b sweeps the full turn), lines sit at b = m/Nmax of a turn (a sweeps [aLo, aHi]).
+            const dsArc0 = 0.36 * spcBase / scale; // surface (arc) pitch of the finest ring
+            const analytic = (() => {
+              if (sphereFit) {
+                const { c, R, a } = sphereFit;
+                const ref = Math.abs(a.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+                let e1 = { x: a.y * ref.z - a.z * ref.y, y: a.z * ref.x - a.x * ref.z, z: a.x * ref.y - a.y * ref.x };
+                const el = Math.hypot(e1.x, e1.y, e1.z); e1 = { x: e1.x / el, y: e1.y / el, z: e1.z / el };
+                const e2 = { x: a.y * e1.z - a.z * e1.y, y: a.z * e1.x - a.x * e1.z, z: a.x * e1.y - a.y * e1.x };
+                let thMax = 0;
+                tris.forEach((tr) => tr.t.forEach((vi) => {
+                  const w = rec.world[vi]; const vx = w.x - c.x; const vy = w.y - c.y; const vz = w.z - c.z;
+                  thMax = Math.max(thMax, Math.acos(clamp((vx * a.x + vy * a.y + vz * a.z) / (Math.hypot(vx, vy, vz) || 1), -1, 1)));
+                }));
+                const dA = dsArc0 / R;
+                return {
+                  R, dA, kLo: 1, kHi: Math.floor((thMax + 1e-6) / dA), aLo: 1e-4, aHi: thMax, aStep: 0.5 * Math.PI / 180,
+                  pointAt: (th, psi) => {
+                    const st = Math.sin(th); const ct = Math.cos(th); const cp = Math.cos(psi); const sp2 = Math.sin(psi);
+                    const dx = ct * a.x + st * (cp * e1.x + sp2 * e2.x); const dy = ct * a.y + st * (cp * e1.y + sp2 * e2.y); const dz = ct * a.z + st * (cp * e1.z + sp2 * e2.z);
+                    return { w: { x: c.x + R * dx, y: c.y + R * dy, z: c.z + R * dz }, n: { x: -dx, y: -dy, z: -dz } };
+                  },
+                  lineKeep: (q, m, Nmax, stride, ratio) => {
+                    if (R * q.a < 0.6 * dsArc0) return false; // the pole is left to the innermost ring
+                    const n = (2 * Math.PI * R * Math.sin(q.a)) / (dsArc0 * stride * ratio);
+                    const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
+                    return m % (Nmax / cnt) === 0;
+                  },
+                };
+              }
+              if (cylFit) {
+                const { O, A, U, V, R, hMin, hMax } = cylFit;
+                return {
+                  R, dA: dsArc0, kLo: Math.ceil(hMin / dsArc0), kHi: Math.floor(hMax / dsArc0), aLo: hMin, aHi: hMax, aStep: Math.max(0.05, (hMax - hMin) / 200),
+                  pointAt: (h, psi) => {
+                    const cp = Math.cos(psi); const sp2 = Math.sin(psi);
+                    const rx = cp * U.x + sp2 * V.x; const ry = cp * U.y + sp2 * V.y; const rz = cp * U.z + sp2 * V.z;
+                    return { w: { x: O.x + h * A.x + R * rx, y: O.y + h * A.y + R * ry, z: O.z + h * A.z + R * rz }, n: { x: -rx, y: -ry, z: -rz } };
+                  },
+                  lineKeep: (q, m, Nmax, stride, ratio) => {
+                    const n = (2 * Math.PI * R) / (dsArc0 * stride * ratio);
+                    const cnt = clamp(2 ** Math.round(Math.log2(Math.max(1, n))), 1, Nmax);
+                    return m % (Nmax / cnt) === 0;
+                  },
+                };
+              }
+              return null;
+            })();
+            if (analytic && typeof scene.projectWorld === 'function') {
+              const lines = (() => {
+                const { R, dA, kLo, kHi, aLo, aHi, aStep, pointAt, lineKeep } = analytic;
+                const dsArc = dsArc0;
+                const depthAt = csgSurfaceDepthFn(rec, g.faces);
+                if (!depthAt) return null;
+                const tolZ = 0.05 * R * scale;
+                const EPS = 1e-3 * R;
+                // One analytic surface sample: its screen point, whether it lies on the carved front surface, and its tone
+                // stride (band x foreshortening), exactly the quantities the old per-triangle path used.
+                const sampleAt = (a, b) => {
+                  const { w, n } = pointAt(a, b);
+                  const P = scene.projectWorld(w);
+                  if (!P || !Number.isFinite(P.x) || !Number.isFinite(P.y)) return null;
+                  const Z = depthAt(P.x, P.y);
+                  const inside = Z !== null && Math.abs(Z - P.z) < tolZ;
+                  if (!inside) return { x: P.x, y: P.y, inside: false };
+                  const Pn = scene.projectWorld({ x: w.x + n.x * EPS, y: w.y + n.y * EPS, z: w.z + n.z * EPS });
+                  const fore = clamp(Pn ? Math.abs(Pn.z - P.z) / EPS : 1, 0.35, 1);
+                  const band = (toneOn && typeof intensityFn === 'function') ? Regions.band(intensityFn(n, w), p.tone) : 0;
+                  // Fractional stride (ring k is drawn when it crosses a multiple of it), so the tone ladder is not rounded to whole rings;
+                  // the tone ratio is shaped (^1.5) so the dark side reads clearly denser than the lit side, and foreshortening is
+                  // corrected by its square root (full correction over-thins the steep wall).
+                  return { x: P.x, y: P.y, inside: true, stride: Math.max(1, Math.round(2 * (spcOf(band) / spcBase) ** 1.5 / Math.sqrt(fore)) / 2), a }; // half-ring steps, so a ring does not flicker along its length
+                };
+                const out = [];
+                // Split a sampled curve into runs where `keep` holds; the ends of a run sit on the last kept sample, so strokes
+                // stay as smooth as the sampling (never re-meshed).
+                const runsOf = (samples, keep, closed) => {
+                  const ok = (q) => !!(q && q.inside && keep(q));
+                  let runs = []; let cur = [];
+                  samples.forEach((q) => { if (ok(q)) cur.push({ x: q.x, y: q.y }); else { if (cur.length) runs.push(cur); cur = []; } });
+                  if (cur.length) runs.push(cur);
+                  if (closed && runs.length > 1 && ok(samples[0]) && ok(samples[samples.length - 1])) {
+                    const first = runs.shift(); runs[runs.length - 1] = runs[runs.length - 1].concat(first); // the ring's seam
+                  }
+                  runs = runs.filter((r) => r.length > 1);
+                  // A stroke shorter than ~1.5 pen widths is a fleck, not a mark.
+                  return runs.filter((r) => { let len = 0; for (let i = 1; i < r.length; i += 1) len += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y); return len >= 1.5 * penWidth + 0.3; });
+                };
+                const DPSI = Math.PI / 180;
+                for (let k = kLo; k <= kHi; k += 1) {
+                  const row = [];
+                  for (let i = 0; i <= 360; i += 1) row.push(sampleAt(k * dA, i * DPSI));
+                  runsOf(row, (q) => Math.floor(k / q.stride + 1e-9) > Math.floor((k - 1) / q.stride + 1e-9), true).forEach((r) => out.push(r));
+                }
+                if (cross) {
+                  const Nmax = clamp(2 ** Math.ceil(Math.log2(Math.max(2, 2 * Math.PI * R / (dsArc * crossRatio)))), 2, 256);
+                  const nA = Math.max(2, Math.ceil((aHi - aLo) / aStep));
+                  for (let m = 0; m < Nmax; m += 1) {
+                    const row = [];
+                    const psi = (2 * Math.PI * m) / Nmax;
+                    for (let i = 0; i <= nA; i += 1) row.push(sampleAt(aLo + ((aHi - aLo) * i) / nA, psi));
+                    runsOf(row, (q) => lineKeep(q, m, Nmax, q.stride, crossRatio), false).forEach((r) => out.push(r));
+                  }
+                }
+                return out;
+              })();
+              if (lines && lines.length) {
+                const st0 = (Vectura.scene3dStats = Vectura.scene3dStats || {});
+                st0.csgBowlGroups = (st0.csgBowlGroups || 0) + 1;
+                st0.csgBowlAnalytic = (st0.csgBowlAnalytic || 0) + 1;
+                return lines;
+              }
+            }
+            let fams;
+            {
+              fams = [{ vals: planeVals({ n: n0 }), dd: ds, emit: (tr, k) => { const st = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore)); return ((k % st) + st) % st === 0; } }];
+              if (cross) fams.push({ vals: planeVals({ n: u }), dd: ds * crossRatio, emit: (tr, k) => { const st = Math.max(1, Math.round(spcOf(tr.band) / spcBase / tr.fore)); return ((k % st) + st) % st === 0; } });
+            }
+            const out = [];
+            const Q = 1e4;
+            fams.forEach((fam) => {
+              const dd = fam.dd;
+              const planes = new Map();
+              tris.forEach((tr) => {
+                const d = fam.vals(tr);
+                if (!d) return;
+                const lo = Math.min(d[0], d[1], d[2]); const hi = Math.max(d[0], d[1], d[2]);
+                for (let k = Math.ceil(lo / dd); k * dd <= hi; k += 1) {
+                  if (!fam.emit(tr, k)) continue;
+                  const lvl = k * dd;
+                  const pts = [];
+                  for (let e = 0; e < 3; e += 1) {
+                    const i0 = tr.t[e]; const i1 = tr.t[(e + 1) % 3];
+                    const d0 = d[e]; const d1 = d[(e + 1) % 3];
+                    if ((d0 - lvl) * (d1 - lvl) > 0 || d0 === d1) continue;
+                    const lo2 = i0 < i1; const a2 = lo2 ? i0 : i1; const b2 = lo2 ? i1 : i0;
+                    const da = lo2 ? d0 : d1; const db = lo2 ? d1 : d0;
+                    const f = (lvl - da) / (db - da);
+                    if (f < 0 || f > 1) continue;
+                    const A = rec.projected[a2]; const B = rec.projected[b2];
+                    pts.push({ x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f });
+                  }
+                  if (pts.length >= 2 && Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) > 1e-6) {
+                    if (!planes.has(k)) planes.set(k, []);
+                    planes.get(k).push([pts[0], pts[1]]);
+                  }
+                }
+              });
+              planes.forEach((segs) => {
+                const key = (q) => `${Math.round(q.x * Q)},${Math.round(q.y * Q)}`;
+                const ends = new Map();
+                segs.forEach((sg, i) => sg.forEach((q) => { const kk = key(q); if (!ends.has(kk)) ends.set(kk, []); ends.get(kk).push(i); }));
+                const used = new Array(segs.length).fill(false);
+                const grow = (line, atEnd) => {
+                  for (;;) {
+                    const tip = atEnd ? line[line.length - 1] : line[0];
+                    const cand = (ends.get(key(tip)) || []).find((i) => !used[i]);
+                    if (cand === undefined) return;
+                    used[cand] = true;
+                    const sg = segs[cand];
+                    const nxt = key(sg[0]) === key(tip) ? sg[1] : sg[0];
+                    if (atEnd) line.push(nxt); else line.unshift(nxt);
+                  }
+                };
+                segs.forEach((sg, i) => {
+                  if (used[i]) return;
+                  used[i] = true;
+                  const line = [sg[0], sg[1]];
+                  grow(line, true); grow(line, false);
+                  if (line.length >= 2) out.push(line);
+                });
+              });
+            });
+            const stats = (Vectura.scene3dStats = Vectura.scene3dStats || {});
+            stats.csgBowlGroups = (stats.csgBowlGroups || 0) + 1;
+            return out.length ? out : null;
+          };
           groups.forEach((g) => {
-            const boundary = frontRegionBoundary(record, g.faces);
+            // U7: a curved carve's boundary comes from a polygon union (faceted CSG, every other primitive: unchanged).
+            const boundary = (record.primitive === 'csg' && !record.csgFaceted && csgFrontUnionBoundary(record, g.faces))
+              || frontRegionBoundary(record, g.faces);
             if (!boundary.length) return;
             const sp = g.style.params || {};
-            const angleDeg = finite(sp.fillAngle, 45);
+            const angleDeg = Number.isFinite(g.angleOverride) ? g.angleOverride : finite(sp.fillAngle, 45);
             // Curved surface (v1): sample intensity from the GROUP's mean world
             // normal — one spacing for the whole continuous region, deterministic.
             let spacing = hatchSpacing(sp.fillDensity);
@@ -5320,6 +5994,7 @@
             // band left blank = the highlight). Falls back to the flat
             // silhouette fill on draft frames or an unsupported primitive.
             let lines = null;
+            let csgToneDone = false;
             // spiralMode 'flatClip' opts out of the wrapped surface helix and
             // fills the projected silhouette with the SAME clipped Archimedean
             // spiral the faceted path uses; 'surfaceHelix' (default curved) wraps
@@ -5444,6 +6119,8 @@
                 chainMarks: sp.chainMarks,
                 patternMaturity: sp.patternMaturity,
                 stripeScale: sp.stripeScale,
+                wrapOriginX: sp.wrapOriginX,
+                wrapOriginY: sp.wrapOriginY,
                 nibAngleDeg: sp.nibAngleDeg,
                 nibContrast: sp.nibContrast,
                 taperLength: sp.taperLength,
@@ -5572,6 +6249,21 @@
                 // header. Family B below (× crossDensityRatio) keeps the old
                 // floor of 1 unconditionally: an existing document at density
                 // 100 with ratio 0.25 already relied on being clamped to 1mm.
+                // U7c: the carved curved surface is ruled as a bowl / bore (world-plane rings), not one straight family.
+                const bowlLines = (g.csgBowl && !draft && record.primitive === 'csg' && !record.csgFaceted && !lockedFill
+                  && !chartParams && (g.style.mapper === 'hatch' || g.style.mapper === 'crosshatch'))
+                  ? csgBowlLines(record, g, sp, g.style.mapper === 'crosshatch') : null;
+                // U7b: each tone cluster of a curved carve hatches by its own light (null = today's single region).
+                const toneClusterLines = bowlLines ? null : (!draft && toneOn && record.primitive === 'csg' && !record.csgFaceted && !lockedFill
+                  && !chartParams && (g.style.mapper === 'hatch' || g.style.mapper === 'crosshatch'))
+                  ? csgToneClusterLines(record, g, sp, angleDeg, boundary) : null;
+                if (bowlLines) {
+                  lines = bowlLines;
+                  csgToneDone = true;
+                } else if (toneClusterLines) {
+                  lines = toneClusterLines;
+                  csgToneDone = true;
+                } else {
                 lines = hatchSegments(boundary, angleDeg, spacing, hatchFloorFor(sp.fillDensity));
                 if (g.style.mapper === 'crosshatch') {
                   // Independent family-B (Phase 1.3): +crossAngleDelta, ×ratio.
@@ -5581,6 +6273,7 @@
                   if (sp.tripleHatch === true && darkBand) {
                     hatchSegments(boundary, angleDeg + 45, spacing * ratio).forEach((l) => lines.push(l));
                   }
+                }
                 }
               } else {
                 const loops = (linkSegments ? linkSegments(boundary) : [])
@@ -5595,6 +6288,9 @@
                   ? (Mappers.regionFill(g.style.mapper, loops, regionOpts) || [])
                   : [];
               }
+            }
+            if (lines && lines.length && record.primitive === 'csg' && !record.csgFaceted && !lockedFill && !chartParams && !csgToneDone) {
+              lines = mergeHairlineGaps(lines, 0.35);
             }
             // Nearest front-face depth for the group: hatch draws over farther
             // objects and is hidden behind nearer ones; a CONVEX object never
@@ -5691,10 +6387,26 @@
                 emitRuns(clip.runs, backMeta, 'dash', null, backTreat, { forceHidden: true });
               }
             });
+            // U7: a curved carve's flat-fallback lines ride the visible surface (per-sample depth), not one flat nearZ.
+            const csgDepthAt = (!lockedFill && record.primitive === 'csg' && !record.csgFaceted && !record.convex)
+              ? csgSurfaceDepthFn(record, g.faces) : null;
             lines.forEach((line) => {
               if (line.back === true) return;
               const isHL = line.highlight === true;
-              const pts = line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
+              const pts = (csgDepthAt && line.length && !Number.isFinite(line[0].z))
+                ? (() => {
+                  // A sample exactly ON a face seam / the outline can miss every face by float noise: borrow the nearest
+                  // sampled neighbour's depth instead of the farthest-depth fallback (which would hide it and make the
+                  // run ends depend on where the object sits on the page).
+                  const dense = densifyLine(line, 1);
+                  const zs = dense.map((pt) => csgDepthAt(pt.x, pt.y));
+                  let last = null;
+                  for (let i = 0; i < zs.length; i += 1) { if (zs[i] === null) zs[i] = last; else last = zs[i]; }
+                  last = null;
+                  for (let i = zs.length - 1; i >= 0; i -= 1) { if (zs[i] === null) zs[i] = last; else last = zs[i]; }
+                  return dense.map((pt, i) => ({ x: pt.x, y: pt.y, z: zs[i] === null ? nearZ : zs[i] }));
+                })()
+                : line.map((pt) => ({ x: pt.x, y: pt.y, z: Number.isFinite(pt.z) ? pt.z : nearZ }));
               const clip = clipper.clipPath(pts, segCtx);
               if (isHL) {
                 emitRuns(clip.runs, hlMeta, hiddenTreatment, null, hlTreat);
@@ -5705,9 +6417,11 @@
                 // Absent (every other law), the meta is untouched and the output
                 // is byte-identical.
                 const rawW = Number(line.weightScale);
-                const lineMeta0 = (Number.isFinite(rawW) && rawW !== 1)
+                const lineMeta00 = (Number.isFinite(rawW) && rawW !== 1)
                   ? { ...fillMeta, weightScale: round3(clamp(rawW, 0.1, 6)) }
                   : fillMeta;
+                // WD-D2: a surface-locked line may carry its own pen (MarkSet runPen, contract A26 / A28)
+                const lineMeta0 = (typeof line.penId === 'string' && line.penId) ? { ...lineMeta00, penId: line.penId } : lineMeta00;
                 // Three-pen laws tag each run with its pen TIER (0 fine / 1 medium /
                 // 2 broad). Keep it on the emitted path so export can route tiers
                 // to real pens; absent on every other law ⇒ meta untouched.
@@ -6149,10 +6863,18 @@
         // ── Edges: silhouette / crease / boundary (+ every edge of a
         // wireframe-mapped face); hidden runs drop (solid) or dash (x-ray).
         // `classified` was computed once above (shared with the face-outline pass).
+        // E2 — a CURVED carve (box minus sphere/cylinder) draws only its RIM as a crease (the loop where a flat face meets
+        // the smooth cut surface), like a plain primitive draws only its real outline. A "cut-surface" face is one with a
+        // shallow-dihedral (smooth, sub-crease-angle) neighbour; a rim edge is a crease with exactly one such side.
+        const csgRim = csgCurvedFaces
+          ? (entry) => entry.faceIndices.length === 2
+            && (csgCurvedFaces.has(entry.faceIndices[0]) !== csgCurvedFaces.has(entry.faceIndices[1]))
+          : null;
         classified.forEach((entry) => {
           const adjacentFaces = entry.faceIndices.map((idx) => record.faces[idx]).filter(Boolean);
           const wireframeFace = adjacentFaces.find((face) => styleOf(face).mapper === 'wireframe');
           const wireframeDemand = Boolean(wireframeFace);
+          if (csgThinFaces && entry.faceIndices.some((fi) => csgThinFaces.has(fi))) return;
           const structural = entry.cls !== 'interior';
           if (!structural && !wireframeDemand) return;
           // CSG seam suppression: a boolean RESULT is a closed manifold, so every
@@ -6208,7 +6930,9 @@
           // would otherwise bury it (legacy). On ordinary primitives 'none' drops
           // every crease (outline only).
           const creaseSuppressed = entry.cls === 'crease' && !wireframeDemand
-            && (record.primitive === 'csg' ? bordersSurfaceFill : true);
+            && (record.primitive === 'csg'
+              ? (csgRim ? !csgRim(entry) : bordersSurfaceFill)
+              : true);
           // A suppressed crease over a surface-filled face survives as HIDDEN-ONLY
           // (its visible portion drops, its occluded portion reads through the
           // shown fill) ONLY when the x-ray see-through FILL is active. This is a

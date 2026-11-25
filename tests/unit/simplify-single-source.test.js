@@ -50,6 +50,9 @@ const DELEGATION_WINDOW = 12;
 const ALLOWED = new Set([
   // Greedy 3-point collinearity filter, not RDP. See the header.
   'src/core/algorithms/geometry3d.js -> decimate',
+  // 3D Ramer-Douglas-Peucker over typed-array node indices of a surface web chain (3D distance, in the object's chart
+  // frame). GeometryUtils.simplifyPath is 2D over {x, y} points, so it cannot take this chain; owner-visible output is unchanged.
+  'src/core/scene3d/surface-lock-webs.js -> rdp',
 ]);
 
 function walk(dir) {

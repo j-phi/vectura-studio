@@ -2807,6 +2807,8 @@
     const MK_TICK_BC_PROBES = 16;
     const MK_TICK_BC_BISECT = 6;
     const MK_TICK_BC_HI_I = 2 / 3;
+    //   `MK_TICK_BC_JOIN_DEG` — v2 only: max bend (degrees) at a continuation tick's hub (below the 10 deg no-hook bar).
+    const MK_TICK_BC_JOIN_DEG = 9;
     // T2-8b-5 — RIM-STRIP extension (Jay: ends "evenly offset from the perimeter", applied to the
     // regular ticks). A deferred, NON-SITE pass lengthens the rim-facing end of a regular
     // (non-highlight, I < MK_TICK_BC_HI_I) main tick to EXACTLY c_E from the outline, by the same
@@ -6854,6 +6856,9 @@
       // T2-8b-5b — the TRUE HUB of the last walked pass (frame + point), read by `extendTick` so its
       // end walk starts where the tick's own arms started (the nominal one-jump hub is up to ~0.19 mm off).
       let mkLastHub = null;
+      // U9 (tone model v2 only) — set by `bcSide` around its `place`: the largest bend (degrees) allowed at a continuation
+      // tick's HUB, where its two arms meet. 0 everywhere else (legacy and every other mark are untouched).
+      let mkJoinCut = 0;
       const walkPoly = (fr0, uOff, theta, poly, stepCapMM) => {
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const toUV = (pt) => ({
@@ -6983,6 +6988,18 @@
         let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
         if (poly.length > 1) {
           const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM, mkClipArm.p, mkClipArm.rp);
+          // U9 — the two arms leave the hub in exactly opposite LOCAL directions, but near a limb the chart-to-screen map
+          // turns fast, so the arm that runs into it can leave the hub 40 deg off the straight line (a hook over the last
+          // ~0.3 mm; test torus/contour, v2 paper band shifts the lattice onto it). Where the screen bend at the hub exceeds
+          // `mkJoinCut`, the arm with the SHORTER first step (the foreshortened one, nearer the limb) is not drawn.
+          if (mkJoinCut > 0 && w0.pts.length && w1.pts.length) {
+            const dA = { x: hubPt.x - w0.pts[0].x, y: hubPt.y - w0.pts[0].y };
+            const dB = { x: w1.pts[0].x - hubPt.x, y: w1.pts[0].y - hubPt.y };
+            const lA = Math.hypot(dA.x, dA.y); const lB = Math.hypot(dB.x, dB.y);
+            if (lA > 1e-6 && lB > 1e-6 && (dA.x * dB.x + dA.y * dB.y) / (lA * lB) < Math.cos((mkJoinCut * Math.PI) / 180)) {
+              if (lB <= lA) { w1.pts.length = 0; w1.truncated = true; } else { pts.length = 0; pts.push(hubPt); w0.truncated = true; truncated = true; }
+            }
+          }
           pts.push(...w1.pts);
           askLen += w1.askLen;
           truncated = truncated || w1.truncated;
@@ -8048,7 +8065,9 @@
             }
             if (ok) {
               if (apexTick) { mkMinOverride = MK_TICK_BC_APEX_MIN * penWidth; mkApexRun = true; }
+              if (v2On) mkJoinCut = MK_TICK_BC_JOIN_DEG;
               const placed = place(n.fr, [poly], 0, 0);
+              mkJoinCut = 0;
               mkMinOverride = 0; mkApexRun = false;
               if (apexTick && !placed) stop = true;
             } else stop = true;
@@ -13246,6 +13265,8 @@
           chainMarks: opts.chainMarks,
           patternMaturity: opts.patternMaturity,
           stripeScale: opts.stripeScale,
+          // etfKang: the object-locked wrap axis (the Wrap origin pad); absent for every other law.
+          ...(TONE_ALGO === 'etfKang' ? { wrapAxis: MonoFill().wrapAxisWorld(fcNum('wrapOriginX'), fcNum('wrapOriginY'), t, applyTransform) } : {}),
         });
       } else if (contMapper) {
         // W-36c: crosshatch's family A now also reads the per-family budget

@@ -23,7 +23,7 @@ const B7_CELLS = [
 ];
 
 const buildSceneParams = (Params, defaults, {
-  mapper, fillDensity, primitive, rig, law = 'mkTick',
+  mapper, fillDensity, primitive, rig, law = 'mkTick', toneModel = 'legacy',
 }) => {
   const p = clone(defaults);
   const bag = rig === 'create'
@@ -39,7 +39,11 @@ const buildSceneParams = (Params, defaults, {
   p.ground = { enabled: false };
   p.backdrop = { enabled: false };
   p.camera = clone(Params.DEFAULT_CAMERA);
-  p.tone = { ...clone(defaults).tone, enabled: true, model: 'legacy', specular: { enabled: true, size: 1 } }; // legacy-look pin, like tests/unit/scene3d-mktick-spacing-tone.test.js (H2)
+  // toneModel 'legacy' (default) = the legacy-look pin, like tests/unit/scene3d-mktick-spacing-tone.test.js (H2);
+  // 'v2' = the shipped default light model (ALGO_DEFAULTS tone, unpinned) for the *-v2 audit variants.
+  p.tone = toneModel === 'v2'
+    ? { ...clone(defaults).tone, enabled: true, model: 'v2' }
+    : { ...clone(defaults).tone, enabled: true, model: 'legacy', specular: { enabled: true, size: 1 } };
   p.lights = [SUN];
   p.styleTable = {
     scene: {
@@ -72,14 +76,14 @@ const HOOK_REPL = `if (si === mainIdx) {
 const buildHookedSource = () => patchOne(loadHeadSource(), HOOK_NEEDLE, HOOK_REPL, 'HOOK_NEEDLE');
 
 const renderCellHooked = (runtime, {
-  mapper, primitive, rig = 'test', fillDensity = 50, law = 'mkTick',
+  mapper, primitive, rig = 'test', fillDensity = 50, law = 'mkTick', toneModel = 'legacy',
 }) => {
   const V = runtime.window.Vectura;
   const algo = V.AlgorithmRegistry.scene3d;
   const defaults = V.ALGO_DEFAULTS.scene3d;
   const Params = V.Scene3D.Params;
   const params = buildSceneParams(Params, defaults, {
-    mapper, fillDensity, primitive, rig, law,
+    mapper, fillDensity, primitive, rig, law, toneModel,
   });
   const sites = [];
   runtime.window.__T27_SITE__ = (rec) => { sites.push(rec); };
@@ -148,6 +152,12 @@ const BC_MUT = {
   nocohstrip: [['const MK_TICK_RIM_COH_OFF = false;', 'const MK_TICK_RIM_COH_OFF = true;'], ['const MK_TICK_RIM_STRIP_OFF = false;', 'const MK_TICK_RIM_STRIP_OFF = true;']],
   noiso: [['const MK_TICK_RIM_ISO_OFF = false;', 'const MK_TICK_RIM_ISO_OFF = true;']],
   nohook: [['const MK_TICK_RIM_HOOK_OFF = false;', 'const MK_TICK_RIM_HOOK_OFF = true;']],
+  // U8 (v2 audits): every walked mark point is jittered sideways in chart space (a(+/-0.4 % of the chart, fast in b): ticks come out kinked / hooked.
+  kinked: [[`          const sm = sampleAt(pp.a, bb);
+          if (!sm || sm.front !== wantFront) return null;
+          return { sm, pr: { a: pp.a, b: bb } };`, `          const sm = sampleAt(Math.min(1, Math.max(0, pp.a + 0.004 * Math.sin(bb * 997))), bb);
+          if (!sm || sm.front !== wantFront) return null;
+          return { sm, pr: { a: pp.a, b: bb } };`]],
   noboth: [['const MK_TICK_RIM_BOTH_OFF = false;', 'const MK_TICK_RIM_BOTH_OFF = true;']],
 };
 const REC_NEEDLES = [

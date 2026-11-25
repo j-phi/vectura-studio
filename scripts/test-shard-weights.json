@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "source": {
-    "description": "Hosted V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare): mean of runs 45653680641",
-    "fileCount": 1008,
-    "fileDurationSumSeconds": 10701,
+    "description": "Hosted V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare): mean of runs 45653680641; 32 files of the Scene3D integration release added from one local Node 24 Vitest run x calibration k=1.380 (artifacts unreachable)",
+    "fileCount": 1040,
+    "fileDurationSumSeconds": 11262,
     "unweightedFilePolicy": "median of measured files in the same tests/<dir>/, else the global median"
   },
   "weightsSeconds": {
@@ -1014,6 +1014,38 @@
     "tests/visual/scene3d-tone-baseline.test.js": 3.401,
     "tests/visual/stroke-style-baseline.test.js": 0.902,
     "tests/visual/svg-baseline.test.js": 2.372,
-    "tests/visual/text-outline-parity.test.js": 0.711
+    "tests/visual/text-outline-parity.test.js": 0.711,
+    "tests/integration/start-page/scene-session.test.js": 40.133,
+    "tests/unit/start-page/scene-orbit-budget.test.js": 0.66,
+    "tests/unit/start-page/scene-orbit.test.js": 0.845,
+    "tests/integration/scene3d-multi-object-gizmo.test.js": 13.491,
+    "tests/integration/scene3d-panel-keeps-multi-selection.test.js": 2.485,
+    "tests/integration/scene3d-panel-wrap-origin.test.js": 0.638,
+    "tests/integration/scene3d-sun-handle-transform.test.js": 4.617,
+    "tests/unit/scene3d-csg-bowl.test.js": 28.909,
+    "tests/unit/scene3d-csg-carve-face-tone.test.js": 20.619,
+    "tests/unit/scene3d-csg-carved-solid.test.js": 10.85,
+    "tests/unit/scene3d-csg-curved-carve-fill.test.js": 15.064,
+    "tests/unit/scene3d-etfkang-lawdraft.test.js": 10.481,
+    "tests/unit/scene3d-etfkang-surface-spacing.test.js": 14.414,
+    "tests/unit/scene3d-etfkang-wrap-origin.test.js": 34.102,
+    "tests/unit/scene3d-etfkang-wrap-rim.test.js": 26.684,
+    "tests/unit/scene3d-raised-ground-occlusion.test.js": 11.922,
+    "tests/unit/scene3d-surface-lock-frame-identity.test.js": 21.416,
+    "tests/unit/scene3d-surface-lock-markset-channels.test.js": 0.1,
+    "tests/unit/scene3d-surface-lock-ring-shadow.test.js": 21.544,
+    "tests/unit/scene3d-surface-lock-tone-bound.test.js": 60.071,
+    "tests/unit/scene3d-surface-lock-wave-d-ampspacing.test.js": 13.712,
+    "tests/unit/scene3d-surface-lock-wave-d-penlaws.test.js": 27.545,
+    "tests/unit/scene3d-surface-lock-wave-d-weightlaw.test.js": 12.018,
+    "tests/unit/scene3d-surface-lock-wave-d5-maze.test.js": 12.901,
+    "tests/unit/scene3d-surface-lock-wave-d5-turing.test.js": 98.049,
+    "tests/unit/scene3d-surface-lock-wave-d5-voronoi.test.js": 19.734,
+    "tests/audit/scene3d-golden-corpus.test.js": 7.281,
+    "tests/audit/scene3d-mktick-spacing-tone-v2-bce-chain.test.js": 0.1,
+    "tests/audit/scene3d-mktick-spacing-tone-v2-bce-crumbs.test.js": 0.1,
+    "tests/audit/scene3d-mktick-spacing-tone-v2-bce-rim.test.js": 0.238,
+    "tests/audit/scene3d-mktick-spacing-tone-v2-bce.test.js": 6.332,
+    "tests/audit/scene3d-mktick-spacing-tone-v2.test.js": 23.795
   }
 }

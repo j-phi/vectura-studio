@@ -1,0 +1,1353 @@
+/**
+ * Scene3D.SurfaceLockWebs — the surface-locked baker for WEB laws (docs/surface-lock-contract.md §9, A32): fills whose marks are the
+ * walls of a connected network rather than parallel rulings. Three laws: mazeFill (A32), voronoiWeb (A33) and turingStripe (A35, bottom of this file).
+ *
+ *   FIT, supports(spec) -> boolean, bake(spec) -> MarkSet, toneLUT(spec, toneCtx) -> { lut, scaleFn: null }
+ *
+ * mazeFill is a v2 Level S law (FIT row `v2Only`, A32 amended): while a 3D drag / orbit is in progress AND at rest the frame
+ * is this bake; settled and export output is the pose compose, byte for byte. The pose law carves a randomised spanning tree on a screen grid
+ * whose cell size is the tone (finer in the shadow) and draws the walls. That is not a keyed subset (a finer grid is a different maze), so
+ * the bake is its EXACT keyed-subset cousin, a recursive-division maze in the object's chart (a, b):
+ *
+ *   - the chart is cut into na x nb ROOT chambers of about p0 (the coarsest cell the tone ever asks for); every chamber of level l is
+ *     divided by a cross into four chambers of level l + 1, down to the finest level K (the plot-floor cell);
+ *   - the perfect-maze rule: of the four half-walls of a cross, exactly one is closed and three carry a single gap, so the four
+ *     children are connected by a spanning tree; the root chambers are joined by a random spanning tree the same way;
+ *   - one cell edge is the unit of a wall: the gap of a half-wall is ONE cell edge of the finest level drawn, so a half-wall is stored as
+ *     the nested chain of pieces that appear as the finer levels do. The piece of level k is keyed by the finer of the two chambers
+ *     it separates (rank = min of the two chamber ranks), so a gap never spans two cells of a finer neighbour (no loop is ever drawn);
+ *   - a mark of level k (k >= 1) has key 2^(k-1) (1 + rank), exactly the ladder's gain-2 key. Any tone threshold t = p0 / cell(I) therefore
+ *     draws a perfect maze whose chambers are divided down to cell size ~ p0 / t, a random subset of the next level included, so the
+ *     cell size follows the light continuously with no rebake. The LUT is 1 / cell(I) of the pose law's own cell size.
+ *   - chambers whose physical shape is too thin or too wide (sphere poles, a torus's inner equator) drop the wall across their short
+ *     side: rings or meridian lanes instead of a squeezed lattice.
+ * The bake is POSE-FREE (contract §3, §8): geometry, style, pen, scaleRef and seed only.
+ */
+(function registerScene3DSurfaceLockWebs() {
+  'use strict';
+
+  // A local alias of Math: a hot-loop `Math.x` is a global lookup, which a window-backed global (jsdom, a vm context) answers through an interceptor.
+  const Mth = Math;
+  const isFin = Number.isFinite;
+  const globalScope = typeof window !== 'undefined' ? window : globalThis;
+  const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
+  const Scene3D = (Vectura.Scene3D = Vectura.Scene3D || {});
+
+  // Live values come from Vectura.SCENE3D_SURFACE_LOCK.LAWS (MAZE_*); the table is the safe fallback.
+  const DEFAULTS = {
+    INK_SPREAD: 0.12,        // surface-fill INK_SPREAD (private there)
+    A_DARK: 0.90,            // makeCtx dark end of the tone map
+    PLOT_FLOOR_PEN: 2.2,     // Regions.PLOT_FLOOR_PEN fallback
+    LIT_MAX_PITCH_PEN: 12,   // Regions.LIT_MAX_PITCH_PEN fallback
+    V2_PAPER_BAND: 0.18,     // the lightest share of the tone range that rolls off to paper (laws' own)
+    MAZE_PAPER_DENS: 0.03,   // pose maze: the relative density at and below which nothing is drawn (surface-fill-mono V2_PAPER_DENS)
+    MAZE_PITCH_X: 0.6,       // pose maze: cell = max(floor, MAZE_PITCH_X x pitchOfDens) x MAZE_CELL_X
+    MAZE_CELL_X: 1.05,
+    MAZE_V2_PITCH_X: 2,      // pose v2: the sparse end runs to this x the legacy lit pitch (surface-fill-mono V2_PITCH_X)
+    MAZE_OFF_DENS: 0.5,      // tone OFF: the uniform maze of this relative density
+    MAZE_LEVEL_MAX: 5,       // finest level (the MarkSet carries levels 0..5)
+    MAZE_THIN: 0.6,          // a chamber whose physical width / height is under this (or over its inverse) drops its wall across the short side
+    MAZE_STEP_MM: 1.2,       // longest polyline segment of a wall (screen mm at the bake scale)
+    MAZE_FLOOR_PEN: 0.7,     // meta.floorPitchPen: the frame's plot-floor cap, in pens
+    MAZE_INK_X: 1,           // LUT calibration: 1 / cell x this (the maze's ink is ~ pen / cell at any tone)
+    MAZE_KNEE_N: 4,          // the pose cell is max(floor, 0.6 x pitch); the lock takes the smooth maximum (p^n + floor^n)^(1/n), so the dark end keeps grading
+    MAZE_FINE: 1.1,          // the finest baked cell is the floor cell / this (the lock walls are shorter than the pose's per cell: the pose ink at the dark end)
+    MAZE_MAX_VERTS: 150000,  // finest level is lowered until the estimate fits
+    MAZE_SURVEY: 25,         // chart survey grid
+    MAZE_RANK_JITTER: 0.3,   // random share of a chamber rank (the rest is a low-discrepancy lattice)
+    MAZE_ROOT_MAX: 6000,     // most root chambers
+    VORONOI_PAPER_BAND: 0.15,   // pose voronoi: the lightest share of the tone range that rolls off to paper (surface-fill-mono V2_PAPER_BAND)
+    VORONOI_PAPER_DENS: 0.03,   // pose voronoi: relative density at and below which nothing is drawn (V2_PAPER_DENS)
+    VORONOI_PITCH_X: 2,         // pose voronoi: the v2 sparse end runs to this x the legacy lit pitch (V2_PITCH_X)
+    VORONOI_CELL_MIN_PEN: 3.25, // pose voronoi CELL_MIN, in pens
+    VORONOI_CELL_R: 0.14,       // pose voronoi CELL_MAX = min(R x this, PMAX x VORONOI_CELL_PITCH)
+    VORONOI_CELL_PITCH: 1.25,
+    VORONOI_WEB_K: 0.76,        // pose voronoi v2: the relaxed seed set packs ~0.76 of the hexagonal-identity ink
+    VORONOI_LEVEL_RATIO: 1.5,   // cell size ratio of successive levels (one level per tone band)
+    VORONOI_GRID_DIV: 3,        // label grid spacing = cell / this
+    VORONOI_RELAX: 2,           // damped Lloyd passes per level
+    VORONOI_RELAX_STRIDE: 2,    // the Lloyd passes label every this-th grid node (the last pass is full)
+    VORONOI_RELAX_K: 0.45,      // Lloyd step (pose: 0.45)
+    VORONOI_TRIES: 8,           // dart throws per expected seed
+    VORONOI_SEP: 1,             // minimum seed separation, x the level's cell size
+    VORONOI_SIMPLIFY: 0.05,     // wall simplification tolerance (screen mm at the bake scale)
+    VORONOI_STEP_MM: 1.2,       // longest polyline segment of a wall (screen mm)
+    VORONOI_FLOOR_PEN: 0.7,     // meta.floorPitchPen (see MAZE_FLOOR_PEN)
+    VORONOI_MAX_VERTS: 150000,  // finest levels are dropped until the estimate fits
+    VORONOI_MAX_NODES: 1200000, // most label grid nodes per level (the grid is coarsened to fit)
+    VORONOI_THIN_RANK: 0.5,     // chain ranks run over [0, this): the facing / paper thinning only starts where the tone demand falls under it (webs tear into fragments if thinned from 1)
+    VORONOI_COARSE_DROP: 2,     // a drag-LOD (coarse) bake leaves out this many of the finest levels (they are ~70% of the bake time)
+    VORONOI_INK_X: 1.45,         // wall length calibration: cell sizes x this
+    TURING_PAPER_BAND: 0.15, // pose turingStripe: the lightest share of the tone range that rolls off to paper (surface-fill-mono V2_PAPER_BAND)
+    TURING_PAPER_DENS: 0.12, // pose turingStripe: relative density at and below which nothing is drawn (V2_PAPER_DENS)
+    TURING_DMIN: 0.9,        // pose turingStripe TURING_V2_DMIN: the wavelength follows the tone only down to this share of the dark end; lighter tones keep that pattern and the paper gate thins it
+    TURING_PITCH_X: 2,       // pose turingStripe: the v2 sparse end runs to this x the legacy lit pitch (V2_PITCH_X)
+    TURING_SPACING_X: 1.25,     // calibration: the baked line spacing is the pose clearance x this
+    TURING_WARP: 0.65,       // field: phase warp amplitude, as a share of the carrier wave number (stripe meander; 3 warp waves per family)
+    TURING_WARP_L: 11,       // field: warp wavelength, in line spacings
+    TURING_W2: 0.95,         // field: weight of the second carrier (it forks and joins the stripes of the first into a labyrinth)
+    TURING_MIN_LEN: 7.5,       // stripes shorter than this many spacings are dropped (specks)
+    TURING_SMOOTH: 2,        // [1 2 1] smoothing passes on every traced stripe (no marching-squares stair steps)
+    TURING_K: 1.2,           // carrier wave number x spacing / pi
+    TURING_GRID: 2,        // chart grid nodes per line spacing
+    TURING_MAX_TURN: 11,     // deg: extra vertices on a tight bend so consecutive segments never turn more than about this
+    TURING_RELAX: 3,         // [1 2 1] passes on the raw trace before the Chaikin subdivision
+    TURING_PIECE: 30,        // spacings: a stripe is cut into pieces of about this length (long; the tone gate drops whole pieces)
+    TURING_STEP: 0.3,       // polyline vertex spacing, x the line spacing
+    TURING_NORMAL_EVERY: 3,  // a vertex normal is sampled from the chart every this many vertices (the positions in between are exact, the normals blend)
+    TURING_OFF_DENS: 0.5,    // tone OFF: the uniform pattern of this relative density
+    TURING_FLOOR_PEN: 0.7,   // meta.floorPitchPen (see MAZE_FLOOR_PEN)
+    TURING_MAX_VERTS: 100000, // the vertex step grows until the estimate fits
+    TURING_MAX_NODES: 1500000, // most grid nodes per bake (the grid is coarsened to fit)
+    MAZE_RUN: 4,             // longest straight wall, in cells of the tone it is drawn at: a longer wall is drawn as runs of this many cells with a one-cell gap
+    MAZE_RING_OPEN: 0.2,     // chambers on the thin side of the chart (poles, torus inner equator): the share of the ring / lane walls that keep their one gap (the rest are closed rings)
+  };
+  const K = Object.assign({}, DEFAULTS);
+
+  const MAZE_LAWS = ['mazeFill'];
+  const VORONOI_LAWS = ['voronoiWeb'];
+  const TURING_LAWS = ['turingStripe'];
+  const FIT_MAPPERS = ['hatch', 'crosshatch'];
+  const FIT_PRIMITIVES = ['sphere', 'ellipsoid', 'cylinder', 'cone', 'capsule', 'torus'];
+  const PRIM_MODE = { box: 'faceted', sphere: 'sphere', ellipsoid: 'sphere', cylinder: 'cylinder', cone: 'cone', capsule: 'capsule', torus: 'torus' };
+  const CONVEX_MODES = { sphere: true, cylinder: true, cone: true, capsule: true };
+  // v2 only (contract A32, amended: no longer drag-preview only): the bake is the drag frame AND the settled / export frame (Level S at rest).
+  const FIT = Object.freeze([Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(MAZE_LAWS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(VORONOI_LAWS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.slice()),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  }), Object.freeze({
+    v2Only: true,
+    mappers: Object.freeze(FIT_MAPPERS.slice()),
+    laws: Object.freeze(TURING_LAWS.slice()),
+    primitives: Object.freeze(FIT_PRIMITIVES.concat(['box'])),
+    refuse: Object.freeze({ tripleHatch: Object.freeze([true]) }),
+  })]);
+
+  const finite = (v, d) => (isFin(v) ? v : d);
+  const clamp = (v, lo, hi) => Mth.min(hi, Mth.max(lo, v));
+  const frac = (v) => v - Mth.floor(v);
+  const cfg = () => Vectura.SCENE3D_SURFACE_LOCK || {};
+  const sync = () => {
+    const own = cfg().LAWS || {};
+    Object.keys(DEFAULTS).forEach((k) => { K[k] = isFin(own[k]) ? own[k] : DEFAULTS[k]; });
+  };
+  const regions = () => Scene3D.Regions || {};
+  const MS = () => Scene3D.SurfaceLockMarkSet;
+  const CH = () => Scene3D.SurfaceLockChart;
+
+  // ---- tone: copies of the laws' pure maths (surface-lock-laws toneParams / targetOf, v2) ------------------------------------------
+  const v2FloorPen = () => { const v = cfg().V2 && cfg().V2.FLOOR_PEN; return isFin(v) && v > 1 ? v : 1.4; };
+  const toneParams = (spec) => {
+    const R = regions();
+    const PEN = Mth.max(0.02, finite(spec && spec.penWidth, 0.3));
+    const INK = PEN * (1 + K.INK_SPREAD);
+    const FLOOR = v2FloorPen() * PEN;
+    const litMax = (isFin(R.LIT_MAX_PITCH_PEN) ? R.LIT_MAX_PITCH_PEN : K.LIT_MAX_PITCH_PEN) * PEN;
+    const DS = clamp(finite(spec && spec.style && spec.style.densityScale, 1), 0.25, 4);
+    const PMAX0 = Mth.max(FLOOR * 1.6, litMax);
+    const PMAX = Mth.max(FLOOR * 1.6, litMax / DS);
+    const Lstar = (Y) => (Y > 0.008856 ? 116 * Mth.pow(Y, 1 / 3) - 16 : 903.3 * Y);
+    const invL = (Lv) => (Lv > 8 ? Mth.pow((Lv + 16) / 116, 3) : Lv / 903.3);
+    const A_LIGHT = clamp(INK / PMAX0, 0.02, 0.5);
+    const L_LIGHT = Lstar(1 - A_LIGHT); const L_DARK = Lstar(1 - K.A_DARK);
+    const areaFor = (I) => clamp(1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, K.A_DARK);
+    return { PEN, INK, FLOOR, DS, PMAX, areaFor };
+  };
+  // relative density: the law's own L*-linear span mapped to [0, 1], no lit floor, a short roll-off to paper
+  const targetOf = (T, paperBand) => {
+    const aL = T.areaFor(1); const aD = T.areaFor(0);
+    const band = Mth.max(1e-3, isFin(paperBand) ? paperBand : K.V2_PAPER_BAND);
+    return (I) => {
+      const x = clamp(finite(I, 0), 0, 1);
+      const d = clamp((T.areaFor(x) - aL) / Mth.max(1e-6, aD - aL), 0, 1);
+      const u = clamp((1 - x) / band, 0, 1);
+      return d * u * u * (3 - 2 * u);
+    };
+  };
+  // The pose maze's cell (screen mm) at a relative density, without the limb wrap: max(floor, 0.6 x pitchOfDens) x 1.05.
+  const cellModel = (spec) => {
+    const T = toneParams(spec);
+    const areaMax = clamp((T.INK / (T.FLOOR * 1.05)) * T.DS, 0.02, K.A_DARK);
+    const pmaxV = T.PMAX * K.MAZE_V2_PITCH_X;
+    const pitchOfDens = (d) => clamp(T.INK / Mth.max(1e-6, clamp(areaMax * d, 0, K.A_DARK)), T.INK / K.A_DARK, pmaxV);
+    const cellPose = (d) => Mth.max(T.FLOOR, K.MAZE_PITCH_X * pitchOfDens(d)) * K.MAZE_CELL_X;
+    const nk = Mth.max(1, K.MAZE_KNEE_N);
+    const cell = (d) => { const cp = K.MAZE_PITCH_X * pitchOfDens(d) * K.MAZE_CELL_X; const cf = T.FLOOR * K.MAZE_CELL_X; return Mth.pow(Mth.pow(cp, nk) + Mth.pow(cf, nk), 1 / nk); };
+    return { T, cell, cmin: T.FLOOR * K.MAZE_CELL_X / K.MAZE_FINE, cmax: cellPose(K.MAZE_PAPER_DENS + 1e-6) };
+  };
+
+  const toneIsOff = (toneCtx) => !!toneCtx && ((toneCtx.tone && toneCtx.tone.enabled === false)
+    || (toneCtx.light && Array.isArray(toneCtx.light.lights) && toneCtx.light.lights.length === 0));
+  const mazeLUT = (spec, toneCtx) => {
+    sync();
+    const { T, cell } = cellModel(spec);
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const lut = new Float32Array(size + 1);
+    const D = targetOf(T);
+    const off = toneIsOff(toneCtx);
+    const offVal = K.MAZE_INK_X / cell(K.MAZE_OFF_DENS);
+    for (let k = 0; k <= size; k++) {
+      const d = D(k / size);
+      lut[k] = off ? offVal : (d > K.MAZE_PAPER_DENS ? K.MAZE_INK_X / cell(d) : 0);
+    }
+    return { lut, scaleFn: null };
+  };
+
+  // ---- supports ------------------------------------------------------------------------------------------------
+  const primitiveOf = (spec) => (spec && typeof spec.primitive === 'string' && spec.primitive ? spec.primitive : (spec && spec.mode) || '');
+  const supports = (spec) => {
+    if (!spec || typeof spec !== 'object') return false;
+    const prim = primitiveOf(spec);
+    const style = spec.style || {};
+    return FIT.some((row) => row.laws.indexOf(spec.toneLaw) !== -1
+      && (!row.v2Only || spec.toneModel === 'v2')
+      && row.mappers.indexOf(spec.mapper) !== -1
+      && row.primitives.indexOf(prim) !== -1
+      && (spec.mode === undefined || spec.mode === PRIM_MODE[prim])
+      && !Object.keys(row.refuse).some((k) => row.refuse[k].indexOf(style[k]) !== -1));
+  };
+
+  const median = (arr) => {
+    if (!arr.length) return 0;
+    const s = Float64Array.from(arr).sort();
+    return s[s.length >> 1];
+  };
+
+  // ---- the bake ----------------------------------------------------------------------------------------------
+  const bakeCore = (spec, opts) => {
+    sync();
+    if (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1) return bakeVoronoi(spec, opts);
+    if (spec && TURING_LAWS.indexOf(spec.toneLaw) !== -1) return bakeTuring(spec, opts);
+    if (!supports(spec)) throw new Error(`SurfaceLockWebs.bake: unsupported spec (law ${spec && spec.toneLaw})`);
+    const SM = MS(); const SC = CH();
+    const prim = primitiveOf(spec);
+    const mode = spec.mode || PRIM_MODE[prim];
+    const sc = spec.scale || {};
+    const scale = { sx: finite(sc.sx, 1), sy: finite(sc.sy, 1), sz: finite(sc.sz, 1) };
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const seed = (spec.seed && typeof spec.seed === 'object') ? spec.seed : {};
+    const salt = finite(seed.salt, 0) | 0;
+    const M = SC.metric(mode, spec.sizes || {}, scale);
+    const builder = SM.createBuilder({ bakerId: 'webs', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const emptyMeta = { p0: 1, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'mazeFill', bounds: { min: [0, 0, 0], max: [0, 0, 0], radius: 0 }, convex: false };
+    if (!M) { const e0 = builder.finish(); e0.bakerId = 'webs'; e0.meta = emptyMeta; return e0; }
+
+    const { cmin, cmax } = cellModel(spec);
+    const Lc = clamp(Mth.ceil(Mth.log2(Mth.max(1.0001, cmax / cmin)) - 1e-9), 1, Mth.min(K.MAZE_LEVEL_MAX, (cfg().MAX_LEVELS || 6) - 1));
+    const p0S = cmin * Mth.pow(2, Lc);       // the coarsest cell, screen mm at the bake scale
+    const p0 = p0S / scaleRef;                // ... in scaled local mm
+
+    // chart survey: physical mm per chart unit along a and b, on a grid (the chamber shape test and the root counts read it)
+    const G = Mth.max(5, Mth.round(K.MAZE_SURVEY));
+    const WA = new Float32Array(G * G); const WB = new Float32Array(G * G);
+    const la = []; const lb = []; let area = 0; let cnt = 0;
+    for (let i = 0; i < G; i++) {
+      for (let j = 0; j < G; j++) {
+        const s = M.sample((i + 0.5) / G, (j + 0.5) / G);
+        let A = 0; let B = 0;
+        if (s) {
+          A = Mth.hypot(s.dax, s.day, s.daz); B = Mth.hypot(s.dbx, s.dby, s.dbz);
+          if (A > 1e-9 && B > 1e-9) {
+            const cx = s.day * s.dbz - s.daz * s.dby; const cy = s.daz * s.dbx - s.dax * s.dbz; const cz = s.dax * s.dby - s.day * s.dbx;
+            area += Mth.hypot(cx, cy, cz); cnt += 1; la.push(A); lb.push(B);
+          } else { A = 0; B = 0; }
+        }
+        WA[i * G + j] = A; WB[i * G + j] = B;
+      }
+    }
+    const medA = median(la); const medB = median(lb);
+    const surfaceArea = cnt ? area / cnt : 0;
+    if (!(medA > 1e-9) || !(medB > 1e-9) || !(surfaceArea > 0)) { const e1 = builder.finish(); e1.bakerId = 'webs'; e1.meta = emptyMeta; return e1; }
+
+    let na = Mth.max(1, Mth.round(medA / p0)); let nb = Mth.max(1, Mth.round(medB / p0));
+    while (na * nb > K.MAZE_ROOT_MAX) { na = Mth.max(1, Mth.round(na * 0.8)); nb = Mth.max(1, Mth.round(nb * 0.8)); if (na === 1 && nb === 1) break; }
+    // finest level: lowered until the vertex estimate (about two vertices per cell) fits the budget
+    let Kf = Lc;
+    const estVerts = (k) => 2.4 * surfaceArea / Mth.pow(p0 / Mth.pow(2, k), 2);
+    while (Kf > 1 && estVerts(Kf) > K.MAZE_MAX_VERTS) Kf -= 1;
+    const UA = na * Mth.pow(2, Kf); const UB = nb * Mth.pow(2, Kf); // chart extent in finest-cell units
+    const S = (l) => Mth.pow(2, Kf - l);                              // chamber side of level l, in units
+    const NA = (l) => na * Mth.pow(2, l); const NB = (l) => nb * Mth.pow(2, l);
+    const periodicA = !!M.periodicA; const periodicB = !!M.periodicB;
+
+    // ---- chamber ranks, hashes, shape ------------------------------------------------------------------------
+    const R2A = 0.7548776662466927; const R2B = 0.5698402909980532;
+    const rankOf = (l, i, j) => {
+      const ii = ((i % NA(l)) + NA(l)) % NA(l); const jj = ((j % NB(l)) + NB(l)) % NB(l);
+      const h = SC.hash(ii, jj, salt + 977 * (l + 1));
+      const r = frac(0.5 + ii * R2A + jj * R2B + 0.3183098861837907 * l + K.MAZE_RANK_JITTER * (h - 0.5));
+      return Mth.min(0.99998, Mth.max(0, r));
+    };
+    // Pointwise shape of the chart at a lattice point: width / height of a cell there. A vertical wall (constant a) is dropped where the
+    // cell is too thin across a (a pole, a torus's inner equator), a horizontal one where it is too wide: rings / lanes instead of a fan.
+    const ratioAt = (x, y) => {
+      const q = Mth.floor(clamp(x / UA, 0, 0.9999) * G) * G + Mth.floor(clamp(y / UB, 0, 0.9999) * G);
+      const w = WA[q] / UA; const h = WB[q] / UB;
+      return w > 0 && h > 0 ? w / h : 1;
+    };
+
+    // ---- vertex sampling on the finest lattice (cached) ----------------------------------------------------
+    const bmin = [Infinity, Infinity, Infinity]; const bmax = [-Infinity, -Infinity, -Infinity]; let rmax2 = 0;
+    const cache = new Map();
+    const stepObj = K.MAZE_STEP_MM / scaleRef;
+    const sampleAt = (x, y) => M.sample(clamp(x / UA, 0, 1), clamp(y / UB, 0, 1));
+    const latticeSample = (x, y) => {
+      const key = x * (UB + 1) + y;
+      let s = cache.get(key);
+      if (s === undefined) { s = sampleAt(x, y); cache.set(key, s); }
+      return s;
+    };
+    let pieces = 0;
+    const emitPiece = (level, rank, x0, y0, x1, y1, bLo, bHi, dash) => {
+      const rt = ratioAt((x0 + x1) / 2, (y0 + y1) / 2);
+      if (!(opts && opts.noThin) && (x0 === x1 ? rt < K.MAZE_THIN : rt > 1 / K.MAZE_THIN)) return;
+      if (opts && opts.collect) opts.collect.push({ level, rank, x0, y0, x1, y1, band: bLo !== undefined, dash: dash === true });
+      const p = latticeSample(x0, y0); const q = latticeSample(x1, y1);
+      if (!p || !q) return;
+      const len = Mth.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+      if (!(len > 1e-4)) return;
+      const n = Mth.max(1, Mth.ceil(len / stepObj));
+      if (bLo === undefined) builder.beginRun(level, rank, 0, 0); else builder.beginRun(level, rank, 0, 0, undefined, 0, 0, bLo, bHi);
+      for (let u = 0; u <= n; u++) {
+        const s = u === 0 ? p : (u === n ? q : sampleAt(x0 + (x1 - x0) * u / n, y0 + (y1 - y0) * u / n));
+        if (!s) continue;
+        builder.vertex(s.x, s.y, s.z, s.nx, s.ny, s.nz);
+        if (s.x < bmin[0]) bmin[0] = s.x; if (s.x > bmax[0]) bmax[0] = s.x;
+        if (s.y < bmin[1]) bmin[1] = s.y; if (s.y > bmax[1]) bmax[1] = s.y;
+        if (s.z < bmin[2]) bmin[2] = s.z; if (s.z > bmax[2]) bmax[2] = s.z;
+        { const r2 = s.x * s.x + s.y * s.y + s.z * s.z; if (r2 > rmax2) rmax2 = r2; }
+      }
+      builder.endRun();
+      pieces += 1;
+    };
+
+    // A wall of side S(lvSlot) on the line `fixed`, starting at `start`. o 'h': y = fixed, x runs; o 'v': x = fixed, y runs. Closed: one piece
+    // keyed (closedLevel, closedRank). Open: the nested chain of gap pieces (one per finer level), each keyed by the finer of the two chambers
+    // it separates at the level above.
+    const bitOf = (id, k) => SC.hash(id | 0, k * 131 + 7, salt + 4099) < 0.5 ? 0 : 1;
+    // Long straight walls. A wall of slot level l is 2^(m - l) cells long at the tone level m. Past MAZE_RUN cells it is drawn as runs of MAZE_RUN
+    // cells with a one-cell gap instead (a few extra doors: the maze is perfect up to that tone and braided past it). Ink is monotone in the key
+    // but a gap is not, so the broken copies are tone BANDS (runBand, A28): the whole wall up to level mB - 1 in the band t < 2^(mB - 1), then one
+    // dashed copy per finer level m in the band t in [2^(m - 1), 2^m).
+    const lutT = toneLUT(spec, null).lut; const lutN = lutT.length - 1;
+    const p0Screen = cmin * Mth.pow(2, Lc);
+    const iCross = (T) => { // the I at which the tone threshold t = lut(I) x p0 falls to T (t falls as I rises)
+      for (let q = 0; q <= lutN; q++) if (lutT[q] * p0Screen < T) return clamp((q - 0.5) / lutN, 0, 1);
+      return 1;
+    };
+    const runCells = Mth.max(1, Mth.round(K.MAZE_RUN));
+    const firstBroken = Mth.floor(Mth.log2(runCells)) + 1; // levels below a slot at which the wall first exceeds runCells
+    const noBreak = !!(opts && opts.noBreak);
+    const bandCache = new Map();
+    const bandOf = (m) => { let v = bandCache.get(m); if (v === undefined) { v = iCross(Mth.pow(2, m)); bandCache.set(m, v); } return v; };
+    const wall = (o, fixed, start, lvSlot, closed, closedRank, id) => {
+      const len = S(lvSlot);
+      const at = (s0, w) => (o === 'h' ? [start + s0, fixed, start + s0 + w, fixed] : [fixed, start + s0, fixed, start + s0 + w]);
+      // a wall on the thin side of the chart (a ring at a pole, a lane on a torus's inner equator) is a ring: closed, with a few gaps
+      let ring = false;
+      { const c = at(len / 2, 0); const rt = ratioAt(c[0], c[1]); ring = o === 'h' ? rt < K.MAZE_THIN : rt > 1 / K.MAZE_THIN; }
+      if (ring && !closed && !(opts && opts.noThin) && SC.hash(id | 0, 17, salt + 733) >= K.MAZE_RING_OPEN) closed = true;
+      // a ring is keyed as ONE mark per line and level: it appears whole at one tone, not as scattered arcs
+      const ringRank = SC.hash(o === 'h' ? 1 : 2, fixed * 131 + lvSlot, salt + 89) * 0.999;
+      if (ring) closedRank = ringRank;
+      const mB = lvSlot + firstBroken;
+      const broken = !noBreak && !ring && mB <= Kf;
+      const uLo = broken ? bandOf(mB - 1) : undefined; // the whole wall draws where t < 2^(mB - 1), i.e. I >= iCross(2^(mB - 1))
+      if (closed) {
+        const c = at(0, len);
+        if (broken) emitPiece(lvSlot, closedRank, c[0], c[1], c[2], c[3], uLo, 1);
+        else emitPiece(lvSlot, closedRank, c[0], c[1], c[2], c[3]);
+      }
+      let pos = 0;
+      const gapPos = [lvSlot === Kf ? 0 : -1]; // gapPos[m - lvSlot]: the real gap cell of an open wall at level m
+      if (!closed) {
+        for (let k = lvSlot + 1; k <= Kf; k++) {
+          const bit = bitOf(id, k);
+          const sk = S(k); const sp = S(k - 1);
+          const sib = 2 * pos + (1 - bit);
+          // chambers of level k - 1 on the two sides of the slot of level k - 1
+          const s0 = start + pos * sp;
+          let rA; let rB;
+          if (o === 'h') { const ci = Mth.floor(s0 / sp); const cj = fixed / sp; rA = rankOf(k - 1, ci, cj - 1); rB = rankOf(k - 1, ci, cj); }
+          else { const cj = Mth.floor(s0 / sp); const ci = fixed / sp; rA = rankOf(k - 1, ci - 1, cj); rB = rankOf(k - 1, ci, cj); }
+          const piece = o === 'h' ? [start + sib * sk, fixed, start + (sib + 1) * sk, fixed] : [fixed, start + sib * sk, fixed, start + (sib + 1) * sk];
+          pos = 2 * pos + bit; gapPos[k - lvSlot] = pos;
+          if (broken && k >= mB) continue;
+          if (broken) emitPiece(k, ring ? ringRank : Mth.min(rA, rB), piece[0], piece[1], piece[2], piece[3], uLo, 1);
+          else emitPiece(k, ring ? ringRank : Mth.min(rA, rB), piece[0], piece[1], piece[2], piece[3]);
+        }
+      }
+      if (!broken) return;
+      // the dashed copies: runs of runCells cells (of the level m) with a one-cell gap, and the wall's real gap
+      const period = runCells + 1;
+      for (let m = mB; m <= Kf; m++) {
+        const n = Mth.pow(2, m - lvSlot); const sm = S(m);
+        const off = Mth.floor(SC.hash(id | 0, m * 31 + 3, salt + 5003) * period);
+        const real = closed ? -1 : gapPos[m - lvSlot];
+        const lo = m === Kf ? 0 : bandOf(m); const hi = bandOf(m - 1);
+        if (!(hi > lo)) continue;
+        let c = 0;
+        while (c < n) {
+          const isGap = (q) => q === real || (q + off) % period === 0;
+          while (c < n && isGap(c)) c += 1;
+          const c0 = c;
+          while (c < n && !isGap(c)) c += 1;
+          if (c > c0) {
+            const w = at(c0 * sm, (c - c0) * sm);
+            emitPiece(Mth.max(0, m - 1), 0, w[0], w[1], w[2], w[3], lo, hi, true);
+          }
+        }
+      }
+    };
+
+    // ---- the root chambers: a random spanning tree; every other root edge is a full wall -------------------------------
+    const roots = na * nb; const parent = new Int32Array(roots);
+    for (let q = 0; q < roots; q++) parent[q] = q;
+    const find = (q) => { while (parent[q] !== q) { parent[q] = parent[parent[q]]; q = parent[q]; } return q; };
+    const edges = [];
+    for (let j = 0; j < nb; j++) {
+      for (let i = 0; i < na; i++) {
+        if (i + 1 < na) edges.push({ o: 'v', i, j, i2: i + 1, j2: j, x: (i + 1) * S(0), y: j * S(0) });
+        else if (periodicA && na > 1) edges.push({ o: 'v', i, j, i2: 0, j2: j, x: 0, y: j * S(0) });
+        if (j + 1 < nb) edges.push({ o: 'h', i, j, i2: i, j2: j + 1, x: i * S(0), y: (j + 1) * S(0) });
+        else if (periodicB && nb > 1) edges.push({ o: 'h', i, j, i2: i, j2: 0, x: i * S(0), y: 0 });
+      }
+    }
+    edges.forEach((e, q) => { e.w = SC.hash(q, e.i * 3 + e.j * 7, salt + 313); });
+    edges.slice().sort((a, b) => a.w - b.w).forEach((e) => {
+      const a = find(e.j * na + e.i); const b = find(e.j2 * na + e.i2);
+      if (a !== b) { parent[a] = b; e.open = true; }
+    });
+    edges.forEach((e, q) => {
+      if (e.o === 'v') wall('v', e.x, e.y, 0, !e.open, SC.hash(q, 5, salt + 61) * 0.999, q * 5 + 1);
+      else wall('h', e.y, e.x, 0, !e.open, SC.hash(q, 5, salt + 61) * 0.999, q * 5 + 1);
+    });
+
+    // ---- the crosses of every chamber, depth first ----------------------------------------------------------------
+    const divide = (l, i, j) => {
+      if (l >= Kf) return;
+      const sl = S(l); const half = sl / 2;
+      const x0 = i * sl; const y0 = j * sl; const xc = x0 + half; const yc = y0 + half;
+      const rk = rankOf(l, i, j);
+      const closedSide = Mth.min(3, Mth.floor(SC.hash(i * 5 + l, j, salt + 211 + l * 17) * 4));
+      const id = (((l * 7919 + i) * 104729 + j) * 8) + 11;
+      // 0 L, 1 R (y = yc), 2 B, 3 T (x = xc)
+      wall('h', yc, x0, l + 1, closedSide === 0, rk, id + 0);
+      wall('h', yc, xc, l + 1, closedSide === 1, rk, id + 1);
+      wall('v', xc, y0, l + 1, closedSide === 2, rk, id + 2);
+      wall('v', xc, yc, l + 1, closedSide === 3, rk, id + 3);
+      divide(l + 1, 2 * i, 2 * j); divide(l + 1, 2 * i + 1, 2 * j); divide(l + 1, 2 * i, 2 * j + 1); divide(l + 1, 2 * i + 1, 2 * j + 1);
+    };
+    for (let j = 0; j < nb; j++) for (let i = 0; i < na; i++) divide(0, i, j);
+
+    const ms = builder.finish();
+    ms.bakerId = 'webs';
+    const has = ms.vertexCount > 0;
+    if (ms.vertexCount > 200000) throw new Error('SurfaceLockWebs.bake: vertex budget exceeded');
+    if (opts && opts.info) Object.assign(opts.info, { Kf, na, nb, UA, UB, periodicA, periodicB });
+    ms.meta = {
+      p0, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'mazeFill',
+      noFacingComp: true,
+      floorPitchPen: K.MAZE_FLOOR_PEN, // the frame's plot-floor cap is a ruling-pitch rule; a maze wall may sit this close (x pen) before the cap bites
+      mazeLevels: Kf, mazeRoots: [na, nb], mazePieces: pieces, mazeP0MM: p0S,
+      bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Mth.sqrt(rmax2) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
+      convex: typeof spec.convex === 'boolean' ? spec.convex : Boolean(CONVEX_MODES[mode]),
+    };
+    return ms;
+  };
+
+
+  // ===================================================================================================================================
+  // voronoiWeb (contract A33): a v2 Level S law (AMENDED: the bake is the drag AND the settled / export frame). The pose law scatters seeds over the SCREEN, relaxes them, and draws the walls of
+  // their Voronoi diagram; the cell size is the tone (finer in shadow). A different cell size is a different diagram, so unlike the maze
+  // there is no keyed subset; the bake is one FULL web per tone level instead:
+  //
+  //   - level l has cell size D_l = CELL_TOP / ratio^l (the pose's own clamp range, CELL_MIN .. 2 x CELL_MAX), one web per level;
+  //   - each level is a blue-noise seed set (dart throwing on the surface at separation D_l) relaxed by damped Lloyd passes, the walls are
+  //     the label boundaries of the nearest-seed partition of a chart grid (grid spacing D_l / GRID_DIV), refined onto the true bisector
+  //     (crossings by the chord equation, 3-way junctions by Gauss-Newton), chained through the junctions like the pose, simplified;
+  //   - a run carries the TONE BAND [lo, hi] of its level (MarkSet.runBand): the I interval in which the pose cell size rounds (log) to
+  //     that level. Bands tile [0, 1], so exactly one level draws at a vertex and the cell size follows the light with no rebake. Where
+  //     one band meets the next, the web changes cell size (a seam; the two webs are independent diagrams and do not join up).
+  //   - the lightest tones thin by RANK per wall chain (the pose's paper gate), the LUT is the gate g(I) / CELL_TOP.
+  // The bake is POSE-FREE (contract §3, §8).
+  // ===================================================================================================================================
+  const rawChart = (spec) => {
+    const SF = Scene3D.SurfaceFill;
+    const prim = primitiveOf(spec);
+    const mode = spec.mode || PRIM_MODE[prim];
+    const raw = SF && typeof SF.chartFor === 'function' ? SF.chartFor(mode, spec.sizes || {}) : null;
+    return typeof raw === 'function' ? raw : null;
+  };
+  const scaleOf = (spec) => {
+    const sc = spec.scale || {};
+    return { sx: finite(sc.sx, 1), sy: finite(sc.sy, 1), sz: finite(sc.sz, 1) };
+  };
+  // bounding radius of the scaled object, local mm (a 17 x 17 survey of the raw chart)
+  const radiusOf = (spec) => {
+    const raw = rawChart(spec); const sc = scaleOf(spec);
+    if (!raw) return 0;
+    let r2 = 0; const n = 17;
+    for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) {
+      const q = raw(i / n, j / n);
+      if (!q || !isFin(q.x + q.y + q.z)) continue;
+      const x = q.x * sc.sx; const y = q.y * sc.sy; const z = q.z * sc.sz;
+      r2 = Mth.max(r2, x * x + y * y + z * z);
+    }
+    return Mth.sqrt(r2);
+  };
+  const voroModel = (spec) => {
+    const T = toneParams(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const R = radiusOf(spec) * scaleRef; // the form's screen radius, mm (pose: C.R)
+    const CMIN = K.VORONOI_CELL_MIN_PEN * T.PEN;
+    const CMAX = clamp(Mth.min(R * K.VORONOI_CELL_R, T.PMAX * K.VORONOI_CELL_PITCH), CMIN * 3, CMIN * 14);
+    const CTOP = CMAX * 2; // v2: the cell may grow to twice the legibility cap; past that the paper gate thins the web
+    const areaMax = clamp((T.INK / (T.FLOOR * 1.05)) * T.DS, 0.02, K.A_DARK);
+    const PMAXV = T.PMAX * K.VORONOI_PITCH_X;
+    const pitchOfDens = (d) => clamp(T.INK / Mth.max(1e-6, clamp(areaMax * d, 0, K.A_DARK)), T.INK / K.A_DARK, PMAXV);
+    const WK = 2.31 * (T.PEN / T.INK) * K.VORONOI_WEB_K;
+    const D = (d) => clamp(WK * pitchOfDens(d), CMIN, CTOP);
+    const sparse = clamp((2.31 * T.PEN / CTOP) / (areaMax / 1.12), 0.05, 0.6);
+    const dens = targetOf(T, K.VORONOI_PAPER_BAND);
+    const ratio = Mth.max(1.1, K.VORONOI_LEVEL_RATIO);
+    // levels span exactly [D(1), CTOP]: the count is the least that keeps the step under the ratio, and the step is then spread evenly
+    const Dmin = D(1);
+    const Lmax = Mth.max(1, Mth.ceil(Mth.log(CTOP / Dmin) / Mth.log(ratio) - 1e-9));
+    const step = Mth.pow(CTOP / Dmin, 1 / Lmax);
+    const lvOf = (d) => clamp(Mth.round(Mth.log(CTOP / D(d)) / Mth.log(step)), 0, Lmax);
+    return { T, scaleRef, R, CMIN, CTOP, D, dens, sparse, ratio: step, lvOf, Lmax, levelCell: (l) => CTOP / Mth.pow(step, l) };
+  };
+  const voronoiLUT = (spec, toneCtx) => {
+    const m = voroModel(spec);
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const lut = new Float32Array(size + 1);
+    const off = toneIsOff(toneCtx);
+    const p0 = m.CTOP; // screen mm at the bake scale: dm = p0 x scaleRef-free x lut = the gate g
+    for (let k = 0; k <= size; k++) {
+      const d = m.dens(k / size);
+      const g = off ? 1 : (d <= K.VORONOI_PAPER_DENS ? 0 : Mth.min(1, d / m.sparse));
+      lut[k] = 1.001 * g / p0;
+    }
+    return { lut, scaleFn: null };
+  };
+
+  const mulberry = (a) => () => { a = (a + 0x6D2B79F5) | 0; let t = Mth.imul(a ^ (a >>> 15), 1 | a); t = (t + Mth.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+
+  const bakeVoronoi = (spec, opts) => {
+    sync();
+    if (!supports(spec)) throw new Error(`SurfaceLockWebs.bake: unsupported spec (law ${spec && spec.toneLaw})`);
+    const SM = MS(); const SC = CH();
+    const prim = primitiveOf(spec);
+    const mode = spec.mode || PRIM_MODE[prim];
+    const sc = scaleOf(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const seed = (spec.seed && typeof spec.seed === 'object') ? spec.seed : {};
+    const salt = finite(seed.salt, 0) | 0;
+    const M = SC.metric(mode, spec.sizes || {}, sc);
+    const raw = rawChart(spec);
+    const builder = SM.createBuilder({ bakerId: 'webs', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const emptyMeta = { p0: 1, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'voronoiWeb', bounds: { min: [0, 0, 0], max: [0, 0, 0], radius: 0 }, convex: false };
+    if (!M || !raw) { const e0 = builder.finish(); e0.bakerId = 'webs'; e0.meta = emptyMeta; return e0; }
+    const tStart = Date.now();
+    const model = voroModel(spec);
+    const periodicA = !!M.periodicA; const periodicB = !!M.periodicB;
+    const P = (u, v) => { // scaled local point of the raw chart (null off the chart)
+      const q = raw(u, v);
+      return q && isFin(q.x + q.y + q.z) ? q : null;
+    };
+
+    // ---- chart survey: area density (seed throwing), physical extent per chart unit (grid size), bounding box -------------------------
+    const G = 25;
+    const AW = new Float32Array(G * G); const la = []; const lb = []; let areaSum = 0; let areaMaxW = 0;
+    const degHist = [0, 0, 0, 0, 0, 0, 0];
+    const stats = { perLevel: [], degHist };
+    const bmin0 = [Infinity, Infinity, Infinity]; const bmax0 = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < G; i++) {
+      for (let j = 0; j < G; j++) {
+        const s = M.sample((i + 0.5) / G, (j + 0.5) / G);
+        if (!s) continue;
+        const A = Mth.hypot(s.dax, s.day, s.daz); const B = Mth.hypot(s.dbx, s.dby, s.dbz);
+        const cx = s.day * s.dbz - s.daz * s.dby; const cy = s.daz * s.dbx - s.dax * s.dbz; const cz = s.dax * s.dby - s.day * s.dbx;
+        const w = Mth.hypot(cx, cy, cz);
+        AW[i * G + j] = w; areaSum += w; if (w > areaMaxW) areaMaxW = w;
+        if (A > 1e-9) la.push(A); if (B > 1e-9) lb.push(B);
+        if (s.x < bmin0[0]) bmin0[0] = s.x; if (s.y < bmin0[1]) bmin0[1] = s.y; if (s.z < bmin0[2]) bmin0[2] = s.z;
+        if (s.x > bmax0[0]) bmax0[0] = s.x; if (s.y > bmax0[1]) bmax0[1] = s.y; if (s.z > bmax0[2]) bmax0[2] = s.z;
+      }
+    }
+    const surfaceArea = areaSum / (G * G); // physical area of the whole chart, scaled mm^2
+    if (!(surfaceArea > 0) || !la.length || !lb.length) { const e1 = builder.finish(); e1.bakerId = 'webs'; e1.meta = emptyMeta; return e1; }
+    const pct = (arr, q) => { const s = Float64Array.from(arr).sort(); return s[Mth.min(s.length - 1, Mth.floor(q * s.length))]; };
+    const extA = pct(la, 0.9); const extB = pct(lb, 0.9);
+    for (let a = 0; a < 3; a++) { bmin0[a] -= 1e-3; bmax0[a] += 1e-3; }
+    stats.surveyMs = Date.now() - tStart;
+    const stepObj = K.VORONOI_STEP_MM / scaleRef;
+    const simpTol = K.VORONOI_SIMPLIFY / scaleRef;
+
+    // ---- levels: drop the finest while the vertex estimate does not fit ---------------------------------------------------------------
+    let Lc = model.Lmax;
+    const estV = (l) => 1.6 * 2.31 * surfaceArea / (model.levelCell(l) / scaleRef * K.VORONOI_INK_X) / stepObj;
+    for (;;) { let tot = 0; for (let l = 0; l <= Lc; l++) tot += estV(l); if (tot <= K.VORONOI_MAX_VERTS || Lc <= 0) break; Lc -= 1; }
+    // tone band of each level: the I interval in which the pose cell size rounds to that level (bands tile [0, 1])
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const bandLo = new Array(Lc + 1).fill(Infinity); const bandHi = new Array(Lc + 1).fill(-Infinity);
+    for (let k = 0; k <= size; k++) {
+      const l = Mth.min(Lc, model.lvOf(model.dens(k / size)));
+      bandLo[l] = Mth.min(bandLo[l], (k - 0.5) / size); bandHi[l] = Mth.max(bandHi[l], (k + 0.5) / size);
+    }
+
+    // COARSE (drag LOD): the finest levels are left out and the darkest level kept takes over their tone band, so the bands still tile [0, 1]
+    // (the cell size just stops following the light at the dark end). A full bake is never coarse.
+    const coarse = !!(opts && opts.coarse) && Lc >= 2;
+    if (coarse) {
+      const keep = Mth.max(1, Lc - Mth.max(1, K.VORONOI_COARSE_DROP | 0));
+      for (let q = keep + 1; q <= Lc; q++) { bandLo[keep] = Mth.min(bandLo[keep], bandLo[q]); bandHi[keep] = Mth.max(bandHi[keep], bandHi[q]); }
+      Lc = keep; bandLo.length = Lc + 1; bandHi.length = Lc + 1;
+    }
+    const bmin = [Infinity, Infinity, Infinity]; const bmax = [-Infinity, -Infinity, -Infinity]; let rmax2 = 0;
+    let runs = 0; let vertsOut = 0; let junctions = 0; let cells = 0;
+    const R2A = 0.7548776662466927; const R2B = 0.5698402909980532;
+
+
+    // per-bake scratch buffers reused by every level (the finest level is the largest, so each grows once)
+    const bufs = { f: [], i: [], b: [] };
+    const take = (pool, k, n, Ctor) => { let a = pool[k]; if (!a || a.length < n) { a = new Ctor(n); pool[k] = a; } return a.subarray(0, n); };
+    const bufF = (k, n) => take(bufs.f, k, n, Float32Array); const bufI = (k, n) => take(bufs.i, k, n, Int32Array); const bufB = (k, n) => take(bufs.b, k, n, Uint8Array);
+    const buildLevel = (l) => {
+      const Dl = model.levelCell(l) / scaleRef * K.VORONOI_INK_X; // cell size, scaled local mm
+      const t0 = opts && opts.timing ? Date.now() : 0;
+      // -- label grid -------------------------------------------------------------------------------------------------------------------
+      let h = Dl / Mth.max(2, K.VORONOI_GRID_DIV);
+      let Nu = Mth.max(8, Mth.ceil(extA / h)); let Nv = Mth.max(8, Mth.ceil(extB / h));
+      while (Nu * Nv > K.VORONOI_MAX_NODES) { Nu = Mth.max(8, Mth.round(Nu * 0.9)); Nv = Mth.max(8, Mth.round(Nv * 0.9)); if (Nu === 8 && Nv === 8) break; }
+      const NNu = periodicA ? Nu : Nu + 1; const NNv = periodicB ? Nv : Nv + 1;
+      const nn = NNu * NNv;
+      const gx = bufF(0, nn); const gy = bufF(1, nn); const gz = bufF(2, nn);
+      const gOk = bufB(0, nn).fill(0);
+      for (let j = 0; j < NNv; j++) {
+        for (let i = 0; i < NNu; i++) {
+          const q = P(i / Nu, j / Nv); const k = j * NNu + i;
+          if (q) { gx[k] = q.x * sc.sx; gy[k] = q.y * sc.sy; gz[k] = q.z * sc.sz; gOk[k] = 1; }
+        }
+      }
+      const tg = opts && opts.timing ? Date.now() : 0;
+      // -- seeds: blue-noise dart throwing on the surface -------------------------------------------------------------------------------
+      const rng = mulberry(salt * 7919 + 104729 * (l + 1) + 12345);
+      const sep = Dl * Mth.max(0.5, K.VORONOI_SEP);
+      const dims = (cs) => [Mth.max(1, Mth.ceil((bmax0[0] - bmin0[0]) / cs)), Mth.max(1, Mth.ceil((bmax0[1] - bmin0[1]) / cs)), Mth.max(1, Mth.ceil((bmax0[2] - bmin0[2]) / cs))];
+      let seedsX = []; let seedsY = []; let seedsZ = [];
+      {
+        const cs = sep; const [hx, hy, hz] = dims(cs);
+        const head = new Int32Array(hx * hy * hz).fill(-1); const next = [];
+        const cx0 = (v) => Mth.min(hx - 1, Mth.max(0, Mth.floor((v - bmin0[0]) / cs)));
+        const cy0 = (v) => Mth.min(hy - 1, Mth.max(0, Mth.floor((v - bmin0[1]) / cs)));
+        const cz0 = (v) => Mth.min(hz - 1, Mth.max(0, Mth.floor((v - bmin0[2]) / cs)));
+        const nEst = Mth.max(8, surfaceArea / (0.75 * sep * sep));
+        const accept = Mth.max(0.15, (areaSum / (G * G)) / Mth.max(1e-9, areaMaxW));
+        const tries = Mth.min(400000, Mth.ceil(K.VORONOI_TRIES * nEst / accept));
+        const ou = rng(); const ov = rng(); const sep2 = sep * sep;
+        // candidates are the label-grid nodes (already evaluated: no chart call per dart; Lloyd moves the seeds onto grid nodes anyway)
+        const nbU = periodicA ? Nu : Nu + 1; const nbV = periodicB ? Nv : Nv + 1;
+        for (let t = 1; t <= tries; t++) {
+          const u = (ou + R2A * t) % 1; const v = (ov + R2B * t) % 1;
+          if (rng() * areaMaxW > AW[Mth.min(G - 1, Mth.floor(u * G)) * G + Mth.min(G - 1, Mth.floor(v * G))]) continue;
+          const kn = Mth.min(nbV - 1, Mth.floor(v * Nv + 0.5)) * NNu + Mth.min(nbU - 1, Mth.floor(u * Nu + 0.5));
+          if (!gOk[kn]) continue;
+          const x = gx[kn]; const y = gy[kn]; const z = gz[kn];
+          const ix = cx0(x); const iy = cy0(y); const iz = cz0(z);
+          let blocked = false;
+          for (let a = Mth.max(0, ix - 1); a <= Mth.min(hx - 1, ix + 1) && !blocked; a++) {
+            for (let b = Mth.max(0, iy - 1); b <= Mth.min(hy - 1, iy + 1) && !blocked; b++) {
+              for (let c = Mth.max(0, iz - 1); c <= Mth.min(hz - 1, iz + 1); c++) {
+                for (let e = head[(a * hy + b) * hz + c]; e >= 0; e = next[e]) {
+                  const dx = seedsX[e] - x; const dy = seedsY[e] - y; const dz = seedsZ[e] - z;
+                  if (dx * dx + dy * dy + dz * dz < sep2) { blocked = true; break; }
+                }
+                if (blocked) break;
+              }
+            }
+          }
+          if (blocked) continue;
+          const id = seedsX.length; seedsX.push(x); seedsY.push(y); seedsZ.push(z);
+          const hk = (ix * hy + iy) * hz + iz; next.push(head[hk]); head[hk] = id;
+        }
+      }
+      let ns = seedsX.length;
+      if (ns < 3) return;
+      const ts = opts && opts.timing ? Date.now() : 0;
+      // -- labelling: nearest seed of every grid node (3D) -----------------------------------------------------------------------------
+      const labels = bufI(2, nn);
+      const label = (stride) => {
+        const cs = Dl * 1.3; const [hx, hy, hz] = dims(cs); const ics = 1 / cs;
+        const hyz = hy * hz; const hx1 = hx - 1; const hy1 = hy - 1; const hz1 = hz - 1;
+        const x0 = bmin0[0]; const y0 = bmin0[1]; const z0 = bmin0[2];
+        const head = new Int32Array(hx * hy * hz).fill(-1); const next = new Int32Array(ns);
+        const cellOf = (v, lo, top) => { const c = Mth.floor((v - lo) * ics); return c < 0 ? 0 : (c > top ? top : c); };
+        for (let s = 0; s < ns; s++) { const hk = cellOf(seedsX[s], x0, hx1) * hyz + cellOf(seedsY[s], y0, hy1) * hz + cellOf(seedsZ[s], z0, hz1); next[s] = head[hk]; head[hk] = s; }
+        // a node closer to its predecessor's seed than half that seed's nearest neighbour is certainly in that seed's cell (the 1-eval fast path)
+        const rin2 = new Float64Array(ns);
+        for (let s = 0; s < ns; s++) {
+          const ci = cellOf(seedsX[s], x0, hx1); const cj = cellOf(seedsY[s], y0, hy1); const ck = cellOf(seedsZ[s], z0, hz1); let nd = Infinity;
+          for (let a = Mth.max(0, ci - 1); a <= Mth.min(hx1, ci + 1); a++) for (let b = Mth.max(0, cj - 1); b <= Mth.min(hy1, cj + 1); b++) for (let c = Mth.max(0, ck - 1); c <= Mth.min(hz1, ck + 1); c++) {
+            for (let e = head[a * hyz + b * hz + c]; e >= 0; e = next[e]) { if (e === s) continue; const dx = seedsX[e] - seedsX[s]; const dy = seedsY[e] - seedsY[s]; const dz = seedsZ[e] - seedsZ[s]; const d2 = dx * dx + dy * dy + dz * dz; if (d2 < nd) nd = d2; }
+          }
+          rin2[s] = isFin(nd) ? nd * 0.25 * 0.98 : 0;
+        }
+        let prev = -1;
+        const step = stride > 1 ? stride : 1;
+        for (let j = 0; j < NNv; j += step) {
+          const row = j * NNu;
+          for (let i = 0; i < NNu; i += step) {
+            const k = row + i;
+            if (!gOk[k]) { labels[k] = -1; continue; }
+            const x = gx[k]; const y = gy[k]; const z = gz[k];
+            if (prev >= 0) { const dx = seedsX[prev] - x; const dy = seedsY[prev] - y; const dz = seedsZ[prev] - z; if (dx * dx + dy * dy + dz * dz < rin2[prev]) { labels[k] = prev; continue; } }
+            const ci = cellOf(x, x0, hx1); const cj = cellOf(y, y0, hy1); const ck = cellOf(z, z0, hz1);
+            let best = -1; let bd = Infinity;
+            for (let R = 1; R <= 4; R++) {
+              if (R === 1 || best < 0 || Mth.sqrt(bd) > (R - 1) * cs) {
+                const aLo = ci - R < 0 ? 0 : ci - R; const aHi = ci + R > hx1 ? hx1 : ci + R;
+                const bLo = cj - R < 0 ? 0 : cj - R; const bHi = cj + R > hy1 ? hy1 : cj + R;
+                const cLo = ck - R < 0 ? 0 : ck - R; const cHi = ck + R > hz1 ? hz1 : ck + R;
+                for (let a = aLo; a <= aHi; a++) {
+                  const da = a - ci;
+                  for (let b = bLo; b <= bHi; b++) {
+                    const db = b - cj;
+                    const inner = R > 1 && (da < 0 ? -da : da) < R && (db < 0 ? -db : db) < R;
+                    for (let c = cLo; c <= cHi; c++) {
+                      if (inner) { const dc = c - ck; if ((dc < 0 ? -dc : dc) < R) continue; } // inner shell already scanned
+                      for (let e = head[a * hyz + b * hz + c]; e >= 0; e = next[e]) {
+                        const dx = seedsX[e] - x; const dy = seedsY[e] - y; const dz = seedsZ[e] - z;
+                        const d2 = dx * dx + dy * dy + dz * dz;
+                        if (d2 < bd) { bd = d2; best = e; }
+                      }
+                    }
+                  }
+                }
+              }
+              if (best >= 0 && Mth.sqrt(bd) <= R * cs) break;
+            }
+            labels[k] = best; prev = best;
+          }
+        }
+      };
+      const RS = Mth.max(1, K.VORONOI_RELAX_STRIDE | 0);
+      label(RS);
+      // -- damped Lloyd: a seed moves 0.45 of the way to the centroid of its labelled nodes, onto the nearest grid node of its cell -------
+      for (let pass = 0; pass < K.VORONOI_RELAX; pass++) {
+        const sx = new Float64Array(ns); const sy = new Float64Array(ns); const sz = new Float64Array(ns); const cn = new Int32Array(ns);
+        for (let k = 0; k < nn; k++) { if (RS > 1 && ((k % NNu) % RS !== 0 || Mth.floor(k / NNu) % RS !== 0)) continue; const s = labels[k]; if (s < 0) continue; sx[s] += gx[k]; sy[s] += gy[k]; sz[s] += gz[k]; cn[s] += 1; }
+        const tx = new Float64Array(ns); const ty = new Float64Array(ns); const tz = new Float64Array(ns);
+        for (let s = 0; s < ns; s++) {
+          if (!cn[s]) { tx[s] = seedsX[s]; ty[s] = seedsY[s]; tz[s] = seedsZ[s]; continue; }
+          tx[s] = seedsX[s] + (sx[s] / cn[s] - seedsX[s]) * K.VORONOI_RELAX_K; ty[s] = seedsY[s] + (sy[s] / cn[s] - seedsY[s]) * K.VORONOI_RELAX_K; tz[s] = seedsZ[s] + (sz[s] / cn[s] - seedsZ[s]) * K.VORONOI_RELAX_K;
+        }
+        const bestK = new Int32Array(ns).fill(-1); const bestD = new Float64Array(ns).fill(Infinity);
+        for (let k = 0; k < nn; k++) {
+          if (RS > 1 && ((k % NNu) % RS !== 0 || Mth.floor(k / NNu) % RS !== 0)) continue;
+          const s = labels[k]; if (s < 0) continue;
+          const dx = gx[k] - tx[s]; const dy = gy[k] - ty[s]; const dz = gz[k] - tz[s];
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < bestD[s]) { bestD[s] = d2; bestK[s] = k; }
+        }
+        for (let s = 0; s < ns; s++) { const k = bestK[s]; if (k >= 0) { seedsX[s] = gx[k]; seedsY[s] = gy[k]; seedsZ[s] = gz[k]; } }
+        label(pass === K.VORONOI_RELAX - 1 ? 1 : RS);
+      }
+      if (K.VORONOI_RELAX <= 0) label(1);
+      const t1 = opts && opts.timing ? Date.now() : 0;
+      cells += ns;
+      // -- boundaries: crossings on the grid edges (chord bisector), a node at every cell holding 3 labels ----------------------------------
+      const nu = []; const nv = []; // graph node chart coordinates (unwrapped; wrapped on use)
+      const adjE = []; const adjC = []; const ea = []; const eb = []; // 4 incident-edge slots per node (a crossing has 2, a junction cell up to 4)
+      const hCross = bufI(0, nn).fill(-1); const vCross = bufI(1, nn).fill(-1);
+      const addNode = (u, v) => { nu.push(u); nv.push(v); adjE.push(-1, -1, -1, -1); adjC.push(0); return nu.length - 1; };
+      const link = (n, e) => { if (adjC[n] < 4) { adjE[4 * n + adjC[n]] = e; adjC[n] += 1; } };
+      const addEdge = (a, b) => { if (a === b) return; const e = ea.length; ea.push(a); eb.push(b); link(a, e); link(b, e); };
+      const crossing = (k0, k1, u0, v0, u1, v1, store, key) => {
+        let id = store[key];
+        if (id >= 0) return id;
+        const a = labels[k0]; const b = labels[k1];
+        const f = (k) => { const x = gx[k]; const y = gy[k]; const z = gz[k];
+          const ax = x - seedsX[a]; const ay = y - seedsY[a]; const az = z - seedsZ[a]; const bx = x - seedsX[b]; const by = y - seedsY[b]; const bz = z - seedsZ[b];
+          return ax * ax + ay * ay + az * az - (bx * bx + by * by + bz * bz); };
+        const f0 = f(k0); const f1 = f(k1);
+        let t = f0 - f1 !== 0 ? f0 / (f0 - f1) : 0.5; t = clamp(t, 0.02, 0.98);
+        id = addNode(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t); store[key] = id; return id;
+      };
+      const wrapI = (i) => (i >= NNu ? i - NNu : i); const wrapJ = (j) => (j >= NNv ? j - NNv : j);
+      const centers = [];
+      for (let j = 0; j < Nv; j++) {
+        const j1 = wrapJ(j + 1);
+        for (let i = 0; i < Nu; i++) {
+          const i1 = wrapI(i + 1);
+          const k00 = j * NNu + i; const k10 = j * NNu + i1; const k01 = j1 * NNu + i; const k11 = j1 * NNu + i1;
+          const l00 = labels[k00]; const l10 = labels[k10]; const l01 = labels[k01]; const l11 = labels[k11];
+          if (l00 === l10 && l00 === l01 && l00 === l11) continue;
+          if (l00 < 0 || l10 < 0 || l01 < 0 || l11 < 0) continue;
+          const uA = i / Nu; const uB = (i + 1) / Nu; const vA = j / Nv; const vB = (j + 1) / Nv;
+          const cr = [];
+          if (l00 !== l10) cr.push(crossing(k00, k10, uA, vA, uB, vA, hCross, k00));
+          if (l10 !== l11) cr.push(crossing(k10, k11, uB, vA, uB, vB, vCross, k10));
+          if (l01 !== l11) cr.push(crossing(k01, k11, uA, vB, uB, vB, hCross, k01));
+          if (l00 !== l01) cr.push(crossing(k00, k01, uA, vA, uA, vB, vCross, k00));
+          let distinct = 1; { const set = [l00]; [l10, l01, l11].forEach((q) => { if (set.indexOf(q) < 0) { set.push(q); distinct += 1; } }); }
+          if (cr.length === 2 && distinct === 2) { addEdge(cr[0], cr[1]); continue; }
+          const c = addNode((uA + uB) / 2, (vA + vB) / 2);
+          cr.forEach((q) => addEdge(q, c));
+          if (distinct === 3) centers.push({ c, i, j, l: [l00, l10, l01, l11] });
+        }
+      }
+      const tb1 = opts && opts.timing ? Date.now() : 0;
+      // -- junction refinement: Gauss-Newton onto the point equidistant from the cell's three seeds -----------------------------------
+      centers.forEach((cn) => {
+        const lab = []; cn.l.forEach((q) => { if (lab.indexOf(q) < 0) lab.push(q); });
+        const [a, b, c] = lab;
+        let u = nu[cn.c]; let v = nv[cn.c];
+        const u0 = u; const v0 = v;
+        const ev = (uu, vv) => {
+          const q = P(((uu % 1) + 1) % 1, ((vv % 1) + 1) % 1); if (!q) return null;
+          const x = q.x * sc.sx; const y = q.y * sc.sy; const z = q.z * sc.sz;
+          const da = (x - seedsX[a]) ** 2 + (y - seedsY[a]) ** 2 + (z - seedsZ[a]) ** 2;
+          const db = (x - seedsX[b]) ** 2 + (y - seedsY[b]) ** 2 + (z - seedsZ[b]) ** 2;
+          const dc = (x - seedsX[c]) ** 2 + (y - seedsY[c]) ** 2 + (z - seedsZ[c]) ** 2;
+          return [da - db, da - dc];
+        };
+        const du = 0.25 / Nu; const dv = 0.25 / Nv;
+        // chord iteration: the finite-difference Jacobian is measured once (3 chart evaluations), the two further steps cost 1 each
+        let j00 = 0; let j01 = 0; let j10 = 0; let j11 = 0; let det = 0;
+        for (let it = 0; it < 3; it++) {
+          const f0 = ev(u, v);
+          if (!f0) return;
+          if (it === 0) {
+            const fu = ev(u + du, v); const fv = ev(u, v + dv);
+            if (!fu || !fv) return;
+            j00 = (fu[0] - f0[0]) / du; j01 = (fv[0] - f0[0]) / dv; j10 = (fu[1] - f0[1]) / du; j11 = (fv[1] - f0[1]) / dv;
+            det = j00 * j11 - j01 * j10;
+            if (!(Mth.abs(det) > 1e-12)) return;
+          }
+          u -= (f0[0] * j11 - f0[1] * j01) / det; v -= (j00 * f0[1] - j10 * f0[0]) / det;
+        }
+        if (Mth.abs(u - u0) <= 1.2 / Nu && Mth.abs(v - v0) <= 1.2 / Nv) { nu[cn.c] = u; nv[cn.c] = v; }
+      });
+      const tb2 = opts && opts.timing ? Date.now() : 0;
+      const nN = nu.length;
+      if (!nN) return;
+      junctions += centers.length;
+      for (let n = 0; n < nN; n++) degHist[Mth.min(6, adjC[n])] += 1;
+      // node positions (3D)
+      const px = new Float32Array(nN); const py = new Float32Array(nN); const pz = new Float32Array(nN); const pOk = new Uint8Array(nN);
+      const wrapU = (u) => (periodicA ? ((u % 1) + 1) % 1 : clamp(u, 0, 1)); const wrapV = (v) => (periodicB ? ((v % 1) + 1) % 1 : clamp(v, 0, 1));
+      for (let n = 0; n < nN; n++) {
+        const q = P(wrapU(nu[n]), wrapV(nv[n]));
+        if (q) { px[n] = q.x * sc.sx; py[n] = q.y * sc.sy; pz[n] = q.z * sc.sz; pOk[n] = 1; }
+      }
+      // -- chaining: long strokes through the junctions (the straightest continuation), junction / end starts first ----------------------
+      const used = new Uint8Array(ea.length);
+      const chains = [];
+      const walk = (start) => {
+        let cur = start; let dx = 0; let dy = 0; let dz = 0; let has = false;
+        const pts = [cur];
+        for (;;) {
+          let best = -1; let bdot = -Infinity;
+          for (let q = 0; q < adjC[cur]; q++) {
+            const e = adjE[4 * cur + q]; if (used[e]) continue;
+            const o = ea[e] === cur ? eb[e] : ea[e];
+            const ex = px[o] - px[cur]; const ey = py[o] - py[cur]; const ez = pz[o] - pz[cur];
+            const L = Mth.hypot(ex, ey, ez) || 1;
+            const dot = has ? (ex * dx + ey * dy + ez * dz) / L : 0;
+            if (dot > bdot) { bdot = dot; best = e; }
+          }
+          if (best < 0) break;
+          used[best] = 1;
+          const o = ea[best] === cur ? eb[best] : ea[best];
+          const ex = px[o] - px[cur]; const ey = py[o] - py[cur]; const ez = pz[o] - pz[cur];
+          const L = Mth.hypot(ex, ey, ez) || 1;
+          dx = ex / L; dy = ey / L; dz = ez / L; has = true;
+          cur = o; pts.push(cur);
+        }
+        if (pts.length >= 2) chains.push(pts);
+      };
+      for (let n = 0; n < nN; n++) if (adjC[n] !== 2) walk(n);
+      for (let n = 0; n < nN; n++) { let any = false; for (let q = 0; q < adjC[n]; q++) if (!used[adjE[4 * n + q]]) any = true; if (any) walk(n); }
+      const tb3 = opts && opts.timing ? Date.now() : 0;
+      // -- simplify (RDP on the 3D polyline) and emit, resampled at the step ----------------------------------------------------------
+      const keepIdx = new Uint8Array(0);
+      const rdp = (pts) => {
+        const n = pts.length; const keep = new Uint8Array(n); keep[0] = 1; keep[n - 1] = 1;
+        const stack = [[0, n - 1]];
+        while (stack.length) {
+          const [s, e] = stack.pop();
+          if (e <= s + 1) continue;
+          const A = pts[s]; const B = pts[e];
+          const abx = px[B] - px[A]; const aby = py[B] - py[A]; const abz = pz[B] - pz[A];
+          const l2 = abx * abx + aby * aby + abz * abz;
+          let md = -1; let mi = -1;
+          for (let q = s + 1; q < e; q++) {
+            const N = pts[q];
+            const apx = px[N] - px[A]; const apy = py[N] - py[A]; const apz = pz[N] - pz[A];
+            const t = l2 > 0 ? clamp((apx * abx + apy * aby + apz * abz) / l2, 0, 1) : 0;
+            const ex = apx - t * abx; const ey = apy - t * aby; const ez = apz - t * abz;
+            const d = ex * ex + ey * ey + ez * ez;
+            if (d > md) { md = d; mi = q; }
+          }
+          if (md > simpTol * simpTol) { keep[mi] = 1; stack.push([s, mi], [mi, e]); }
+        }
+        const out = []; for (let q = 0; q < n; q++) if (keep[q]) out.push(pts[q]);
+        return out;
+      };
+      void keepIdx;
+      const lo = Mth.max(0, bandLo[l]); const hi = Mth.min(1, bandHi[l]);
+      chains.forEach((chain, ci) => {
+        const pts = rdp(chain);
+        if (pts.length < 2) return;
+        const rank = Mth.min(0.99998, SC.hash(ci, l * 31 + 5, salt + 8821) * K.VORONOI_THIN_RANK);
+        const closed = chain[0] === chain[chain.length - 1];
+        builder.beginRun(0, rank, 0, closed ? SM.FLAG.CLOSED : 0, undefined, 0, 0, lo, hi);
+        let pu = 0; let pv = 0; let n0 = 0; let ps = null;
+        const put = (x, y, z, nx, ny, nz) => {
+          builder.vertex(x, y, z, nx, ny, nz); n0 += 1;
+          if (x < bmin[0]) bmin[0] = x; if (x > bmax[0]) bmax[0] = x;
+          if (y < bmin[1]) bmin[1] = y; if (y > bmax[1]) bmax[1] = y;
+          if (z < bmin[2]) bmin[2] = z; if (z > bmax[2]) bmax[2] = z;
+          const r2 = x * x + y * y + z * z; if (r2 > rmax2) rmax2 = r2;
+        };
+        for (let q = 0; q < pts.length; q++) {
+          const N = pts[q]; let u = nu[N]; let v = nv[N];
+          if (q > 0) { // unwrap relative to the previous node, then subdivide: the chart point is exact, the normal is the end normals' blend
+            if (periodicA) { while (u - pu > 0.5) u -= 1; while (u - pu < -0.5) u += 1; }
+            if (periodicB) { while (v - pv > 0.5) v -= 1; while (v - pv < -0.5) v += 1; }
+            const len = Mth.hypot(px[N] - px[pts[q - 1]], py[N] - py[pts[q - 1]], pz[N] - pz[pts[q - 1]]);
+            const m = Mth.max(1, Mth.ceil(len / stepObj));
+            const s1 = M.sample(wrapU(u), wrapV(v));
+            for (let w = 1; w <= m; w++) {
+              if (w === m) { if (s1) put(s1.x, s1.y, s1.z, s1.nx, s1.ny, s1.nz); continue; }
+              const f = w / m; const uu = pu + (u - pu) * f; const vv = pv + (v - pv) * f;
+              const c = P(wrapU(uu), wrapV(vv));
+              if (!c || !ps || !s1) continue;
+              let nx = ps.nx + (s1.nx - ps.nx) * f; let ny = ps.ny + (s1.ny - ps.ny) * f; let nz = ps.nz + (s1.nz - ps.nz) * f;
+              const nl = Mth.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+              put(c.x * sc.sx, c.y * sc.sy, c.z * sc.sz, nx, ny, nz);
+            }
+            ps = s1;
+          } else {
+            ps = M.sample(wrapU(u), wrapV(v));
+            if (ps) put(ps.x, ps.y, ps.z, ps.nx, ps.ny, ps.nz);
+          }
+          pu = u; pv = v;
+        }
+        if (builder.endRun()) { runs += 1; vertsOut += n0; }
+      });
+      if (opts && opts.timing) stats.perLevel.push({ l, D: +(Dl * scaleRef).toFixed(2), seeds: ns, nodes: nn, ms: [tg - t0, ts - tg, t1 - ts, tb1 - t1, tb2 - tb1, tb3 - tb2, Date.now() - tb3] });
+    };
+    const tLv = Date.now();
+    for (let l = 0; l <= Lc; l++) buildLevel(l);
+    stats.levelsMs = Date.now() - tLv; const tFin = Date.now();
+
+    const ms = builder.finish();
+    ms.bakerId = 'webs';
+    stats.finishMs = Date.now() - tFin; stats.levels = Lc + 1;
+    if (ms.vertexCount > 200000) throw new Error('SurfaceLockWebs.bake: vertex budget exceeded');
+    const has = ms.vertexCount > 0;
+    if (opts && opts.info) Object.assign(opts.info, stats, { bandLo, bandHi, CTOP: model.CTOP, CMIN: model.CMIN, Lc });
+    ms.meta = {
+      p0: model.CTOP / scaleRef, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'voronoiWeb',
+      toneScaleFree: true,
+      floorPitchPen: K.VORONOI_FLOOR_PEN,
+      voronoiLevels: Lc + 1, lod: coarse ? 1 : 0, voronoiCells: cells, voronoiJunctions: junctions, voronoiRuns: runs, voronoiCTopMM: model.CTOP,
+      voronoiBands: bandLo.map((a, i) => [a, bandHi[i]]),
+      bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Mth.sqrt(rmax2) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
+      convex: typeof spec.convex === 'boolean' ? spec.convex : Boolean(CONVEX_MODES[mode]),
+    };
+    return ms;
+  };
+
+
+  // ===================================================================================================================================
+  // turingStripe (contract A35): a v2 Level S law, the bake is the drag AND the settled / export frame. The pose law relaxes a reaction-diffusion
+  // field on a SCREEN raster and draws its zero set: a labyrinth of stripes whose pitch is the tone's clearance (v2: the wavelength follows the
+  // tone only down to TURING_DMIN of the dark end, lighter tones keep that pattern and the paper gate thins it by cells). A screen pattern cannot
+  // follow the surface, so the bake gives the SURFACE its own stripe texture:
+  //   - the field is two domain-warped plane-wave carriers, f(p) = cos(k n1 . p + warp1) + TURING_W2 cos(k n2 . p + warp2), of the object's scaled
+  //     LOCAL 3D position (random unit n_i, phases and warp waves from the scene seed): few, low-frequency waves give long, connected, meandering
+  //     labyrinth stripes of uniform physical spacing on any surface, no chart distortion at poles, no seam, the same field on every box face;
+  //   - the zero set is traced by marching squares on a chart grid (curved primitives: the object's own chart, grid spacing = spacing /
+  //     TURING_GRID; box: one planar grid per face), crossings refined and chained into stripes, relaxed + Chaikin-smoothed (no stair-steps), cut only into long pieces (TURING_PIECE spacings), extra vertices on tight bends (TURING_MAX_TURN);
+  //   - a piece is keyed by a golden-ratio-sequence rank in [0, 1); the LUT is the paper gate g(I) = min(1, d(I) / TURING_DMIN) (0 at and below the pose paper
+  //     density), so the lit side thins out piece by piece (long runs dropped, never confetti-cut), with no rebake. Line spacing is the pose
+  //     clearance max(FLOOR, pitchOfDens(max(d, DMIN))) x Stripe scale (it varies only ~10 % across the whole tone range, so one level).
+  // Not baked (a screen / light quantity): Stripe align (the pose combs the stripes across the shading) and Maturity (the relaxation steps).
+  // The bake is POSE-FREE (contract §3, §8).
+  // ===================================================================================================================================
+  const turingModel = (spec) => {
+    const T = toneParams(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const areaMax = clamp((T.INK / (T.FLOOR * 1.05)) * T.DS, 0.02, K.A_DARK);
+    const pmaxV = T.PMAX * K.TURING_PITCH_X;
+    const pitchOfDens = (d) => clamp(T.INK / Mth.max(1e-6, clamp(areaMax * d, 0, K.A_DARK)), T.INK / K.A_DARK, pmaxV);
+    const FC = Vectura.SCENE_FILL_CONTROLS;
+    const ss = FC && typeof FC.read === 'function' ? FC.read(spec.style || {}, 'stripeScale') : undefined;
+    const stripeScale = isFin(ss) && ss > 0 ? ss : 1;
+    const clearance = (d) => Mth.max(T.FLOOR, pitchOfDens(Mth.max(d, K.TURING_DMIN)));
+    const S = clearance(1) * stripeScale * K.TURING_SPACING_X; // screen mm at the bake scale
+    return { T, scaleRef, S, stripeScale, dens: targetOf(T, K.TURING_PAPER_BAND), gate: (d) => (d <= K.TURING_PAPER_DENS ? 0 : Mth.min(1, d / K.TURING_DMIN)) };
+  };
+  const turingLUT = (spec, toneCtx) => {
+    const m = turingModel(spec);
+    const size = cfg().TONE_LUT_SIZE || 256;
+    const lut = new Float32Array(size + 1);
+    const off = toneIsOff(toneCtx);
+    const gOff = m.gate(K.TURING_OFF_DENS);
+    for (let k = 0; k <= size; k++) lut[k] = 1.001 * (off ? gOff : m.gate(m.dens(k / size))) / m.S;
+    return { lut, scaleFn: null };
+  };
+
+  // Marching squares of f (NNu x NNv nodes, node (i, j) at chart (i / Nu, j / Nv)) on f = 0, chained through shared edges.
+  // Returns [{ uv: Float64Array [u0, v0, u1, v1, ...], closed }] (open chains first).
+  const traceZero = (Nu, Nv, f, ok, fAt, smoothPasses) => {
+    const NNu = Nu + 1; const NNv = Nv + 1;
+    const nE = NNu * NNv;
+    const adj = new Int32Array(4 * nE).fill(-1); // edge id (H: j * NNu + i, V: nE + j * NNu + i) -> up to two partner edges
+    const touched = []; // edges that carry a crossing (the chain scans visit only these)
+    const link = (a, b) => {
+      if (adj[2 * a] < 0) { adj[2 * a] = b; touched.push(a); } else adj[2 * a + 1] = b;
+      if (adj[2 * b] < 0) { adj[2 * b] = a; touched.push(b); } else adj[2 * b + 1] = a;
+    };
+    for (let j = 0; j < Nv; j++) {
+      for (let i = 0; i < Nu; i++) {
+        const k0 = j * NNu + i; const k1 = k0 + 1; const k2 = k1 + NNu; const k3 = k0 + NNu;
+        if (!(ok[k0] && ok[k1] && ok[k2] && ok[k3])) continue;
+        const a = f[k0]; const b = f[k1]; const c = f[k2]; const d = f[k3];
+        const cidx = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
+        if (cidx === 0 || cidx === 15) continue;
+        const eT = k0; const eB = k3; const eL = nE + k0; const eR = nE + k1;
+        switch (cidx) {
+          case 1: case 14: link(eL, eT); break;
+          case 2: case 13: link(eT, eR); break;
+          case 3: case 12: link(eL, eR); break;
+          case 4: case 11: link(eR, eB); break;
+          case 6: case 9: link(eT, eB); break;
+          case 7: case 8: link(eL, eB); break;
+          case 5: if ((a + b + c + d) > 0) { link(eT, eR); link(eL, eB); } else { link(eL, eT); link(eR, eB); } break;
+          default: if ((a + b + c + d) > 0) { link(eL, eT); link(eR, eB); } else { link(eT, eR); link(eL, eB); } break; // 10
+        }
+      }
+    }
+    const seen = new Uint8Array(2 * nE);
+    // the crossing on an edge: the linear root, refined by two regula falsi steps on the true field (fAt) so a coarse grid still gives exact points
+    const root = (u0, v0, u1, v1, f0, f1, out) => {
+      let ta = 0; let tb = 1; let fa = f0; let fb = f1; let t = f0 / (f0 - f1);
+      if (fAt) {
+        for (let it = 0; it < 2; it++) {
+          const fm = fAt(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t);
+          if (!isFin(fm)) break;
+          if ((fm > 0) === (fa > 0)) { ta = t; fa = fm; } else { tb = t; fb = fm; }
+          const d = fa - fb; if (!(Mth.abs(d) > 1e-12)) break;
+          t = ta + (tb - ta) * fa / d;
+        }
+      }
+      out[0] = u0 + (u1 - u0) * t; out[1] = v0 + (v1 - v0) * t;
+    };
+    const uvOf = (e, out) => {
+      if (e < nE) { const j = (e / NNu) | 0; const i = e - j * NNu; root(i / Nu, j / Nv, (i + 1) / Nu, j / Nv, f[e], f[e + 1], out); }
+      else { const q = e - nE; const j = (q / NNu) | 0; const i = q - j * NNu; root(i / Nu, j / Nv, i / Nu, (j + 1) / Nv, f[q], f[q + NNu], out); }
+    };
+    // Chaikin corner cutting (quadratic B-spline limit): every pass replaces each segment by its 1/4 and 3/4 points, so a marching-squares
+    // trace becomes a smooth curve and a tight U-turn gets enough vertices to stay round (ends of an open chain are kept)
+    const relax = (uv, closed, passes) => { // [1 2 1] relaxation: kills the node-to-node zigzag of the marching-squares trace before the curve is subdivided
+      const n = uv.length / 2; const m = closed ? n - 1 : n;
+      if (m < 3) return;
+      const tmp2 = new Float64Array(uv.length);
+      for (let ps = 0; ps < passes; ps++) {
+        for (let q = 0; q < m; q++) {
+          if (!closed && (q === 0 || q === m - 1)) { tmp2[2 * q] = uv[2 * q]; tmp2[2 * q + 1] = uv[2 * q + 1]; continue; }
+          const a = closed ? (q + m - 1) % m : q - 1; const b = closed ? (q + 1) % m : q + 1;
+          tmp2[2 * q] = 0.25 * uv[2 * a] + 0.5 * uv[2 * q] + 0.25 * uv[2 * b]; tmp2[2 * q + 1] = 0.25 * uv[2 * a + 1] + 0.5 * uv[2 * q + 1] + 0.25 * uv[2 * b + 1];
+        }
+        for (let q = 0; q < m; q++) { uv[2 * q] = tmp2[2 * q]; uv[2 * q + 1] = tmp2[2 * q + 1]; }
+      }
+      if (closed) { uv[2 * (n - 1)] = uv[0]; uv[2 * (n - 1) + 1] = uv[1]; }
+    };
+    const chaikin = (uv, closed, passes) => {
+      relax(uv, closed, K.TURING_RELAX | 0);
+      let cur = uv;
+      for (let ps = 0; ps < passes; ps++) {
+        const n = cur.length / 2; const m = closed ? n - 1 : n; // a closed chain repeats its first point
+        if (m < 3) return cur;
+        const out = []; if (!closed) out.push(cur[0], cur[1]);
+        const segs = closed ? m : m - 1;
+        for (let q = 0; q < segs; q++) {
+          const a = q; const b = (q + 1) % m;
+          const ax = cur[2 * a]; const ay = cur[2 * a + 1]; const bx = cur[2 * b]; const by = cur[2 * b + 1];
+          if (!closed && q === 0) out.push(ax * 0.5 + bx * 0.5, ay * 0.5 + by * 0.5); else out.push(0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by);
+          if (!closed && q === segs - 1) out.push(0.5 * ax + 0.5 * bx, 0.5 * ay + 0.5 * by); else out.push(0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by);
+        }
+        if (!closed) out.push(cur[2 * (m - 1)], cur[2 * (m - 1) + 1]); else out.push(out[0], out[1]);
+        cur = new Float64Array(out);
+      }
+      return cur;
+    };
+    const chains = [];
+    const tmp = [0, 0];
+    const walk = (start, closedHint) => {
+      const ids = [start]; seen[start] = 1;
+      let prev = -1; let cur = start;
+      for (;;) {
+        const a0 = adj[2 * cur]; const a1 = adj[2 * cur + 1];
+        let nx = -1;
+        if (a0 >= 0 && a0 !== prev && !seen[a0]) nx = a0; else if (a1 >= 0 && a1 !== prev && !seen[a1]) nx = a1;
+        if (nx < 0) break;
+        seen[nx] = 1; ids.push(nx); prev = cur; cur = nx;
+      }
+      let closed = false;
+      if (closedHint) { const a0 = adj[2 * cur]; const a1 = adj[2 * cur + 1]; if (ids.length > 2 && (a0 === start || a1 === start)) closed = true; }
+      const uv = new Float64Array(2 * (ids.length + (closed ? 1 : 0)));
+      for (let q = 0; q < ids.length; q++) { uvOf(ids[q], tmp); uv[2 * q] = tmp[0]; uv[2 * q + 1] = tmp[1]; }
+      if (closed) { uv[2 * ids.length] = uv[0]; uv[2 * ids.length + 1] = uv[1]; }
+      chains.push({ uv: chaikin(uv, closed, smoothPasses), closed });
+    };
+    for (let ti = 0; ti < touched.length; ti++) { // open chains: start at the degree-one edges
+      const e = touched[ti];
+      if (seen[e]) continue;
+      const deg = (adj[2 * e] >= 0 ? 1 : 0) + (adj[2 * e + 1] >= 0 ? 1 : 0);
+      if (deg === 1) walk(e, false);
+    }
+    for (let ti = 0; ti < touched.length; ti++) { const e = touched[ti]; if (!seen[e] && adj[2 * e] >= 0) walk(e, true); }
+    return chains;
+  };
+
+  const bakeTuring = (spec, opts) => {
+    sync();
+    if (!supports(spec)) throw new Error(`SurfaceLockWebs.bake: unsupported spec (law ${spec && spec.toneLaw})`);
+    const SM = MS(); const SC = CH();
+    const prim = primitiveOf(spec);
+    const mode = spec.mode || PRIM_MODE[prim];
+    const sc = scaleOf(spec);
+    const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
+    const seed = (spec.seed && typeof spec.seed === 'object') ? spec.seed : {};
+    const salt = finite(seed.salt, 0) | 0;
+    const builder = SM.createBuilder({ bakerId: 'webs', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
+    const emptyMeta = { p0: 1, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'turingStripe', bounds: { min: [0, 0, 0], max: [0, 0, 0], radius: 0 }, convex: false };
+    const model = turingModel(spec);
+    const So = model.S / scaleRef; // line spacing, scaled local mm
+    const stats = { areaMM2: 0, lenMM: 0, chains: 0, pieces: 0 };
+    const bmin = [Infinity, Infinity, Infinity]; const bmax = [-Infinity, -Infinity, -Infinity]; let rmax2 = 0;
+    let vertsOut = 0;
+
+    // ---- the field: plane waves of the local 3D position -----------------------------------------------------------------------------
+    const t00 = Date.now();
+    const rng = mulberry(salt * 7919 + 271828);
+    // two warped carriers: cos(k n1 . p + W1(p)) + w2 cos(k n2 . p + W2(p)), W = three slow waves (meander). The carriers keep the stripes
+    // long and parallel-ish, the warp bends them like a labyrinth, and the second carrier forks and joins them (no isolated blobs).
+    const kk = Mth.PI / So * K.TURING_K;
+    const unit = () => { const z = 2 * rng() - 1; const a = 2 * Mth.PI * rng(); const rr = Mth.sqrt(Mth.max(0, 1 - z * z)); return [rr * Mth.cos(a), rr * Mth.sin(a), z]; };
+    const n1 = unit(); let n2 = unit();
+    for (let t = 0; t < 20 && Mth.abs(n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) > 0.8; t++) n2 = unit();
+    const kw = 2 * Mth.PI / (Mth.max(3, K.TURING_WARP_L) * So); const aw = K.TURING_WARP * kk / kw;
+    const NWR = 6; const wdir = []; const wph = [];
+    for (let w = 0; w < NWR; w++) { const u = unit(); wdir.push([u[0] * kw, u[1] * kw, u[2] * kw]); wph.push(2 * Mth.PI * rng()); }
+    const ph1 = 2 * Mth.PI * rng(); const ph2 = 2 * Mth.PI * rng();
+    const field = (x, y, z) => {
+      let w1 = 0; let w2 = 0;
+      for (let w = 0; w < 3; w++) { const d = wdir[w]; w1 += Mth.sin(d[0] * x + d[1] * y + d[2] * z + wph[w]); const e = wdir[w + 3]; w2 += Mth.sin(e[0] * x + e[1] * y + e[2] * z + wph[w + 3]); }
+      return Mth.cos(kk * (n1[0] * x + n1[1] * y + n1[2] * z) + aw * w1 + ph1) + K.TURING_W2 * Mth.cos(kk * (n2[0] * x + n2[1] * y + n2[2] * z) + aw * w2 + ph2);
+    };
+
+    // ---- stripes -> pieces -> runs ---------------------------------------------------------------------------------------------------
+    let stepO = Mth.max(1e-4, K.TURING_STEP * So);
+    // vertex budget: the stripe length is about area / spacing, so verts ~ area / (spacing x step); the step grows until that fits
+    let turnDeg = K.TURING_MAX_TURN;
+    const fitStep = (area) => { const s0 = stepO; stepO = Mth.max(stepO, area / (So * K.TURING_MAX_VERTS)); turnDeg = K.TURING_MAX_TURN * stepO / s0; }; // a fine pattern coarsens step AND bend density together
+    let rankSeq = 0;
+    const emitChains = (chains, cheapAt, fullAt, tag) => {
+      chains.forEach((ch, ci) => {
+        const n = ch.uv.length / 2;
+        if (n < 2) return;
+        const P = new Array(n); const cum = new Float64Array(n);
+        for (let q = 0; q < n; q++) {
+          const v = cheapAt(ch.uv[2 * q], ch.uv[2 * q + 1]); // position only: the full vertex (normal) is built for the kept points
+          P[q] = v;
+          if (q > 0) cum[q] = cum[q - 1] + (v && P[q - 1] ? Mth.hypot(v.x - P[q - 1].x, v.y - P[q - 1].y, v.z - P[q - 1].z) : 0);
+        }
+        const total = cum[n - 1];
+        if (!(total > Mth.max(stepO, K.TURING_MIN_LEN * So))) return;
+        stats.chains += 1; stats.lenMM += total;
+        const np = Mth.max(1, Mth.round(total / (K.TURING_PIECE * So))); // very long stripes are cut into LONG pieces (TURING_PIECE spacings), never into confetti
+        const single = ch.closed && np === 1;
+        for (let pc = 0; pc < np; pc++) {
+          const s0 = total * pc / np; const s1 = total * (pc + 1) / np;
+          const idx = [];
+          let last = -Infinity; let acc = 0; const maxTurn = turnDeg * Mth.PI / 180;
+          for (let q = 0; q < n; q++) {
+            if (cum[q] < s0 - 1e-9 || cum[q] > s1 + 1e-9 || !P[q]) continue;
+            // a vertex every step, and also whenever the stripe has turned by TURING_MAX_TURN since the last one: a tight bend gets dense vertices,
+            // so the turning angle between consecutive segments stays bounded and the stroke reads as a smooth curve (never a polygon corner)
+            if (q > 0 && q + 1 < n && P[q - 1] && P[q + 1]) {
+              const ux = P[q].x - P[q - 1].x; const uy = P[q].y - P[q - 1].y; const uz = P[q].z - P[q - 1].z;
+              const wx = P[q + 1].x - P[q].x; const wy = P[q + 1].y - P[q].y; const wz = P[q + 1].z - P[q].z;
+              const lu = Mth.hypot(ux, uy, uz); const lw = Mth.hypot(wx, wy, wz);
+              if (lu > 1e-12 && lw > 1e-12) acc += Mth.acos(Mth.max(-1, Mth.min(1, (ux * wx + uy * wy + uz * wz) / (lu * lw))));
+            }
+            if (!idx.length || cum[q] - last >= stepO || acc >= maxTurn || (cum[q] >= s1 - 1e-9)) { idx.push(q); last = cum[q]; acc = 0; }
+          }
+          if (idx.length < 2) continue;
+          const rank = Mth.min(0.99998, ((rankSeq++ * 0.6180339887498949) + SC.hash(tag, 7, salt + 4421)) % 1); // golden-ratio sequence: neighbouring pieces get well-spread ranks, so the tone gate thins evenly (no random clumps)
+          builder.beginRun(0, rank, 0, single ? SM.FLAG.CLOSED : 0);
+          let n0 = 0; const nextN = {};
+          const m = single ? idx.length - 1 : idx.length;
+          const ne = Mth.max(1, K.TURING_NORMAL_EVERY | 0);
+          let pa = null; let pi = -1; // last sampled normal and its vertex index
+          const nrm = (a) => { const q = idx[a]; const sm = fullAt(ch.uv[2 * q], ch.uv[2 * q + 1]); return sm && isFin(sm.nx + sm.ny + sm.nz) ? sm : null; };
+          for (let a = 0; a < m; a++) {
+            const c = P[idx[a]];
+            let nx; let ny; let nz;
+            if (!fullAt) { nx = c.nx; ny = c.ny; nz = c.nz; }
+            else {
+              if (a % ne === 0 || pa === null) { const sm = nextN[a] || nrm(a); if (sm) { pa = { nx: sm.nx, ny: sm.ny, nz: sm.nz }; pi = a; } }
+              let na = pa; let ia = pi;
+              // blend toward the next sampled normal when the block is complete
+              const nb = ((a % ne) !== 0 && (a - (a % ne) + ne) < m) ? (nextN[a - (a % ne) + ne] || (nextN[a - (a % ne) + ne] = nrm(a - (a % ne) + ne))) : null;
+              if (nb && na) { const f = (a - ia) / Mth.max(1, (a - (a % ne) + ne) - ia); nx = na.nx + (nb.nx - na.nx) * f; ny = na.ny + (nb.ny - na.ny) * f; nz = na.nz + (nb.nz - na.nz) * f; const nl = Mth.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl; }
+              else if (na) { nx = na.nx; ny = na.ny; nz = na.nz; } else continue;
+            }
+            builder.vertex(c.x, c.y, c.z, nx, ny, nz); n0 += 1;
+            if (c.x < bmin[0]) bmin[0] = c.x; if (c.x > bmax[0]) bmax[0] = c.x;
+            if (c.y < bmin[1]) bmin[1] = c.y; if (c.y > bmax[1]) bmax[1] = c.y;
+            if (c.z < bmin[2]) bmin[2] = c.z; if (c.z > bmax[2]) bmax[2] = c.z;
+            const r2 = c.x * c.x + c.y * c.y + c.z * c.z; if (r2 > rmax2) rmax2 = r2;
+          }
+          if (builder.endRun()) { vertsOut += n0; stats.pieces += 1; }
+        }
+      });
+    };
+    const finish = (convex) => {
+      const ms = builder.finish();
+      ms.bakerId = 'webs';
+      if (ms.vertexCount > 200000) throw new Error('SurfaceLockWebs.bake: vertex budget exceeded');
+      const has = ms.vertexCount > 0;
+      if (opts && opts.info) Object.assign(opts.info, stats);
+      ms.meta = {
+        p0: model.S / scaleRef, gain: 2, toneModel: 'pitch', scaleRef, minMarkMM: 0, lawId: 'turingStripe',
+        toneScaleFree: true,
+        floorPitchPen: K.TURING_FLOOR_PEN,
+        turingSpacingMM: model.S, turingPieces: stats.pieces, turingLenMM: stats.lenMM, turingAreaMM2: stats.areaMM2,
+        bounds: has ? { min: bmin.slice(), max: bmax.slice(), radius: Mth.sqrt(rmax2) } : { min: [0, 0, 0], max: [0, 0, 0], radius: 0 },
+        convex: typeof spec.convex === 'boolean' ? spec.convex : convex,
+      };
+      return ms;
+    };
+    const nodeBudget = (Nu, Nv) => { while ((Nu + 1) * (Nv + 1) > K.TURING_MAX_NODES) { Nu = Mth.max(8, Mth.round(Nu * 0.9)); Nv = Mth.max(8, Mth.round(Nv * 0.9)); if (Nu === 8 && Nv === 8) break; } return [Nu, Nv]; };
+
+    if (prim === 'box') { // ---- one planar grid per face, in the object's scaled local frame ----------------------------------------------------
+      const only = Number.isInteger(spec.sizes && spec.sizes.face) ? spec.sizes.face : -1;
+      const params = Object.assign({}, spec.sizes || {}); delete params.face;
+      const mesh = Scene3D.Scene && Scene3D.Scene.buildPrimitiveMesh ? Scene3D.Scene.buildPrimitiveMesh({ primitive: 'box', params }, 1) : null;
+      if (!mesh) { const e0 = builder.finish(); e0.bakerId = 'webs'; e0.meta = emptyMeta; return e0; }
+      { const bs = spec.sizes || {}; const ax = finite(bs.sx, 20) * sc.sx; const ay = finite(bs.sy, 20) * sc.sy; const az = finite(bs.sz, 20) * sc.sz; fitStep(2 * (ax * ay + ay * az + ax * az)); }
+      for (let fi = 0; fi < mesh.faces.length; fi++) {
+        if (only >= 0 && fi !== only) continue;
+        const idxs = mesh.faces[fi];
+        if (!Array.isArray(idxs) || idxs.length < 3) continue;
+        const pts = idxs.map((q) => { const v = mesh.vertices[q]; return [v.x * sc.sx, v.y * sc.sy, v.z * sc.sz]; });
+        let nx = 0; let ny = 0; let nz = 0;
+        for (let k = 0; k < pts.length; k++) {
+          const a = pts[k]; const b = pts[(k + 1) % pts.length];
+          nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1]);
+        }
+        const nl = Mth.hypot(nx, ny, nz);
+        if (!(nl > 1e-9)) continue;
+        const n = [nx / nl, ny / nl, nz / nl];
+        let U = null;
+        const cands = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+        for (let c = 0; c < 3 && !U; c++) {
+          const a = cands[c]; const dd = a[0] * n[0] + a[1] * n[1] + a[2] * n[2];
+          const px = a[0] - n[0] * dd; const py = a[1] - n[1] * dd; const pz = a[2] - n[2] * dd; const pl = Mth.hypot(px, py, pz);
+          if (pl > 1e-3) U = [px / pl, py / pl, pz / pl];
+        }
+        if (!U) continue;
+        const Vv = [n[1] * U[2] - n[2] * U[1], n[2] * U[0] - n[0] * U[2], n[0] * U[1] - n[1] * U[0]];
+        let h0 = 0; let umin = Infinity; let umax = -Infinity; let vmin = Infinity; let vmax = -Infinity;
+        pts.forEach((q) => {
+          h0 += n[0] * q[0] + n[1] * q[1] + n[2] * q[2];
+          const u = U[0] * q[0] + U[1] * q[1] + U[2] * q[2]; const v = Vv[0] * q[0] + Vv[1] * q[1] + Vv[2] * q[2];
+          umin = Mth.min(umin, u); umax = Mth.max(umax, u); vmin = Mth.min(vmin, v); vmax = Mth.max(vmax, v);
+        });
+        h0 /= pts.length;
+        const W0 = umax - umin; const H0 = vmax - vmin;
+        if (!(W0 > 1e-6 && H0 > 1e-6)) continue;
+        stats.areaMM2 += W0 * H0;
+        const hh = So / Mth.max(1, K.TURING_GRID);
+        const [Nu, Nv] = nodeBudget(Mth.max(4, Mth.ceil(W0 / hh)), Mth.max(4, Mth.ceil(H0 / hh)));
+        const NNu = Nu + 1; const NNv = Nv + 1;
+        const f = new Float32Array(NNu * NNv); const ok = new Uint8Array(NNu * NNv).fill(1);
+        const at = (u, v) => { const s = umin + W0 * u; const t = vmin + H0 * v; return [U[0] * s + Vv[0] * t + n[0] * h0, U[1] * s + Vv[1] * t + n[1] * h0, U[2] * s + Vv[2] * t + n[2] * h0]; };
+        for (let j = 0; j < NNv; j++) for (let i = 0; i < NNu; i++) { const p = at(i / Nu, j / Nv); f[j * NNu + i] = field(p[0], p[1], p[2]); }
+        const chains = traceZero(Nu, Nv, f, ok, (u, v) => { const p = at(u, v); return field(p[0], p[1], p[2]); }, K.TURING_SMOOTH | 0);
+        const faceVtx = (u, v) => { const p = at(u, v); return { x: p[0], y: p[1], z: p[2], nx: n[0], ny: n[1], nz: n[2] }; };
+        emitChains(chains, faceVtx, faceVtx, fi * 131071);
+      }
+      return finish(true);
+    }
+
+    // ---- curved primitive: the object's chart -----------------------------------------------------------------------------------------
+    const M = SC.metric(mode, spec.sizes || {}, sc);
+    const raw = rawChart(spec);
+    if (!M || !raw) { const e0 = builder.finish(); e0.bakerId = 'webs'; e0.meta = emptyMeta; return e0; }
+    const G = 25; const la = []; const lb = []; let areaSum = 0;
+    for (let i = 0; i < G; i++) {
+      for (let j = 0; j < G; j++) {
+        const s = M.sample((i + 0.5) / G, (j + 0.5) / G);
+        if (!s) continue;
+        const A = Mth.hypot(s.dax, s.day, s.daz); const B = Mth.hypot(s.dbx, s.dby, s.dbz);
+        const cx = s.day * s.dbz - s.daz * s.dby; const cy = s.daz * s.dbx - s.dax * s.dbz; const cz = s.dax * s.dby - s.day * s.dbx;
+        areaSum += Mth.hypot(cx, cy, cz);
+        if (A > 1e-9) la.push(A); if (B > 1e-9) lb.push(B);
+      }
+    }
+    stats.areaMM2 = areaSum / (G * G);
+    if (!(stats.areaMM2 > 0) || !la.length || !lb.length) { const e1 = builder.finish(); e1.bakerId = 'webs'; e1.meta = emptyMeta; return e1; }
+    const pct = (arr, q) => { const s = Float64Array.from(arr).sort(); return s[Mth.min(s.length - 1, Mth.floor(q * s.length))]; };
+    const extA = pct(la, 0.9); const extB = pct(lb, 0.9);
+    const hh = So / Mth.max(1, K.TURING_GRID);
+    const [Nu, Nv] = nodeBudget(Mth.max(8, Mth.ceil(extA / hh)), Mth.max(8, Mth.ceil(extB / hh)));
+    const NNu = Nu + 1; const NNv = Nv + 1;
+    const f = new Float32Array(NNu * NNv); const ok = new Uint8Array(NNu * NNv);
+    for (let j = 0; j < NNv; j++) {
+      for (let i = 0; i < NNu; i++) {
+        const q = raw(i / Nu, j / Nv); const k = j * NNu + i;
+        if (!q || !isFin(q.x + q.y + q.z)) continue;
+        f[k] = field(q.x * sc.sx, q.y * sc.sy, q.z * sc.sz); ok[k] = 1;
+      }
+    }
+    fitStep(stats.areaMM2);
+    const tF = Date.now(); stats.nodes = NNu * NNv; stats.fieldMs = tF - t00;
+    const chains = traceZero(Nu, Nv, f, ok, (u, v) => { const q = raw(u, v); return q && isFin(q.x + q.y + q.z) ? field(q.x * sc.sx, q.y * sc.sy, q.z * sc.sz) : NaN; }, K.TURING_SMOOTH | 0);
+    stats.traceMs = Date.now() - tF;
+    const cheapAt = (u, v) => { const q = raw(u, v); return q && isFin(q.x + q.y + q.z) ? { x: q.x * sc.sx, y: q.y * sc.sy, z: q.z * sc.sz } : null; };
+    emitChains(chains, cheapAt, (u, v) => { const s = M.sample(u, v); return s && isFin(s.x + s.y + s.z) ? s : null; }, 0);
+    stats.emitMs = Date.now() - tF - stats.traceMs;
+    return finish(Boolean(CONVEX_MODES[mode]));
+  };
+
+  const toneLUT = (spec, toneCtx) => {
+    if (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1) { sync(); return voronoiLUT(spec, toneCtx); }
+    if (spec && TURING_LAWS.indexOf(spec.toneLaw) !== -1) { sync(); return turingLUT(spec, toneCtx); }
+    return mazeLUT(spec, toneCtx);
+  };
+  const bake = (spec) => bakeCore(spec, null);
+  // A drag-only coarse MarkSet (SurfaceLock.bake(spec, { lod: true })); a law without a coarse form returns null and the full bake is used.
+  const bakeCoarse = (spec) => (spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1 ? (sync(), bakeVoronoi(spec, { coarse: true })) : null);
+  // Test hook: the lattice pieces { level, rank, x0, y0, x1, y1 } of a bake (finest-cell units) and its geometry; `noThin` keeps every wall and closes no ring, `noBreak` keeps every wall whole (the perfect-maze skeleton); both default on.
+  const debugLattice = (spec, opts) => { const pieces = []; const info = {}; bakeCore(spec, { collect: pieces, info, noThin: !opts || opts.noThin !== false, noBreak: !opts || opts.noBreak !== false }); return { pieces, info }; };
+
+  Scene3D.SurfaceLockWebs = { id: 'webs', FIT, supports, bake, bakeCoarse, supportsCoarse: (spec) => !!(spec && VORONOI_LAWS.indexOf(spec.toneLaw) !== -1), toneLUT, debug: { lattice: debugLattice, turing: (spec, opts) => { const info = {}; const ms = bakeTuring(spec, Object.assign({ info }, opts || {})); return { ms, info }; }, voronoi: (spec, opts) => { const info = {}; const ms = bakeVoronoi(spec, Object.assign({ info, timing: true }, opts || {})); return { ms, info }; } } };
+})();

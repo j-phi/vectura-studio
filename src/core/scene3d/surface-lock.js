@@ -63,7 +63,7 @@
 
   // Dispatch order (contract §9): the first baker whose supports(spec) is true bakes the spec.
   // Each is its own Scene3D namespace so Engine's sceneModuleFingerprint sees its functions.
-  const BAKER_KEYS = Object.freeze(['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws', 'SurfaceLockFaceted']);
+  const BAKER_KEYS = Object.freeze(['SurfaceLockMezzo', 'SurfaceLockLadder', 'SurfaceLockLaws', 'SurfaceLockFaceted', 'SurfaceLockWebs']);
 
   const now = () => ((globalScope.performance && typeof globalScope.performance.now === 'function') ? globalScope.performance.now() : Date.now());
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : (Number.isFinite(Number(v)) && v !== null && v !== '' && v !== undefined ? Number(v) : d));
@@ -71,8 +71,8 @@
   const freshStats = () => ({
     bakes: 0, bakeHits: 0, bakeMisses: 0, frames: 0, sceneFrames: 0,
     verticesIn: 0, verticesOut: 0, runsIn: 0, runsOut: 0,
-    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
-    bakeErrors: 0, adopted: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
+    culledFacing: 0, culledGrazing: 0, culledTone: 0, culledOccluded: 0, prepassProjected: 0, toneEvals: 0, toneRemapPow: 0, glintFast: 0,
+    bakeErrors: 0, adopted: 0, lodBakes: 0, lodServed: 0, prewarmed: 0, sceneFallbacks: 0, msBake: 0, msFrame: 0, msFrameLast: 0, cacheBytes: 0, cacheEntries: 0, evictions: 0,
   });
   const stats = freshStats();
   // The cache counters describe live state, not events: resetStats keeps them in step with the cache.
@@ -202,12 +202,39 @@
     stats.cacheBytes = 0; stats.cacheEntries = 0;
   };
 
-  const bake = (spec) => {
+  // LOD (a drag-only coarse bake). The surface texture is baked once and re-baked only when its inputs change; a drag frame that finds the
+  // full bake missing may ask for a COARSE one instead (`bake(spec, { lod: true })`, a baker with `bakeCoarse(spec)`): faster to build, cached
+  // under its own key (`|lod1`) so it can never answer a full lookup. Settled / export compose never passes `lod`.
+  const LOD_SUFFIX = '|lod1';
+  const canCoarse = (spec) => { const b = spec ? bakerFor(spec) : null; return !!(b && typeof b.bakeCoarse === 'function' && (typeof b.supportsCoarse !== 'function' || b.supportsCoarse(spec))); };
+  const bake = (spec, opts) => {
     stats.bakes += 1;
     const baker = bakerFor(spec);
     if (!baker) return null;
-    const key = bakeKey(spec);
-    const hit = cache.get(key);
+    let key = bakeKey(spec);
+    let hit = cache.get(key);
+    if (!hit && opts && opts.lod === true && canCoarse(spec)) {
+      // full bake missing and a coarse one allowed (drag frames only)
+      key += LOD_SUFFIX; hit = cache.get(key);
+      if (!hit) {
+        stats.bakeMisses += 1; stats.lodBakes += 1;
+        const t0c = now();
+        let msc = null;
+        try { msc = baker.bakeCoarse(spec); } catch (e) { msc = null; stats.bakeErrors += 1; }
+        stats.msBake += now() - t0c;
+        if (!msc) return null;
+        msc.key = key;
+        const MSc = Scene3D.SurfaceLockMarkSet;
+        const bytesC = MSc && MSc.byteSize ? MSc.byteSize(msc) : 0;
+        cache.set(key, { ms: msc, bytes: bytesC }); cacheBytes += bytesC;
+        evictToLimit(key);
+        stats.lodServed += 1;
+        return msc;
+      }
+      stats.bakeHits += 1; stats.lodServed += 1;
+      cache.delete(key); cache.set(key, hit);
+      return hit.ms;
+    }
     if (hit) {
       stats.bakeHits += 1;
       cache.delete(key); cache.set(key, hit); // most recently used last
@@ -264,6 +291,26 @@
   };
   // The specs among `specs` that would bake (a baker exists) but are not cached. Read-only: no LRU touch, no stat.
   const missingBakes = (specs) => (specs || []).filter((spec) => spec && bakerFor(spec) && !cache.has(bakeKey(spec)));
+  // PREWARM: bake the missing full MarkSets while the app is idle, one bake per idle slice, so the first drag frame is a cache hit.
+  // `opts.sync` bakes them all now (tests); `opts.done(n)` is called when the queue drains. Returns a handle { cancel }.
+  const prewarm = (specs, opts) => {
+    const queue = missingBakes(specs);
+    const o = opts || {};
+    let cancelled = false; let n = 0;
+    const step = () => {
+      if (cancelled) return;
+      const spec = queue.shift();
+      if (!spec) { if (typeof o.done === 'function') o.done(n); return; }
+      if (!cache.has(bakeKey(spec))) { try { bake(spec); } catch (e) { /* counted by bake */ } stats.prewarmed += 1; n += 1; }
+      later();
+    };
+    const later = () => {
+      if (o.sync) { step(); return; }
+      if (typeof globalScope.requestIdleCallback === 'function') globalScope.requestIdleCallback(step, { timeout: 1500 }); else setTimeout(step, 30);
+    };
+    later();
+    return { cancel() { cancelled = true; queue.length = 0; } };
+  };
 
   // ── tone table (contract §5, A16) ──────────────────────────────────────────────────────────────────────────────────────
   // The LUT is memoized per baker + tone shape and never depends on the light's position: the v2 model only changes it through
@@ -419,19 +466,19 @@
   const memoFor = (ms, key) => {
     let m = toneMemoI.get(ms);
     if (!m || m.key !== key || m.I.length !== ms.vertexCount) {
-      m = { key, I: new Float64Array(ms.vertexCount).fill(NaN) };
+      m = { key, I: new Float64Array(ms.vertexCount).fill(NaN), seen: new Uint8Array(ms.vertexCount), bound: null };
       toneMemoI.set(ms, m);
     }
-    return m.I;
+    return m;
   };
 
   // Per-vertex scratch, grown on demand and shared (a frame is synchronous; the worker has its own copy).
-  let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX; let SCAP = SX;
+  let SX = new Float64Array(0); let SY = SX; let SZ = SX; let SC = SX; let STE = SX; let SNR = SX; let SCAP = SX; let STI = SX; // STI: the tone I per vertex (WD-D2 run tone bands)
   const ensureScratch = (n) => {
     if (SX.length >= n) return;
     const m = Math.max(n, 1024, SX.length * 2);
     SX = new Float64Array(m); SY = new Float64Array(m); SZ = new Float64Array(m);
-    SC = new Float64Array(m); STE = new Float64Array(m); SNR = new Float64Array(m); SCAP = new Float64Array(m);
+    SC = new Float64Array(m); STE = new Float64Array(m); SNR = new Float64Array(m); SCAP = new Float64Array(m); STI = new Float64Array(m);
   };
 
   const nW = { x: 0, y: 0, z: 0 }; const pW = { x: 0, y: 0, z: 0 }; const eW = { x: 0, y: 0, z: 0 };
@@ -447,8 +494,96 @@
     runLasts.set(ms, o); return o;
   };
 
+  // U1a back-face block skip (orthographic only). Runs are grouped, in bake order, into blocks of about BLOCK_VERTS vertices; each
+  // block keeps the cone of its vertex normals (unit axis m, half-angle a >= every angle(n, m)). Orthographic facing is n . v with
+  // v the one view direction in object space, so when angle(v, m) - a > 90 deg + margin every vertex of the block has facing < 0:
+  // every run in it would be culled whole (frameSet counts it culledFacing and draws nothing), so the prepass skips its vertices.
+  // Exact, never approximate: the margin is the slack for float rounding. `blockSkip` is the test hook (tests move marginRad to
+  // prove an over-eager skip changes the output; enabled=false is the pre-U1a path).
+  const BLOCK_VERTS = 8;
+  const blockSkip = { enabled: true, marginRad: 1e-6 };
+  const blockCones = new WeakMap();
+  const blockConesOf = (ms) => {
+    let c = blockCones.get(ms);
+    if (c && c.nv === ms.vertexCount && c.nr === ms.runCount) return c;
+    const nr = ms.runCount; const rs = ms.runStart; const nrm = decodedNormals(ms);
+    const runBlock = new Int32Array(nr); const bRun0 = []; const bRun1 = []; const bV0 = []; const bV1 = []; const ax = []; const ay = []; const az = []; const half = [];
+    let r = 0;
+    while (r < nr) {
+      const b = bV0.length; const v0 = rs[r]; let r1 = r; let v1 = v0;
+      while (r1 < nr && (r1 === r || v1 - v0 < BLOCK_VERTS)) { runBlock[r1] = b; v1 = rs[r1 + 1]; r1 += 1; }
+      let sx = 0; let sy = 0; let sz = 0;
+      for (let v = v0; v < v1; v++) { sx += nrm[3 * v]; sy += nrm[3 * v + 1]; sz += nrm[3 * v + 2]; }
+      const sl = Math.sqrt(sx * sx + sy * sy + sz * sz);
+      let mx = 0; let my = 0; let mz = 0; let h = Math.PI; // a zero sum (normals cancel) keeps the block whole: half-angle pi never skips
+      if (sl > 1e-9) {
+        mx = sx / sl; my = sy / sl; mz = sz / sl; let mn = 1;
+        for (let v = v0; v < v1; v++) { const d = mx * nrm[3 * v] + my * nrm[3 * v + 1] + mz * nrm[3 * v + 2]; if (d < mn) mn = d; }
+        h = Math.acos(Math.max(-1, Math.min(1, mn))) + 1e-6;
+      }
+      bRun0.push(r); bRun1.push(r1); bV0.push(v0); bV1.push(v1); ax.push(mx); ay.push(my); az.push(mz); half.push(h);
+      r = r1;
+    }
+    c = { nv: ms.vertexCount, nr, runBlock, count: bV0.length, r0: Int32Array.from(bRun0), r1: Int32Array.from(bRun1), v0: Int32Array.from(bV0), v1: Int32Array.from(bV1),
+      ax: Float64Array.from(ax), ay: Float64Array.from(ay), az: Float64Array.from(az), half: Float64Array.from(half), cosHalf: Float64Array.from(half, Math.cos), sinHalf: Float64Array.from(half, Math.sin), skip: new Uint8Array(bV0.length) };
+    blockCones.set(ms, c);
+    return c;
+  };
+  // Marks the blocks that are wholly back-facing for this frame; returns the cone record (skip flags in .skip) or null.
+  const markBackBlocks = (ms, F) => {
+    if (F.persp || !blockSkip.enabled || !(ms.runCount > 0)) return null;
+    const c = blockConesOf(ms); const A = F.A; const lim = Math.PI / 2 + blockSkip.marginRad;
+    const vx = A[6]; const vy = A[7]; const vz = A[8]; const skip = c.skip;
+    // angle(v, m) - half > lim  <=>  v . m < cos(half + lim) (cosine is decreasing on [0, pi]); cos(half + lim) comes from the per-block
+    // cos/sin of the half-angle, so a frame costs no trigonometry per block.
+    const cl = Math.cos(lim); const sl = Math.sin(lim); const hc = c.cosHalf; const hs = c.sinHalf; const hh = c.half;
+    for (let b = 0; b < c.count; b++) {
+      const d = vx * c.ax[b] + vy * c.ay[b] + vz * c.az[b];
+      skip[b] = (hh[b] + lim < Math.PI && d < hc[b] * cl - hs[b] * sl) ? 1 : 0;
+    }
+    return c;
+  };
+
+
+  // U1d static tone bound (orthographic only). A vertex's tone demand is te = (p0 * sv * lut(I))^q times factors that can only LOWER it
+  // (the specular scaleFn is clamped to <= 1, the cap remap squeezes toward the cap, the v2 facing compensation 1 + fc * (2c/(1+c) - 1)
+  // is <= 1 for c <= 1, the limb knee and capComp subtract / scale down). So teMax(v) = (p0 * sv * lut(I))^q bounds it from above for
+  // EVERY pose, and a run whose teMax never beats its key k can never draw: frameSet counts its vertices exactly as the full path
+  // would (facing / grazing / tone, from the facing cosine alone) and the prepass never projects it. The bound depends on I (memoised
+  // per toneKey), the scale and the LUT only, so it is built once per (toneKey, scale) and survives every rotation. `toneBound` is the
+  // test hook (enabled=false is the pre-U1d path; slack > 1 / < 1 over- or under-shoots, which the mutation proof uses).
+  const toneBound = { enabled: true, slack: 1 + 1e-6 };
+  const buildToneBound = (ms, F, view, m, ssv, p0, gain, q, lut, toneFn, MS) => {
+    const nv = ms.vertexCount; const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank;
+    const pos = ms.positions; const nrm = decodedNormals(ms); const I = m.I;
+    const { objR, ox, oy, oz } = F;
+    const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
+    const dead = new Uint8Array(nr); let nDead = 0;
+    const RS = MS.RANK_SCALE;
+    for (let r = 0; r < nr; r++) {
+      let ub = 0;
+      for (let v = rs[r]; v < rs[r + 1]; v++) {
+        let Iv = I[v];
+        if (Iv !== Iv) {
+          const px = pos[3 * v]; const py = pos[3 * v + 1]; const pz = pos[3 * v + 2]; const nx = nrm[3 * v]; const ny = nrm[3 * v + 1]; const nz = nrm[3 * v + 2];
+          pW.x = r00 * px + r01 * py + r02 * pz + ox; pW.y = r10 * px + r11 * py + r12 * pz + oy; pW.z = r20 * px + r21 * py + r22 * pz + oz;
+          nW.x = r00 * nx + r01 * ny + r02 * nz; nW.y = r10 * nx + r11 * ny + r12 * nz; nW.z = r20 * nx + r21 * ny + r22 * nz;
+          Iv = toneFn(nW, pW); Iv = Iv > 0 ? (Iv < 1 ? Iv : 1) : 0; I[v] = Iv; // the same fill the prepass makes; it counts toneEvals at the first facing visit (m.seen)
+        }
+        const f = Iv * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
+        const dm = p0 * ssv * (lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]));
+        const te = q === 1 ? dm : (q === 2 ? dm * dm : Math.pow(dm, q));
+        if (!(te <= ub)) ub = te; // NaN propagates: an unbounded run is never dead
+      }
+      const L = rl[r]; const rank = rr[r] / RS;
+      const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
+      if (ub * toneBound.slack <= k) { dead[r] = 1; nDead += 1; }
+    }
+    return { dead, nDead };
+  };
+
   // Pre-pass: per vertex camera-space position -> screen, facing cosine, tone demand t_eff (contract §5).
-  const prepass = (ms, F, view) => {
+  const prepass = (ms, F, view, blocks) => {
     const nv = ms.vertexCount; const pos = ms.positions; const nrm = decodedNormals(ms);
     const meta = ms.meta || {};
     const p0 = meta.p0; const gain = meta.gain || 2;
@@ -473,11 +608,33 @@
     const strideSep = capCont && Number.isFinite(meta.strideSepPen) && meta.strideSepPen > 0 ? meta.strideSepPen * num(view.penWidth, 0) : 0;
     const limbKnee = Number.isFinite(meta.limbKnee) ? meta.limbKnee : 0; // baker-declared (mezzo)
     const remapLuts = new Map(); let lastCapT = NaN; let lastRl = null;
-    const memoI = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
+    const memoM = (toneFn && typeof view.toneKey === 'string') ? memoFor(ms, view.toneKey) : null;
+    const memoI = memoM ? memoM.I : null; const memoSeen = memoM ? memoM.seen : null;
     const { A, objR, camR, tx, ty, tz, ox, oy, oz, persp, focal, scale, cxs, cys, eyeZ, nearD } = F;
     const [a00, a01, a02, a10, a11, a12, a20, a21, a22] = A;
     const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = objR;
-    for (let v = 0; v < nv; v++) {
+    let boundInfo = null;
+    if (memoM && lut && !persp && toneBound.enabled && Number.isFinite(p0) && p0 > 0) {
+      const ssv = toneScaleFree ? meta.scaleRef : scale;
+      let ok = true; const lN = lut[LUT_N]; for (let j = 0; j <= LUT_N; j++) { if (!(lut[j] >= lN) || !(lut[j] >= 0)) { ok = false; break; } } // lut >= its last entry >= 0: the cap remap can only lower dm
+      if (ok) {
+        const b = memoM.bound;
+        if (b && b.lut === lut && b.ssv === ssv && b.p0 === p0 && b.gain === gain && b.slack === toneBound.slack) boundInfo = b;
+        else {
+          boundInfo = buildToneBound(ms, F, view, memoM, ssv, p0, gain, q, lut, toneFn, Scene3D.SurfaceLockMarkSet);
+          boundInfo.lut = lut; boundInfo.ssv = ssv; boundInfo.p0 = p0; boundInfo.gain = gain; boundInfo.slack = toneBound.slack; memoM.bound = boundInfo;
+        }
+      }
+    }
+    const deadRun = boundInfo ? boundInfo.dead : null; const rsP = ms.runStart;
+    const nbk = blocks ? blocks.count : 1; let projected = 0;
+    for (let bi = 0; bi < nbk; bi++) {
+    let vs = 0; let ve = nv; let rg = 0; let rgEnd = 1;
+    if (blocks) { if (blocks.skip[bi]) continue; rg = blocks.r0[bi]; rgEnd = blocks.r1[bi]; } // a wholly back-facing block (U1a): its runs are culled whole by frameSet and never read these slots
+    for (; rg < rgEnd; rg++) {
+    if (blocks) { if (deadRun && deadRun[rg]) continue; vs = rsP[rg]; ve = rsP[rg + 1]; } // a statically tone-dead run (U1d): frameSet counts it from the facing cosine alone
+    projected += ve - vs;
+    for (let v = vs; v < ve; v++) {
       const px = pos[3 * v]; const py = pos[3 * v + 1]; const pz = pos[3 * v + 2];
       const nx = nrm[3 * v]; const ny = nrm[3 * v + 1]; const nz = nrm[3 * v + 2];
       const cx = a00 * px + a01 * py + a02 * pz + tx;
@@ -540,6 +697,7 @@
       SCAP[v] = hasCap ? capT : Infinity;
       // tone
       let te = Infinity;
+      STI[v] = 1;
       if (lut) {
         let I = 1;
         if (toneFn) {
@@ -556,9 +714,11 @@
             I = toneFn(nW, pW);
             I = I > 0 ? (I < 1 ? I : 1) : 0;
             stats.toneEvals += 1;
-            if (memoI) memoI[v] = I;
+            if (memoI) { memoI[v] = I; memoSeen[v] = 1; }
           }
+          if (memoSeen && memoSeen[v] === 0) { memoSeen[v] = 1; stats.toneEvals += 1; } // filled by the static bound before its first facing visit: counted here, as the miss would have
         }
+        STI[v] = I;
         const f = I * LUT_N; let k0 = f | 0; if (k0 >= LUT_N) k0 = LUT_N - 1;
         const l = lut[k0] + (f - k0) * (lut[k0 + 1] - lut[k0]);
         let dm = p0 * (toneScaleFree ? meta.scaleRef : sv) * l;
@@ -607,7 +767,10 @@
       if (hasCap && capT < te && !capSep) te = capT;
       STE[v] = te;
     }
-    return undefined;
+    }
+    }
+    stats.prepassProjected += projected;
+    return boundInfo ? { dead: boundInfo.dead, seen: memoSeen, nrm } : null;
   };
 
   // A21: screen-space crowd guard of a capContinuous MarkSet. The stride cap trusts a LOCAL pitch estimate; where the surface turns
@@ -616,39 +779,59 @@
   // result is deterministic and Level S == Level F). Grid of segments, cell = 2 x guardD.
   // The functions below are module level on purpose (H4): closures made per frame get a fresh feedback vector, so the hot guard code
   // re-warmed (and ran unoptimised) at the start of every pose.
-  const crowdKey = (ix, iy) => ix * 73856093 ^ iy * 19349663;
-  // true when the distance from (px, py) to the entry's segment is < guardD. The squared distance decides everywhere except
+  // U1b: the guard's segment store is typed arrays shared by every frame (no per-segment object, no Map of arrays). A segment is a
+  // row of SEGF (ax, ay, dx, dy, l2, x0, x1, y0, y1) and SEGI (fam, ord); the grid is a fixed hash table of list heads (CROWD_HASH
+  // cells) chained through CELL_SEG / CELL_NEXT. The hash is the original cell hash masked to the table, so two cells may share a
+  // head: that only adds candidates, and every candidate is still rejected by crowdCloser's box and distance test, so the answer
+  // (any kept segment of another ruling within guardD) is the same as with an exact-keyed map. crowdNear is order independent.
+  const CROWD_HASH = 1 << 15; const CROWD_MASK = CROWD_HASH - 1; const SEGW = 9;
+  let SEGF = new Float64Array(SEGW * 1024); let SEGI = new Int32Array(2 * 1024); let nSeg = 0;
+  let CELL_SEG = new Int32Array(4096); let CELL_NEXT = new Int32Array(4096); let nCell = 0;
+  const CELL_HEAD = new Int32Array(CROWD_HASH);
+  const crowdKey = (ix, iy) => (ix * 73856093 ^ iy * 19349663) & CROWD_MASK;
+  const growCrowd = () => {
+    if ((nSeg + 1) * SEGW > SEGF.length) { const f = new Float64Array(SEGF.length * 2); f.set(SEGF); SEGF = f; const i = new Int32Array(SEGI.length * 2); i.set(SEGI); SEGI = i; }
+    if (nCell + 1 > CELL_SEG.length) { const a = new Int32Array(CELL_SEG.length * 2); a.set(CELL_SEG); CELL_SEG = a; const n = new Int32Array(CELL_NEXT.length * 2); n.set(CELL_NEXT); CELL_NEXT = n; }
+  };
+  // true when the distance from (px, py) to segment e is < guardD. The squared distance decides everywhere except
   // within CROWD_EXACT_BAND of guardD, where Math.hypot (the original test) is evaluated, so the decision is unchanged.
   const crowdCloser = (st, px, py, e) => {
-    const pad = st.pad;
-    if (px < e.x0 - pad || px > e.x1 + pad || py < e.y0 - pad || py > e.y1 + pad) return false; // beyond guardD from the segment's box
-    const dx = e.dx; const dy = e.dy; const l2 = e.l2;
-    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - e.ax) * dx + (py - e.ay) * dy) / l2)) : 0;
-    const qx = px - e.ax - t * dx; const qy = py - e.ay - t * dy;
+    const pad = st.pad; const o = e * SEGW; const F = SEGF;
+    if (px < F[o + 5] - pad || px > F[o + 6] + pad || py < F[o + 7] - pad || py > F[o + 8] + pad) return false; // beyond guardD from the segment's box
+    const dx = F[o + 2]; const dy = F[o + 3]; const l2 = F[o + 4];
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - F[o]) * dx + (py - F[o + 1]) * dy) / l2)) : 0;
+    const qx = px - F[o] - t * dx; const qy = py - F[o + 1] - t * dy;
     const d2 = qx * qx + qy * qy;
     if (d2 < st.lo2) return true;
     if (d2 > st.hi2) return false;
     return Math.hypot(qx, qy) < st.guardD;
   };
   const crowdNear = (st, x, y, fam, ord) => {
-    const cell = st.cell; const grid = st.grid;
+    const cell = st.cell;
     const ix = Math.floor(x / cell); const iy = Math.floor(y / cell);
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-      const list = grid.get(crowdKey(ix + a, iy + b)); if (!list) continue;
-      for (let k = 0; k < list.length; k++) {
-        const e = list[k]; if (e.fam !== fam || e.ord === ord) continue;
+      for (let c = CELL_HEAD[crowdKey(ix + a, iy + b)] - 1; c >= 0; c = CELL_NEXT[c]) {
+        const e = CELL_SEG[c]; if (SEGI[2 * e] !== fam || SEGI[2 * e + 1] === ord) continue;
         if (crowdCloser(st, x, y, e)) return true;
       }
     }
     return false;
   };
   const crowdAdd = (st, ax, ay, bx, by, fam, ord) => {
-    const cell = st.cell; const grid = st.grid;
+    const cell = st.cell;
     const dx = bx - ax; const dy = by - ay;
-    const e = { ax, ay, bx, by, fam, ord, dx, dy, l2: dx * dx + dy * dy, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
+    growCrowd();
+    const e = nSeg++; const o = e * SEGW;
+    SEGF[o] = ax; SEGF[o + 1] = ay; SEGF[o + 2] = dx; SEGF[o + 3] = dy; SEGF[o + 4] = dx * dx + dy * dy;
+    SEGF[o + 5] = Math.min(ax, bx); SEGF[o + 6] = Math.max(ax, bx); SEGF[o + 7] = Math.min(ay, by); SEGF[o + 8] = Math.max(ay, by);
+    SEGI[2 * e] = fam; SEGI[2 * e + 1] = ord;
     const x0 = Math.floor(Math.min(ax, bx) / cell); const x1 = Math.floor(Math.max(ax, bx) / cell);
     const y0 = Math.floor(Math.min(ay, by) / cell); const y1 = Math.floor(Math.max(ay, by) / cell);
-    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) { const k = crowdKey(i, j); const l = grid.get(k); if (l) l.push(e); else grid.set(k, [e]); }
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) {
+      growCrowd();
+      const k = crowdKey(i, j); const c = nCell++;
+      CELL_SEG[c] = e; CELL_NEXT[c] = CELL_HEAD[k] - 1; CELL_HEAD[k] = c + 1; // heads hold index + 1 (0 = empty)
+    }
   };
   // Splits `subs` into the stretches that clear the guard (checked at the vertices), registers what is kept.
   const crowdFilter = (st, subs, fam, ord) => {
@@ -670,8 +853,9 @@
     return out2;
   };
   const makeCrowd = (guardD) => {
+    CELL_HEAD.fill(0); nSeg = 0; nCell = 0; // one guard at a time: a frameSet is synchronous and builds its guard from scratch
     const st = {
-      guardD, cell: Math.max(1e-6, 2 * guardD), grid: new Map(), pad: guardD * (1 + CROWD_EXACT_BAND),
+      guardD, cell: Math.max(1e-6, 2 * guardD), pad: guardD * (1 + CROWD_EXACT_BAND),
       lo2: guardD * guardD * (1 - CROWD_EXACT_BAND) * (1 - CROWD_EXACT_BAND), hi2: guardD * guardD * (1 + CROWD_EXACT_BAND) * (1 + CROWD_EXACT_BAND),
     };
     return { filter: (subs, fam, ord) => crowdFilter(st, subs, fam, ord) };
@@ -690,7 +874,9 @@
 
   const frameSet = (ms, F, view, out, acc) => {
     const MS = Scene3D.SurfaceLockMarkSet;
-    prepass(ms, F, view);
+    const blocks = markBackBlocks(ms, F);
+    const pre = prepass(ms, F, view, blocks);
+    const deadRun = pre ? pre.dead : null;
     const meta = ms.meta || {};
     const gain = meta.gain || 2;
     const minMark = num(meta.minMarkMM, 0);
@@ -707,6 +893,13 @@
     const nr = ms.runCount; const rs = ms.runStart; const rl = ms.runLevel; const rr = ms.runRank; const rf = ms.runFlags;
     const capSep = meta.capKey === 'ruling' && !!ms.runCapRank; const rcap = capSep ? ms.runCapRank : null;
     const capCont = capSep && meta.capContinuous === true;
+    // D0 (contract A26): optional per-run pen / weight channels. A line carries penId / weightScale only when its run sets them; a MarkSet
+    // without the channels takes none of these branches (frame output byte-identical).
+    const rband = ms.runBand || null; const penTiers = meta.penTiers === true; // WD-D2 (contract A28): a run draws only where its tone band holds; runPen k is the nib tier k - 1
+    const rpen = ms.runPen || null; const rwt = ms.runWeight || null; const penIds = Array.isArray(meta.penIds) ? meta.penIds : null;
+    const WU = Scene3D.SurfaceLockMarkSet.WEIGHT_UNIT;
+    const penOf = (r) => (rpen && rpen[r] > 0 && penIds && penIds[rpen[r] - 1] ? penIds[rpen[r] - 1] : null);
+    const wtOf = (r) => (rwt && rwt[r] > 0 && rwt[r] !== WU ? rwt[r] / WU : 0);
     // Tone model v2 states the guard directly in pens (config V2.GUARD_PEN: ink width + a hair); legacy keeps GUARD_FRAC x the plot floor.
     const guardD = view.toneModel === 'v2' && Number.isFinite(meta.guardPen) && meta.guardPen > 0 ? meta.guardPen * num(view.penWidth, 0)
       : (view.toneModel === 'v2' && V2_GUARD_PEN > 0 ? V2_GUARD_PEN * num(view.penWidth, 0) : view.floorPitch * GUARD_FRAC);
@@ -737,17 +930,27 @@
       const k = L === 0 ? rank : Math.pow(gain, L - 1) * (1 + (gain - 1) * rank);
       const ck = capSep ? rcap[r] / RS : 0;
       acc.runsIn += 1; acc.verticesIn += n;
-      if (comp) {
-        const rq = (rcap[r] >> 12) / CAP_RHO_STEPS;
-        for (let i = v0; i < v0 + n; i++) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const c = c0 * rq; if (c < 1) STE[i] *= c; } }
+      if (blocks && blocks.skip[blocks.runBlock[r]]) { acc.culledFacing += n; continue; }
+      if (deadRun && deadRun[r]) { // statically tone-dead (U1d): nothing can draw, count the vertices as the full path would
+        const nrm = pre.nrm; const seen = pre.seen; const A = F.A; const a20 = A[6]; const a21 = A[7]; const a22 = A[8];
+        for (let i = v0; i < v0 + n; i++) {
+          const c = a20 * nrm[3 * i] + a21 * nrm[3 * i + 1] + a22 * nrm[3 * i + 2];
+          if (c <= 0) { acc.culledFacing += 1; continue; }
+          if (seen[i] === 0) { seen[i] = 1; stats.toneEvals += 1; }
+          if (c < NZ_CULL) acc.culledGrazing += 1; else acc.culledTone += 1;
+        }
+        continue;
       }
-      // vertex counters
+      // capCompensate scaling of the tone demand and the vertex counters share one pass (each vertex is independent)
+      const bLo = rband ? rband[2 * r] / 255 : -1; const bHi = rband ? rband[2 * r + 1] / 255 : 2;
+      const rq = comp ? (rcap[r] >> 12) / CAP_RHO_STEPS : 1;
       let anyOk = false;
       for (let i = v0; i < v0 + n; i++) {
+        if (comp) { const c0 = SCAP[i]; if (c0 !== Infinity && STE[i] > 0) { const cq = c0 * rq; if (cq < 1) STE[i] *= cq; } }
         const c = SC[i];
         if ((persp && SNR[i] <= 0) || c <= 0) acc.culledFacing += 1;
         else if (c < NZ_CULL) acc.culledGrazing += 1;
-        else if (!(STE[i] > k) || (capSep && !capOk(i, r, ck))) acc.culledTone += 1;
+        else if (!(STE[i] > k) || (capSep && !capOk(i, r, ck)) || (rband && !(STI[i] >= bLo && STI[i] <= bHi))) acc.culledTone += 1;
         else anyOk = true;
       }
       if (flags & DOT) {
@@ -758,7 +961,9 @@
           const a = (s % segs) * 2 * Math.PI / segs;
           ring.push(mkPt(SX[v0] + gr * Math.cos(a), SY[v0] + gr * Math.sin(a), SZ[v0]));
         }
-        ring.back = false; out.push(ring); acc.runsOut += 1; acc.verticesOut += ring.length;
+        ring.back = false;
+        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) ring.penId = pid; if (ws) ring.weightScale = ws; if (penTiers && rpen && rpen[r] > 0) ring.penTier = rpen[r] - 1; }
+        out.push(ring); acc.runsOut += 1; acc.verticesOut += ring.length;
         continue;
       }
       let nEff = n; const closed = (flags & CLOSED) !== 0;
@@ -781,6 +986,13 @@
         const t0ok = e0 > 0; const t1ok = e1 > 0;
         if (!t0ok && !t1ok) { if (cur) { subs.push(cur); cur = null; } continue; }
         if (t0ok !== t1ok) { const u = e0 / (e0 - e1); if (t0ok) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+        // WD-D2 tone band: a second linear clip, on the tone I itself (this run draws only where bLo <= I <= bHi)
+        if (rband) {
+          const l0 = STI[i] - bLo; const l1 = STI[j] - bLo; const h0 = bHi - STI[i]; const h1 = bHi - STI[j];
+          if ((l0 < 0 && l1 < 0) || (h0 < 0 && h1 < 0)) { if (cur) { subs.push(cur); cur = null; } continue; }
+          if (l0 < 0 !== l1 < 0) { const u = l0 / (l0 - l1); if (l0 >= 0) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+          if (h0 < 0 !== h1 < 0) { const u = h0 / (h0 - h1); if (h0 >= 0) { if (u < hi) hi = u; } else if (u > lo) lo = u; }
+        }
         // plot-floor cap on the ruling's rank (capKey 'ruling'): a second linear clip, intersected with the tone clip
         if (capCont) {
           if (!capOk(i, r, ck) || !capOk(j, r, ck)) { if (cur) { subs.push(cur); cur = null; } continue; }
@@ -817,7 +1029,7 @@
       for (let s = 0; s < subs.length; s++) {
         const line = subs[s];
         if (line.length < 2) continue;
-        if (join && s === 0 && tail && tailRun === r - 1 && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
+        if (join && s === 0 && tail && tailRun === r - 1 && (!(rpen || rwt) || (tail.penId === penOf(r) || (tail.penId === undefined && !penOf(r))) && (tail.weightScale || 0) === wtOf(r) && tail.penTier === (penTiers && rpen && rpen[r] > 0 ? rpen[r] - 1 : undefined)) && Math.abs(tail[tail.length - 1].x - line[0].x) < 1e-4
           && Math.abs(tail[tail.length - 1].y - line[0].y) < 1e-4 && Math.abs(tail[tail.length - 1].z - line[0].z) < 1e-4) {
           for (let q = 1; q < line.length; q++) tail.push(line[q]);
           acc.verticesOut += line.length - 1; tailRun = r;
@@ -829,7 +1041,9 @@
         if (join) flushTail();
         const last = join && s === subs.length - 1;
         if (minMark > 0 && !last && lineLength(line) < minMark) continue;
-        line.back = false; out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
+        line.back = false;
+        if (rpen || rwt) { const pid = penOf(r); const ws = wtOf(r); if (pid) line.penId = pid; if (ws) line.weightScale = ws; if (penTiers && rpen && rpen[r] > 0) line.penTier = rpen[r] - 1; }
+        out.push(line); acc.runsOut += 1; acc.verticesOut += line.length;
         if (join) { tail = last ? line : null; tailRun = r; }
       }
     }
@@ -913,6 +1127,7 @@
       mapper: st.mapper, toneLaw: P && P.resolveToneLaw ? P.resolveToneLaw(sp) : sp.toneLaw,
       style: sp, penWidth: num(bounds && bounds.penWidth, 0), scaleRef: 1, seed: seed || null,
       ...(toneModelOf(p) === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(bounds && bounds.dragPreview === true ? { dragPreview: true } : {}),
       ...(toneDarknessOf(p) !== undefined ? { toneDarkness: toneDarknessOf(p) } : {}),
     };
   };
@@ -1008,6 +1223,23 @@
     }
     const R = rotMatrix({ yaw: pose.obj.yaw, pitch: pose.obj.pitch, roll: pose.obj.roll });
     const V = mesh && mesh.vertices ? mesh.vertices : [];
+    // A torus / torus knot: the footprint is the union of the projected world triangles (A34), the same triangles the pose
+    // path's receive map uses, so the hole stays open. Cached per transform: a light move or an orbit re-reads it.
+    const MP = Scene3D.SurfaceLockShadow && Scene3D.SurfaceLockShadow.MESH_PRIMITIVES;
+    if (MP && MP.has(o.primitive) && mesh && mesh.triVerts && mesh.triVerts.length >= 3) {
+      const key = JSON.stringify([o.id, o.primitive, o.params, o.transform || null, pose.obj.yaw, pose.obj.pitch, pose.obj.roll]);
+      const triangles = auxGet(2, 'cast|' + key, () => {
+        const Tv = mesh.triVerts; const out = new Float64Array(Tv.length * 3);
+        for (let k = 0; k < Tv.length; k += 1) {
+          const i = Tv[k]; const w = 3 * k;
+          out[w] = R[0] * V[3 * i] + R[1] * V[3 * i + 1] + R[2] * V[3 * i + 2] + tr.x;
+          out[w + 1] = R[3] * V[3 * i] + R[4] * V[3 * i + 1] + R[5] * V[3 * i + 2] + tr.y;
+          out[w + 2] = R[6] * V[3 * i] + R[7] * V[3 * i + 1] + R[8] * V[3 * i + 2] + tr.z;
+        }
+        return out;
+      });
+      return { primitive: o.primitive, shape: 'mesh', triangles };
+    }
     const points = [];
     for (let i = 0; i + 2 < V.length; i += 3) {
       points.push({
@@ -1153,6 +1385,65 @@
     };
   };
 
+  // U4: a raised floor (finite non-zero ground.y) hides what lies below it. The occluder buffer is object-space triangles
+  // (and a floor spanning the screen would swamp its grid), so the floor is a synthetic depth plane instead: the projected
+  // floor ring plus the plane through three of its vertices (the pose path's HLR occluder is the same plane and polygon).
+  // Built once per frame from the 4-6 ring vertices; null when the floor is flat, off, edge-on or seen from below.
+  const groundCover = (ground, camera, bounds, ring) => {
+    const gy = Number(ground && ground.y);
+    if (!ring || !Number.isFinite(gy) || gy === 0 || ring.length < 4) return null;
+    const G3 = Vectura.Geometry3D; const c = camera || {};
+    const up = G3.rotatePoint({ x: 0, y: 1, z: 0 }, { yaw: num(c.yaw, 0), pitch: num(c.pitch, 0), roll: num(c.roll, 0) });
+    if (!(up.z > 1e-9)) return null; // the plate is double-sided in pose; it occludes only from above
+    const poly = ring.slice(0, ring.length - 1);
+    let best = null; let area = 1e-9;
+    for (let j = 1; j + 1 < poly.length; j += 1) {
+      const a = poly[0]; const b = poly[j]; const d = poly[j + 1];
+      const ar = Math.abs((b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x));
+      if (ar > area) { area = ar; best = [a, b, d]; }
+    }
+    if (!best) return null;
+    const [a, b, d] = best;
+    const e1x = b.x - a.x; const e1y = b.y - a.y; const e2x = d.x - a.x; const e2y = d.y - a.y;
+    const det = e1x * e2y - e1y * e2x;
+    const dz1 = b.z - a.z; const dz2 = d.z - a.z;
+    const zx = (dz1 * e2y - dz2 * e1y) / det; const zy = (dz2 * e1x - dz1 * e2x) / det;
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    poly.forEach((q) => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+    const inside = (x, y) => {
+      let hit = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+        const p = poly[i]; const q = poly[j];
+        if ((p.y > y) !== (q.y > y) && x < ((q.x - p.x) * (y - p.y)) / (q.y - p.y) + p.x) hit = !hit;
+      }
+      return hit;
+    };
+    const BIAS = 0.05;
+    const hidden = (pt) => pt.x >= x0 && pt.x <= x1 && pt.y >= y0 && pt.y <= y1
+      && a.z + zx * (pt.x - a.x) + zy * (pt.y - a.y) > pt.z + BIAS && inside(pt.x, pt.y);
+    // Splits a polyline at the plane: a crossing is bisected on the segment; returns the runs that stay visible.
+    const clip = (pts) => {
+      const flags = pts.map(hidden);
+      if (!flags.some(Boolean)) return [pts];
+      const lerp = (p, q, t) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t, z: p.z + (q.z - p.z) * t });
+      const edge = (p, q, pHid) => { // the boundary point between a visible and a hidden vertex
+        let lo = 0; let hi = 1;
+        for (let k = 0; k < 14; k += 1) { const m = (lo + hi) / 2; if (hidden(lerp(p, q, m)) === pHid) lo = m; else hi = m; }
+        return lerp(p, q, pHid ? hi : lo);
+      };
+      const out = []; let cur = null;
+      for (let i = 0; i < pts.length; i += 1) {
+        if (!flags[i]) {
+          if (!cur) { cur = []; if (i > 0 && flags[i - 1]) cur.push(edge(pts[i - 1], pts[i], true)); }
+          cur.push(pts[i]);
+        } else if (cur) { cur.push(edge(pts[i - 1], pts[i], false)); out.push(cur); cur = null; }
+      }
+      if (cur) out.push(cur);
+      return out.filter((r) => r.length > 1);
+    };
+    return { hidden, clip };
+  };
+
   const sceneFrame = (p, bounds, ctx) => {
     const t0 = now();
     stats.sceneFrames += 1;
@@ -1190,6 +1481,19 @@
     const cam = p.camera || {};
     const groundOn = !!(p.ground && p.ground.enabled !== false);
     const deferredGround = []; const deferredShadow = [];
+    const groundRingPts = groundOn ? groundRing(p.ground, cam, bounds) : null;
+    const cover = groundOn ? groundCover(p.ground, cam, bounds, groundRingPts) : null;
+    // Object marks and edges only: the ground's own ink and its shadow lie ON the plane and are never tested against it.
+    const underFloor = (runs) => {
+      if (!cover) return runs;
+      const out = [];
+      runs.forEach((r) => {
+        const parts = cover.clip(r.pts);
+        if (parts.length === 1 && parts[0] === r.pts) out.push(r);
+        else parts.forEach((pts) => out.push({ ...r, pts, closed: false }));
+      });
+      return out;
+    };
     if (shadowOn) {
       const seed = seedOf('ground');
       const persp = camPose.cam.persp;
@@ -1212,7 +1516,7 @@
       });
     }
     if (groundOn && typeof ctx.emitGround === 'function') {
-      const ring = groundRing(p.ground, cam, bounds);
+      const ring = groundRingPts;
       if (ring) {
         const out = clipLine(ring, GROUND_SEG, false);
         if (out.length) deferredGround.push(() => ctx.emitGround(out));
@@ -1227,7 +1531,7 @@
         const spec = specOfObject(p, o, bounds, seedOf(o.id));
         if (typeof ctx.specFor === 'function') Object.assign(spec, ctx.specFor(o, spec, meshes[i]));
         withToneModel(p, spec);
-        const ms = bake(spec);
+        const ms = bake(spec, bounds && bounds.lodDrag === true ? { lod: true } : undefined);
         if (ms) {
           const v2 = spec.toneModel === 'v2';
           const recv = v2 ? receiveCtxFor(p, objects, meshes, poses, i) : null;
@@ -1247,22 +1551,28 @@
           const clipFills = !!occ && (objects.length > 1 || !meshes[i].convex);
           const seg = clipFills ? occ.segFor(meshes[i]) : null;
           const runs = [];
+          // WD-D2: a frame line may carry its pen (penTier / penId) and width (weightScale); the run keeps them for the emit
+          const penOf = (line) => (line.penTier !== undefined || line.penId !== undefined || line.weightScale !== undefined
+            ? { penTier: line.penTier, penId: line.penId, weightScale: line.weightScale } : null);
           if (!clipFills) {
-            for (let k = 0; k < lines.length; k++) runs.push({ pts: lines[k], visible: true });
+            for (let k = 0; k < lines.length; k++) { const x = penOf(lines[k]); runs.push(x ? { pts: lines[k], visible: true, pen: x } : { pts: lines[k], visible: true }); }
           } else {
             lines.forEach((line) => {
               const a = line[0]; const b = line[line.length - 1];
               const closed = line.length > 3 && Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9;
-              clipLine(line, seg, closed).forEach((q) => runs.push(q));
+              const x = penOf(line);
+              clipLine(line, seg, closed).forEach((q) => runs.push(x ? Object.assign({}, q, { pen: x }) : q));
             });
           }
-          if (runs.length) ctx.emitFill(o.id, runs);
+          const shown = underFloor(runs);
+          if (shown.length) ctx.emitFill(o.id, shown);
         } else complete = false; // no baker (or a throwing one): the caller renders this scene in pose mode
       }
       if (Vis && typeof Vis.outline === 'function') {
         const ol = Vis.outline(meshes[i], poses[i], occ) || {};
         ['silhouette', 'crease', 'boundary'].forEach((cls) => {
-          if (ol[cls] && ol[cls].length) ctx.emitEdge(o.id, cls, ol[cls]);
+          const shown = ol[cls] && ol[cls].length ? underFloor(ol[cls]) : null;
+          if (shown && shown.length) ctx.emitEdge(o.id, cls, shown);
         });
       }
     });
@@ -1279,6 +1589,8 @@
     EXCLUSIONS,
     FRAMEABLE,
     stats,
+    blockSkip,
+    toneBound,
     resetStats,
     effectiveMarkSpace,
     explainMarkSpace,
@@ -1289,6 +1601,8 @@
     takeFreshBakes,
     adopt,
     missingBakes,
+    prewarm,
+    canCoarse,
     sceneBakeSpecs,
     toneTable,
     exclusionCtx,

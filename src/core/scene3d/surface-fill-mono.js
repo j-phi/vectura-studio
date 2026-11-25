@@ -649,7 +649,7 @@
       setSparse: (v) => { sparse = v; },
       emittedCount: () => famIdx,
       cutCount: () => cutSegs,
-      lat, ok, minX, minY, maxX, maxY, W, H: Hh, R, SEED_STRIDE,
+      lat, ok, minX, minY, maxX, maxY, W, H: Hh, R, SEED_STRIDE, draft: !!SD,
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
       stripeAlign: clamp(finite(o.stripeAlign, 0), 0, STRIPE_ALIGN_MAX),
@@ -671,7 +671,11 @@
    * the existing roster touches. Every step is integrated on the chart, so a
    * streamline follows the body and stops on the silhouette.
    */
-  const streamFamily = (C, dirAt, clearAt) => {
+  const streamFamily = (C, dirAt, clearAt, opts) => {
+    // opts.closeLoops (etfKang's wrap rings): a streamline that comes back to its own start ends there, as a closed ring, instead of
+    // lapping the ring again and again (the walk's own points are not in the spacing grid until the line is placed).
+    const closeLoops = Boolean(opts && opts.closeLoops);
+    const regionAt = (opts && opts.regionAt) || null;   // a streamline ends at a crease: it never turns a corner onto the next face
     // The spacing grid. A QUARTER-pitch cell with NUMERIC keys (fill-style
     // review NEW-1, U2): `tooClose` was the #1 mono hotspot (26 % self on
     // etfKang) because a PMAX-wide cell held dozens of 0.34 mm-spaced points and
@@ -741,6 +745,11 @@
         // field law measured a median paper gap of 0.3 mm against a requested
         // 0.9. 0.80 is the value that makes the placed spacing the requested
         // one; the free ends it costs are reported, split out, in the table.
+        if (regionAt) { const r0 = regionAt(cur); const r1 = regionAt(nx); if (r1 === -2 || (r0 >= 0 && r1 >= 0 && r0 !== r1)) break; }
+        if (closeLoops && i > 30 && Math.hypot(nx.x - s0.x, nx.y - s0.y) < STEP * 3) {
+          pts.push({ x: s0.x, y: s0.y, z: s0.z }); pts.closed = true;
+          break;
+        }
         if (i > 14 && tooClose(nx.x, nx.y, clearAt(nx) * 0.80)) break;
         if (C.paper(nx)) break;   // v2: a streamline ends where the paper begins
         cur = nx;
@@ -774,7 +783,7 @@
       const sep = clearAt(s);
       if (tooClose(s.x, s.y, sep * 0.95)) continue;
       const fwd = walk(s, 1);
-      const bwd = walk(s, -1);
+      const bwd = fwd.closed ? fwd.slice(0, 1) : walk(s, -1);
       bwd.reverse();
       const line = bwd.concat(fwd.slice(1));
       if (line.length < 3) continue;
@@ -813,9 +822,16 @@
     // read of any accessor and never for the other laws. `inv` is a pure
     // function of the chart (no RNG, no cache), so building later yields the
     // same values; `C.fieldBuilds` counts the builds (0 or 1) for the tests.
-    const N = 132;
+    // DRAFT: the depth raster is the single dearest term of etfKang's law tier
+    // (one `inv` + shade per cell), and the draft's 48-cell Kang grid cannot
+    // resolve a 132 raster anyway, so the law tier rasters at 66. Settled = 132.
+    const N = C.draft ? 66 : 132;
+    C.fieldCells = (N + 1) * (N + 1);
     const dx = C.W / N; const dy = C.H / N;
     let Z = null; let Ii = null; let M = null;
+    // Object-locked fields (etfKang's wrap rings): the world position and world normal of every raster cell, read
+    // through C.gradOn / C.fieldWorld. Filled in the same loop as Z, so it costs no extra `inv`.
+    let WP = null; let WNm = null;
     C.fieldBuilds = 0;
     const raster = () => {
       if (M) return;
@@ -823,12 +839,18 @@
       Z = new Float32Array((N + 1) * (N + 1));
       Ii = new Float32Array((N + 1) * (N + 1));
       M = new Uint8Array((N + 1) * (N + 1));
+      WP = new Float32Array((N + 1) * (N + 1) * 3);
+      WNm = new Float32Array((N + 1) * (N + 1) * 3);
       for (let j = 0; j <= N; j++) {
         for (let i = 0; i <= N; i++) {
           const s = C.inv(C.minX + i * dx, C.minY + j * dy);
           const k = j * (N + 1) + i;
           if (!s) continue;
           M[k] = 1; Z[k] = finite(s.z, 0); Ii[k] = lum(s);
+          if (s.world && s.wN) {
+            WP[k * 3] = finite(s.world.x, 0); WP[k * 3 + 1] = finite(s.world.y, 0); WP[k * 3 + 2] = finite(s.world.z, 0);
+            WNm[k * 3] = finite(s.wN.x, 0); WNm[k * 3 + 1] = finite(s.wN.y, 0); WNm[k * 3 + 2] = finite(s.wN.z, 0);
+          }
         }
       }
     };
@@ -844,6 +866,74 @@
       if (!M[k] || !M[k - 1] || !M[k + 1] || !M[k - (N + 1)] || !M[k + (N + 1)]) return null;
       return { x: (Z[k + 1] - Z[k - 1]) / (2 * dx), y: (Z[k + (N + 1)] - Z[k - (N + 1)]) / (2 * dy) };
     };
+    // Screen gradient of any per-cell scalar f(k) over the same raster (the same stencil as gradZ).
+    // With `edgeCos` (etfKang's wrap field) a stencil neighbour whose world normal is more than acos(edgeCos) from the
+    // centre's is across a crease (a cylinder's rim): the difference then runs one-sided, on the centre's own side, so a
+    // cell at a crease reads its own face's field and never a blend of the two faces.
+    C.gradOn = (x, y, f, edgeCos) => {
+      raster();
+      const i = gi(x); const j = gj(y);
+      if (i < 1 || j < 1 || i >= N || j >= N) return null;
+      const k = j * (N + 1) + i;
+      if (!M[k] || !M[k - 1] || !M[k + 1] || !M[k - (N + 1)] || !M[k + (N + 1)]) return null;
+      if (!(edgeCos > -1)) return { x: (f(k + 1) - f(k - 1)) / (2 * dx), y: (f(k + (N + 1)) - f(k - (N + 1))) / (2 * dy), k };
+      const same = (kn) => (WNm[kn * 3] * WNm[k * 3] + WNm[kn * 3 + 1] * WNm[k * 3 + 1] + WNm[kn * 3 + 2] * WNm[k * 3 + 2]) >= edgeCos;
+      const d1 = (kp, km, h) => {
+        const up = same(kp); const um = same(km);
+        if (up && um) return (f(kp) - f(km)) / (2 * h);
+        if (up) return (f(kp) - f(k)) / h;
+        if (um) return (f(k) - f(km)) / h;
+        return null;
+      };
+      const gx = d1(k + 1, k - 1, dx); const gy = d1(k + (N + 1), k - (N + 1), dy);
+      if (gx === null || gy === null) return null;
+      return { x: gx, y: gy, k };
+    };
+    // FACES (etfKang's wrap field): the raster cells grouped into connected sets whose neighbours' world normals stay
+    // within `deg` of each other. A smooth surface (sphere, torus, a cylinder's side) is one face; a crease (a cylinder's
+    // rim, a box edge) separates two. -1 off the surface. Lazy, one flood fill over the raster.
+    let FR = null; let FRN = 0;
+    C.faceAt = (x, y, deg, crease) => {
+      raster();
+      if (!FR) {
+        const LINK = Math.cos((Number.isFinite(deg) ? deg : 45) * Math.PI / 180);
+        FR = new Int32Array((N + 1) * (N + 1)).fill(-1);
+        // A crease is rarely razor sharp (the chart rounds a cylinder's rim over a few cells), so no single pair of
+        // neighbours turns far. A cell is ON a crease when its two stencil neighbours' normals, a cell either side, turn
+        // by more than `crease` degrees: label -2, a band that belongs to neither face and links nothing.
+        const CR = Math.cos((Number.isFinite(crease) ? crease : 30) * Math.PI / 180);
+        const turn = (k1, k2) => (WNm[k1 * 3] * WNm[k2 * 3] + WNm[k1 * 3 + 1] * WNm[k2 * 3 + 1] + WNm[k1 * 3 + 2] * WNm[k2 * 3 + 2]) < CR;
+        for (let j = 1; j < N; j++) {
+          for (let i = 1; i < N; i++) {
+            const k = j * (N + 1) + i;
+            if (!M[k] || !M[k - 1] || !M[k + 1] || !M[k - (N + 1)] || !M[k + (N + 1)]) continue;
+            if (turn(k - 1, k + 1) || turn(k - (N + 1), k + (N + 1))) FR[k] = -2;
+          }
+        }
+        const stack = [];
+        for (let k0 = 0; k0 < FR.length; k0++) {
+          if (!M[k0] || FR[k0] !== -1) continue;
+          FR[k0] = FRN; stack.push(k0);
+          while (stack.length) {
+            const k = stack.pop(); const ki = k % (N + 1); const kj = (k - ki) / (N + 1);
+            for (let q = -1; q <= 1; q++) {
+              for (let p = -1; p <= 1; p++) {
+                const ii = ki + p; const jj = kj + q;
+                if ((!p && !q) || ii < 0 || jj < 0 || ii > N || jj > N) continue;
+                const kk = jj * (N + 1) + ii;
+                if (!M[kk] || FR[kk] !== -1) continue;
+                if (WNm[k * 3] * WNm[kk * 3] + WNm[k * 3 + 1] * WNm[kk * 3 + 1] + WNm[k * 3 + 2] * WNm[kk * 3 + 2] < LINK) continue;
+                FR[kk] = FRN; stack.push(kk);
+              }
+            }
+          }
+          FRN++;
+        }
+      }
+      return FR[gj(y) * (N + 1) + gi(x)];
+    };
+    C.faceCount = () => FRN;
+    C.fieldWorld = () => { raster(); return { P: WP, N: WNm }; };
     // AMBIENT OCCLUSION, as its own term. Horizon sampling in twelve screen
     // directions over the depth raster: a direction is occluded when a nearby
     // sample stands NEARER the camera than the tangent plane predicts. On a
@@ -922,24 +1012,83 @@
    * curvature is stated by the direction of the ink and not by its density.
    */
   const lawEtf = (C) => {
-    const NG = 96;
+    // DRAFT ('law' drag tier only, `C.draft`): the direction grid is 48 and Kang
+    // runs 2 passes instead of 96 / 4. The field is a smooth screen-space
+    // gradient, so a coarser grid + fewer smoothing passes keeps the flow's
+    // look while a drag keeps its tone. The settled compose and every export
+    // (no substrateDraft) keep 96 / 4 byte-for-byte.
+    const ETF0 = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.ETF) || {};
+    const NG = C.draft ? 48 : 96;
+    const PASSES = C.draft ? 2 : 4;
+    C.etfWork = NG * NG * PASSES;     // grid cells x passes (test-visible)
     const dx = C.W / NG; const dy = C.H / NG;
     let TX = new Float32Array((NG + 1) * (NG + 1));
     let TY = new Float32Array((NG + 1) * (NG + 1));
     const CF = new Float32Array((NG + 1) * (NG + 1));
     const MK = new Uint8Array((NG + 1) * (NG + 1));
+    // THE WRAP RINGS (object-locked). With a wrap axis `a` (the object's own, rotated into world: C.wrap.a) the
+    // strokes are the level sets of the height h = P.a: the slices of the surface by planes perpendicular to `a`.
+    // On a sphere with `a` = the top pole those are the latitude rings; on a cylinder's side, horizontal rings; on
+    // a torus, contour rings. Where the surface faces along `a` (|a x n| -> 0: a cylinder cap, a box top, the pole
+    // itself) a slice degenerates, so the stroke blends over to the level sets of q = P.e, e a fixed axis
+    // perpendicular to `a`: straight parallel lines across the face. The field is a function of the surface and the
+    // object alone: it ignores the light and the camera, so it rotates with the object. The screen direction is the
+    // perpendicular of the screen gradient of h (and q) over the same depth raster, exactly as the old depth field
+    // was. Without a wrap axis (a direct harness call) the field stays the old depth isocontours.
+    const WRAPC = C.wrap || null;
+    const WLO = Number.isFinite(ETF0.WRAP_LO) ? ETF0.WRAP_LO : 0.015;
+    const WHI = Number.isFinite(ETF0.WRAP_HI) ? ETF0.WRAP_HI : 0.07;
+    const WF = WRAPC ? C.fieldWorld() : null;
+    // EDGE-AWARE. A crease (a cylinder's rim, a box edge) is where the surface normal turns by more than ~30 degrees
+    // between neighbouring cells. The two faces keep their own directions: the gradient differences are one-sided at
+    // a crease, the smoothing never mixes cells of different faces, and a streamline stops where it would step over one.
+    const EDGE_DEG = Number.isFinite(ETF0.EDGE_DEG) ? ETF0.EDGE_DEG : 30;   // 0 = edge-aware off (test witness)
+    const EDGE_COS = EDGE_DEG > 0 ? Math.cos(EDGE_DEG * Math.PI / 180) : -2;
+    let REG = null;
+    const hOf = WRAPC ? (k) => WF.P[k * 3] * WRAPC.a.x + WF.P[k * 3 + 1] * WRAPC.a.y + WF.P[k * 3 + 2] * WRAPC.a.z : null;
+    const qOf = WRAPC ? (k) => WF.P[k * 3] * WRAPC.e.x + WF.P[k * 3 + 1] * WRAPC.e.y + WF.P[k * 3 + 2] * WRAPC.e.z : null;
     for (let j = 0; j <= NG; j++) {
       for (let i = 0; i <= NG; i++) {
         const x = C.minX + i * dx; const y = C.minY + j * dy;
         const g = C.gradZ(x, y);
         const k = j * (NG + 1) + i;
         if (!g) continue;
+        if (WRAPC) {
+          const gh = C.gradOn(x, y, hOf, EDGE_COS); const gq = C.gradOn(x, y, qOf, EDGE_COS);
+          if (!gh || !gq) continue;
+          const nx = WF.N[gh.k * 3]; const ny = WF.N[gh.k * 3 + 1]; const nz = WF.N[gh.k * 3 + 2];
+          const ax = WRAPC.a;
+          const cx = ax.y * nz - ax.z * ny; const cy = ax.z * nx - ax.x * nz; const cz = ax.x * ny - ax.y * nx;
+          const w = smooth01((Math.hypot(cx, cy, cz) - WLO) / Math.max(1e-6, WHI - WLO));
+          const Lh = Math.hypot(gh.x, gh.y); const Lq = Math.hypot(gq.x, gq.y);
+          let t1x = 0; let t1y = 0; let t2x = 0; let t2y = 0;
+          if (Lh > 1e-9) { t1x = -gh.y / Lh; t1y = gh.x / Lh; }
+          if (Lq > 1e-9) { t2x = -gq.y / Lq; t2y = gq.x / Lq; }
+          if (!(Lh > 1e-9) && !(Lq > 1e-9)) continue;
+          if (!(Lh > 1e-9)) { t1x = t2x; t1y = t2y; }
+          if (!(Lq > 1e-9)) { t2x = t1x; t2y = t1y; }
+          const sg = (t1x * t2x + t1y * t2y) < 0 ? -1 : 1;
+          let bx = w * t1x + (1 - w) * sg * t2x; let by = w * t1y + (1 - w) * sg * t2y;
+          let Lb = Math.hypot(bx, by);
+          if (!(Lb > 1e-6)) { bx = w >= 0.5 ? t1x : sg * t2x; by = w >= 0.5 ? t1y : sg * t2y; Lb = Math.hypot(bx, by); }
+          if (!(Lb > 1e-9)) continue;
+          MK[k] = 1;
+          TX[k] = bx / Lb; TY[k] = by / Lb;
+          CF[k] = w * Lh + (1 - w) * Lq;
+          continue;
+        }
         const L = Math.hypot(g.x, g.y);
         if (!(L > 1e-9)) continue;
         MK[k] = 1;
         TX[k] = -g.y / L; TY[k] = g.x / L;
         CF[k] = L;                       // anisotropy = confidence
       }
+    }
+    if (WRAPC && EDGE_DEG > 0) {
+      const REGION_DEG = Number.isFinite(ETF0.REGION_DEG) ? ETF0.REGION_DEG : 45;
+      REG = new Int32Array((NG + 1) * (NG + 1)).fill(-1);
+      for (let j = 0; j <= NG; j++) for (let i = 0; i <= NG; i++) { const k = j * (NG + 1) + i; if (MK[k]) REG[k] = C.faceAt(C.minX + i * dx, C.minY + j * dy, REGION_DEG, EDGE_DEG); }
+      C.etfRegions = C.faceCount();
     }
     let mx = 0;
     for (let k = 0; k < CF.length; k++) if (CF[k] > mx) mx = CF[k];
@@ -969,7 +1118,8 @@
     // of this law's seed signal on non-simply-connected silhouettes; the cone
     // has its own instance of the same root cause (a 46.9 degree cross-axis
     // direction jump down its visible ridge, bar 15 degrees).
-    for (let it = 0; it < 4; it++) {
+    const RAWX = globalScope.__MONO_TRACE ? TX.slice() : null; const RAWY = globalScope.__MONO_TRACE ? TY.slice() : null;
+    for (let it = 0; it < PASSES; it++) {
       const NX = new Float32Array(TX.length);
       const NY = new Float32Array(TY.length);
       for (let j = 2; j < NG - 1; j++) {
@@ -981,6 +1131,7 @@
             for (let p = -2; p <= 2; p++) {
               const kk = (j + q) * (NG + 1) + (i + p);
               if (!MK[kk]) continue;
+              if (REG && REG[kk] !== REG[k] && REG[kk] !== -1 && REG[k] !== -1) continue;   // never mix across a crease (-1: a cell at the silhouette, no face of its own)
               const dot = TX[k] * TX[kk] + TY[k] * TY[kk];
               const phi = dot >= 0 ? 1 : -1;
               const wd = Math.abs(dot);
@@ -999,15 +1150,68 @@
     const gi = (x) => clamp(Math.round((x - C.minX) / dx), 0, NG);
     const gj = (y) => clamp(Math.round((y - C.minY) / dy), 0, NG);
     const dirAt = (s) => {
-      const k = gj(s.y) * (NG + 1) + gi(s.x);
+      const gx = gi(s.x); const gy = gj(s.y);
+      let k = gy * (NG + 1) + gx;
+      if (REG) {
+        // The query's own face owns the answer: the nearest Kang cell OF THAT FACE (a cell across a crease is another face).
+        const f = C.faceAt(s.x, s.y);
+        if (f === -2) return null;   // on a crease: no stroke runs along a rim
+        if (f >= 0 && REG[k] !== f && REG[k] !== -1) {
+          let best = -1; let bd = Infinity;
+          for (let q = -1; q <= 1; q++) {
+            for (let p = -1; p <= 1; p++) {
+              const ii = gx + p; const jj = gy + q;
+              if (ii < 0 || jj < 0 || ii > NG || jj > NG) continue;
+              const kk = jj * (NG + 1) + ii;
+              if (!MK[kk] || (REG[kk] !== f && REG[kk] !== -1)) continue;
+              const d2 = (C.minX + ii * dx - s.x) ** 2 + (C.minY + jj * dy - s.y) ** 2;
+              if (d2 < bd) { bd = d2; best = kk; }
+            }
+          }
+          if (best < 0) return null;
+          k = best;
+        }
+      }
       if (!MK[k]) return null;
       return { x: TX[k], y: TY[k] };
     };
     // TEST-ONLY (opt-in via the same `__MONO_TRACE` flag `emit()` gates
     // `__MONO_CTX` behind): publish the field itself so a harness can measure
     // its winding number directly rather than reconstructing this grid.
-    if (globalScope.__MONO_TRACE) C.__dirAt = dirAt;
-    streamFamily(C, dirAt, (s) => C.pitchOf(s));
+    if (globalScope.__MONO_TRACE) {
+      C.__dirAt = dirAt;
+      C.__rawAt = (s) => { const k = gj(s.y) * (NG + 1) + gi(s.x); return MK[k] ? { x: RAWX[k], y: RAWY[k] } : null; };
+    }
+    // SURFACE-DISTANCE SPACING. The pitch is the gap ON the surface; on screen the gap across a
+    // ruling is that pitch times the surface's foreshortening in the direction perpendicular to
+    // the ruling. With z the camera depth, a screen step p moves the surface by (p, grad z . p),
+    // so one screen mm covers sqrt(1 + (g.p)^2) surface mm and the screen gap is the pitch over
+    // that. Rulings are depth isocontours, so p is the gradient direction and the gap shrinks as
+    // 1/sqrt(1+|g|^2) = |N.V| toward the limb, the way a printed pattern does in perspective.
+    // Floored so the limb (|g| -> inf) cannot run away into a flood.
+    const ETFC = (Vectura.SCENE3D_SURFACE_LOCK && Vectura.SCENE3D_SURFACE_LOCK.ETF) || {};
+    const ETF_K = Number.isFinite(ETFC.SURFACE_K) ? ETFC.SURFACE_K : 1;   // 1 = full foreshortening (variant A), 0.5 = partial (variant B)
+    const ETF_SURF_MIN = C.draft
+      ? (Number.isFinite(ETFC.GAP_MIN_DRAFT) ? ETFC.GAP_MIN_DRAFT : 0.5)
+      : (Number.isFinite(ETFC.GAP_MIN) ? ETFC.GAP_MIN : 0.3);
+    // Tabulated on the Kang grid (one gradZ per cell), so the per-step separation test is a lookup.
+    const SC = new Float32Array((NG + 1) * (NG + 1)).fill(1);
+    for (let j = 0; j <= NG; j++) {
+      for (let i = 0; i <= NG; i++) {
+        const k = j * (NG + 1) + i;
+        if (!MK[k]) continue;
+        const g = C.gradZ(C.minX + i * dx, C.minY + j * dy);
+        if (!g) continue;
+        const gp = -g.x * TY[k] + g.y * TX[k];   // g . p, p = the ruling's screen normal (-ty, tx)
+        SC[k] = Math.max(ETF_SURF_MIN, Math.pow(1 / Math.sqrt(1 + gp * gp), ETF_K));
+      }
+    }
+    const surfScale = (s) => SC[gj(s.y) * (NG + 1) + gi(s.x)];
+    // Ink floor: compression never takes the gap under ETF.GAP_FLOOR_X x the plot-floor pitch, unless the tone pitch itself is already finer.
+    const FLOOR_MM = (Number.isFinite(ETFC.GAP_FLOOR_X) ? ETFC.GAP_FLOOR_X : 0) * C.FLOOR;
+    streamFamily(C, dirAt, FLOOR_MM > 0
+      ? (s) => { const p = C.pitchOf(s); return Math.max(p * surfScale(s), Math.min(p, FLOOR_MM)); }
+      : (s) => C.pitchOf(s) * surfScale(s), WRAPC ? { closeLoops: true, regionAt: REG ? (s) => C.faceAt(s.x, s.y) : null } : null);
   };
 
   /* ── 02 · defectSplit ───────────────────────────────────────────────────────
@@ -3317,6 +3521,7 @@
     if (!fn) return false;
     const C = makeCtx(o);
     if (!C.ok) return true;
+    C.wrap = o.wrapAxis && o.wrapAxis.a && o.wrapAxis.e ? o.wrapAxis : null;
     attachFields(C);
     // The crosshatch mapper is a crossed pair by definition, so a law that owns
     // family A there owns family B too: the same construction, rotated by the
@@ -3371,6 +3576,7 @@
     // about its SEED SET, and the seed set is not recoverable from the emitted
     // ink — the ink is what survived the silhouette cut.
     if (C.voronoiDiag) diag.voronoi = C.voronoiDiag;
+    if (C.etfWork !== undefined) { diag.etfWork = C.etfWork; diag.fieldCells = C.fieldCells; }
     globalScope.__MONO_DIAG = diag;
     // A measuring harness must be able to ask THIS substrate whether a screen
     // point is on the visible surface — a harness that reimplements `inv` is
@@ -3387,5 +3593,26 @@
   const ANGLE_LAWS = ['mezzoRegion', 'dutyConst', 'endShorten', 'creviceAO', 'transReserveMono',
     'jitterOverdraw', 'mergeLadder', 'shearClear', 'phaseBlue', 'fiboQuasi'];
   const readsAngle = (algo) => ANGLE_LAWS.indexOf(String(algo)) !== -1;
-  Scene3D.SurfaceFillMono = { LAWS, isMono, emit, readsAngle, STRIPE_ALIGN_MAX };
+  /* The wrap axis of an object, in WORLD space. (px, py) is the Wrap-origin pad value: a point on the unit disk read as
+   * a top-down view of the object's upper hemisphere (centre = the top pole +Y, rim = the equator at that azimuth; the
+   * pad's down is toward the viewer, +Z). Returns { a, e }: `a` the unit axis whose level sets are the rings, `e` the
+   * fixed axis perpendicular to it that the straight-line fallback uses, both rotated by the object's own transform
+   * (`apply(pt, transform)` is Scene.applyObjectTransform), so the field is locked to the object. Null when the
+   * transform helper is missing. (0, 0) is the default and gives a = +Y, e = +Z. */
+  const wrapAxisWorld = (px, py, transform, apply) => {
+    if (typeof apply !== 'function') return null;
+    let x = finite(px, 0); let z = finite(py, 0);
+    const r = Math.hypot(x, z);
+    if (r > 1) { x /= r; z /= r; }
+    const y = Math.sqrt(Math.max(0, 1 - x * x - z * z));
+    const unit = (v) => { const L = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / L, y: v.y / L, z: v.z / L }; };
+    const a = unit({ x, y, z });
+    const pick = Math.abs(a.z) > 0.95 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 0, z: 1 };
+    const d = a.x * pick.x + a.y * pick.y + a.z * pick.z;
+    const e = unit({ x: pick.x - d * a.x, y: pick.y - d * a.y, z: pick.z - d * a.z });
+    const o0 = apply({ x: 0, y: 0, z: 0 }, transform);
+    const rot = (v) => { const w = apply(v, transform); return unit({ x: w.x - o0.x, y: w.y - o0.y, z: w.z - o0.z }); };
+    return { a: rot(a), e: rot(e) };
+  };
+  Scene3D.SurfaceFillMono = { LAWS, isMono, emit, readsAngle, STRIPE_ALIGN_MAX, wrapAxisWorld };
 }());

@@ -64,7 +64,9 @@ describe('SurfaceFill — F7 wide-ribbon outline/fill seam, torus', () => {
         .filter((l) => l && l.type === 'object3d')[0];
       obj.params.primitive = 'torus';
       obj.params.style = obj.params.style || { penId: null, mapper: 'hatch', params: {} };
-      obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw };
+      // markSpace 'pose': this witness is of the POSE ribbon erosion. A fresh scene is surface-locked by default and (WD-D1, contract A27)
+      // ampSpacing now has a v2 surface baker, which would bypass the pose path under test.
+      obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw, markSpace: 'pose' };
 
       const cap = captureClipGroups(V);
       engine.computeAllDisplayGeometry();
