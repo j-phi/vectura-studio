@@ -1858,6 +1858,7 @@
       };
       pad.addEventListener('pointermove', mv); pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
     });
+    // touch-alt: TUX-038 via attachResetHold - the Wrap origin row label long-press resets the pad (Scene3D panel)
     pad.addEventListener('dblclick', () => { setCur(0, 0); if (props.onCommit) props.onCommit({ ...cur }); });
     pad.addEventListener('keydown', (e) => {
       const s = e.shiftKey ? 0.1 : 0.02;

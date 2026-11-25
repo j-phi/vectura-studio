@@ -1675,6 +1675,14 @@
         onCommit: (v) => { if (typeof write.many === 'function') write.many({ wrapOriginX: v.x, wrapOriginY: v.y }); else { write('wrapOriginX', v.x); write('wrapOriginY', v.y); } },
       });
       comps.push(pad);
+      // Touch path for the pad's double-click recentre: long-press the row label, then "Reset to default".
+      if (Vectura.UI.attachResetHold) {
+        Vectura.UI.attachResetHold(ctl.parentNode.querySelector('.vs3-lbl'), {
+          label: 'Wrap origin',
+          getDefault: () => ({ x: dx, y: dy }),
+          reset: () => { pad.set({ x: dx, y: dy }); if (typeof write.many === 'function') write.many({ wrapOriginX: dx, wrapOriginY: dy }); else { write('wrapOriginX', dx); write('wrapOriginY', dy); } },
+        });
+      }
       ctl.parentNode.dataset.art = '1';
       ctl.parentNode.dataset.wrapOrigin = '1';
       ctl.parentNode.setAttribute('title', 'Where the rings are centred, seen from above: the middle is the top of the object, the rim its equator. Drag the knob or use the arrow keys. Double-click recentres.');

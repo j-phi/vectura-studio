@@ -7750,7 +7750,11 @@
           // The unified transform gizmo (move/rotate/scale) wins over an object
           // re-pick underneath it — runs after sun/shadow, before the legacy
           // corner-scale/face-pull (which it supersedes for a selected object).
-          const gizmoHit = this.hitSceneObjectGizmo(sx, sy, sceneLayer);
+          // A Shift-down over a MULTI-object gizmo is a membership click (add / remove from the selection), so the
+          // gizmo, which sits on the centroid of the selection, cannot swallow the click that would deselect a member.
+          // Shift may still be held after the press to snap the drag.
+          const multiGizmoShiftClick = Boolean(this.getModifierState(e).shift && (this.getSceneObjectGizmo(sceneLayer) || {}).objIds);
+          const gizmoHit = multiGizmoShiftClick ? null : this.hitSceneObjectGizmo(sx, sy, sceneLayer);
           if (gizmoHit && this.beginSceneObjectGizmoDrag(gizmoHit, e)) {
             if (e.cancelable) e.preventDefault();
             return;
