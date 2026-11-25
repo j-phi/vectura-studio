@@ -182,6 +182,25 @@
       return p;
     };
 
+    // An <svg> wrapping a stored raster thumbnail (data:image/png|jpeg|webp only), at the image's own aspect (PNG header),
+    // or null when the entry has no usable raster. The ink engine draws this <image> as is (it cannot recolor it).
+    const RASTER_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+    const pngSize = (url) => {
+      try {
+        const bin = G.atob(url.slice(url.indexOf(',') + 1, url.indexOf(',') + 1 + 44));
+        if (bin.charCodeAt(1) !== 0x50) return null;
+        const u32 = (o) => ((bin.charCodeAt(o) << 24) | (bin.charCodeAt(o + 1) << 16) | (bin.charCodeAt(o + 2) << 8) | bin.charCodeAt(o + 3)) >>> 0;
+        const w = u32(16); const h = u32(20);
+        return w > 0 && h > 0 ? [w, h] : null;
+      } catch (_e) { return null; }
+    };
+    const rasterSvg = (thumb) => {
+      const url = thumb && typeof thumb.data === 'string' ? thumb.data : '';
+      if (!thumb || thumb.kind === 'svg' || !RASTER_URL.test(url)) return null;
+      const [w, h] = pngSize(url) || [1, 1];
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><image x="0" y="0" width="${w}" height="${h}" href="${url}"/></svg>`;
+    };
+
     const workArt = (entry) => {
       const type = typeFromLabel(entry.algorithm);
       const pen = Array.isArray(entry.pens) && entry.pens[0] ? entry.pens[0] : null;
@@ -204,12 +223,21 @@
         ownColors,
         getSvg: async () => {
           if (entry.thumb && entry.thumb.kind === 'svg' && entry.thumb.data) return stripGround(entry.thumb.data);
-          const rec = await cached(`work:${entry.id}:${entry.lastOpened}`, async () => {
-            const store = getStore();
-            const doc = store && await store.getDoc(entry.id);
-            if (!doc) throw new Error('This saved work has no stored copy to draw from');
-            return getRenderer().renderDocument(doc, `work:${entry.id}`);
-          });
+          // A work too big for the recents document budget keeps only its raster thumbnail: the plate shows that.
+          const fallback = () => rasterSvg(entry.thumb);
+          let rec;
+          try {
+            rec = await cached(`work:${entry.id}:${entry.lastOpened}`, async () => {
+              const store = getStore();
+              const doc = store && await store.getDoc(entry.id);
+              if (!doc) throw new Error('This saved work has no stored copy to draw from');
+              return getRenderer().renderDocument(doc, `work:${entry.id}`);
+            });
+          } catch (err) {
+            const svg = fallback();
+            if (svg) return svg;
+            throw err;
+          }
           if (rec.ownColors) Object.assign(art.ownColors, rec.ownColors);
           return rec.svg;
         },

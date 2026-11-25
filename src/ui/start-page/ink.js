@@ -148,7 +148,7 @@
    * a, animate*, set ...) is dropped; text survives only inside <title>. Not well-formed XML yields null.
    */
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const ALLOWED_EL = new Set(['svg', 'g', 'path', 'polyline', 'polygon', 'line', 'circle', 'ellipse', 'rect', 'defs', 'clipPath', 'title']);
+  const ALLOWED_EL = new Set(['svg', 'g', 'path', 'polyline', 'polygon', 'line', 'circle', 'ellipse', 'rect', 'defs', 'clipPath', 'title', 'image']);
   const ALLOWED_ATTR = new Set(['d', 'points', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'transform',
     'viewBox', 'id', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-dasharray',
     'stroke-dashoffset', 'stroke-opacity', 'fill-opacity', 'fill-rule', 'clip-rule', 'clip-path', 'clipPathUnits', 'opacity', 'vector-effect']);
@@ -162,10 +162,17 @@
     return true;
   };
   const num = (v, fb) => { const n = Number(v); return Number.isFinite(n) ? n : fb; };
+  // A stored raster thumbnail (a work with no document copy): only an inline PNG / JPEG / WebP data URL is drawn.
+  const RASTER_HREF = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
   const copyTree = (src, dst) => {
     Array.prototype.forEach.call(src.childNodes, (n) => {
       if (n.nodeType !== 1 || !ALLOWED_EL.has(n.localName) || n.localName === 'svg') return;
       const out = D.createElementNS(SVG_NS, n.localName);
+      if (n.localName === 'image') {
+        const href = n.getAttribute('href') || '';
+        if (!RASTER_HREF.test(href)) return;
+        out.setAttribute('href', href);
+      }
       if (n.localName === 'title') out.textContent = String(n.textContent || '').slice(0, 200);
       else copyTree(n, out);
       Array.prototype.forEach.call(n.attributes, (a) => {
@@ -397,6 +404,7 @@
   // 'cover' crops to the ink; 'object' shows the whole ink box scaled up to fill; 'focus' is 'object' on the ink's dense body (long
   // sparse strokes left to run off the edge); anything else contains the paper
   const fitOf = (f) => (f === 'cover' || f === 'object' || f === 'focus' ? f : 'contain');
+  const isRasterArt = (svg) => typeof svg === 'string' && svg.indexOf('<image') >= 0 && /<image\b/.test(svg);
   const mount = (el, art, opts) => {
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return Promise.reject(new Error('StartPageInk.mount: no element'));
@@ -484,7 +492,7 @@
     h.destroy = () => { stopFill(); prevDestroy(); const cur = h.bmp; h.bmp = null; if (cur && typeof cur.close === 'function') { try { cur.close(); } catch (e) { /* already closed */ } } };
     h.setColorway = (c) => {
       h.colorway = normColorway(c); setVars(el, h.colorway); h.applyLook();
-      if (h.colorway.fill && h.mode === 'svg' && h.parsed) {
+      if (h.colorway.fill && h.mode === 'svg' && h.parsed && !isRasterArt(art.svg)) {
         /* the vector tile cannot carry a conic or animated fill: continue as the crisp raster */
         if (h.svg) { h.svg.remove(); h.svg = null; }
         h.mode = 'canvas'; el.classList.add('sp-ink-raster'); h.raster().then(startFill); return;
@@ -500,7 +508,7 @@
     h.ready = parseArt(art).then((parsed) => {
       if (!h.alive()) return h;
       h.parsed = parsed; h.measure(); h.applyLook();
-      const asCanvas = opts.raster === true || h.colorway.fill || (opts.raster !== false && art.svg.length > (opts.rasterOver || RASTER_OVER));
+      const asCanvas = !isRasterArt(art.svg) && (opts.raster === true || h.colorway.fill || (opts.raster !== false && art.svg.length > (opts.rasterOver || RASTER_OVER)));
       if (asCanvas) { h.mode = 'canvas'; el.classList.add('sp-ink-raster'); return h.raster(); }
       const safe = safeSvg(art.svg, gid);
       if (!safe) throw new Error('StartPageInk: the art is not well-formed SVG');

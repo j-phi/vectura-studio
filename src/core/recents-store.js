@@ -248,6 +248,9 @@
       // `id` (optional): update that entry in place (Save of the document a recent already tracks).
       const byId = typeof data.id === 'string' && entries.has(data.id) ? entries.get(data.id) : null;
       // forceNew: never merge by name (a Save after New Canvas is a different document with a repeated filename)
+      // Compact the noise images first (legacy number arrays are ~10x the size): measure and store the small form.
+      const codec = G.Vectura && G.Vectura.ImageCodec;
+      if (codec && data.payload !== undefined) data.payload = codec.compactPayload(data.payload);
       const hash = data.payload === undefined ? '' : docHash(data.payload);
       const existing = byId || (data.forceNew === true ? null : await findExisting(handle, name, hash));
       const entry = existing || {

@@ -773,6 +773,11 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Big works get plates; open several files at once
+- **Much smaller project files.** Image noise is saved compactly (a 244 MB file with two photo images is now about 13 MB). Old files still open.
+- **Every work shows on the Start Page.** Large works keep their stored copy, a work without one shows its thumbnail, and a work with nothing stored shows a visible "open it again" plate instead of vanishing.
+- **Open several projects at once** from File ▸ Open, Open file… or by dropping them on the window; each becomes a plate.
+
 ### 1.5.30 - Touch fix for the Shading row
 - On phones and tablets the Scene3D **Shading** slider gets its own full-width line, and the Threshold 1 control is a full finger-sized target again.
 

@@ -474,7 +474,7 @@
           ${section('File',
             row(CMD + SHF + k('H'), 'Start Page', 'Back to the Start Page; again to return to the canvas') +
             row(CMD + k('N'),       'New canvas', 'Asks first when the canvas has unsaved changes') +
-            row(CMD + k('O'),       'Open project') +
+            row(CMD + k('O'),       'Open project', 'Pick or drop several .vectura files to open them all; each becomes a Start Page plate') +
             row(CMD + OPT + k('1–8'), 'Open a recent project', 'File ▸ Open Recent lists them') +
             row(CMD + k('S'),       'Save project') +
             row(CMD + k('S'),       'Save preset (config panel focused, after editing a preset)') +
