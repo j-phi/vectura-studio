@@ -383,6 +383,7 @@
         document.querySelector('#app-header h1')?.addEventListener('click', () => this.startPage?.show());
       }
       this.recents?.refresh();
+      this.recents?.scheduleBackfill?.(); // one-time plate lines for works saved before they existed (idle, off under automation)
 
       this.render();
       this.persistPreferencesDebounced(0);

@@ -63,7 +63,7 @@ describe('START_PAGE config', () => {
     expect(SP.ENUMS.coverWord).toContain('custom');
     expect(SP.ENUMS.hover).toEqual(expect.arrayContaining(['default', 'none', 'retrigger', 'lift', 'glare', 'replot', 'holo', 'ripple']));
     expect(SP.LIMITS).toEqual({
-      recentsShown: 8, entriesMax: 48, docsMaxBytes: 40 * 1024 * 1024,
+      recentsShown: 8, entriesMax: 48, docsMaxBytes: 40 * 1024 * 1024, plateLinesBytes: 600 * 1024, plateBytesMax: 640 * 1024, plateBackfillDelayMs: 4000,
       textMax: { name: 60, practiceLine: 120, customWord: 24 },
     });
     expect(SP.SHORTCUTS).toEqual({ startPage: 'Shift+Cmd+H', newCanvas: 'Cmd+N', openRecent: 'Alt+Cmd+1..8' });

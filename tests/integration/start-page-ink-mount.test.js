@@ -144,6 +144,28 @@ describe('StartPageInk.mount', () => {
     expect(el.innerHTML).not.toMatch(/<script|onload|onclick/i);
   });
 
+  // Plate lines (core/start-page/plate-lines.js) of a dense work can exceed RASTER_OVER: the tile mounts as a canvas, but the
+  // draw-in strokes the PARSED polylines onto its own overlay canvas, so the plot still runs (and ends) in canvas mode.
+  test('a piece over 250 KB (canvas mode) still plots: drawIn strokes its parsed polylines', async () => {
+    window.devicePixelRatio = 1;
+    const drawCtxs = [];
+    const orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function () { const c = orig.call(this); if (this.className === 'sp-ink-draw') drawCtxs.push(c); return c; };
+    try {
+      Ink.setMotion({ still: false });
+      const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 320, 240);
+      const h = await Ink.mount(el, { id: 'bigPlot', svg: bigSvg() }, { colorway, pad: 0 });
+      expect(h.mode).toBe('canvas');
+      expect(h.parsed.strokes).toBeGreaterThan(1000);
+      await Ink.drawIn(el, { style: 'plot', duration: 30 });
+      expect(drawCtxs.length).toBe(1);
+      const names = drawCtxs[0].calls.map((c) => c[0]);
+      expect(names.filter((n) => n === 'lineTo').length).toBeGreaterThan(1000);
+      expect(names).toContain('stroke');
+      expect(el.classList.contains('sp-ink-drawing')).toBe(false);
+    } finally { HTMLCanvasElement.prototype.getContext = orig; }
+  });
+
   test('drawIn(plot) with still motion finishes instantly and resolves', async () => {
     const el = document.createElement('div'); document.body.appendChild(el); sizeBox(el, 100, 100);
     await Ink.mount(el, { id: 'tre', svg: fixture('lissajous-trefoil.svg') }, { colorway });

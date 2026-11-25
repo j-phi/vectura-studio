@@ -127,6 +127,12 @@
     recentsShown: 8,
     entriesMax: 48,
     docsMaxBytes: 40 * 1024 * 1024,
+    // Display-only plate lines (core/start-page/plate-lines.js): a dense work whose export SVG is too big to keep as its thumbnail
+    // gets a flattened + simplified vector copy that fits `plateLinesBytes` (the builder's budget, ground rect included);
+    // the store refuses a plate over `plateBytesMax`.
+    plateLinesBytes: 600 * 1024,
+    plateBytesMax: 640 * 1024,
+    plateBackfillDelayMs: 4000, // the one-time plate backfill (core/start-page/plate-backfill.js) waits this long after launch, then runs idle
     textMax: Object.freeze({ name: 60, practiceLine: 120, customWord: 24 }),
   });
 
