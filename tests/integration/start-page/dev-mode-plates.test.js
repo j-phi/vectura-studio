@@ -390,7 +390,9 @@ describe('Start Page Developer Mode: editable example plates', () => {
     let scrolled = 0;
     window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() { if (this.id === 'sp-plates') scrolled += 1; };
     click(document.getElementById('btn-edit-start-page-plates'));
-    await tick(250);
+    // show() reveals the Plates section only AFTER its async render resolves; a fixed sleep raced that under coverage
+    // instrumentation. Wait for the real condition (the reveal scroll fired), bounded, then assert the resulting state.
+    await vi.waitFor(() => expect(scrolled).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
     expect(sp().hidden).toBe(false);
     expect(document.getElementById('settings-panel').classList.contains('open')).toBe(false);
     expect(q('#sp-dev')).not.toBeNull();

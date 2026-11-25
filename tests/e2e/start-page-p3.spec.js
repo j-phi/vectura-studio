@@ -128,18 +128,20 @@ test.describe('Start Page P3', () => {
   });
 
   test('no idle rAF: with the pointer idle and nothing animating, the page schedules no frames (Still off or on)', async ({ page }) => {
+    test.setTimeout(120000); // boot (seeding works is slow on a loaded runner) + up to 30 s settle poll + 15 s Still poll
     await bootWithWorks(page);
     const count = (ms) => page.evaluate((t) => new Promise((res) => {
       let n = 0; const orig = window.requestAnimationFrame;
       window.requestAnimationFrame = function (cb) { n += 1; return orig.call(window, cb); };
       setTimeout(() => { window.requestAnimationFrame = orig; res(n); }, t);
     }), ms);
-    // settled = a whole window passes with (almost) no frames; poll for it instead of guessing how long the draw-ins take
-    await expect.poll(() => count(1000), { timeout: 30000, intervals: [250] }).toBeLessThanOrEqual(4);
-    expect(await count(2000)).toBeLessThanOrEqual(4);
+    // The contract is "the page EVENTUALLY goes idle", not "it is idle by a fixed moment": late DOM churn after the works load
+    // (re-renders, plate mounts -> canvas-hud's MutationObserver step-aside rAFs, orbit3d/layout mount kicks) settles at a
+    // varying time. So poll until a FULL 2000 ms window is quiet (<=4 frames; 0 under Still). A rAF loop that never stops
+    // never produces a quiet window and still fails when the poll times out.
+    await expect.poll(() => count(2000), { timeout: 30000, intervals: [250] }).toBeLessThanOrEqual(4);
     await page.locator('#sp-motion-btn').click();
-    await expect.poll(() => count(1000), { timeout: 15000, intervals: [250] }).toBe(0);
-    expect(await count(2000)).toBe(0);
+    await expect.poll(() => count(2000), { timeout: 15000, intervals: [250] }).toBe(0);
   });
 
   test('prefers-reduced-motion is honored like Still', async ({ page }) => {

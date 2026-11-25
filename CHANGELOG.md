@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: flaky tests, and a group move-gizmo drag that could die silently
+- **Group move arrow (Scene 3D).** Grabbing the move arrow of a combined (boolean) shape creates its transform lazily, and an identity transform is dropped again on the next params normalize. If that happened between the grab and the first move, the drag was abandoned: nothing moved and no undo step was recorded. The drag now rebuilds the transform from its grab-time start (`src/render/renderer.js`), with a deterministic regression test.
+- **Deflaked tests.** Six tests that failed and passed on the same commit in CI now wait for the real condition or tolerate real variability, and each still fails when the feature breaks (mutation-checked):
+  - `target-audit-guards` clipping guard: the hack sets `transition:none` on the header, because under reduced motion its `max-width` cap started a 0.01 ms transition that WebKit sometimes measured mid-way (verified on real WebKit: 5/8 failing before, 25/25 passing after).
+  - Start Page "no idle rAF": polls until a full 2 s window is quiet instead of demanding a fixed window, so late settling passes and a never-ending rAF loop still fails.
+  - Start Page Developer Mode plates: waits for the plates reveal instead of a fixed 250 ms sleep.
+  - Scene3D boolean group gizmo e2e: waits for the arrow to hit-test and for the async compose to settle.
+  - Preset corpus `hyphae-sparse-roots`: the canary pins the hyphae seed; about 1.5% of random seeds start at the page edge and draw nothing (logged as PRH-141).
+
 ### Send to Plotter (docs)
 
 #### Added

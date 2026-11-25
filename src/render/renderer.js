@@ -13466,7 +13466,14 @@
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (!layer || !layer.params) { this._sceneObjectGizmoDrag = null; return false; }
       const obj = this._sceneXformTargetById(layer, drag.objectId);
-      if (!obj || !obj.transform) { this._sceneObjectGizmoDrag = null; return false; }
+      if (!obj) { this._sceneObjectGizmoDrag = null; return false; }
+      // A combined shape's transform bag is created lazily at grab time and dropped again whenever it is identity, so a
+      // regen / params normalize landing between the grab and the first move removes it. Recreate it from the grab-time
+      // start instead of abandoning the drag (which left the shape untouched and the gesture silently dead).
+      if (!obj.transform) {
+        const st = drag.start;
+        obj.transform = { x: st.x, y: st.y, z: st.z, yaw: st.yaw, pitch: st.pitch, roll: st.roll, scale: st.scale };
+      }
       const rect = this.canvas.getBoundingClientRect();
       const world = this.screenToWorld((e.clientX ?? 0) - rect.left, (e.clientY ?? 0) - rect.top);
       let dx = world.x - drag.startWorld.x;
