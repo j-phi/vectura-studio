@@ -870,3 +870,37 @@ describe('pen-change repositioning and pen height re-check', () => {
     await s.run(p);
   });
 });
+
+describe('bounds tolerance for status rounding', () => {
+  test('Go to origin at the power-on corner works with WCO -0.001 rounding skew', async () => {
+    const s = await connected({ sim: { wcoSkew: { x: -0.001 } } });
+    await s.run(s.ctrl.setOrigin());
+    await s.run(s.ctrl.jog(151.164, 0));
+    await until(s.clock, () => s.ctrl.state === 'idle');
+    expect(s.ctrl.wco.x).toBeCloseTo(-0.001, 6);
+    await s.run(s.ctrl.goToOrigin());
+    const pos = s.sim.getPosition();
+    expect(pos.wpos.x).toBeCloseTo(0, 2);
+    expect(pos.wpos.y).toBeCloseTo(0, 2);
+    expect(s.ctrl.pen.state).toBe('up');
+    expect(assertAllSafe(s.sim)).toEqual([]);
+  });
+
+  test('goTo beyond the tolerance is still rejected', async () => {
+    const s = await connectedWithOrigin();
+    await expect(s.run(s.ctrl.goTo(-0.05, 0))).rejects.toMatchObject({ code: 'out-of-bounds' });
+  });
+
+  test('setOrigin at the power-on corner stores exactly (0, 0)', async () => {
+    const s = await connected({ sim: { initialPosition: { x: 0.004, y: 0.002, z: 0 } } });
+    const o = await s.run(s.ctrl.setOrigin());
+    expect(o).toEqual({ x: 0, y: 0 });
+  });
+
+  test('jog target within tolerance past the edge clamps to the edge', async () => {
+    const s = await connectedWithOrigin();
+    const r = await s.run(s.ctrl.jog(-0.015, 0));
+    expect(r.sent).toBe(false);
+    expect(r.atLimit.x).toBe('min');
+  });
+});

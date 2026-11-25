@@ -164,6 +164,21 @@
     return Math.max(lo, Math.min(isNum(v) ? v : lo, hi));
   };
 
+  // Bounds tolerance (mm). GRBL status reports round to 3 decimals and MPos, WPos and WCO are
+  // rounded independently, so WCO can be off by 0.001 per report; G92 round-trips add the same.
+  // A target this close outside the work area is treated as on the edge (clamped for moves,
+  // accepted for jobs/console). Never widen this beyond what rounding noise needs.
+  const BOUNDS_TOLERANCE_MM = 0.02;
+
+  // Round a machine coordinate to firmware resolution (3 decimals) and snap values within
+  // tolerance of 0 or of the far edge (size) to exactly that value.
+  const snapMachineCoord = (v, size) => {
+    const r = Math.round(v * 1000) / 1000;
+    if (Math.abs(r) <= BOUNDS_TOLERANCE_MM) return 0;
+    if (isNum(size) && Math.abs(r - size) <= BOUNDS_TOLERANCE_MM) return size;
+    return r;
+  };
+
   // ---- Job bounds (rule 2) ----
   // Job coordinates are relative to the work origin; the work origin sits at
   // machine position originOffset, so the allowed range is [-offset, size - offset].
@@ -186,12 +201,12 @@
     });
     const overflow = { left: 0, right: 0, top: 0, bottom: 0 };
     if (minX === Infinity) return { ok: !invalid, overflow, bbox: null, ...(invalid ? { reason: 'Job contains invalid coordinates.' } : {}) };
-    const eps = 1e-6;
+    const eps = BOUNDS_TOLERANCE_MM;
     overflow.left = Math.max(0, -ox - minX);
     overflow.right = Math.max(0, maxX - (area.width - ox));
     overflow.top = Math.max(0, -oy - minY);
     overflow.bottom = Math.max(0, maxY - (area.height - oy));
-    Object.keys(overflow).forEach((k) => { if (overflow[k] < eps) overflow[k] = 0; });
+    Object.keys(overflow).forEach((k) => { if (overflow[k] <= eps) overflow[k] = 0; });
     const ok = !invalid && !overflow.left && !overflow.right && !overflow.top && !overflow.bottom;
     const out = { ok, overflow, bbox: { minX, minY, maxX, maxY } };
     if (invalid) out.reason = 'Job contains invalid coordinates.';
@@ -283,6 +298,8 @@
     clampFeedZ,
     clampZ,
     checkJobBounds,
+    BOUNDS_TOLERANCE_MM,
+    snapMachineCoord,
     validateProfile,
     normalizeProfile,
   };

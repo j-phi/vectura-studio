@@ -200,3 +200,20 @@ describe('PlotSafety.validateProfile / normalizeProfile', () => {
     expect(Object.isFrozen(p)).toBe(false);
   });
 });
+
+describe('PlotSafety bounds tolerance', () => {
+  const area = { width: 420, height: 297 };
+  const job = (pts) => ({ pens: [{ paths: [pts] }] });
+  test('accepts overshoot within the tolerance', () => {
+    expect(safety.checkJobBounds(job([{ x: -0.015, y: 0 }, { x: 10, y: 297.015 }]), area).ok).toBe(true);
+    expect(safety.BOUNDS_TOLERANCE_MM).toBe(0.02);
+  });
+  test('rejects overshoot beyond the tolerance', () => {
+    expect(safety.checkJobBounds(job([{ x: -0.05, y: 0 }]), area).ok).toBe(false);
+  });
+  test('snapMachineCoord rounds and snaps to 0 and the far edge', () => {
+    expect(safety.snapMachineCoord(-0.001, 420)).toBe(0);
+    expect(safety.snapMachineCoord(419.99, 420)).toBe(420);
+    expect(safety.snapMachineCoord(151.1634, 420)).toBe(151.163);
+  });
+});

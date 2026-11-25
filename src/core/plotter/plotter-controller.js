@@ -590,8 +590,10 @@
       const st = await this._refreshStatus();
       if (st.state !== 'Idle') throw new PlotterError('busy', 'Wait for the plotter to stop moving before setting the origin.');
       await this._cmd('G92 X0 Y0');
-      this.originMachine = { x: st.mpos.x, y: st.mpos.y };
-      this.wco = { x: st.mpos.x, y: st.mpos.y, z: this.wco.z };
+      const area = this._limits().area;
+      const om = { x: PS().snapMachineCoord(st.mpos.x, area.width), y: PS().snapMachineCoord(st.mpos.y, area.height) };
+      this.originMachine = om;
+      this.wco = { x: om.x, y: om.y, z: this.wco.z };
       this.originSet = true;
       await this._refreshStatus().catch(() => null);
       this.emit('origin', { machine: Object.assign({}, this.originMachine) });
@@ -600,9 +602,12 @@
 
     async _moveTo(x, y, feed) {
       const r = this._workRange();
-      if (x < r.minX - EPS || x > r.maxX + EPS || y < r.minY - EPS || y > r.maxY + EPS) {
+      const TOL = PS().BOUNDS_TOLERANCE_MM;
+      if (x < r.minX - TOL || x > r.maxX + TOL || y < r.minY - TOL || y > r.maxY + TOL) {
         throw new PlotterError('out-of-bounds', 'Target (' + fmt(x) + ', ' + fmt(y) + ') is outside the work area.');
       }
+      x = Math.min(r.maxX, Math.max(r.minX, x)); // within tolerance: clamp to the edge
+      y = Math.min(r.maxY, Math.max(r.minY, y));
       await this._penUpRaw(); // pen up before any travel, always
       const f = PS().clampFeedXY(feed || this.profile.motion.travelFeed, this.profile, this.fw);
       this._enterJogging();
@@ -927,13 +932,16 @@
       try {
         await this._penUpRaw();
         const pos = job.opts.penChangePosition;
-        const target = pos && typeof pos === 'object' ? pos : { x: 0, y: 0 };
+        const target = pos && typeof pos === 'object' ? { x: pos.x, y: pos.y } : { x: 0, y: 0 };
         await this._refreshStatus().catch(() => null);
         if (job.finished) return;
         const r = this._workRange();
-        if (target.x < r.minX - EPS || target.x > r.maxX + EPS || target.y < r.minY - EPS || target.y > r.maxY + EPS) {
+        const TOL = PS().BOUNDS_TOLERANCE_MM;
+        if (target.x < r.minX - TOL || target.x > r.maxX + TOL || target.y < r.minY - TOL || target.y > r.maxY + TOL) {
           throw new PlotterError('out-of-bounds', 'The pen-change position is outside the work area.');
         }
+        target.x = Math.min(r.maxX, Math.max(r.minX, target.x));
+        target.y = Math.min(r.maxY, Math.max(r.minY, target.y));
         const f = PS().clampFeedXY(this.profile.motion.travelFeed, this.profile, this.fw);
         await this._cmd('G1 X' + fmt(target.x) + ' Y' + fmt(target.y) + ' F' + fmt(f));
         await this._sync();
@@ -1115,8 +1123,9 @@
       });
       const r = this._workRange();
       if (hasXY) {
-        if (t.x < r.minX - EPS || t.x > r.maxX + EPS) return 'X target ' + fmt(t.x) + ' is outside the work area (' + fmt(r.minX) + ' to ' + fmt(r.maxX) + ' mm).';
-        if (t.y < r.minY - EPS || t.y > r.maxY + EPS) return 'Y target ' + fmt(t.y) + ' is outside the work area (' + fmt(r.minY) + ' to ' + fmt(r.maxY) + ' mm).';
+        const TOL = PS().BOUNDS_TOLERANCE_MM;
+        if (t.x < r.minX - TOL || t.x > r.maxX + TOL) return 'X target ' + fmt(t.x) + ' is outside the work area (' + fmt(r.minX) + ' to ' + fmt(r.maxX) + ' mm).';
+        if (t.y < r.minY - TOL || t.y > r.maxY + TOL) return 'Y target ' + fmt(t.y) + ' is outside the work area (' + fmt(r.minY) + ' to ' + fmt(r.maxY) + ' mm).';
       }
       if (hasZ) {
         const zm = t.z + this.wco.z;

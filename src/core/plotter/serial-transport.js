@@ -264,6 +264,8 @@
       this.rxBuffer = o.rxBuffer || 127;
       this.plannerSize = o.plannerSize || PLANNER_SIZE;
       this.penThreshold = Number.isFinite(o.penThreshold) ? o.penThreshold : 1.0;
+      // Emulate real status rounding: MPos/WPos each rounded independently; WCO skewed (e.g. {x:-0.001}).
+      this.wcoSkew = o.wcoSkew || null;
       this.statusMode = o.statusMode || 'both'; // 'mpos' | 'wpos' | 'both'
       this.resetOnOpen = o.resetOnOpen !== false;
       this.bannerDelayMs = Number.isFinite(o.bannerDelayMs) ? o.bannerDelayMs : 1200;
@@ -611,7 +613,8 @@
       parts.push('Bf:' + (this.plannerSize - this.planner.length) + ',' + (this.rxBuffer - this.rxBytes));
       parts.push('FS:' + Math.round(this.cur ? this.cur.feed : 0) + ',0');
       if (this.wcoDirty || this.statusCount % 10 === 0) {
-        parts.push('WCO:' + f3(this.offset.x) + ',' + f3(this.offset.y) + ',' + f3(this.offset.z));
+        const sk = this.wcoSkew || {};
+        parts.push('WCO:' + f3(this.offset.x + (sk.x || 0)) + ',' + f3(this.offset.y + (sk.y || 0)) + ',' + f3(this.offset.z + (sk.z || 0)));
         this.wcoDirty = false;
       }
       this.statusCount += 1;
