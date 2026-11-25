@@ -215,7 +215,9 @@ describe('surface lock ground shadow', () => {
     expect(SH.supports({ ...ok, ground: { enabled: false } })).toBe(false);
     expect(SH.supports({ ...ok, light: { ...SUN, elevation: 1 } })).toBe(false);
     expect(SH.supports({ ...ok, light: { ...SUN, castShadows: false } })).toBe(false);
-    expect(SH.supports({ ...ok, casters: [{ primitive: 'torus' }] })).toBe(false);
+    // A34: a torus is a mesh caster now (Level S); a primitive the module has no footprint for is still refused
+    expect(SH.supports({ ...ok, casters: [{ primitive: 'torus' }] })).toBe(true);
+    expect(SH.supports({ ...ok, casters: [{ primitive: 'unknownNonConvex' }] })).toBe(false);
     expect(SH.supports({ ...ok, shadow: { ...SHADOW, shadowMode: 'inverse' } })).toBe(false);
   });
 

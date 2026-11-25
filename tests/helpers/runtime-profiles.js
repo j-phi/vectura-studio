@@ -62,6 +62,7 @@ const SCENE3D_FILES = Object.freeze([
   'src/core/scene3d/surface-lock-ladder.js',
   'src/core/scene3d/surface-lock-laws.js',
   'src/core/scene3d/surface-lock-faceted.js',
+  'src/core/scene3d/surface-lock-webs.js',
   'src/core/scene3d/surface-lock-visibility.js',
   'src/core/scene3d/surface-lock-shadow.js',
   'src/core/scene3d/surface-lock.js',

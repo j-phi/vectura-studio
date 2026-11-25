@@ -3040,9 +3040,21 @@
       // for a mezzo sphere): it composes nothing, keeps the previous ink on screen (owner Q4: no look flip) and has the worker
       // bake and compose this state; the bakes are adopted and the ink installed when it lands. A slider scrub therefore never
       // holds the main thread for a bake, and every tick after the first coalesces into one follow-up job.
+      // LOD (surface-lock contract A33): a Level S DRAG frame whose full bake is missing, for a law with a coarse form (voronoiWeb), is composed
+      // from the COARSE bake (built in a fraction of the time, so the drag stays live and follows the pose) while the full bake is built in the
+      // background (worker settle, else idle slices) and replaces it. The coarse ink is never memoised and never the settled / export frame.
+      let lodFrame = false;
+      if (isPreview && levelS && !memoHit && memoKey && !(options && (options.precomputed || options.captureJob || options.jobOnly)) && SETTINGS.sceneBakeLod !== false) {
+        const SLk = window.Vectura?.Scene3D?.SurfaceLock;
+        const missing = SLk && typeof SLk.canCoarse === 'function' ? this._sceneBakeMissing(group, assembled, baseBounds) : [];
+        if (missing.length && missing.some((sp) => SLk.canCoarse(sp))) {
+          lodFrame = true; bounds.lodDrag = true;
+          this._sceneLodFullBake(group, missing);
+        }
+      }
       const heldInk = group.scenePaths && group.scenePaths.length ? group.scenePaths : (holdCommit ? group._sceneInkPrev : null);
       if ((isPreview || holdCommit) && levelS && !memoHit && memoKey && !(options && (options.precomputed || options.captureJob || options.jobOnly))
-        && heldInk && heldInk.length && !group._sceneBakeOffFailed && !baseBounds.dragPreview && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
+        && !lodFrame && heldInk && heldInk.length && !group._sceneBakeOffFailed && !baseBounds.dragPreview && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
         group.scenePaths = heldInk;
         this.sceneComposeStats.bakeHolds += 1;
         this.sceneComposeStats.lastTier = 'hold';
@@ -3100,7 +3112,7 @@
           }
           // A fresh settled measurement re-arms the law tier for the next drag.
           group._sceneLastLawDraftMs = null;
-          if (memoKey && !failed) {
+          if (memoKey && !failed && !lodFrame) {
             this._sceneComposeMemo.set(group, pre && pre.packed
               ? { key: memoKey, modules, paths: null, lazy: pre.packed }
               : { key: memoKey, modules, paths: cloneScenePaths(paths) });
@@ -3121,7 +3133,8 @@
         : this._applySceneCurveFinish(paths, assembled, objectLayers, group);
       group.scenePaths = this._applyObjectDivisions(finished, objectLayers);
       group._sceneInkPrev = null;
-      if (tier === 'full') group._sceneSettledKey = memoKey;
+      group._sceneLodFrame = lodFrame;
+      if (tier === 'full') group._sceneSettledKey = lodFrame ? null : memoKey;
       // Lift the settled ink for the drag preview (null when the scene is not
       // warpable; never throws into the compose).
       if (tier === 'full') {
@@ -3157,6 +3170,23 @@
       const SLock = window.Vectura?.Scene3D?.SurfaceLock;
       if (!algo || typeof algo.levelSBakeSpecs !== 'function' || !SLock || typeof SLock.missingBakes !== 'function') return [];
       try { return SLock.missingBakes(algo.levelSBakeSpecs(assembled, bounds)); } catch (err) { return []; }
+    }
+
+    // The full bake behind a coarse LOD drag frame. Off-thread when a worker is available (the existing bake settle: its bakes are adopted into
+    // this cache), else one bake per idle slice (SurfaceLock.prewarm). When it lands the group is recomposed at the current pose, which now hits.
+    _sceneLodFullBake(group, missing) {
+      if (group._sceneLodBaking) return;
+      const SLk = window.Vectura?.Scene3D?.SurfaceLock;
+      const client = SETTINGS.sceneBakeOffThread === false ? null : this._sceneBakeClient();
+      const noiseImages = window.Vectura?.NOISE_IMAGES;
+      if (client && client.available() && !(noiseImages && Object.keys(noiseImages).length)) { this._scheduleBakeSettle(group); return; }
+      if (!SLk || typeof SLk.prewarm !== 'function') return;
+      group._sceneLodBaking = SLk.prewarm(missing, { done: () => {
+        group._sceneLodBaking = null;
+        if (!group._sceneLodFrame) return;
+        try { this._composeSceneGroup(group, { preview: true }); } catch (err) { /* the next frame recomposes */ }
+        this._notifySceneInk(group);
+      } });
     }
 
     // The worker client the preview bake settles run on: its own worker (never the release settle's, whose single in-flight job a
