@@ -6,24 +6,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-### Send to Plotter (docs)
-
-#### Added
-- **Send to Plotter.** `File > Send to Plotter...` streams the document to a UUNATEK 3.0 (GRBL / DrawCore) pen plotter from Chrome or Edge over Web Serial, with a plotter profile and driver registry, per-pen speed, height, dwell, passes, brush re-dip and path order, jog and calibration wizards, a bounds-checked console, and a Simulator. User guide: `docs/plotter-send.md`; documented in the README (new Send to Plotter feature group), the in-app Help Guide and the shortcut list (Machine tab keys).
-- **Send to Plotter guided flow (v2).** Tabs now follow a session (1 Connect, 2 Machine, 3 Setup, 4 Plot, then Console as Advanced) with status glyphs and auto-advance; a persistent header carries the live WPos readout, Connect/Disconnect and an EMERGENCY STOP (Space or Escape); a Next-step banner and a start-corner confirmation card guide the session; rarely used controls sit in collapsed Advanced sections. While anything moves, the jog dial centre becomes a stop sign. Press-and-hold jogs use a deadman (keep-alive, ends on wheel, leave, blur, key, tab hidden) and key auto-repeat is ignored. Controller safety methods (`emergencyStop`, `confirmMachineCorner`, jog handles) are feature-detected.
-
-### Fixed: Bottom pane tidy, and a Copy button for the Mathematical Model
-- **No more overlap in Document Overview.** The Distance / Lines / Est. Time grid and the Plot Physics table sat side by side in a row and ran into each other. They now stack in one right-aligned column, with the Plot Physics table capped at 420 px.
-- **Long values wrap.** A JSON value in the Values list (for example `N1.imageEffects`) no longer stretches the bottom pane sideways; it wraps inside its row.
-- **Copy the Mathematical Model.** A **Copy** button at the top right of the formula block copies the whole model as plain text: the formula lines, every Values row as `key: value`, and the seed. The button shows "Copied" for a moment (or "Copy failed" if the browser blocks the clipboard).
-
-### Fixed: big works get a Start Page plate; open several files at once
-- **Smaller .vectura files.** Noise-rack images were saved as one JSON number per pixel byte, so a Wavetable with two 2048×1143 photo images (statue.vectura) was 244 MB on disk and about 75 MB in memory. Images are now saved as lossless base64 RGBA (`encoding: 'rgba8-base64'`), and a byte-identical second image is written as `sameAs` (new `Vectura.ImageCodec`, `src/core/image-codec.js`). The same document is now about 13 MB. Old files still open; files saved in the new form do not open in older versions (an unknown `encoding` is skipped with a console warning).
-- **Large works keep a stored copy.** Recents compacts a document's images before measuring it against the 40 MB budget, so opening an old-format big file stores its copy and its plate draws. Save, Open, Recents and the Start Page art renderer all decode through the codec.
-- **A plate never collapses to a sliver.** A work with no stored copy but a raster thumbnail draws that thumbnail on its plate (`<image>` with an inline png/jpeg/webp data URL only; colorways do not recolor it and the stroke figures are left out). A work with nothing stored shows a visible plate: its name, "No preview stored for this work. Open the file again to refresh it." and Open.
-- **Open several projects at once.** File ▸ Open, the Start Page Open file… and drag and drop take several `.vectura` files. They open in order, each recorded as a work with its own thumbnail (one plate each); the last stays on the canvas. Unsaved changes are asked about once; unreadable files are skipped and named in one summary toast. In a mixed drop the projects open first, then the first `.svg` is imported.
-
-### Scene3D: surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching (v1.5.41)
+### Scene3D: surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching (v1.5.42)
 
 One release that finishes the surface-locked fills, anchors Etf Kang to the object and makes carved shapes read as carved solids. Saved scenes and presets keep their old look unless noted; every new key is written only when it is off its default.
 
@@ -43,6 +26,32 @@ One release that finishes the surface-locked fills, anchors Etf Kang to the obje
 #### Notes
 - Taper (`taperedEnds`) is not part of this release.
 - In-app help has a Wrap origin entry.
+
+### Fixed: flaky tests, and a group move-gizmo drag that could die silently
+- **Group move arrow (Scene 3D).** Grabbing the move arrow of a combined (boolean) shape creates its transform lazily, and an identity transform is dropped again on the next params normalize. If that happened between the grab and the first move, the drag was abandoned: nothing moved and no undo step was recorded. The drag now rebuilds the transform from its grab-time start (`src/render/renderer.js`), with a deterministic regression test.
+- **Deflaked tests.** Six tests that failed and passed on the same commit in CI now wait for the real condition or tolerate real variability, and each still fails when the feature breaks (mutation-checked):
+  - `target-audit-guards` clipping guard: the hack sets `transition:none` on the header, because under reduced motion its `max-width` cap started a 0.01 ms transition that WebKit sometimes measured mid-way (verified on real WebKit: 5/8 failing before, 25/25 passing after).
+  - Start Page "no idle rAF": polls until a full 2 s window is quiet instead of demanding a fixed window, so late settling passes and a never-ending rAF loop still fails.
+  - Start Page Developer Mode plates: waits for the plates reveal instead of a fixed 250 ms sleep.
+  - Scene3D boolean group gizmo e2e: waits for the arrow to hit-test and for the async compose to settle.
+  - Preset corpus `hyphae-sparse-roots`: the canary pins the hyphae seed; about 1.5% of random seeds start at the page edge and draw nothing (logged as PRH-141).
+
+### Send to Plotter (docs)
+
+#### Added
+- **Send to Plotter.** `File > Send to Plotter...` streams the document to a UUNATEK 3.0 (GRBL / DrawCore) pen plotter from Chrome or Edge over Web Serial, with a plotter profile and driver registry, per-pen speed, height, dwell, passes, brush re-dip and path order, jog and calibration wizards, a bounds-checked console, and a Simulator. User guide: `docs/plotter-send.md`; documented in the README (new Send to Plotter feature group), the in-app Help Guide and the shortcut list (Machine tab keys).
+- **Send to Plotter guided flow (v2).** Tabs now follow a session (1 Connect, 2 Machine, 3 Setup, 4 Plot, then Console as Advanced) with status glyphs and auto-advance; a persistent header carries the live WPos readout, Connect/Disconnect and an EMERGENCY STOP (Space or Escape); a Next-step banner and a start-corner confirmation card guide the session; rarely used controls sit in collapsed Advanced sections. While anything moves, the jog dial centre becomes a stop sign. Press-and-hold jogs use a deadman (keep-alive, ends on wheel, leave, blur, key, tab hidden) and key auto-repeat is ignored. Controller safety methods (`emergencyStop`, `confirmMachineCorner`, jog handles) are feature-detected.
+
+### Fixed: Bottom pane tidy, and a Copy button for the Mathematical Model
+- **No more overlap in Document Overview.** The Distance / Lines / Est. Time grid and the Plot Physics table sat side by side in a row and ran into each other. They now stack in one right-aligned column, with the Plot Physics table capped at 420 px.
+- **Long values wrap.** A JSON value in the Values list (for example `N1.imageEffects`) no longer stretches the bottom pane sideways; it wraps inside its row.
+- **Copy the Mathematical Model.** A **Copy** button at the top right of the formula block copies the whole model as plain text: the formula lines, every Values row as `key: value`, and the seed. The button shows "Copied" for a moment (or "Copy failed" if the browser blocks the clipboard).
+
+### Fixed: big works get a Start Page plate; open several files at once
+- **Smaller .vectura files.** Noise-rack images were saved as one JSON number per pixel byte, so a Wavetable with two 2048×1143 photo images (statue.vectura) was 244 MB on disk and about 75 MB in memory. Images are now saved as lossless base64 RGBA (`encoding: 'rgba8-base64'`), and a byte-identical second image is written as `sameAs` (new `Vectura.ImageCodec`, `src/core/image-codec.js`). The same document is now about 13 MB. Old files still open; files saved in the new form do not open in older versions (an unknown `encoding` is skipped with a console warning).
+- **Large works keep a stored copy.** Recents compacts a document's images before measuring it against the 40 MB budget, so opening an old-format big file stores its copy and its plate draws. Save, Open, Recents and the Start Page art renderer all decode through the codec.
+- **A plate never collapses to a sliver.** A work with no stored copy but a raster thumbnail draws that thumbnail on its plate (`<image>` with an inline png/jpeg/webp data URL only; colorways do not recolor it and the stroke figures are left out). A work with nothing stored shows a visible plate: its name, "No preview stored for this work. Open the file again to refresh it." and Open.
+- **Open several projects at once.** File ▸ Open, the Start Page Open file… and drag and drop take several `.vectura` files. They open in order, each recorded as a work with its own thumbnail (one plate each); the last stays on the canvas. Unsaved changes are asked about once; unreadable files are skipped and named in one summary toast. In a mixed drop the projects open first, then the first `.svg` is imported.
 
 ### Touch: Shading row target fix (v1.5.30)
 

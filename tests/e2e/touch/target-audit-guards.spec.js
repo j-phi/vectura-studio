@@ -37,7 +37,10 @@ test('guard: clipping overflow away is reported as worse via stranded @audit-ext
   const spec = PROJECTS[project];
   await boot(page, baseURL);
   const clean = await measure(page, spec, project);
-  const css = 'html,body{overflow-x:hidden !important;overflow-y:hidden !important} #app-header{overflow:hidden !important;max-width:120px !important}';
+  // transition:none: under reduced motion the app keeps `transition: all 0.00001s`, so the cap would start a
+  // max-width transition, and WebKit sometimes measures before the capped width lands (7 controls read as
+  // 1 px short instead of stranded: a flake on webkit-iphone-portrait). The guard is about clipping, not motion.
+  const css = 'html,body{overflow-x:hidden !important;overflow-y:hidden !important} #app-header{overflow:hidden !important;max-width:120px !important;transition:none !important}';
   await page.addStyleTag({ content: css });
   await core.waitLayoutSettled(page);
   const hacked = await measure(page, spec, project);
