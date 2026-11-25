@@ -6,6 +6,17 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Bottom pane tidy, and a Copy button for the Mathematical Model
+- **No more overlap in Document Overview.** The Distance / Lines / Est. Time grid and the Plot Physics table sat side by side in a row and ran into each other. They now stack in one right-aligned column, with the Plot Physics table capped at 420 px.
+- **Long values wrap.** A JSON value in the Values list (for example `N1.imageEffects`) no longer stretches the bottom pane sideways; it wraps inside its row.
+- **Copy the Mathematical Model.** A **Copy** button at the top right of the formula block copies the whole model as plain text: the formula lines, every Values row as `key: value`, and the seed. The button shows "Copied" for a moment (or "Copy failed" if the browser blocks the clipboard).
+
+### Fixed: big works get a Start Page plate; open several files at once
+- **Smaller .vectura files.** Noise-rack images were saved as one JSON number per pixel byte, so a Wavetable with two 2048×1143 photo images (statue.vectura) was 244 MB on disk and about 75 MB in memory. Images are now saved as lossless base64 RGBA (`encoding: 'rgba8-base64'`), and a byte-identical second image is written as `sameAs` (new `Vectura.ImageCodec`, `src/core/image-codec.js`). The same document is now about 13 MB. Old files still open; files saved in the new form do not open in older versions (an unknown `encoding` is skipped with a console warning).
+- **Large works keep a stored copy.** Recents compacts a document's images before measuring it against the 40 MB budget, so opening an old-format big file stores its copy and its plate draws. Save, Open, Recents and the Start Page art renderer all decode through the codec.
+- **A plate never collapses to a sliver.** A work with no stored copy but a raster thumbnail draws that thumbnail on its plate (`<image>` with an inline png/jpeg/webp data URL only; colorways do not recolor it and the stroke figures are left out). A work with nothing stored shows a visible plate: its name, "No preview stored for this work. Open the file again to refresh it." and Open.
+- **Open several projects at once.** File ▸ Open, the Start Page Open file… and drag and drop take several `.vectura` files. They open in order, each recorded as a work with its own thumbnail (one plate each); the last stays on the canvas. Unsaved changes are asked about once; unreadable files are skipped and named in one summary toast. In a mixed drop the projects open first, then the first `.svg` is imported.
+
 ### Touch: Shading row target fix (v1.5.30)
 
 #### Fixed

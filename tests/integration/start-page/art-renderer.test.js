@@ -61,6 +61,24 @@ describe('StartPageArtRenderer', () => {
     expect(liveState()).toBe(before);
   });
 
+  test('loads compact (base64 + sameAs) noise images before importing the document', async () => {
+    const doc = makeDoc();
+    const px = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 255]);
+    doc.images = V.ImageCodec.encodeAll({
+      'noise-c-1': { width: 2, height: 1, data: px },
+      'noise-c-2': { width: 2, height: 1, data: new Uint8ClampedArray(px) },
+    });
+    expect(doc.images['noise-c-2'].sameAs).toBe('noise-c-1');
+    const seen = {};
+    const spy = vi.spyOn(V.VectorEngine.prototype, 'importState').mockImplementation(function importSpy(...args) {
+      ['noise-c-1', 'noise-c-2'].forEach((id) => { seen[id] = V.NOISE_IMAGES[id] && Array.from(V.NOISE_IMAGES[id].data); });
+    });
+    try { await R.renderDocument(doc).catch(() => {}); } finally { spy.mockRestore(); }
+    expect(seen['noise-c-1']).toEqual([10, 20, 30, 255, 40, 50, 60, 255]);
+    expect(seen['noise-c-2']).toEqual([10, 20, 30, 255, 40, 50, 60, 255]);
+    expect(V.NOISE_IMAGES['noise-c-1']).toBeUndefined();
+  });
+
   test('leaves SETTINGS, the live engine and NOISE_IMAGES untouched when a render succeeds', async () => {
     const live = new V.VectorEngine();
     live.addLayer('lissajous');

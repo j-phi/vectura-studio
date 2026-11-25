@@ -23,6 +23,7 @@ const loadModules = () => {
     removeEventListener: (t, fn) => { listeners.set(t, (listeners.get(t) || []).filter((f) => f !== fn)); },
     CustomEvent: class { constructor(type) { this.type = type; } },
     get indexedDB() { return idbHolder.idb; },
+    atob: (b) => Buffer.from(b, 'base64').toString('latin1'),
   };
   win.window = win;
   const ctx = vm.createContext({ window: win, structuredClone, JSON, Promise, Map, Set, Date, Math, Error, Object, Array });
@@ -206,6 +207,37 @@ describe('StartPageArtSource', () => {
     expect(flat.sceneId).toBeUndefined(); // not a 3D work: its document is never read for a scene
     const recent = await mkSource().listRecentFirst();
     expect(recent.find((a) => a.name === 'cube').sceneId).toBe(cube.sceneId);
+  });
+
+  describe('a work with no stored document copy', () => {
+    const pngUrl = (w, h) => {
+      const b = Buffer.alloc(40);
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+      b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20);
+      return `data:image/png;base64,${b.toString('base64')}`;
+    };
+    const workWith = async (thumb) => {
+      await store.record({ name: 'statue.vectura', algorithm: 'Rings', pens: [], thumb, payload: doc(1), source: 'open' });
+      store.getDoc = async () => null; // the document was over the recents budget: nothing stored
+      const works = (await mkSource().list()).filter((a) => a.kind === 'work');
+      return works[0];
+    };
+
+    it('draws its PNG thumbnail as an <image> at the thumbnail aspect', async () => {
+      const url = pngUrl(40, 20);
+      const art = await (await workWith({ kind: 'png', data: url })).getSvg();
+      expect(art).toMatch(/^<svg\b[^>]*viewBox="0 0 40 20"/);
+      expect(art).toContain(`<image x="0" y="0" width="40" height="20" href="${url}"/>`);
+      expect(renders.doc).toBe(0);
+    });
+
+    it('still rejects with nothing to draw when there is no raster thumbnail', async () => {
+      await expect((await workWith(null)).getSvg()).rejects.toThrow(/no stored copy/);
+    });
+
+    it('never wraps a non-image data URL', async () => {
+      await expect((await workWith({ kind: 'png', data: 'data:text/html;base64,AAAA' })).getSvg()).rejects.toThrow(/no stored copy/);
+    });
   });
 });
 

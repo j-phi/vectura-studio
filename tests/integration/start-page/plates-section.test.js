@@ -24,6 +24,7 @@ describe('Start Page plates section', () => {
     V = window.Vectura;
     SETTINGS = V.SETTINGS;
     calls = { open: [], editor: [], fan: [], arrange: [], cover: [], mount: [], frame: [] };
+    if (typeof arts === 'function') arts = await arts(V.StartPageArtSource); // the real art source, before it is stubbed
     curArts = arts;
     V.StartPageInk = {
       isStill: () => false, setMotion() {}, finish() {}, unmount() {}, drawIn: () => Promise.resolve({}),
@@ -455,6 +456,35 @@ describe('Start Page plates section', () => {
       rawClick(window, art); // no recent gesture: keyboard / assistive activation
       await tick(60);
       expect(calls.open).toHaveLength(2);
+    });
+  });
+
+  describe('works with no stored document copy', () => {
+    const PNG = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0, 0, 128, 8, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).toString('base64')}`;
+    const realWorks = (entries) => async (Real) => {
+      const src = Real.create({ store: { listWorks: async () => entries, getDoc: async () => null }, renderer: { renderDocument: async () => { throw new Error('unused'); }, renderPreset: async () => { throw new Error('unused'); } }, presets: [], picks: { STUDIO_PICKS: [] }, version: 't' });
+      return (await src.list()).filter((a) => a.kind === 'work');
+    };
+    const entry = (id, thumb) => ({ id, name: `${id}.vectura`, algorithm: 'Rings', pens: [], thumb, hasDoc: false, addedAt: 1, lastOpened: 2 });
+
+    test('a PNG-thumbnail work still gets a ready plate, without stroke figures', async () => {
+      await boot({ arts: realWorks([entry('statue', { kind: 'png', data: PNG })]) });
+      const pl = q('.sp-pl[data-plate-id="work:statue"]');
+      expect(pl.dataset.state).toBe('ready');
+      expect(calls.mount[0].art.svg).toContain('<image');
+      expect(pl.textContent).not.toMatch(/Strokes|Plot time/);
+    });
+
+    test('a work with nothing stored shows a visible message and an Open button, not a collapsed sliver', async () => {
+      await boot({ arts: realWorks([entry('ghost', null)]) });
+      const pl = q('.sp-pl[data-plate-id="work:ghost"]');
+      expect(pl.dataset.state).toBe('missing');
+      expect(pl.textContent).toMatch(/No preview stored for this work/);
+      const open = pl.querySelector('.sp-pl-missing button');
+      expect(open).toBeTruthy();
+      click(open);
+      await tick(30);
+      expect(calls.open).toHaveLength(1);
     });
   });
 });
