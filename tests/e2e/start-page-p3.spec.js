@@ -130,13 +130,13 @@ test.describe('Start Page P3', () => {
   test('no idle rAF: with the pointer idle and nothing animating, the page schedules no frames (Still off or on)', async ({ page }) => {
     await bootWithWorks(page);
     const count = (ms) => page.evaluate((t) => new Promise((res) => {
-      let n = 0; const orig = window.requestAnimationFrame;
-      window.requestAnimationFrame = function (cb) { n += 1; return orig.call(window, cb); };
+      let n = 0; const orig = window.requestAnimationFrame; window.__st = {};
+      window.requestAnimationFrame = function (cb) { n += 1; const k = (new Error().stack || '').split('\n').slice(2, 6).join(' | ').replace(/http:\/\/[^/]+\//g, ''); window.__st[k] = (window.__st[k] || 0) + 1; return orig.call(window, cb); };
       setTimeout(() => { window.requestAnimationFrame = orig; res(n); }, t);
     }), ms);
     // settled = a whole window passes with (almost) no frames; poll for it instead of guessing how long the draw-ins take
     await expect.poll(() => count(1000), { timeout: 30000, intervals: [250] }).toBeLessThanOrEqual(4);
-    expect(await count(2000)).toBeLessThanOrEqual(4);
+    { const c = await count(2000); const st = JSON.stringify(await page.evaluate(() => window.__st)); expect(c, 'DIAG ' + st).toBeLessThanOrEqual(4); }
     await page.locator('#sp-motion-btn').click();
     await expect.poll(() => count(1000), { timeout: 15000, intervals: [250] }).toBe(0);
     expect(await count(2000)).toBe(0);
