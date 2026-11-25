@@ -104,7 +104,7 @@
     return u;
   };
   const trimNum = (n, d) => String(Number(n.toFixed(d)));
-  const inchDecimals = (precision) => (precision > 0 ? 2 : 1);
+  const inchDecimals = (precision) => (precision >= 2 ? 4 : precision > 0 ? 2 : 1);
   // [mm text, in text] for one or several values, no units attached.
   const lenPair = (vals, precision) => ({
     mm: vals.map((v) => trimNum(v, precision)).join(' \u00d7 '),
@@ -115,6 +115,17 @@
     const t = lenPair([w, hh], precision);
     return unitsMode() === 'imperial' ? `${t.inch} in (${t.mm} mm)` : `${t.mm} mm (${t.inch} in)`;
   };
+  const fmtDims = (arr, o) => {
+    const precision = o && isNum(o.precision) ? o.precision : 0;
+    const t = lenPair(arr, precision);
+    return unitsMode() === 'imperial' ? `${t.inch} in (${t.mm} mm)` : `${t.mm} mm (${t.inch} in)`;
+  };
+  const dualText = (metric, imperial) => (unitsMode() === 'imperial' ? `${imperial} (${metric})` : `${metric} (${imperial})`);
+  const fmtFeed = (mmMin) => dualText(`${trimNum(mmMin, 0)} mm/min`, `${trimNum(mmMin / MM_PER_IN, 0)} in/min`);
+  const fmtAccel = (a) => dualText(`${trimNum(a, 0)} mm/s\u00b2`, `${trimNum(a / MM_PER_IN, 0)} in/s\u00b2`);
+  const fmtMass = (kg) => dualText(`${trimNum(kg, 2)} kg`, `${(kg * 2.20462262).toFixed(2)} lb`);
+  const cToF = (c) => (c * 9) / 5 + 32;
+  const fmtTempRange = (t) => dualText(`${t.min} \u00b0C to ${t.max} \u00b0C`, `${trimNum(cToF(t.min), 0)} \u00b0F to ${trimNum(cToF(t.max), 0)} \u00b0F`);
   const fmtLen = (mm, o) => {
     if (!isNum(mm)) return '–';
     const precision = o && isNum(o.precision) ? o.precision : 0;
@@ -1770,6 +1781,7 @@
         h('span', { class: 'stp-hint', text: sizeText(cur) }),
         h('span', { class: `stp-badge is-${curKind}`, text: kindText(curKind) }),
         h('span', { class: 'stp-spacer' }),
+        cur.specs ? btn('\u24d8 Specs', () => this.openSpecs(cur, 'row'), '', { id: 'stp-specs-btn', title: `Manufacturer specifications for ${cur.name}`, 'aria-label': `Specifications for ${cur.name}`, dataset: { specsFor: cur.id } }) : null,
         btn(this.s.profilePicker ? 'Done' : 'Change', () => { this.s.profilePicker = !this.s.profilePicker; this.renderConnect(); }, '', { id: 'stp-change-profile', disabled: !!c, title: c ? 'Disconnect to change the plotter profile' : null, 'aria-expanded': String(!!this.s.profilePicker) }));
       const profSec = section('Plotter', selRow);
       if (this.s.profilePicker && !c) {
@@ -1777,7 +1789,7 @@
         profiles.forEach((p) => {
           const kind = kindOf(p);
           const selected = p.id === cur.id;
-          cards.appendChild(h('button', {
+          const cardBtn = h('button', {
             type: 'button', class: `stp-card${selected ? ' is-current' : ''}`, role: 'radio', 'aria-checked': String(selected),
             style: `--stp-card-color:${CARD_COLORS[kind]}`, dataset: { profileId: p.id },
             onclick: () => { this.saveSettings({ profileId: p.id }); this.s.profileErrors = null; this.s.profilePicker = false; this.renderConnect(); this.renderHeader(); this.previews.forEach((x) => x.invalidate()); },
@@ -1786,7 +1798,9 @@
           h('span', { class: 'stp-card-name' }, h('i', { class: 'stp-card-dot' }), p.name),
           h('span', { class: 'stp-card-tag', text: sizeText(p) }),
           h('span', { class: `stp-badge is-${kind}`, text: kindText(kind) }),
-          h('span', { class: 'stp-current-marker', text: 'SELECTED' })));
+          h('span', { class: 'stp-current-marker', text: 'SELECTED' }));
+          cards.appendChild(h('div', { class: 'stp-cardwrap' }, cardBtn,
+            p.specs ? btn('\u24d8', () => this.openSpecs(p, 'card'), 'stp-card-specs', { title: `Manufacturer specifications for ${p.name}`, 'aria-label': `Specifications for ${p.name}`, dataset: { specsFor: p.id } }) : null));
         });
         profSec.appendChild(cards);
       }
@@ -1795,6 +1809,104 @@
       el.appendChild(this.connectionSection(c, supported, cur));
       el.appendChild(adv('profile', 'Profile settings', this.profileTools(cur, !!c)));
       el.scrollTop = keepScroll;
+    },
+
+    // ---- manufacturer specs panel (read-only; display of the vendor's claims) ----
+    openSpecs(profile, kind) {
+      if (!profile || !profile.specs) return;
+      this.closeSpecs(false);
+      const sp = profile.specs;
+      const c = liveController();
+      const fw = (c && c.fw) || {};
+      const fwVals = (ids) => ids.map((n) => (isNum(fw[n]) ? fmtN(fw[n], 0) : '\u2014')).join(' / ');
+      const dl = (rows) => h('dl', { class: 'stp-spec-list' }, ...rows.filter(Boolean).flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]));
+      const sec = (title, ...kids) => h('section', { class: 'stp-spec-sec' }, h('h3', { class: 'stp-spec-h', text: title }), ...kids);
+      const perf = sp.performance || {}; const tool = sp.tool || {}; const phys = sp.physical || {}; const el = sp.electronics || {}; const sw = sp.software || {};
+      const body = h('div', { class: 'stp-spec-body' });
+      body.appendChild(sec('Performance & precision', dl([
+        ...(perf.repeatAccuracy || []).map((r) => [`Repeat positioning accuracy, ${r.label}`, `\u00b1${fmtLen(r.mm, { precision: 2 })}`]),
+        isNum(perf.maxWritingSpeedMmMin) ? ['Max writing speed (X/Y/Z)', fmtFeed(perf.maxWritingSpeedMmMin)] : null,
+        perf.sizesAvailable ? ['Sizes available', perf.sizesAvailable] : null,
+        perf.noise ? ['Noise', perf.noise] : null,
+      ])));
+      body.appendChild(sec('Tool & hardware', dl([
+        isNum(tool.maxWritingThicknessMm) ? ['Max writing thickness', `${fmtLen(tool.maxWritingThicknessMm, { precision: 1 })}${isNum(tool.maxWritingThicknessModifiedMm) ? `, up to ${fmtLen(tool.maxWritingThicknessModifiedMm, { precision: 1 })} with modification` : ''}`] : null,
+        isNum(tool.penDiameterMaxMm) ? ['Pen diameter', `Up to ${fmtLen(tool.penDiameterMaxMm, { precision: 1 })}`] : null,
+        tool.penAngleDeg ? ['Adjustable pen angle', `${tool.penAngleDeg.min}\u00b0\u2013${tool.penAngleDeg.max}\u00b0${tool.penAngleNote ? ` (${tool.penAngleNote.toLowerCase()})` : ''}`] : null,
+        tool.motors ? ['Stepper motors', `X: ${tool.motors.x}; Y: ${tool.motors.y}; Z: ${tool.motors.z}`] : null,
+        tool.limitSwitches ? ['Limit switches', tool.limitSwitches] : null,
+        tool.laser ? ['Laser', tool.laser] : null,
+      ]), h('p', { class: 'stp-hint', text: 'Limit switches: integrated \u2014 Vectura only homes when the firmware reports homing enabled ($22=1).' })));
+      body.appendChild(sec('Physical (this model)', dl([
+        phys.writingAreaMm ? ['Writing area', fmtSize(phys.writingAreaMm.width, phys.writingAreaMm.height)] : null,
+        phys.paperEquivalents ? ['Paper equivalents', phys.paperEquivalents] : null,
+        phys.productMm ? ['Product size (L \u00d7 W \u00d7 H)', fmtDims([phys.productMm.l, phys.productMm.w, phys.productMm.h])] : null,
+        phys.tableMm ? ['Recommended table (L \u00d7 W)', fmtDims([phys.tableMm.l, phys.tableMm.w])] : null,
+        phys.packageMm ? ['Package (L \u00d7 W \u00d7 H)', fmtDims([phys.packageMm.l, phys.packageMm.w, phys.packageMm.h])] : null,
+        isNum(phys.netWeightKg) ? ['Net weight', fmtMass(phys.netWeightKg)] : null,
+      ])));
+      body.appendChild(sec('Electronics & power', dl([
+        el.frame ? ['Frame', el.frame] : null,
+        el.basePlate ? ['Base plate', el.basePlate] : null,
+        el.board ? ['Motherboard', el.board] : null,
+        isNum(el.ratedPowerW) ? ['Rated power', `${el.ratedPowerW} W${el.ratedPowerNote ? ` (${el.ratedPowerNote})` : ''}`] : null,
+        el.operatingVoltage ? ['Operating voltage', el.operatingVoltage] : null,
+        el.adapterInput ? ['Adapter input', el.adapterInput] : null,
+        el.adapterOutput ? ['Adapter output', el.adapterOutput] : null,
+        el.operatingTempC ? ['Operating temperature', fmtTempRange(el.operatingTempC)] : null,
+        el.design ? ['Design & build', el.design] : null,
+      ])));
+      body.appendChild(sec('Software & control', dl([
+        sw.controlSoftware ? ['Control software', sw.controlSoftware.join(', ')] : null,
+        sw.os ? ['Operating systems', sw.os] : null,
+        sw.connectivity ? ['Connectivity', sw.connectivity] : null,
+        sw.memoryCard ? ['Memory card', sw.memoryCard] : null,
+        sw.protocol ? ['Control protocol', sw.protocol] : null,
+        sw.fileFormats ? ['File formats', sw.fileFormats.join(', ')] : null,
+      ])));
+      if (Array.isArray(sp.speedModes) && sp.speedModes.length) {
+        const table = h('table', { class: 'stp-spec-speeds', id: 'stp-spec-speeds' },
+          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Mode' }), ...['X', 'Y', 'Z'].map((a) => h('th', { scope: 'col', text: `${a} max speed / acceleration` })))),
+          h('tbody', {}, ...sp.speedModes.map((m) => h('tr', {},
+            h('th', { scope: 'row' }, h('strong', { text: m.name }), m.note ? h('span', { class: 'stp-hint', text: m.note }) : null),
+            ...['x', 'y', 'z'].map((a) => h('td', {}, h('span', { text: fmtFeed(m.axes[a].maxFeed) }), h('span', { text: fmtAccel(m.axes[a].maxAccel) })))))));
+        const cap = profile.limits && isNum(profile.limits.maxFeedXY) ? profile.limits.maxFeedXY : null;
+        body.appendChild(sec('Speed modes', table,
+          h('p', { class: 'stp-hint', id: 'stp-spec-fw', text: `Your plotter's firmware: max rates $110/$111/$112 = ${fwVals([110, 111, 112])}, acceleration $120/$121/$122 = ${fwVals([120, 121, 122])}` }),
+          h('p', { class: 'stp-hint', text: `Vectura never changes firmware speed or acceleration settings. Its own limits stay at or below your firmware's rates${cap ? ` (currently capped at ${fmtFeed(cap)} for safety)` : ''}.` })));
+      }
+      body.appendChild(h('p', { class: 'stp-hint stp-spec-foot', text: `Source: ${sp.source || 'Manufacturer'}. ${sp.note || ''}` }));
+      const closeBtn = btn('Close', () => this.closeSpecs(true), 'is-primary', { id: 'stp-specs-close' });
+      const dlg = h('div', { class: 'stp-specs', id: 'stp-specs', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${profile.name} specifications`, tabindex: '-1' },
+        h('div', { class: 'stp-specs-card' },
+          h('div', { class: 'stp-specs-head' }, h('strong', { class: 'stp-specs-title', text: `${profile.name} \u2014 specifications` }), h('span', { class: 'stp-spacer' }), closeBtn),
+          body));
+      dlg.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') { e.preventDefault(); this.closeSpecs(true); return; }
+        if (e.key === 'Tab') { // keep focus inside the dialog
+          const f = Array.from(dlg.querySelectorAll('button, [tabindex="0"]'));
+          if (!f.length) return;
+          const first = f[0]; const last = f[f.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      });
+      this.specsOpener = { id: profile.id, kind };
+      this.root.appendChild(dlg);
+      closeBtn.focus();
+    },
+
+    closeSpecs(restoreFocus) {
+      const d = this.root && this.root.querySelector('#stp-specs');
+      if (d) d.remove();
+      const o = this.specsOpener;
+      this.specsOpener = null;
+      if (restoreFocus && o) {
+        const sel = o.kind === 'row' ? `#stp-specs-btn[data-specs-for="${o.id}"]` : `.stp-card-specs[data-specs-for="${o.id}"]`;
+        const b = this.root.querySelector(sel) || this.root.querySelector('#stp-specs-btn');
+        if (b && typeof b.focus === 'function') b.focus();
+      }
     },
 
     profileTools(cur, connected) {
@@ -2557,6 +2669,8 @@
     connectSession,
     disconnectSession,
     fmtLen,
+    fmtDims,
+    fmtFeed,
     fmtSize,
     fmtDist,
     simOptions: null,

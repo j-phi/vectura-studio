@@ -19369,3 +19369,22 @@ textarea.stp-in { height: auto; padding: 10px 12px; font-family: var(--font-mono
 .stp-root .sw-toggle input:checked ~ .sw-thumb { transform: translateX(24px); }
 @container stp (max-width: 860px) { .stp-rail-div { width: 1px; height: auto; margin: 4px 6px; } .stp-tab-sub { display: none; } .stp-head { overflow-x: auto; } }
 /* ==== end Send to Plotter ==== */
+
+/* Send to Plotter: manufacturer specs dialog (read-only) and the card info button */
+.stp-root { position: relative; }
+.stp-cardwrap { position: relative; display: flex; min-width: 0; }
+.stp-cardwrap > .stp-card { flex: 1; min-width: 0; }
+.stp-card-specs { position: absolute; top: 4px; right: 4px; min-width: 36px; min-height: 36px; border: 1px solid var(--ui-border); border-radius: 50%; background: var(--ui-panel, var(--ui-ctrl)); color: var(--ui-text-2); font-size: 18px; line-height: 1; cursor: pointer; }
+.stp-card-specs:hover, .stp-card-specs:focus-visible { border-color: var(--ui-accent); color: var(--ui-text); }
+.stp-specs { position: absolute; inset: 0; z-index: 30; display: flex; align-items: stretch; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.55); }
+.stp-specs-card { display: flex; flex-direction: column; width: min(100%, 1000px); min-height: 0; background: var(--ui-panel, var(--ui-bg)); border: 1px solid var(--ui-border); border-radius: var(--radius-md); }
+.stp-specs-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--ui-border); }
+.stp-specs-title { font-size: calc(var(--stp-font) + 2px); }
+.stp-spec-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 16px 16px; }
+.stp-spec-h { margin: 14px 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ui-text-2); }
+.stp-spec-list { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 6px 16px; margin: 0; }
+.stp-spec-list dt { color: var(--ui-text-2); }
+.stp-spec-list dd { margin: 0; color: var(--ui-text); }
+.stp-spec-speeds { width: 100%; border-collapse: collapse; }
+.stp-spec-speeds th, .stp-spec-speeds td { padding: 6px 8px; border-bottom: 1px solid var(--ui-border); text-align: left; vertical-align: top; }
+.stp-spec-speeds td span, .stp-spec-speeds th span { display: block; }

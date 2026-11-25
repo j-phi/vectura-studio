@@ -452,4 +452,65 @@ describe('Send to Plotter v2 flow', () => {
       expect(document.getElementById('stp-banner-text').textContent).toMatch(/origin/i);
     });
   });
+
+  describe('manufacturer specs panel', () => {
+    const panelEl = () => document.getElementById('stp-specs');
+    const profileId = () => STP.getPanel().profile().id;
+
+    test('opens from the summary row, renders dual units and the speed table, closes with Escape and restores focus', () => {
+      const S = window.Vectura.SETTINGS; const prev = S.documentUnits;
+      try {
+        S.documentUnits = 'metric';
+        const btn = document.getElementById('stp-specs-btn');
+        expect(btn).toBeTruthy();
+        btn.focus();
+        click('#stp-specs-btn');
+        expect(panelEl()).toBeTruthy();
+        expect(panelEl().getAttribute('role')).toBe('dialog');
+        const t = panelEl().textContent;
+        ['Performance & precision', 'Tool & hardware', 'Physical', 'Electronics & power', 'Software & control', 'Speed modes'].forEach((h) => expect(t).toContain(h));
+        expect(t).toMatch(/420 \u00d7 297 mm \(16\.5 \u00d7 11\.7 in\)/);
+        expect(t).toMatch(/11 kg \(24\.\d+ lb\)/);
+        expect(t).toMatch(/-20 \u00b0C to 55 \u00b0C \(-4 \u00b0F to 131 \u00b0F\)/);
+        expect(t).toMatch(/\$22=1/);
+        expect(t).toMatch(/Vectura never changes firmware speed or acceleration/);
+        expect(t).toMatch(/High-speed writing mode/);
+        expect(t).toMatch(/20000 mm\/min \(787 in\/min\)/);
+        expect(t).toMatch(/6000 mm\/s\u00b2/);
+        expect(t).toMatch(/\$110\/\$111\/\$112 = \u2014/); // disconnected: no firmware values
+        S.documentUnits = 'imperial';
+        click('#stp-specs-close');
+        click('#stp-specs-btn');
+        expect(panelEl().textContent).toMatch(/16\.5 \u00d7 11\.7 in \(420 \u00d7 297 mm\)/);
+        key(panelEl(), 'Escape');
+        expect(panelEl()).toBeNull();
+        expect(document.activeElement).toBe(document.getElementById('stp-specs-btn'));
+      } finally { S.documentUnits = prev; document.getElementById('stp-specs')?.remove(); }
+    });
+
+    test('opens from a profile card and the Close button restores focus to that card button', () => {
+      click('#stp-change-profile');
+      const b = document.querySelector(`.stp-card-specs[data-specs-for="${profileId()}"]`);
+      expect(b).toBeTruthy();
+      b.focus();
+      click(`.stp-card-specs[data-specs-for="${profileId()}"]`);
+      expect(panelEl()).toBeTruthy();
+      click('#stp-specs-close');
+      expect(panelEl()).toBeNull();
+      expect(document.activeElement).toBe(document.querySelector(`.stp-card-specs[data-specs-for="${profileId()}"]`));
+      expect(document.querySelector('.stp-card-specs[data-specs-for="generic-grbl-servo"]')).toBeNull();
+      click('#stp-change-profile');
+    });
+
+    test('firmware comparison line shows simulated $$ values when connected', async () => {
+      const c = await connectSim();
+      c.confirmMachineCorner && c.confirmMachineCorner();
+      click('#stp-specs-btn');
+      const t = panelEl().textContent;
+      expect(t).toMatch(/\$110\/\$111\/\$112 = 11000 \/ 11000 \/ 5000/);
+      expect(t).toMatch(/\$120\/\$121\/\$122 = 2000 \/ 2000 \/ 2000/);
+      expect(t).toMatch(/currently capped at 11000 mm\/min/);
+      click('#stp-specs-close');
+    });
+  });
 });
