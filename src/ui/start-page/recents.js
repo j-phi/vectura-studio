@@ -13,7 +13,7 @@
   const Vectura = G.Vectura = G.Vectura || {};
   const UI = Vectura.UI = Vectura.UI || {};
 
-  const SVG_LIMIT = 250 * 1024; // beyond this the thumbnail is a 512 px PNG instead
+  const SVG_LIMIT = 250 * 1024; // beyond this the thumbnail is a 512 px PNG instead (plus a reduced-fidelity plate-lines SVG for the plates)
   const PNG_SIZE = 512;
   const MENU_MAX_DIGITS = 8;
 
@@ -124,17 +124,26 @@
       return { paperColor: hexOf(S.paper?.color) || hexOf(S.bgColor), inkColor: hexOf(pen && pen.color) };
     };
 
+    // { thumb, plate }. A drawing too big to keep as an SVG thumbnail still gets the 512 px PNG (the Recents menu and rails use
+    // it) AND a display-only plate-lines SVG (flattened, simplified, low precision; see core/start-page/plate-lines.js) that
+    // the plates draw and animate instead of the blurry PNG. The plate is never an edit or export source.
     const buildThumb = async () => {
+      const none = { thumb: null, plate: null };
       try {
         const doc = app.ui?.buildSvgDocument?.();
-        if (!doc || !doc.svg) return null;
+        if (!doc || !doc.svg) return none;
         const paper = Vectura.SETTINGS?.paper?.color || Vectura.SETTINGS?.bgColor;
         const svg = thumbSvg(doc.svg, paper);
-        if (svg.length <= SVG_LIMIT) return { kind: 'svg', data: svg };
+        if (svg.length <= SVG_LIMIT) return { thumb: { kind: 'svg', data: svg }, plate: null };
         const png = await svgToPng(svg);
-        return png ? { kind: 'png', data: png } : null;
+        let plate = null;
+        try {
+          const lines = Vectura.StartPagePlateLines?.build?.(doc.svg, { paperColor: paper });
+          if (lines && lines.svg) plate = { kind: 'svg', data: lines.svg };
+        } catch (_) { plate = null; }
+        return { thumb: png ? { kind: 'png', data: png } : null, plate };
       } catch (err) {
-        return null;
+        return none;
       }
     };
 
@@ -177,17 +186,17 @@
       },
 
       /** Record the document the editor holds right now. */
-      async record({ source = 'open', name, handle = null, payload = null, id, forceNew = false, algorithm, paper, pens, thumb: thumbOverride, paperColor, inkColor } = {}) {
+      async record({ source = 'open', name, handle = null, payload = null, id, forceNew = false, algorithm, paper, pens, thumb: thumbOverride, plate: plateOverride, paperColor, inkColor } = {}) {
         if (!store) return null;
         try {
           const doc = payload || { type: 'vectura', version: app.ui?.getAppVersion?.() || '', state: app.captureState(), images: {} };
           if (doc.state) delete doc.state.layerLockedIds;
-          const thumb = thumbOverride !== undefined ? thumbOverride : await buildThumb();
+          const { thumb, plate } = thumbOverride !== undefined ? { thumb: thumbOverride, plate: plateOverride || null } : await buildThumb();
           const own = ownColors();
           const entry = await store.record({
             name: name || 'untitled.vectura', algorithm: algorithm || algorithmLabel(), paper: paper || paperLabel(), pens: pens || pensSummary(),
             paperColor: paperColor || own.paperColor, inkColor: inkColor || own.inkColor,
-            thumb, payload: doc, handle: handle || undefined, source, id, forceNew,
+            thumb, plate, payload: doc, handle: handle || undefined, source, id, forceNew,
           });
           if (entry && entry.id) app.currentRecentId = entry.id;
           await ctl.refresh({ ifStale: true });
@@ -196,6 +205,24 @@
           console.warn('[Recents] record failed', err);
           return null;
         }
+      },
+
+      /**
+       * Lazily start the ONE-TIME plate backfill (core/start-page/plate-backfill.js) for entries saved before plate lines
+       * existed. Never under automation or jsdom, and a no-op without the backfill module, the art renderer or a store.
+       * Idle-scheduled, one entry at a time; returns the timer (tests may clear it) or null.
+       */
+      scheduleBackfill() {
+        try {
+          const B = Vectura.StartPagePlateBackfill;
+          const nav = typeof navigator !== 'undefined' ? navigator : null;
+          if (!store || !B || !Vectura.StartPageArtRenderer || !Vectura.StartPagePlateLines) return null;
+          if (nav && (nav.webdriver === true || /jsdom/i.test(nav.userAgent || ''))) return null;
+          const delay = Vectura.START_PAGE?.LIMITS?.plateBackfillDelayMs ?? 4000;
+          return setTimeout(() => {
+            B.run({ store }).catch((err) => console.warn('[PlateBackfill] failed', err));
+          }, delay);
+        } catch (_) { return null; }
       },
 
       /** Reopen an entry: its file handle first, the stored copy otherwise. */

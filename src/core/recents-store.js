@@ -4,7 +4,7 @@
  * Browser-local history of opened/saved documents for the Start Page and
  * File > Open Recent. Bulky data lives in IndexedDB (database `vectura-start`),
  * independent of the cookie-preference setting:
- *   entries  { id, name, hash, algorithm, paper, paperColor, inkColor, pens, thumb, addedAt, lastOpened, cleared, hasDoc, hasHandle, bytes, source }
+ *   entries  { id, name, hash, algorithm, paper, paperColor, inkColor, pens, thumb, plate, addedAt, lastOpened, cleared, hasDoc, hasHandle, bytes, source }
  *   docs     { id, payload }     full parsed .vectura object, dropped oldest-first when over budget
  *   handles  { id, handle }      FileSystemFileHandle (Chromium only)
  * When IndexedDB is missing or throws, the same API runs from memory.
@@ -13,9 +13,14 @@
  *   await store.record({ name, algorithm, paper, pens, thumb, payload, handle?, source }) -> entry
  *   await store.list({ limit, includeCleared }) | listWorks() | get(id) | getDoc(id) | getHandle(id)
  *   await store.clearRecent() -> token ; await store.undoClear(token) ; await store.remove(id)
+ *   await store.setPlate(id, plate, { onlyIfAbsent, notify }) -> bool   (plate only; nothing else on the entry changes)
+ *   await store.notifyChanged() ; await store.getMeta(key) / setMeta(key, value)   (small records, e.g. the plate backfill marker)
  *   store.subscribe(fn) -> unsubscribe   (also dispatches window event 'vectura:recents-changed')
  *
- * Entries are never evicted by count: past `entriesMax` only the oldest entries' thumbnails are dropped. A failed
+ * `plate` is optional ({ kind: 'svg', data }, null when absent): a DISPLAY-ONLY reduced-fidelity vector copy of a dense work
+ * that the Start Page draws and animates in place of a PNG thumbnail (never an edit or export source; the stored document is).
+ *
+ * Entries are never evicted by count: past `entriesMax` only the oldest entries' thumbnails (and plates) are dropped. A failed
  * storage write calls opts.onWriteFailure() once.
  *
  * Every method is async and never rejects for storage failures. Mutations are
@@ -25,7 +30,7 @@
   const G = (typeof window !== 'undefined' ? window : globalThis);
   const Vectura = G.Vectura = G.Vectura || {};
 
-  const FALLBACK_LIMITS = { recentsShown: 8, entriesMax: 48, docsMaxBytes: 40 * 1024 * 1024 };
+  const FALLBACK_LIMITS = { recentsShown: 8, entriesMax: 48, docsMaxBytes: 40 * 1024 * 1024, plateBytesMax: 640 * 1024 };
   const limits = () => Object.assign({}, FALLBACK_LIMITS, (Vectura.START_PAGE && Vectura.START_PAGE.LIMITS) || {});
 
   const STORES = ['entries', 'docs', 'handles'];
@@ -38,12 +43,13 @@
   };
 
   const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
-  // Entries are flat apart from pens[] and thumb{}: a shallow copy per level keeps callers from mutating the store
+  // Entries are flat apart from pens[], thumb{} and plate{}: a shallow copy per level keeps callers from mutating the store
   // without a JSON round trip of a (up to 250 KB) thumbnail on every list().
   const publicEntry = (e) => ({
     ...e,
     pens: Array.isArray(e.pens) ? e.pens.map((p) => ({ ...p })) : e.pens,
     thumb: e.thumb ? { ...e.thumb } : e.thumb,
+    plate: e.plate ? { ...e.plate } : e.plate,
   });
 
   const cleanPens = (pens) => (Array.isArray(pens) ? pens : []).slice(0, 8)
@@ -54,6 +60,9 @@
     }));
   const cleanThumb = (t) => (t && (t.kind === 'svg' || t.kind === 'png') && typeof t.data === 'string' && t.data
     ? { kind: t.kind, data: t.data } : null);
+  // The display-only plate-lines SVG: svg only, bounded (a bigger one is refused, the plate falls back to the thumbnail).
+  const cleanPlate = (t) => (t && t.kind === 'svg' && typeof t.data === 'string' && t.data && t.data.length <= limits().plateBytesMax
+    ? { kind: 'svg', data: t.data } : null);
   const cleanName = (n) => {
     const s = typeof n === 'string' ? n.trim().slice(0, 120) : '';
     return s || 'Untitled';
@@ -217,14 +226,15 @@
     };
 
     // The cap bounds what the lists show (list() slices to the newest N), never what is kept: no work, doc or handle
-    // is deleted for being old. Past the cap only the oldest entries' thumbnails go (they are regenerable from the doc).
+    // is deleted for being old. Past the cap only the oldest entries' thumbnails and plates go (they are regenerable from the doc).
     const enforceEntryCap = async (keepId) => {
       const max = limits().entriesMax;
       if (entries.size <= max) return;
       const beyond = Array.from(entries.values()).sort((a, b) => byOldest(b, a)).slice(max);
       for (const e of beyond) {
-        if (e.id === keepId || !e.thumb) continue;
+        if (e.id === keepId || (!e.thumb && !e.plate)) continue;
         e.thumb = null;
+        e.plate = null;
         await saveEntry(e);
       }
     };
@@ -265,6 +275,7 @@
         inkColor: cleanHex(data.inkColor),
         pens: cleanPens(data.pens),
         thumb: cleanThumb(data.thumb),
+        plate: cleanPlate(data.plate),
         lastOpened: t,
         cleared: false,
         hash,
@@ -387,13 +398,42 @@
       notify();
     });
 
+    // Backfill support (core/start-page/plate-backfill.js): set ONLY the plate of an existing entry. lastOpened, addedAt, name,
+    // hash, thumb, bytes and `cleared` are untouched. A no-op (false) when the entry is gone, the plate is malformed, or
+    // `onlyIfAbsent` and the entry already has one. `notify: false` lets a batch announce once through notifyChanged().
+    const setPlate = (id, plate, o = {}) => serial(async () => {
+      await load();
+      const e = entries.get(id);
+      const clean = cleanPlate(plate);
+      if (!e || !clean) return false;
+      if (o.onlyIfAbsent && e.plate) return false;
+      e.plate = clean;
+      const res = await saveEntry(e);
+      if (!res.ok) return false;
+      if (o.notify !== false) notify();
+      return true;
+    });
+    const notifyChanged = () => serial(async () => { notify(); });
+
+    // Small key/value records (e.g. the one-time plate backfill marker) kept in the `docs` object store under a `__meta:` id.
+    // Nothing enumerates that store (documents are only read by entry id), so no schema change is needed.
+    const metaId = (key) => `__meta:${String(key).slice(0, 60)}`;
+    const getMeta = async (key) => {
+      const res = await kvGet('docs', metaId(key));
+      return res.ok && res.result && res.result.value !== undefined ? res.result.value : null;
+    };
+    const setMeta = async (key, value) => {
+      const res = await kvPut('docs', { id: metaId(key), value: copy(value) });
+      return res.ok;
+    };
+
     const subscribe = (fn) => {
       if (typeof fn !== 'function') return () => {};
       subscribers.add(fn);
       return () => { subscribers.delete(fn); };
     };
 
-    return { record, list, listWorks, get, getDoc, getHandle, clearRecent, undoClear, remove, subscribe };
+    return { record, list, listWorks, get, getDoc, getHandle, clearRecent, undoClear, remove, subscribe, setPlate, notifyChanged, getMeta, setMeta };
   };
 
   let shared = null;

@@ -14,7 +14,8 @@
  *   create({ store, renderer, cache, picks, presets, version }) -> a private source (tests)
  *
  * A work shows its stored thumbnail when that is an SVG (its paper-colored ground rect is removed so the
- * art recolors); otherwise its saved document is rendered once by StartPageArtRenderer. Picks are always
+ * art recolors); else its stored display-only `plate` (reduced-fidelity vector lines of a dense work, see
+ * core/start-page/plate-lines.js); otherwise its saved document is rendered once by StartPageArtRenderer. Picks are always
  * rendered. Every render is cached in IndexedDB, database `vectura-start-art`, store `thumbs`, keyed by
  * piece id + a hash of the piece's CONTENT (picks) or its last-opened stamp (works) + RENDER_VERSION (a sibling of
  * the recents database, so its schema is untouched). The key does not carry the app version, so a patch release
@@ -206,7 +207,7 @@
       const pen = Array.isArray(entry.pens) && entry.pens[0] ? entry.pens[0] : null;
       const ownColors = {
         // the document's own colors stored at record time; the SVG thumbnail's ground and the first pen serve entries from before
-        paper: (isHex(entry.paperColor) && entry.paperColor) || groundOf(entry.thumb && entry.thumb.kind === 'svg' ? entry.thumb.data : '') || FALLBACK_COLORS.paper,
+        paper: (isHex(entry.paperColor) && entry.paperColor) || groundOf(entry.thumb && entry.thumb.kind === 'svg' ? entry.thumb.data : (entry.plate && entry.plate.data) || '') || FALLBACK_COLORS.paper,
         ink: (isHex(entry.inkColor) && entry.inkColor) || (pen && isHex(pen.color) ? pen.color : FALLBACK_COLORS.ink),
         penName: 'Pen 1',
         paperName: FALLBACK_COLORS.paperName,
@@ -223,6 +224,9 @@
         ownColors,
         getSvg: async () => {
           if (entry.thumb && entry.thumb.kind === 'svg' && entry.thumb.data) return stripGround(entry.thumb.data);
+          // A dense work whose export is too big for an SVG thumbnail keeps display-only plate lines (reduced-fidelity vector
+          // polylines): crisp and drawn-in like any vector piece, never the PNG below. Not an edit/export source.
+          if (entry.plate && entry.plate.kind === 'svg' && entry.plate.data) return stripGround(entry.plate.data);
           // A work too big for the recents document budget keeps only its raster thumbnail: the plate shows that.
           const fallback = () => rasterSvg(entry.thumb);
           let rec;

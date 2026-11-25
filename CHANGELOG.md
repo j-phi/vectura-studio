@@ -6,7 +6,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-### Scene3D: surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching (v1.5.42)
+### Scene3D: surface-locked fills stay wrapped, Etf Kang wrap origin, smooth carved hatching (v1.5.43)
 
 One release that finishes the surface-locked fills, anchors Etf Kang to the object and makes carved shapes read as carved solids. Saved scenes and presets keep their old look unless noted; every new key is written only when it is off its default.
 
@@ -41,6 +41,11 @@ One release that finishes the surface-locked fills, anchors Etf Kang to the obje
 #### Added
 - **Send to Plotter.** `File > Send to Plotter...` streams the document to a UUNATEK 3.0 (GRBL / DrawCore) pen plotter from Chrome or Edge over Web Serial, with a plotter profile and driver registry, per-pen speed, height, dwell, passes, brush re-dip and path order, jog and calibration wizards, a bounds-checked console, and a Simulator. User guide: `docs/plotter-send.md`; documented in the README (new Send to Plotter feature group), the in-app Help Guide and the shortcut list (Machine tab keys).
 - **Send to Plotter guided flow (v2).** Tabs now follow a session (1 Connect, 2 Machine, 3 Setup, 4 Plot, then Console as Advanced) with status glyphs and auto-advance; a persistent header carries the live WPos readout, Connect/Disconnect and an EMERGENCY STOP (Space or Escape); a Next-step banner and a start-corner confirmation card guide the session; rarely used controls sit in collapsed Advanced sections. While anything moves, the jog dial centre becomes a stop sign. Press-and-hold jogs use a deadman (keep-alive, ends on wheel, leave, blur, key, tab hidden) and key auto-repeat is ignored. Controller safety methods (`emergencyStop`, `confirmMachineCorner`, jog handles) are feature-detected.
+
+### Added: dense works get a sharp, animated Start Page plate
+- **Plate lines.** A work whose export SVG is too big to keep as its thumbnail (over 250 KB, e.g. an image-driven Wavetable such as statue.vectura) used to show a blurry 512 px PNG on its plate that could not draw in. Recents now also stores, for display only, a reduced-fidelity vector copy: flattened, simplified (Ramer-Douglas-Peucker at the finest of 0.25 / 0.35 / 0.5 / 0.75 / 1.0 px that fits a 600 KB budget), 1-decimal polylines, one `<path>` per line (new `Vectura.StartPagePlateLines`, `src/core/start-page/plate-lines.js`). The plates prefer it over the PNG, so the piece is crisp and plots, sweeps and cascades like any vector plate. If even the coarsest rung is over budget nothing is stored and the PNG stays. The Recents menu keeps the PNG.
+- **Existing works are backfilled once.** A few seconds after launch (idle, one work at a time, off under automation) Recents gives every saved work that has a stored document copy, a PNG thumbnail and no plate its plate lines, without changing its order, last-opened time, name or thumbnail. It runs once (marker `plate-backfill` version 1 in the Recents store; bump `PLATE_BACKFILL_VERSION` in `src/core/start-page/plate-backfill.js` to repeat), skips works with no stored copy (they gain a plate when reopened or saved), never retries a work that failed, and the page redraws its plates once at the end.
+- **Display only.** Plate lines are never an edit or export source; the stored document copy remains the real file. New optional `plate` field on a Recents entry (`{ kind: 'svg', data }`, `LIMITS.plateBytesMax` 640 KB, dropped with the thumbnail past `entriesMax`); entries saved before this have none and still load. Reopen or Save a dense work once to give it plate lines.
 
 ### Fixed: Bottom pane tidy, and a Copy button for the Mathematical Model
 - **No more overlap in Document Overview.** The Distance / Lines / Est. Time grid and the Plot Physics table sat side by side in a row and ran into each other. They now stack in one right-aligned column, with the Plot Physics table capped at 420 px.
