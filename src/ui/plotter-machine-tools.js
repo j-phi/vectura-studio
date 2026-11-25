@@ -358,7 +358,10 @@
     // calibration
     const sCal = section('Calibration');
     const calHost = h('div', 'stp-mt-cal');
-    sCal.appendChild(calHost);
+    const simNote = h('p', 'stp-mt-hint', 'Simulator calibration is practice only \u2014 it is not saved for your plotter.');
+    simNote.setAttribute('data-stp-sim-cal-note', '');
+    simNote.hidden = true;
+    sCal.append(simNote, calHost);
 
     // ---- refresh (cheap, no DOM rebuild)
     const setEnabled = (el, ok, why) => {
@@ -618,6 +621,7 @@
     wizardCard.hidden = true;
     calHost.append(launcherGrid, wizardCard);
     function renderCalLaunchers() {
+      simNote.hidden = !(ctx.isSimulator && ctx.isSimulator());
       const cal = prof().calibration || {};
       const ok = canMove() && !S.busy;
       CAL.forEach((w) => {

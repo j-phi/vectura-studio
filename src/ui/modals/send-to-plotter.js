@@ -230,28 +230,36 @@
     },
     allProfiles() { return Store.builtIns().map((p) => clone(p)).concat(Store.userProfiles()); },
     baseProfile(id) { return Store.allProfiles().find((p) => p.id === id) || Store.builtIns()[0] || null; },
-    overrides(id) {
+    // Simulator practice overrides live in memory only and never touch the real profile's overrides.
+    simOverrides: {},
+    overrides(id, sim) {
+      if (sim) { const o = Store.simOverrides[id]; return o && typeof o === 'object' ? o : {}; }
       const all = lsRead(OVERRIDES_KEY, {});
       return all && typeof all === 'object' && all[id] && typeof all[id] === 'object' ? all[id] : {};
     },
     // Validates the merged result; never persists an invalid override.
-    setOverride(id, patch) {
+    setOverride(id, patch, sim) {
       const base = Store.baseProfile(id);
       if (!base) return { ok: false, errors: ['Unknown profile.'] };
-      const next = merge(Store.overrides(id), patch);
+      const next = merge(Store.overrides(id, sim), patch);
       const eff = PS().normalizeProfile(merge(base, next));
       const v = PS().validateProfile(eff);
       if (!v.ok) return { ok: false, errors: v.errors };
+      if (sim) { Store.simOverrides[id] = next; return { ok: true, profile: Store.effectiveProfile(id, true) }; }
       const all = lsRead(OVERRIDES_KEY, {});
       const root = all && typeof all === 'object' ? all : {};
       root[id] = next;
       lsWrite(OVERRIDES_KEY, root);
       return { ok: true, profile: eff };
     },
-    effectiveProfile(id) {
+    effectiveProfile(id, sim) {
       const base = Store.baseProfile(id);
       if (!base) return null;
-      return PS().normalizeProfile(merge(base, Store.overrides(id)));
+      if (!sim) return PS().normalizeProfile(merge(base, Store.overrides(id)));
+      // Simulator: real axes/pen/etc. are readable, but real calibration flags never show and sim writes stay in memory.
+      const real = Object.assign({}, Store.overrides(id));
+      delete real.calibration;
+      return PS().normalizeProfile(merge(merge(base, real), Store.overrides(id, true)));
     },
     saveUserProfile(p) {
       const n = PS().normalizeProfile(p);
@@ -392,6 +400,7 @@
     session.controller = controller;
     session.transport = transport;
     session.kind = kind;
+    Store.simOverrides = {}; // simulator practice state never carries over
     session.profileId = profile.id;
     session.lastError = null;
     session.lastResult = null;
@@ -420,6 +429,7 @@
     if (!c) return;
     try { await c.disconnect(); } catch (e) { /* ignore */ }
     unbindController();
+    Store.simOverrides = {};
     session.controller = null;
     session.transport = null;
     session.kind = null;
@@ -830,18 +840,23 @@
 
     profile() {
       const id = session.controller && session.controller.state !== 'disconnected' ? session.profileId : this.settings().profileId;
-      return Store.effectiveProfile(id) || Store.effectiveProfile(Store.builtIns()[0] && Store.builtIns()[0].id);
+      const sim = this.isSim();
+      return Store.effectiveProfile(id, sim) || Store.effectiveProfile(Store.builtIns()[0] && Store.builtIns()[0].id, sim);
+    }
+
+    isSim() {
+      return !!(session.controller && session.controller.state !== 'disconnected' && session.kind === 'sim');
     }
 
     calibration() {
-      const o = Store.overrides(this.profile().id);
+      const o = Store.overrides(this.profile().id, this.isSim());
       const c = (o && o.calibration) || {};
       return { axisChecked: c.axisChecked === true, penHeightChecked: c.penHeightChecked === true };
     }
 
     setProfileOverride(patch) {
       const p = this.profile();
-      const r = Store.setOverride(p.id, patch);
+      const r = Store.setOverride(p.id, patch, this.isSim());
       if (r.ok) {
         const c = liveController();
         if (c && !isActiveJob() && c.profile) c.profile = Object.assign(c.profile, r.profile); // keeps the controller's reference
@@ -856,6 +871,7 @@
       return {
         getController: () => liveController(),
         getProfile: () => self.profile(),
+        isSimulator: () => self.isSim(),
         getFirmware: () => (liveController() ? Object.assign({}, liveController().fw) : {}),
         getSettings: () => self.settings(),
         saveSettings: (patch) => self.saveSettings(patch),
