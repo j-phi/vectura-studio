@@ -2976,6 +2976,15 @@
         if (!isPreview) group._sceneLevelSFell = false;
         if (!isPreview && !(options && (options.captureJob || options.jobOnly))) group._sceneBakeOffFailed = false;
         try { levelS = !group._sceneLevelSFell && algo.levelS(assembled, baseBounds) === true; } catch (err) { levelS = false; }
+        // dragPreviewOnly laws (contract A28 / A29): a scene frameable only through them is Level S WHILE DRAGGING (the light-following
+        // bake); the settled compose / export (not a preview) stays the pose compose. `bounds.dragPreview` is set only then, so every
+        // other scene keeps its compose key (and its release memo hit).
+        if (!levelS && isPreview && !group._sceneLevelSFell) {
+          try {
+            const dragBounds = Object.assign({}, baseBounds, { dragPreview: true });
+            if (algo.levelS(assembled, dragBounds) === true) { levelS = true; baseBounds.dragPreview = true; }
+          } catch (err) { /* stays pose */ }
+        }
       }
       group._sceneLevelS = levelS;
       // A Level S drag frame composes at the SETTLED quality: the renderer's draft drag quality would change the ink and give
@@ -3033,7 +3042,7 @@
       // holds the main thread for a bake, and every tick after the first coalesces into one follow-up job.
       const heldInk = group.scenePaths && group.scenePaths.length ? group.scenePaths : (holdCommit ? group._sceneInkPrev : null);
       if ((isPreview || holdCommit) && levelS && !memoHit && memoKey && !(options && (options.precomputed || options.captureJob || options.jobOnly))
-        && heldInk && heldInk.length && !group._sceneBakeOffFailed && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
+        && heldInk && heldInk.length && !group._sceneBakeOffFailed && !baseBounds.dragPreview && this._sceneBakeHold(group, algo, assembled, baseBounds)) {
         group.scenePaths = heldInk;
         this.sceneComposeStats.bakeHolds += 1;
         this.sceneComposeStats.lastTier = 'hold';

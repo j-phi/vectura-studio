@@ -186,6 +186,32 @@
       DUTY_PERIOD_FLOOR: 2.0,  // dutyConst mark period, x plot floor
       DUTY_PITCH_FLOOR: 1.05,  // dutyConst ruling pitch, x plot floor
       END_PITCH_FLOOR: 1.15,  // endShorten ruling pitch, x plot floor
+      AMP_SHARE: 0.4,  // WD-D1 ampSpacing: wave amplitude as a share of the baked ruling pitch (pose WV6 aMax)
+      AMP_MM_MIN: 0.34,  // WD-D1 ampSpacing: amplitude floor (screen mm; pose WV6_AMP_MIN_MM)
+      AMP_MM_MAX: 0.6,  // WD-D1 ampSpacing: amplitude cap (screen mm; the pose WV6_AMP_MAX_MM is 0.8: a lock wave this size keeps the ruling arc length within ~7 % of the ladder's, so the tone stays the ladder's)
+      AMP_LAMBDA_AMP: 12,  // WD-D1 ampSpacing: wavelength, x the amplitude (a fixed visual shape; never under AMP_LAMBDA_MIN_MM)
+      AMP_LAMBDA_MIN_MM: 3.2,  // WD-D1 ampSpacing: wavelength floor (screen mm)
+      PEN_MM_0: 0.26,  // WD-D2 pen laws: the fine nib's measured width, mm (surface-fill PEN_MM)
+      PEN_MM_1: 0.52,  // WD-D2: the medium nib
+      PEN_MM_2: 0.93,  // WD-D2: the broad nib
+      PEN_DEEP_AREA: 0.93,  // WD-D2: the darkest ink area the pen laws ask for (surface-fill PEN_DEEP_AREA)
+      PEN_LIGHT_AREA: 0.005,  // WD-D2: the lightest ink area (tone model v2: paper)
+      PEN_INTER_PITCH_PEN: 2.2,  // WD-D2 penInterleave: the one even grid's pitch, x the broad nib (= its own plot floor; calibrated to the pose compose, whose coverage sits flat at the broad nib on this grid)
+      PEN_INTER_NEED: 1.2,  // WD-D2 penInterleave: the ink width the tone asks for = area x grid pitch x this (calibrated to the pose compose, whose nib mix stays on the broad nib deeper into the lights)
+      PEN_RES_U_BIAS: 0.07,  // WD-D2 penReserve: added to the tone's ink area before the tier coordinate (calibrated to the pose compose, whose broad nib holds deeper into the mids)
+      PEN_CROSS_PAPER_I: 0.93,  // WD-D2 penCross: the tone at and above which the law draws nothing (paper)
+      PEN_RES_PITCH_PEN: 3.0,  // WD-D2 penReserve: the ground grid's pitch, x the broad nib (calibrated to the pose compose)
+      PEN_CROSS_PITCH_MM: 2.5,  // WD-D2 penCross: the medium family's pitch, screen mm (calibrated to the pose compose)
+      PEN_CROSS_FULL_I: 0.8,  // WD-D2 penCross: the tone at and below which both families draw their full grid
+      PEN_CROSS_B_FRAC: 0.35,  // WD-D2 penCross: the broad family's share of the medium grid
+      PEN_CROSS_DEG: 60,  // WD-D2 penCross: the broad family's angle from the medium family
+      PEN_RES_FINE_FRAC: 0.08,  // WD-D2 penReserve: the fine crossing family's share of the grid
+      PRES_PERIOD: 1 / 12,  // WD-D2 penReserve: transverse reserves per ruling, as a share of its length (surface-fill PRES_PERIOD)
+      PRES_DUTY: 0.3,  // WD-D2 penReserve: the white share of each reserve period (the pose duty runs 0.3 darkest .. 0.6; surface-fill PRES_DUTY_MAX)
+      WEIGHT_TOP: 1.9,  // WD-D3 weightModulated: line width at the dark end, x the document pen (the pose ribbon reaches ~1.7; the lock rulings foreshorten so the ink sits ~0.7x of the pose: +12 %)
+      WEIGHT_STEP: 0.1,  // WD-D3 weightModulated: width quantum (each ruling is baked once per step, with a tone band)
+      WEIGHT_PAPER_BAND: 0.04,  // WD-D3 weightModulated: the lightest share of the tone range that thins to paper (the pose law is paper above L 0.9)
+      AMP_STEPS: 10,  // WD-D1 ampSpacing: polyline samples per wavelength
       V2_OFF_FRACTION: 0.15,  // tone model v2, mark laws, tone OFF: the least fraction of marks drawn (the denser v2 ruling pitch put peff / PMAX at 0.11, where Bundle Count drew nothing)
       V2_DUTY_PITCH_FLOOR: 0.95,  // tone model v2 dutyConst ruling pitch, x the v2 plot floor (V2.FLOOR_PEN); the baked chart delivers ~0.85 of the nominal pitch, so 1.33 pens draws ~0.65 coverage
       V2_DUTY_SEP: 1.0,  // tone model v2 dutyConst: screen ruling spacing (x the nominal ruling pitch) at which the cell fraction is the target; <= 1.04 keeps the even-fill bars (p90/p10 < 1.45) with margin, 1.08 straddled the cap word's 1/8 steps (A22a)

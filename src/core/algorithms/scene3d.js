@@ -1746,6 +1746,7 @@
       scaleRef: eff > 0 ? 2 ** Math.round(Math.log2(eff)) : 1,
       seed: G3.snapshotSeedState(),
       ...(p.tone && p.tone.model === 'v2' ? { toneModel: 'v2' } : {}),
+      ...(bounds && bounds.dragPreview === true ? { dragPreview: true } : {}),
       ...(shadeDarkOf(p) !== undefined ? { toneDarkness: shadeDarkOf(p) } : {}),
     };
   };
@@ -1905,7 +1906,14 @@
       for (let ri = 0; ri < runs.length; ri++) {
         const run = runs[ri];
         if (floor && runLength(run.pts) < MIN_RUN_MM) continue;
-        const meta = treat.active ? { ...baseMeta } : baseMeta;
+        // WD-D2: a locked run may carry its own nib (penTier / penId) and width (weightScale), as the pose emit does
+        const rp = run.pen || null;
+        const meta = (treat.active || rp) ? { ...baseMeta } : baseMeta;
+        if (rp) {
+          if (Number.isFinite(rp.weightScale) && rp.weightScale !== 1) meta.weightScale = Math.round(Math.min(6, Math.max(0.1, rp.weightScale)) * 1000) / 1000;
+          if (Number.isInteger(rp.penTier)) meta.penTier = rp.penTier;
+          if (typeof rp.penId === 'string' && rp.penId) meta.penId = rp.penId;
+        }
         const pts = applyStrokeTreatment(run.pts, treat, meta, false);
         const path = levelSPath(pts, meta);
         if (path.length < 2) continue;
@@ -5855,9 +5863,11 @@
                 // Absent (every other law), the meta is untouched and the output
                 // is byte-identical.
                 const rawW = Number(line.weightScale);
-                const lineMeta0 = (Number.isFinite(rawW) && rawW !== 1)
+                const lineMeta00 = (Number.isFinite(rawW) && rawW !== 1)
                   ? { ...fillMeta, weightScale: round3(clamp(rawW, 0.1, 6)) }
                   : fillMeta;
+                // WD-D2: a surface-locked line may carry its own pen (MarkSet runPen, contract A26 / A28)
+                const lineMeta0 = (typeof line.penId === 'string' && line.penId) ? { ...lineMeta00, penId: line.penId } : lineMeta00;
                 // Three-pen laws tag each run with its pen TIER (0 fine / 1 medium /
                 // 2 broad). Keep it on the emitted path so export can route tiers
                 // to real pens; absent on every other law ⇒ meta untouched.
