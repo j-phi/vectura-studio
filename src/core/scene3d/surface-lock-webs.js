@@ -524,6 +524,7 @@
     const scaleRef = finite(spec.scaleRef, 1) > 0 ? spec.scaleRef : 1;
     const seed = (spec.seed && typeof spec.seed === 'object') ? spec.seed : {};
     const salt = finite(seed.salt, 0) | 0;
+    const closedCells = !!(spec.style && spec.style.voronoiClosedCells === true); // 'Close cells': tone picks whole cells, never single walls
     const M = SC.metric(mode, spec.sizes || {}, sc);
     const raw = rawChart(spec);
     const builder = SM.createBuilder({ bakerId: 'webs', key: String(spec.key || ''), objectId: String(spec.objectId || '') });
@@ -735,15 +736,31 @@
         label(pass === K.VORONOI_RELAX - 1 ? 1 : RS);
       }
       if (K.VORONOI_RELAX <= 0) label(1);
+      // closedCells: every vertex of a cell carries the normal at the grid node nearest its seed, so the tone / facing gate is ONE decision per cell (a per-vertex gate cuts a cell part-way through)
+      let cellN = null;
+      if (closedCells) {
+        cellN = new Float32Array(3 * ns); const bd = new Float64Array(ns).fill(Infinity); const bk = new Int32Array(ns).fill(-1);
+        for (let k = 0; k < nn; k++) {
+          const q = labels[k]; if (q < 0) continue;
+          const dx = gx[k] - seedsX[q]; const dy = gy[k] - seedsY[q]; const dz = gz[k] - seedsZ[q];
+          const d2 = dx * dx + dy * dy + dz * dz; if (d2 < bd[q]) { bd[q] = d2; bk[q] = k; }
+        }
+        for (let q = 0; q < ns; q++) {
+          const k = bk[q]; const sm = k >= 0 ? M.sample((k % NNu) / Nu, Mth.floor(k / NNu) / Nv) : null;
+          if (sm) { cellN[3 * q] = sm.nx; cellN[3 * q + 1] = sm.ny; cellN[3 * q + 2] = sm.nz; } else cellN[3 * q + 2] = 1;
+        }
+      }
       const t1 = opts && opts.timing ? Date.now() : 0;
       cells += ns;
       // -- boundaries: crossings on the grid edges (chord bisector), a node at every cell holding 3 labels ----------------------------------
       const nu = []; const nv = []; // graph node chart coordinates (unwrapped; wrapped on use)
       const adjE = []; const adjC = []; const ea = []; const eb = []; // 4 incident-edge slots per node (a crossing has 2, a junction cell up to 4)
       const hCross = bufI(0, nn).fill(-1); const vCross = bufI(1, nn).fill(-1);
-      const addNode = (u, v) => { nu.push(u); nv.push(v); adjE.push(-1, -1, -1, -1); adjC.push(0); return nu.length - 1; };
+      // closedCells: the two cells each wall separates (crossing nodes carry the pair; a wall takes its crossing end's pair)
+      const nla = []; const nlb = []; const ela = []; const elb = [];
+      const addNode = (u, v) => { nu.push(u); nv.push(v); adjE.push(-1, -1, -1, -1); adjC.push(0); nla.push(-1); nlb.push(-1); return nu.length - 1; };
       const link = (n, e) => { if (adjC[n] < 4) { adjE[4 * n + adjC[n]] = e; adjC[n] += 1; } };
-      const addEdge = (a, b) => { if (a === b) return; const e = ea.length; ea.push(a); eb.push(b); link(a, e); link(b, e); };
+      const addEdge = (a, b) => { if (a === b) return; const e = ea.length; ea.push(a); eb.push(b); const src = nla[a] >= 0 ? a : b; ela.push(nla[src]); elb.push(nlb[src]); link(a, e); link(b, e); };
       const crossing = (k0, k1, u0, v0, u1, v1, store, key) => {
         let id = store[key];
         if (id >= 0) return id;
@@ -753,7 +770,7 @@
           return ax * ax + ay * ay + az * az - (bx * bx + by * by + bz * bz); };
         const f0 = f(k0); const f1 = f(k1);
         let t = f0 - f1 !== 0 ? f0 / (f0 - f1) : 0.5; t = clamp(t, 0.02, 0.98);
-        id = addNode(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t); store[key] = id; return id;
+        id = addNode(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t); nla[id] = a; nlb[id] = b; store[key] = id; return id;
       };
       const wrapI = (i) => (i >= NNu ? i - NNu : i); const wrapJ = (j) => (j >= NNv ? j - NNv : j);
       const centers = [];
@@ -848,8 +865,49 @@
         }
         if (pts.length >= 2) chains.push(pts);
       };
-      for (let n = 0; n < nN; n++) if (adjC[n] !== 2) walk(n);
-      for (let n = 0; n < nN; n++) { let any = false; for (let q = 0; q < adjC[n]; q++) if (!used[adjE[4 * n + q]]) any = true; if (any) walk(n); }
+      // closedCells: a wall belongs to the cell of its two whose tone rank is lower, and a cell's walls are drawn exactly where that rank passes the tone
+      // gate, so a wall is drawn when EITHER neighbour is drawn and every drawn cell is a whole closed polygon (no dangling wall, no partial cell).
+      // The rank of a wall is the min of two uniform ranks pushed through its own CDF, so it is uniform again and the ink per tone equals the per-wall thinning.
+      
+      let cellU = null; let owner = null; let ownerRank = null;
+      const chainOwner = [];
+      if (closedCells) {
+        cellU = new Float64Array(ns); for (let q = 0; q < ns; q++) cellU[q] = SC.hash(q, l * 31 + 5, salt + 8821);
+        owner = new Int32Array(ea.length);
+        for (let e = 0; e < ea.length; e++) { const A = ela[e]; const B = elb[e]; owner[e] = cellU[A] <= cellU[B] ? A : B; }
+        ownerRank = (c) => { const m = cellU[c]; return 1 - (1 - m) * (1 - m); };
+      }
+      const walkOwn = (start, own) => {
+        let cur = start; let dx = 0; let dy = 0; let dz = 0; let has = false;
+        const pts = [cur];
+        for (;;) {
+          let best = -1; let bdot = -Infinity;
+          for (let q = 0; q < adjC[cur]; q++) {
+            const e = adjE[4 * cur + q]; if (used[e] || owner[e] !== own) continue;
+            const o = ea[e] === cur ? eb[e] : ea[e];
+            const ex = px[o] - px[cur]; const ey = py[o] - py[cur]; const ez = pz[o] - pz[cur];
+            const L = Mth.hypot(ex, ey, ez) || 1;
+            const dot = has ? (ex * dx + ey * dy + ez * dz) / L : 0;
+            if (dot > bdot) { bdot = dot; best = e; }
+          }
+          if (best < 0) break;
+          used[best] = 1;
+          const o = ea[best] === cur ? eb[best] : ea[best];
+          const ex = px[o] - px[cur]; const ey = py[o] - py[cur]; const ez = pz[o] - pz[cur];
+          const L = Mth.hypot(ex, ey, ez) || 1;
+          dx = ex / L; dy = ey / L; dz = ez / L; has = true;
+          cur = o; pts.push(cur);
+        }
+        if (pts.length >= 2) { chains.push(pts); chainOwner.push(own); }
+      };
+      if (closedCells) {
+        const ownDeg = (n, own) => { let c = 0; for (let q = 0; q < adjC[n]; q++) if (owner[adjE[4 * n + q]] === own) c += 1; return c; };
+        for (let n = 0; n < nN; n++) for (let q = 0; q < adjC[n]; q++) { const e = adjE[4 * n + q]; if (!used[e] && ownDeg(n, owner[e]) !== 2) walkOwn(n, owner[e]); }
+        for (let n = 0; n < nN; n++) for (let q = 0; q < adjC[n]; q++) { const e = adjE[4 * n + q]; if (!used[e]) walkOwn(n, owner[e]); }
+      } else {
+        for (let n = 0; n < nN; n++) if (adjC[n] !== 2) walk(n);
+        for (let n = 0; n < nN; n++) { let any = false; for (let q = 0; q < adjC[n]; q++) if (!used[adjE[4 * n + q]]) any = true; if (any) walk(n); }
+      }
       const tb3 = opts && opts.timing ? Date.now() : 0;
       // -- simplify (RDP on the 3D polyline) and emit, resampled at the step ----------------------------------------------------------
       const keepIdx = new Uint8Array(0);
@@ -881,11 +939,14 @@
       chains.forEach((chain, ci) => {
         const pts = rdp(chain);
         if (pts.length < 2) return;
-        const rank = Mth.min(0.99998, SC.hash(ci, l * 31 + 5, salt + 8821) * K.VORONOI_THIN_RANK);
+        const rank = closedCells ? Mth.min(0.99998, ownerRank(chainOwner[ci]) * K.VORONOI_THIN_RANK) : Mth.min(0.99998, SC.hash(ci, l * 31 + 5, salt + 8821) * K.VORONOI_THIN_RANK);
         const closed = chain[0] === chain[chain.length - 1];
         builder.beginRun(0, rank, 0, closed ? SM.FLAG.CLOSED : 0, undefined, 0, 0, lo, hi);
         let pu = 0; let pv = 0; let n0 = 0; let ps = null;
+        // closedCells: every vertex of a run carries its OWNER cell's normal, so the run's tone / facing gate is one decision
+        const wn = closedCells ? [cellN[3 * chainOwner[ci]], cellN[3 * chainOwner[ci] + 1], cellN[3 * chainOwner[ci] + 2]] : null;
         const put = (x, y, z, nx, ny, nz) => {
+          if (wn) { nx = wn[0]; ny = wn[1]; nz = wn[2]; }
           builder.vertex(x, y, z, nx, ny, nz); n0 += 1;
           if (x < bmin[0]) bmin[0] = x; if (x > bmax[0]) bmax[0] = x;
           if (y < bmin[1]) bmin[1] = y; if (y > bmax[1]) bmax[1] = y;

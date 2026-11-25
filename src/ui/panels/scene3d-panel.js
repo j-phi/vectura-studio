@@ -1675,6 +1675,10 @@
       const row = artToggleRow(host, comps, bag, 'chainMarks', write, 'Chain edges', 'Chain Voronoi edges into polylines');
       row.setAttribute('title', 'Joins web edges that meet within one pen width into longer polylines, and orders them to cut pen travel. The picture is the same.');
     }
+    if (eff === 'voronoiWeb') {
+      const row = artToggleRow(host, comps, bag, 'voronoiClosedCells', write, 'Close cells', 'Draw only whole closed Voronoi cells');
+      row.setAttribute('title', 'Draws whole closed cells only. Tone decides which cells are drawn, so no wall is left dangling and no cell is partial.');
+    }
     // Width Ribbon family: nib + taper.
     if (law === 'taperedEnds') {
       const nibLive = eff === 'nibAngle';

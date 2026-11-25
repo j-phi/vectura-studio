@@ -53,6 +53,8 @@
     altFillAngle: { ...NUM(0, 180, 1, 45), group: 'alt', label: 'Alt angle', help: 'Angle of the Alt fill lines. A second layer crosses at the Cross angle. 45 = the fixed angle used before.' },
     // Mark chaining (maze).
     chainMarks: { kind: 'bool', default: false, group: 'chain', label: 'Chain marks' },
+    // Voronoi Web: every drawn cell is a whole closed polygon (tone chooses cells, not single walls). Default off = the thinned web.
+    voronoiClosedCells: { kind: 'bool', default: false, group: 'chain', label: 'Close cells', help: 'Draws whole closed cells only. Tone decides which cells are drawn, so no wall is left dangling and no cell is partial.' },
     // Tone tier -> real pen.
     tierPens: { kind: 'pens', default: null, group: 'pens', label: 'Tiers to pens' },
     // U7: split ANY Fill Style's output into N tone bands (0 = off). Band k draws with tierPens[k].
