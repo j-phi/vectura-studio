@@ -102,44 +102,18 @@
     return len;
   };
 
-  // Iterative Ramer-Douglas-Peucker (no recursion: 50k-point paths are fine).
-  const rdp = (pts, tol) => {
-    const n = pts.length;
-    if (n < 3 || !(tol > 0)) return pts;
-    const keep = new Uint8Array(n);
-    keep[0] = 1;
-    keep[n - 1] = 1;
-    const stack = [0, n - 1];
-    const tol2 = tol * tol;
-    while (stack.length) {
-      const hi = stack.pop();
-      const lo = stack.pop();
-      if (hi <= lo + 1) continue;
-      const ax = pts[lo].x; const ay = pts[lo].y;
-      const dx = pts[hi].x - ax; const dy = pts[hi].y - ay;
-      const l2 = dx * dx + dy * dy;
-      let maxD = -1; let idx = -1;
-      for (let i = lo + 1; i < hi; i++) {
-        const px = pts[i].x - ax; const py = pts[i].y - ay;
-        let d2;
-        if (l2 === 0) {
-          d2 = px * px + py * py;
-        } else {
-          let t = (px * dx + py * dy) / l2;
-          t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const qx = px - t * dx; const qy = py - t * dy;
-          d2 = qx * qx + qy * qy;
-        }
-        if (d2 > maxD) { maxD = d2; idx = i; }
-      }
-      if (maxD > tol2) {
-        keep[idx] = 1;
-        stack.push(lo, idx, idx, hi);
-      }
+  // Ramer-Douglas-Peucker via the single source of truth (GeometryUtils.simplifyPath).
+  const geometryUtils = () => {
+    if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
+      return require('../geometry-utils.js');
     }
-    const out = [];
-    for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
-    return out;
+    return (typeof window !== 'undefined' && window.Vectura && window.Vectura.GeometryUtils) || null;
+  };
+  const rdp = (pts, tol) => {
+    if (!pts || pts.length < 3 || !(tol > 0)) return pts;
+    const G = geometryUtils();
+    const GU = G && (G.simplifyPath ? G : G.GeometryUtils);
+    return GU.simplifyPath(pts.map((p) => ({ x: p.x, y: p.y })), tol);
   };
 
   const q3 = (v) => Math.round(v * 1000);
