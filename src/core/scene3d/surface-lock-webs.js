@@ -79,19 +79,25 @@
     VORONOI_COARSE_DROP: 2,     // a drag-LOD (coarse) bake leaves out this many of the finest levels (they are ~70% of the bake time)
     VORONOI_INK_X: 1.45,         // wall length calibration: cell sizes x this
     TURING_PAPER_BAND: 0.15, // pose turingStripe: the lightest share of the tone range that rolls off to paper (surface-fill-mono V2_PAPER_BAND)
-    TURING_PAPER_DENS: 0.03, // pose turingStripe: relative density at and below which nothing is drawn (V2_PAPER_DENS)
+    TURING_PAPER_DENS: 0.12, // pose turingStripe: relative density at and below which nothing is drawn (V2_PAPER_DENS)
     TURING_DMIN: 0.9,        // pose turingStripe TURING_V2_DMIN: the wavelength follows the tone only down to this share of the dark end; lighter tones keep that pattern and the paper gate thins it
     TURING_PITCH_X: 2,       // pose turingStripe: the v2 sparse end runs to this x the legacy lit pitch (V2_PITCH_X)
-    TURING_SPACING_X: 1.2,     // calibration: the baked line spacing is the pose clearance x this
-    TURING_WAVES: 9,         // plane waves summed into the stripe field
-    TURING_K: 3.46,          // wave number x spacing: the zero set of a random plane-wave field has a line spacing of 2 sqrt(3) / k
-    TURING_GRID: 2.2,        // chart grid nodes per line spacing
-    TURING_PIECE: 4,         // a stripe is gated in pieces of this many spacings (the pose gate thins it in 1.2 mm cells)
-    TURING_STEP: 0.6,        // polyline vertex spacing, x the line spacing
+    TURING_SPACING_X: 1.25,     // calibration: the baked line spacing is the pose clearance x this
+    TURING_WARP: 0.65,       // field: phase warp amplitude, as a share of the carrier wave number (stripe meander; 3 warp waves per family)
+    TURING_WARP_L: 11,       // field: warp wavelength, in line spacings
+    TURING_W2: 0.95,         // field: weight of the second carrier (it forks and joins the stripes of the first into a labyrinth)
+    TURING_MIN_LEN: 7.5,       // stripes shorter than this many spacings are dropped (specks)
+    TURING_SMOOTH: 2,        // [1 2 1] smoothing passes on every traced stripe (no marching-squares stair steps)
+    TURING_K: 1.2,           // carrier wave number x spacing / pi
+    TURING_GRID: 2,        // chart grid nodes per line spacing
+    TURING_MAX_TURN: 11,     // deg: extra vertices on a tight bend so consecutive segments never turn more than about this
+    TURING_RELAX: 3,         // [1 2 1] passes on the raw trace before the Chaikin subdivision
+    TURING_PIECE: 30,        // spacings: a stripe is cut into pieces of about this length (long; the tone gate drops whole pieces)
+    TURING_STEP: 0.3,       // polyline vertex spacing, x the line spacing
     TURING_NORMAL_EVERY: 3,  // a vertex normal is sampled from the chart every this many vertices (the positions in between are exact, the normals blend)
     TURING_OFF_DENS: 0.5,    // tone OFF: the uniform pattern of this relative density
     TURING_FLOOR_PEN: 0.7,   // meta.floorPitchPen (see MAZE_FLOOR_PEN)
-    TURING_MAX_VERTS: 150000, // the vertex step grows until the estimate fits
+    TURING_MAX_VERTS: 100000, // the vertex step grows until the estimate fits
     TURING_MAX_NODES: 1500000, // most grid nodes per bake (the grid is coarsened to fit)
     MAZE_RUN: 4,             // longest straight wall, in cells of the tone it is drawn at: a longer wall is drawn as runs of this many cells with a one-cell gap
     MAZE_RING_OPEN: 0.2,     // chambers on the thin side of the chart (poles, torus inner equator): the share of the ring / lane walls that keep their one gap (the rest are closed rings)
@@ -971,13 +977,13 @@
   // field on a SCREEN raster and draws its zero set: a labyrinth of stripes whose pitch is the tone's clearance (v2: the wavelength follows the
   // tone only down to TURING_DMIN of the dark end, lighter tones keep that pattern and the paper gate thins it by cells). A screen pattern cannot
   // follow the surface, so the bake gives the SURFACE its own stripe texture:
-  //   - the field is f(p) = sum of TURING_WAVES plane waves cos(k n_i . p + phi_i) of the object's scaled LOCAL 3D position (random unit n_i and
-  //     phi_i from the scene seed): a Turing-like labyrinth of uniform physical line spacing on any surface, with forks and dislocations, no
-  //     chart distortion at poles and no seam, and the same field on every box face;
+  //   - the field is two domain-warped plane-wave carriers, f(p) = cos(k n1 . p + warp1) + TURING_W2 cos(k n2 . p + warp2), of the object's scaled
+  //     LOCAL 3D position (random unit n_i, phases and warp waves from the scene seed): few, low-frequency waves give long, connected, meandering
+  //     labyrinth stripes of uniform physical spacing on any surface, no chart distortion at poles, no seam, the same field on every box face;
   //   - the zero set is traced by marching squares on a chart grid (curved primitives: the object's own chart, grid spacing = spacing /
-  //     TURING_GRID; box: one planar grid per face), chained into stripes, cut into pieces of TURING_PIECE spacings;
-  //   - a piece is keyed by a hash rank in [0, 1); the LUT is the paper gate g(I) = min(1, d(I) / TURING_DMIN) (0 at and below the pose paper
-  //     density), so the lit side thins out piece by piece exactly as the pose gate thins cells, with no rebake. Line spacing is the pose
+  //     TURING_GRID; box: one planar grid per face), crossings refined and chained into stripes, relaxed + Chaikin-smoothed (no stair-steps), cut only into long pieces (TURING_PIECE spacings), extra vertices on tight bends (TURING_MAX_TURN);
+  //   - a piece is keyed by a golden-ratio-sequence rank in [0, 1); the LUT is the paper gate g(I) = min(1, d(I) / TURING_DMIN) (0 at and below the pose paper
+  //     density), so the lit side thins out piece by piece (long runs dropped, never confetti-cut), with no rebake. Line spacing is the pose
   //     clearance max(FLOOR, pitchOfDens(max(d, DMIN))) x Stripe scale (it varies only ~10 % across the whole tone range, so one level).
   // Not baked (a screen / light quantity): Stripe align (the pose combs the stripes across the shading) and Maturity (the relaxation steps).
   // The bake is POSE-FREE (contract §3, §8).
@@ -1007,13 +1013,14 @@
 
   // Marching squares of f (NNu x NNv nodes, node (i, j) at chart (i / Nu, j / Nv)) on f = 0, chained through shared edges.
   // Returns [{ uv: Float64Array [u0, v0, u1, v1, ...], closed }] (open chains first).
-  const traceZero = (Nu, Nv, f, ok) => {
+  const traceZero = (Nu, Nv, f, ok, fAt, smoothPasses) => {
     const NNu = Nu + 1; const NNv = Nv + 1;
     const nE = NNu * NNv;
     const adj = new Int32Array(4 * nE).fill(-1); // edge id (H: j * NNu + i, V: nE + j * NNu + i) -> up to two partner edges
+    const touched = []; // edges that carry a crossing (the chain scans visit only these)
     const link = (a, b) => {
-      if (adj[2 * a] < 0) adj[2 * a] = b; else adj[2 * a + 1] = b;
-      if (adj[2 * b] < 0) adj[2 * b] = a; else adj[2 * b + 1] = a;
+      if (adj[2 * a] < 0) { adj[2 * a] = b; touched.push(a); } else adj[2 * a + 1] = b;
+      if (adj[2 * b] < 0) { adj[2 * b] = a; touched.push(b); } else adj[2 * b + 1] = a;
     };
     for (let j = 0; j < Nv; j++) {
       for (let i = 0; i < Nu; i++) {
@@ -1036,10 +1043,58 @@
       }
     }
     const seen = new Uint8Array(2 * nE);
+    // the crossing on an edge: the linear root, refined by two regula falsi steps on the true field (fAt) so a coarse grid still gives exact points
+    const root = (u0, v0, u1, v1, f0, f1, out) => {
+      let ta = 0; let tb = 1; let fa = f0; let fb = f1; let t = f0 / (f0 - f1);
+      if (fAt) {
+        for (let it = 0; it < 2; it++) {
+          const fm = fAt(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t);
+          if (!isFin(fm)) break;
+          if ((fm > 0) === (fa > 0)) { ta = t; fa = fm; } else { tb = t; fb = fm; }
+          const d = fa - fb; if (!(Mth.abs(d) > 1e-12)) break;
+          t = ta + (tb - ta) * fa / d;
+        }
+      }
+      out[0] = u0 + (u1 - u0) * t; out[1] = v0 + (v1 - v0) * t;
+    };
     const uvOf = (e, out) => {
-      let i; let j; let t;
-      if (e < nE) { j = (e / NNu) | 0; i = e - j * NNu; const f0 = f[e]; const f1 = f[e + 1]; t = f0 / (f0 - f1); out[0] = (i + t) / Nu; out[1] = j / Nv; }
-      else { const q = e - nE; j = (q / NNu) | 0; i = q - j * NNu; const f0 = f[q]; const f1 = f[q + NNu]; t = f0 / (f0 - f1); out[0] = i / Nu; out[1] = (j + t) / Nv; }
+      if (e < nE) { const j = (e / NNu) | 0; const i = e - j * NNu; root(i / Nu, j / Nv, (i + 1) / Nu, j / Nv, f[e], f[e + 1], out); }
+      else { const q = e - nE; const j = (q / NNu) | 0; const i = q - j * NNu; root(i / Nu, j / Nv, i / Nu, (j + 1) / Nv, f[q], f[q + NNu], out); }
+    };
+    // Chaikin corner cutting (quadratic B-spline limit): every pass replaces each segment by its 1/4 and 3/4 points, so a marching-squares
+    // trace becomes a smooth curve and a tight U-turn gets enough vertices to stay round (ends of an open chain are kept)
+    const relax = (uv, closed, passes) => { // [1 2 1] relaxation: kills the node-to-node zigzag of the marching-squares trace before the curve is subdivided
+      const n = uv.length / 2; const m = closed ? n - 1 : n;
+      if (m < 3) return;
+      const tmp2 = new Float64Array(uv.length);
+      for (let ps = 0; ps < passes; ps++) {
+        for (let q = 0; q < m; q++) {
+          if (!closed && (q === 0 || q === m - 1)) { tmp2[2 * q] = uv[2 * q]; tmp2[2 * q + 1] = uv[2 * q + 1]; continue; }
+          const a = closed ? (q + m - 1) % m : q - 1; const b = closed ? (q + 1) % m : q + 1;
+          tmp2[2 * q] = 0.25 * uv[2 * a] + 0.5 * uv[2 * q] + 0.25 * uv[2 * b]; tmp2[2 * q + 1] = 0.25 * uv[2 * a + 1] + 0.5 * uv[2 * q + 1] + 0.25 * uv[2 * b + 1];
+        }
+        for (let q = 0; q < m; q++) { uv[2 * q] = tmp2[2 * q]; uv[2 * q + 1] = tmp2[2 * q + 1]; }
+      }
+      if (closed) { uv[2 * (n - 1)] = uv[0]; uv[2 * (n - 1) + 1] = uv[1]; }
+    };
+    const chaikin = (uv, closed, passes) => {
+      relax(uv, closed, K.TURING_RELAX | 0);
+      let cur = uv;
+      for (let ps = 0; ps < passes; ps++) {
+        const n = cur.length / 2; const m = closed ? n - 1 : n; // a closed chain repeats its first point
+        if (m < 3) return cur;
+        const out = []; if (!closed) out.push(cur[0], cur[1]);
+        const segs = closed ? m : m - 1;
+        for (let q = 0; q < segs; q++) {
+          const a = q; const b = (q + 1) % m;
+          const ax = cur[2 * a]; const ay = cur[2 * a + 1]; const bx = cur[2 * b]; const by = cur[2 * b + 1];
+          if (!closed && q === 0) out.push(ax * 0.5 + bx * 0.5, ay * 0.5 + by * 0.5); else out.push(0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by);
+          if (!closed && q === segs - 1) out.push(0.5 * ax + 0.5 * bx, 0.5 * ay + 0.5 * by); else out.push(0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by);
+        }
+        if (!closed) out.push(cur[2 * (m - 1)], cur[2 * (m - 1) + 1]); else out.push(out[0], out[1]);
+        cur = new Float64Array(out);
+      }
+      return cur;
     };
     const chains = [];
     const tmp = [0, 0];
@@ -1058,14 +1113,15 @@
       const uv = new Float64Array(2 * (ids.length + (closed ? 1 : 0)));
       for (let q = 0; q < ids.length; q++) { uvOf(ids[q], tmp); uv[2 * q] = tmp[0]; uv[2 * q + 1] = tmp[1]; }
       if (closed) { uv[2 * ids.length] = uv[0]; uv[2 * ids.length + 1] = uv[1]; }
-      chains.push({ uv, closed });
+      chains.push({ uv: chaikin(uv, closed, smoothPasses), closed });
     };
-    for (let e = 0; e < 2 * nE; e++) { // open chains: start at the degree-one edges
+    for (let ti = 0; ti < touched.length; ti++) { // open chains: start at the degree-one edges
+      const e = touched[ti];
       if (seen[e]) continue;
       const deg = (adj[2 * e] >= 0 ? 1 : 0) + (adj[2 * e + 1] >= 0 ? 1 : 0);
       if (deg === 1) walk(e, false);
     }
-    for (let e = 0; e < 2 * nE; e++) { if (!seen[e] && adj[2 * e] >= 0) walk(e, true); }
+    for (let ti = 0; ti < touched.length; ti++) { const e = touched[ti]; if (!seen[e] && adj[2 * e] >= 0) walk(e, true); }
     return chains;
   };
 
@@ -1090,20 +1146,28 @@
     // ---- the field: plane waves of the local 3D position -----------------------------------------------------------------------------
     const t00 = Date.now();
     const rng = mulberry(salt * 7919 + 271828);
-    const NW = Mth.max(3, K.TURING_WAVES | 0);
-    const kk = K.TURING_K / So;
-    const wx = new Float64Array(NW); const wy = new Float64Array(NW); const wz = new Float64Array(NW); const wp = new Float64Array(NW);
-    for (let w = 0; w < NW; w++) {
-      const z = 2 * rng() - 1; const a = 2 * Mth.PI * rng(); const rr = Mth.sqrt(Mth.max(0, 1 - z * z));
-      wx[w] = kk * rr * Mth.cos(a); wy[w] = kk * rr * Mth.sin(a); wz[w] = kk * z; wp[w] = 2 * Mth.PI * rng();
-    }
-    const field = (x, y, z) => { let v = 0; for (let w = 0; w < NW; w++) v += Mth.cos(wx[w] * x + wy[w] * y + wz[w] * z + wp[w]); return v; };
+    // two warped carriers: cos(k n1 . p + W1(p)) + w2 cos(k n2 . p + W2(p)), W = three slow waves (meander). The carriers keep the stripes
+    // long and parallel-ish, the warp bends them like a labyrinth, and the second carrier forks and joins them (no isolated blobs).
+    const kk = Mth.PI / So * K.TURING_K;
+    const unit = () => { const z = 2 * rng() - 1; const a = 2 * Mth.PI * rng(); const rr = Mth.sqrt(Mth.max(0, 1 - z * z)); return [rr * Mth.cos(a), rr * Mth.sin(a), z]; };
+    const n1 = unit(); let n2 = unit();
+    for (let t = 0; t < 20 && Mth.abs(n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) > 0.8; t++) n2 = unit();
+    const kw = 2 * Mth.PI / (Mth.max(3, K.TURING_WARP_L) * So); const aw = K.TURING_WARP * kk / kw;
+    const NWR = 6; const wdir = []; const wph = [];
+    for (let w = 0; w < NWR; w++) { const u = unit(); wdir.push([u[0] * kw, u[1] * kw, u[2] * kw]); wph.push(2 * Mth.PI * rng()); }
+    const ph1 = 2 * Mth.PI * rng(); const ph2 = 2 * Mth.PI * rng();
+    const field = (x, y, z) => {
+      let w1 = 0; let w2 = 0;
+      for (let w = 0; w < 3; w++) { const d = wdir[w]; w1 += Mth.sin(d[0] * x + d[1] * y + d[2] * z + wph[w]); const e = wdir[w + 3]; w2 += Mth.sin(e[0] * x + e[1] * y + e[2] * z + wph[w + 3]); }
+      return Mth.cos(kk * (n1[0] * x + n1[1] * y + n1[2] * z) + aw * w1 + ph1) + K.TURING_W2 * Mth.cos(kk * (n2[0] * x + n2[1] * y + n2[2] * z) + aw * w2 + ph2);
+    };
 
     // ---- stripes -> pieces -> runs ---------------------------------------------------------------------------------------------------
     let stepO = Mth.max(1e-4, K.TURING_STEP * So);
-    let pieceLen = Mth.max(stepO * 2, K.TURING_PIECE * So);
     // vertex budget: the stripe length is about area / spacing, so verts ~ area / (spacing x step); the step grows until that fits
-    const fitStep = (area) => { stepO = Mth.max(stepO, area / (So * K.TURING_MAX_VERTS)); pieceLen = Mth.max(stepO * 2, K.TURING_PIECE * So); };
+    let turnDeg = K.TURING_MAX_TURN;
+    const fitStep = (area) => { const s0 = stepO; stepO = Mth.max(stepO, area / (So * K.TURING_MAX_VERTS)); turnDeg = K.TURING_MAX_TURN * stepO / s0; }; // a fine pattern coarsens step AND bend density together
+    let rankSeq = 0;
     const emitChains = (chains, cheapAt, fullAt, tag) => {
       chains.forEach((ch, ci) => {
         const n = ch.uv.length / 2;
@@ -1115,20 +1179,28 @@
           if (q > 0) cum[q] = cum[q - 1] + (v && P[q - 1] ? Mth.hypot(v.x - P[q - 1].x, v.y - P[q - 1].y, v.z - P[q - 1].z) : 0);
         }
         const total = cum[n - 1];
-        if (!(total > stepO)) return;
+        if (!(total > Mth.max(stepO, K.TURING_MIN_LEN * So))) return;
         stats.chains += 1; stats.lenMM += total;
-        const np = Mth.max(1, Mth.round(total / pieceLen));
-        const single = np === 1 && ch.closed;
+        const np = Mth.max(1, Mth.round(total / (K.TURING_PIECE * So))); // very long stripes are cut into LONG pieces (TURING_PIECE spacings), never into confetti
+        const single = ch.closed && np === 1;
         for (let pc = 0; pc < np; pc++) {
           const s0 = total * pc / np; const s1 = total * (pc + 1) / np;
           const idx = [];
-          let last = -Infinity;
+          let last = -Infinity; let acc = 0; const maxTurn = turnDeg * Mth.PI / 180;
           for (let q = 0; q < n; q++) {
             if (cum[q] < s0 - 1e-9 || cum[q] > s1 + 1e-9 || !P[q]) continue;
-            if (!idx.length || cum[q] - last >= stepO || (cum[q] >= s1 - 1e-9)) { idx.push(q); last = cum[q]; }
+            // a vertex every step, and also whenever the stripe has turned by TURING_MAX_TURN since the last one: a tight bend gets dense vertices,
+            // so the turning angle between consecutive segments stays bounded and the stroke reads as a smooth curve (never a polygon corner)
+            if (q > 0 && q + 1 < n && P[q - 1] && P[q + 1]) {
+              const ux = P[q].x - P[q - 1].x; const uy = P[q].y - P[q - 1].y; const uz = P[q].z - P[q - 1].z;
+              const wx = P[q + 1].x - P[q].x; const wy = P[q + 1].y - P[q].y; const wz = P[q + 1].z - P[q].z;
+              const lu = Mth.hypot(ux, uy, uz); const lw = Mth.hypot(wx, wy, wz);
+              if (lu > 1e-12 && lw > 1e-12) acc += Mth.acos(Mth.max(-1, Mth.min(1, (ux * wx + uy * wy + uz * wz) / (lu * lw))));
+            }
+            if (!idx.length || cum[q] - last >= stepO || acc >= maxTurn || (cum[q] >= s1 - 1e-9)) { idx.push(q); last = cum[q]; acc = 0; }
           }
           if (idx.length < 2) continue;
-          const rank = Mth.min(0.99998, SC.hash(ci * 977 + tag, pc, salt + 4421));
+          const rank = Mth.min(0.99998, ((rankSeq++ * 0.6180339887498949) + SC.hash(tag, 7, salt + 4421)) % 1); // golden-ratio sequence: neighbouring pieces get well-spread ranks, so the tone gate thins evenly (no random clumps)
           builder.beginRun(0, rank, 0, single ? SM.FLAG.CLOSED : 0);
           let n0 = 0; const nextN = {};
           const m = single ? idx.length - 1 : idx.length;
@@ -1213,13 +1285,13 @@
         const W0 = umax - umin; const H0 = vmax - vmin;
         if (!(W0 > 1e-6 && H0 > 1e-6)) continue;
         stats.areaMM2 += W0 * H0;
-        const hh = So / Mth.max(2, K.TURING_GRID);
+        const hh = So / Mth.max(1, K.TURING_GRID);
         const [Nu, Nv] = nodeBudget(Mth.max(4, Mth.ceil(W0 / hh)), Mth.max(4, Mth.ceil(H0 / hh)));
         const NNu = Nu + 1; const NNv = Nv + 1;
         const f = new Float32Array(NNu * NNv); const ok = new Uint8Array(NNu * NNv).fill(1);
         const at = (u, v) => { const s = umin + W0 * u; const t = vmin + H0 * v; return [U[0] * s + Vv[0] * t + n[0] * h0, U[1] * s + Vv[1] * t + n[1] * h0, U[2] * s + Vv[2] * t + n[2] * h0]; };
         for (let j = 0; j < NNv; j++) for (let i = 0; i < NNu; i++) { const p = at(i / Nu, j / Nv); f[j * NNu + i] = field(p[0], p[1], p[2]); }
-        const chains = traceZero(Nu, Nv, f, ok);
+        const chains = traceZero(Nu, Nv, f, ok, (u, v) => { const p = at(u, v); return field(p[0], p[1], p[2]); }, K.TURING_SMOOTH | 0);
         const faceVtx = (u, v) => { const p = at(u, v); return { x: p[0], y: p[1], z: p[2], nx: n[0], ny: n[1], nz: n[2] }; };
         emitChains(chains, faceVtx, faceVtx, fi * 131071);
       }
@@ -1245,7 +1317,7 @@
     if (!(stats.areaMM2 > 0) || !la.length || !lb.length) { const e1 = builder.finish(); e1.bakerId = 'webs'; e1.meta = emptyMeta; return e1; }
     const pct = (arr, q) => { const s = Float64Array.from(arr).sort(); return s[Mth.min(s.length - 1, Mth.floor(q * s.length))]; };
     const extA = pct(la, 0.9); const extB = pct(lb, 0.9);
-    const hh = So / Mth.max(2, K.TURING_GRID);
+    const hh = So / Mth.max(1, K.TURING_GRID);
     const [Nu, Nv] = nodeBudget(Mth.max(8, Mth.ceil(extA / hh)), Mth.max(8, Mth.ceil(extB / hh)));
     const NNu = Nu + 1; const NNv = Nv + 1;
     const f = new Float32Array(NNu * NNv); const ok = new Uint8Array(NNu * NNv);
@@ -1258,7 +1330,7 @@
     }
     fitStep(stats.areaMM2);
     const tF = Date.now(); stats.nodes = NNu * NNv; stats.fieldMs = tF - t00;
-    const chains = traceZero(Nu, Nv, f, ok);
+    const chains = traceZero(Nu, Nv, f, ok, (u, v) => { const q = raw(u, v); return q && isFin(q.x + q.y + q.z) ? field(q.x * sc.sx, q.y * sc.sy, q.z * sc.sz) : NaN; }, K.TURING_SMOOTH | 0);
     stats.traceMs = Date.now() - tF;
     const cheapAt = (u, v) => { const q = raw(u, v); return q && isFin(q.x + q.y + q.z) ? { x: q.x * sc.sx, y: q.y * sc.sy, z: q.z * sc.sz } : null; };
     emitChains(chains, cheapAt, (u, v) => { const s = M.sample(u, v); return s && isFin(s.x + s.y + s.z) ? s : null; }, 0);

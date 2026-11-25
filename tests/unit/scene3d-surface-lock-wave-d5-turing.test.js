@@ -92,7 +92,8 @@ describe('surface lock D5 (turingStripe): v2 Level S, a stripe texture on the su
       lens.push(L);
     }
     lens.sort((a, b) => a - b);
-    expect(lens[lens.length >> 1] / (ms.meta.turingSpacingMM / 3), 'median piece is several line spacings long: stripes, not dust').toBeGreaterThan(3);
+    expect(lens[lens.length >> 1] / (ms.meta.turingSpacingMM / 3), 'the median stripe is long (many line spacings): continuous stripes, not squiggles or static').toBeGreaterThan(25);
+    expect(lens[0] / (ms.meta.turingSpacingMM / 3), 'no specks: the shortest stripe is still several spacings').toBeGreaterThan(5.9);
     const bx = W.bake(boxSpec({ scaleRef: 3 }));
     expect(MS.validate(bx)).toEqual([]);
     expect(bx.vertexCount).toBeGreaterThan(1500);
@@ -104,6 +105,33 @@ describe('surface lock D5 (turingStripe): v2 Level S, a stripe texture on the su
     }
     const tor = W.bake(specOf({ primitive: 'torus', mode: 'torus', sizes: { sx: 34, sy: 9, sz: 9, detail: 24 } }));
     expect(tor.vertexCount).toBeGreaterThan(2000);
+  });
+
+  it('smooth: the baked stripes are smooth curves, no stair steps or polygon corners (turning angle between consecutive segments stays bounded)', () => {
+    const turn = (ms) => {
+      const angles = [];
+      for (let r = 0; r < ms.runCount; r++) {
+        const a = ms.runStart[r]; const b = ms.runStart[r + 1];
+        for (let v = a + 1; v + 1 < b; v++) {
+          const p = (i) => [ms.positions[3 * i], ms.positions[3 * i + 1], ms.positions[3 * i + 2]];
+          const p0 = p(v - 1); const p1 = p(v); const p2 = p(v + 1);
+          const u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]]; const w = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+          const lu = Math.hypot(...u); const lw = Math.hypot(...w);
+          if (!(lu > 1e-9 && lw > 1e-9)) continue;
+          const c = Math.max(-1, Math.min(1, (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / (lu * lw)));
+          angles.push(Math.acos(c) * 180 / Math.PI);
+        }
+      }
+      angles.sort((x, y) => x - y);
+      return { n: angles.length, median: angles[angles.length >> 1], p99: angles[Math.floor(0.99 * angles.length)], max: angles[angles.length - 1] };
+    };
+    [['sphere', specOf({ sizes: { sx: 25, sy: 25, sz: 25 } })], ['torus', specOf({ primitive: 'torus', mode: 'torus', sizes: { sx: 34, sy: 9, sz: 9, detail: 24 } })], ['box', boxSpec({ sizes: { sx: 40, sy: 40, sz: 40 } })]].forEach(([name, sp]) => {
+      const t = turn(W.bake(sp));
+      expect(t.n, name).toBeGreaterThan(5000);
+      expect(t.median, name + ' ' + JSON.stringify(t)).toBeLessThan(14);
+      expect(t.p99, name + ' ' + JSON.stringify(t)).toBeLessThan(45);
+      expect(t.max, name + ' ' + JSON.stringify(t)).toBeLessThan(90);
+    });
   });
 
   it('stripe spacing: neighbouring stripes sit about one clearance apart (the pose Turing line spacing), set by the Density tone law', () => {
