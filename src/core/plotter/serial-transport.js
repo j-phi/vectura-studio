@@ -264,6 +264,11 @@
       this.rxBuffer = o.rxBuffer || 127;
       this.plannerSize = o.plannerSize || PLANNER_SIZE;
       this.penThreshold = Number.isFinite(o.penThreshold) ? o.penThreshold : 1.0;
+      // Emulate real status rounding: MPos/WPos each rounded independently; WCO skewed (e.g. {x:-0.001}).
+      this.wcoSkew = o.wcoSkew || null;
+      // DrawCore-like firmware whose status WCO field omits the G92 offset (reports 0): a controller that
+      // trusts it computes a wrong WPos. The G92 offset is still visible in $# and applied to motion.
+      this.wcoReportsZero = !!o.wcoReportsZero;
       this.statusMode = o.statusMode || 'both'; // 'mpos' | 'wpos' | 'both'
       this.resetOnOpen = o.resetOnOpen !== false;
       this.bannerDelayMs = Number.isFinite(o.bannerDelayMs) ? o.bannerDelayMs : 1200;
@@ -611,7 +616,9 @@
       parts.push('Bf:' + (this.plannerSize - this.planner.length) + ',' + (this.rxBuffer - this.rxBytes));
       parts.push('FS:' + Math.round(this.cur ? this.cur.feed : 0) + ',0');
       if (this.wcoDirty || this.statusCount % 10 === 0) {
-        parts.push('WCO:' + f3(this.offset.x) + ',' + f3(this.offset.y) + ',' + f3(this.offset.z));
+        const sk = this.wcoSkew || {};
+        if (this.wcoReportsZero) parts.push('WCO:0.000,0.000,0.000');
+        else parts.push('WCO:' + f3(this.offset.x + (sk.x || 0)) + ',' + f3(this.offset.y + (sk.y || 0)) + ',' + f3(this.offset.z + (sk.z || 0)));
         this.wcoDirty = false;
       }
       this.statusCount += 1;
@@ -671,7 +678,8 @@
       }
       if (s === '$#') {
         ['G54', 'G55', 'G56', 'G57', 'G58', 'G59', 'G28', 'G30'].forEach((n) => this._emit('[' + n + ':0.000,0.000,0.000]'));
-        this._emit('[G92:' + f3(this.offset.x) + ',' + f3(this.offset.y) + ',' + f3(this.offset.z) + ']');
+        const sk = this.wcoSkew || {};
+        this._emit('[G92:' + f3(this.offset.x + (sk.x || 0)) + ',' + f3(this.offset.y + (sk.y || 0)) + ',' + f3(this.offset.z + (sk.z || 0)) + ']');
         this._emit('[TLO:0.000]');
         return { resp: 'ok' };
       }

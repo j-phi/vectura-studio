@@ -19,8 +19,10 @@ const setup = (o) => {
 };
 
 const connected = async (o) => {
+  const opts = o || {};
   const s = setup(o);
   await s.run(s.ctrl.connect());
+  if (!opts.unconfirmed) s.ctrl.confirmMachineCorner(); // tests exercise motion; the box has its own tests
   return s;
 };
 

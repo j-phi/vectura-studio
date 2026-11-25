@@ -67,7 +67,7 @@
       upDelay: 0,
     },
     motion: { drawFeed: 3000, travelFeed: 6000, jogFeed: 2500 },
-    limits: { maxFeedXY: 11000, maxFeedZ: 5000, maxJogFeed: 6000 },
+    limits: { maxFeedXY: 11000, maxFeedZ: 5000, maxJogFeed: 6000, edgeMargin: 2 },
     gcode: { preamble: ['G21', 'G90'], postamble: [], decimals: 3, compact: false },
     // homing is decided at runtime from firmware $22 (some DrawCore units report $22=1).
     capabilities: { homing: false, statusBufferReport: 'optional', resetsOnOpen: true },

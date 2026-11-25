@@ -751,7 +751,7 @@ describe('v2 safety and layout (spec 12)', () => {
     test('without controller.emergencyStop the fallback cancels the jog and stops', async () => {
       const s = await connectedWithOrigin();
       const m = mountMachine(s);
-      expect(s.ctrl.emergencyStop).toBeUndefined();
+      s.ctrl.emergencyStop = undefined; // simulate an older controller without the method
       const cancel = vi.spyOn(s.ctrl, 'jogCancel');
       const stop = vi.spyOn(s.ctrl, 'stop');
       const handle = stubHandle();

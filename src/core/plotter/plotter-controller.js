@@ -14,6 +14,14 @@
   const MANUAL_STATES = ['idle', 'jogging'];
   const PLANNER_BLOCKS = 15;
   const EPS = 1e-6;
+  const CORNER_BOX_MM = 15;
+  const CORNER_MESSAGE = 'Confirm the carriage was at its start corner when you connected. The plotter measures its limits from that point.';
+  const WCO_TOLERANCE_MM = 0.05;
+  const POSITION_MAX_AGE_MS = 500;
+  const JOG_SEGMENT_S = 0.15;
+  const JOG_MAX_LEAD_S = 0.3;
+  const JOG_DEADMAN_MS = 350;
+  const JOG_MAX_HOLD_MS = 8000;
 
   class PlotterError extends Error {
     constructor(code, message, details) {
@@ -52,7 +60,7 @@
       this.firmware = null;
       this.rxBuffer = (profile.serial && profile.serial.rxBuffer) || 127;
       this.status = null;
-      this.wco = { x: 0, y: 0, z: 0 };
+      this.wco = { x: 0, y: 0, z: 0 }; this._wcoPin = null; this.wcoVerified = null;
       this.originSet = false;
       this.originMachine = null;
       this.pen = { state: 'unknown', z: null };
@@ -67,6 +75,10 @@
       this._lastJob = null;
       this._streamer = null;
       this._jogLoop = null;
+      this._wcoPin = null;
+      this.wcoVerified = null;
+      this.machineCornerConfirmed = false;
+      this._cornerCenter = { x: 0, y: 0 };
       this._lastJogTarget = null;
       this._pollTimer = null;
       this._lastStatusAt = 0;
@@ -201,6 +213,7 @@
 
     // One manual command at a time; resolves {ok, lines} on ok, rejects on error:N.
     _cmd(line, o) {
+      if (this._estopBlock && !(o && o.stopSeq)) return Promise.reject(new PlotterError('stopped', 'Emergency stop: command refused.'));
       const p = this._cmdChain.then(() => this._cmdNow(line, o || {}));
       this._cmdChain = p.catch(() => {});
       return p;
@@ -264,7 +277,16 @@
     }
 
     _onStatus(p) {
-      if (p.wco) this.wco = { x: p.wco.x, y: p.wco.y, z: p.wco.z };
+      if (p.wco) {
+        // A firmware whose status WCO omits the G92 offset must not override the offset we set and
+        // the device confirmed via $#.
+        const pin = this._wcoPin;
+        const ignore = !!pin && this.wcoVerified !== false
+          && (Math.abs(p.wco.x - pin.x) > WCO_TOLERANCE_MM || Math.abs(p.wco.y - pin.y) > WCO_TOLERANCE_MM);
+        if (ignore) {
+          if (!this._wcoIgnoredWarned) { this._wcoIgnoredWarned = true; this._log('warn', 'Status WCO disagrees with the confirmed G92 offset; ignoring it.'); }
+        } else this.wco = { x: p.wco.x, y: p.wco.y, z: p.wco.z };
+      }
       let mpos = p.mpos; let wpos = p.wpos;
       const w = this.wco;
       if (mpos && !wpos) wpos = { x: mpos.x - w.x, y: mpos.y - w.y, z: mpos.z - w.z };
@@ -340,8 +362,9 @@
       const wasActive = ACTIVE_JOB_STATES.includes(this.state) || this.state === 'jogging' || this.state === 'stopping';
       this.originSet = false;
       this.originMachine = null;
-      this.wco = { x: 0, y: 0, z: 0 };
+      this.wco = { x: 0, y: 0, z: 0 }; this._wcoPin = null; this.wcoVerified = null;
       this.penMustRaise = true;
+      this._unconfirmCorner({ x: 0, y: 0 });
       const rp = this._abortActive('reset', RESET_MESSAGE);
       this._failPending(new PlotterError('reset', RESET_MESSAGE));
       if (wasActive) this._setState('alarm');
@@ -382,6 +405,7 @@
 
     // ---- polling ----
     _pollInterval() {
+      if (this.state === 'jogging') return Math.min(100, this.opts.statusRunMs);
       return ['running', 'paused', 'penChange', 'jogging', 'stopping'].includes(this.state) ? this.opts.statusRunMs : this.opts.statusIdleMs;
     }
 
@@ -410,6 +434,7 @@
         throw new PlotterError('port-busy', 'Another plotter connection is already open in this tab.');
       }
       PlotterController._active = this;
+      this._estopBlock = false;
       this._setState('connecting');
       this._phase = 'connecting';
       this.fw = {};
@@ -436,6 +461,9 @@
         try { st = await this._refreshStatus(this.opts.handshakeTimeoutMs); } catch (e) { this._log('warn', 'No status report during handshake.'); }
         this.originSet = false;
         this.originMachine = null;
+        this._wcoPin = null;
+        this.wcoVerified = null;
+        this._unconfirmCorner(st && st.mpos && Number.isFinite(st.mpos.x) && Number.isFinite(st.mpos.y) ? { x: st.mpos.x, y: st.mpos.y } : { x: 0, y: 0 });
         this.penMustRaise = !!(st && st.mpos && st.mpos.z > this.profile.pen.up + 0.05);
         this._phase = null;
         this._startPolling();
@@ -515,9 +543,52 @@
       };
     }
 
-    _workRange() {
-      const L = this._limits();
-      return { minX: -this.wco.x, maxX: L.area.width - this.wco.x, minY: -this.wco.y, maxY: L.area.height - this.wco.y };
+    // Machine-space limits: the area shrunk by limits.edgeMargin on every side, except on a side where the
+    // work origin itself sits inside the margin (the origin and return-to-origin must stay reachable).
+    _machineLimits() {
+      const w = PS().workLimits(this.profile, this._limits().area, { x: this.wco.x, y: this.wco.y });
+      return { loX: w.minX + this.wco.x, hiX: w.maxX + this.wco.x, loY: w.minY + this.wco.y, hiY: w.maxY + this.wco.y };
+    }
+
+    // Work-coordinate range of the corner-confirmation box (null once confirmed).
+    _cornerRange() {
+      if (this.machineCornerConfirmed) return null;
+      const c = this._cornerCenter || { x: 0, y: 0 };
+      return {
+        minX: c.x - CORNER_BOX_MM - this.wco.x, maxX: c.x + CORNER_BOX_MM - this.wco.x,
+        minY: c.y - CORNER_BOX_MM - this.wco.y, maxY: c.y + CORNER_BOX_MM - this.wco.y,
+      };
+    }
+
+    // opts.noBox: the area limits only (moves that must be refused, not clamped, outside the box).
+    _workRange(opts) {
+      const l = this._machineLimits();
+      const r = { minX: l.loX - this.wco.x, maxX: l.hiX - this.wco.x, minY: l.loY - this.wco.y, maxY: l.hiY - this.wco.y };
+      const b = !(opts && opts.noBox) && this._cornerRange();
+      if (b) {
+        r.minX = Math.max(r.minX, b.minX); r.maxX = Math.min(r.maxX, b.maxX);
+        r.minY = Math.max(r.minY, b.minY); r.maxY = Math.min(r.maxY, b.maxY);
+      }
+      return r;
+    }
+
+    _outsideCorner(x, y) {
+      const b = this._cornerRange();
+      if (!b) return false;
+      const TOL = PS().BOUNDS_TOLERANCE_MM;
+      return x < b.minX - TOL || x > b.maxX + TOL || y < b.minY - TOL || y > b.maxY + TOL;
+    }
+
+    confirmMachineCorner() {
+      this.machineCornerConfirmed = true;
+      this.emit('corner', { confirmed: true });
+      return true;
+    }
+
+    _unconfirmCorner(center) {
+      this.machineCornerConfirmed = false;
+      this._cornerCenter = center || { x: 0, y: 0 };
+      this.emit('corner', { confirmed: false });
     }
 
     // True while a job is parked at a pen change (buffer drained, Idle, waiting for the user).
@@ -584,25 +655,67 @@
       return { z: clamped, clamped: Math.abs(clamped - z) > EPS };
     }
 
+    // ---- position trust ----
+    // Cross-check the G92 offset the device holds ($# [G92:x,y,z]) against the offset we set.
+    // Disagreement beyond 0.05 mm blocks motion until the origin is set again.
+    async refreshWco(expected) {
+      const exp = expected || (this.originMachine ? { x: this.originMachine.x, y: this.originMachine.y } : { x: 0, y: 0 });
+      let r;
+      try { r = await this._cmd('$#', { timeoutMs: this.opts.handshakeTimeoutMs, tolerant: true }); } catch (e) { return { ok: null, reason: e.message }; }
+      const line = (r.lines || []).find((l) => /^\[G92:/i.test(l));
+      const m = line && /G92:\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i.exec(line);
+      if (!m) { this.wcoVerified = null; return { ok: null, reason: 'no G92 report' }; }
+      const dev = { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+      const ok = Math.abs(dev.x - exp.x) <= WCO_TOLERANCE_MM && Math.abs(dev.y - exp.y) <= WCO_TOLERANCE_MM;
+      this.wcoVerified = ok;
+      if (!ok) {
+        this._log('warn', 'Work offset mismatch: the plotter reports G92 (' + fmt(dev.x) + ', ' + fmt(dev.y) + ') but (' + fmt(exp.x) + ', ' + fmt(exp.y) + ') was set. Set the origin again.');
+        this.emit('wco-mismatch', { device: dev, expected: { x: exp.x, y: exp.y } });
+      }
+      return { ok, device: dev, expected: { x: exp.x, y: exp.y } };
+    }
+
+    // Motion that depends on the position estimate needs fresh, finite, verified numbers.
+    _requireTrusted(what, st) {
+      const s0 = st || this.status;
+      const bad = (msg) => { throw new PlotterError('position-untrusted', 'Cannot ' + what + ': ' + msg); };
+      if (this.wcoVerified === false) bad('the plotter disagrees about where the work origin is. Set the origin again.');
+      if (!s0 || !s0.mpos || !s0.wpos) bad('no position report from the plotter yet.');
+      if (this.sch.now() - this._lastStatusAt > POSITION_MAX_AGE_MS) bad('the position report is out of date.');
+      ['x', 'y'].forEach((k) => {
+        if (!Number.isFinite(s0.mpos[k]) || !Number.isFinite(s0.wpos[k])) bad('the position report is incomplete.');
+      });
+      return s0;
+    }
+
     // ---- origin / moves ----
     async setOrigin() {
       this._requireManual('setting the origin');
       const st = await this._refreshStatus();
       if (st.state !== 'Idle') throw new PlotterError('busy', 'Wait for the plotter to stop moving before setting the origin.');
       await this._cmd('G92 X0 Y0');
-      this.originMachine = { x: st.mpos.x, y: st.mpos.y };
-      this.wco = { x: st.mpos.x, y: st.mpos.y, z: this.wco.z };
+      const area = this._limits().area;
+      const om = { x: PS().snapMachineCoord(st.mpos.x, area.width), y: PS().snapMachineCoord(st.mpos.y, area.height) };
+      this.originMachine = om;
+      this.wco = { x: om.x, y: om.y, z: this.wco.z };
+      this._wcoPin = { x: om.x, y: om.y };
+      this.wcoVerified = null;
       this.originSet = true;
+      await this.refreshWco({ x: st.mpos.x, y: st.mpos.y }).catch(() => null);
       await this._refreshStatus().catch(() => null);
       this.emit('origin', { machine: Object.assign({}, this.originMachine) });
       return Object.assign({}, this.originMachine);
     }
 
     async _moveTo(x, y, feed) {
-      const r = this._workRange();
-      if (x < r.minX - EPS || x > r.maxX + EPS || y < r.minY - EPS || y > r.maxY + EPS) {
+      const r = this._workRange({ noBox: true });
+      const TOL = PS().BOUNDS_TOLERANCE_MM;
+      if (x < r.minX - TOL || x > r.maxX + TOL || y < r.minY - TOL || y > r.maxY + TOL) {
         throw new PlotterError('out-of-bounds', 'Target (' + fmt(x) + ', ' + fmt(y) + ') is outside the work area.');
       }
+      x = Math.min(r.maxX, Math.max(r.minX, x)); // within tolerance: clamp to the edge
+      y = Math.min(r.maxY, Math.max(r.minY, y));
+      if (this._outsideCorner(x, y)) throw new PlotterError('corner-unconfirmed', CORNER_MESSAGE);
       await this._penUpRaw(); // pen up before any travel, always
       const f = PS().clampFeedXY(feed || this.profile.motion.travelFeed, this.profile, this.fw);
       this._enterJogging();
@@ -614,17 +727,30 @@
       }
     }
 
+    // A single move never travels farther than the area diagonal.
+    _capTravel(st, x, y) {
+      const a = this._limits().area;
+      const d = Math.hypot(x - st.wpos.x, y - st.wpos.y);
+      if (d > Math.hypot(a.width, a.height) + PS().BOUNDS_TOLERANCE_MM) {
+        throw new PlotterError('move-too-long', 'That move is longer than the plotter\'s work area diagonal; the position estimate looks wrong.');
+      }
+    }
+
     async goTo(x, y, feed) {
       this._requireManual('moving', true);
       if (!Number.isFinite(x) || !Number.isFinite(y)) throw new PlotterError('invalid', 'Target must be numbers.');
-      await this._refreshStatus().catch(() => null);
+      const st = await this._refreshStatus().catch(() => null);
+      this._requireTrusted('move', st);
+      this._capTravel(st, x, y);
       await this._moveTo(x, y, feed);
     }
 
     async goToOrigin() {
       this._requireManual('moving', true);
       if (!this.originSet) throw new PlotterError('origin-not-set', 'Set the origin first.');
-      await this._refreshStatus().catch(() => null);
+      const st = await this._refreshStatus().catch(() => null);
+      this._requireTrusted('move', st);
+      this._capTravel(st, 0, 0);
       await this._moveTo(0, 0);
     }
 
@@ -644,50 +770,93 @@
       return { x: tx, y: ty, atLimit };
     }
 
-    // Absolute work-coordinate jog: unambiguous even when earlier jogs are still queued.
-    async _sendJog(target, feed) {
-      await this._cmd('$J=G21G90X' + fmt(target.x) + 'Y' + fmt(target.y) + 'F' + fmt(feed));
-      this._lastJogTarget = { x: target.x, y: target.y };
+    // Relative jog ($J=G21G91): the vector is bounded by the request, whatever the WCO estimate says.
+    // `end` is the estimated end point, kept only to tell when the move has finished.
+    async _sendJogRel(vx, vy, feed, end) {
+      const mag = Math.hypot(vx, vy);
+      if (!Number.isFinite(mag)) throw new PlotterError('position-untrusted', 'Jog vector is not a number.');
+      let line = '$J=G21G91';
+      if (Math.abs(vx) > 5e-4) line += 'X' + fmt(vx);
+      if (Math.abs(vy) > 5e-4) line += 'Y' + fmt(vy);
+      line += 'F' + fmt(feed);
+      await this._cmd(line);
+      this._lastJogTarget = end ? { x: end.x, y: end.y } : null;
     }
 
+    // At most one single jog in flight (command round trip plus the motion itself): further
+    // calls are dropped so key auto-repeat can never queue travel ahead of the carriage.
     async jog(dx, dy, feed) {
       this._requireManual('jogging', true);
       if (!Number.isFinite(dx) || !Number.isFinite(dy)) throw new PlotterError('invalid', 'Jog distances must be numbers.');
-      await this._raiseIfNeeded();
-      const st = await this._refreshStatus();
-      const base = this.state === 'jogging' && this._lastJogTarget ? this._lastJogTarget : st.wpos;
-      const t = this._clampTarget(base, dx, dy);
-      const f = this._jogFeed(feed);
-      const moved = Math.abs(t.x - base.x) > 5e-4 || Math.abs(t.y - base.y) > 5e-4;
-      if (moved) {
-        this._enterJogging();
-        await this._sendJog(t, f);
+      if (this._jogBusy || (this.state === 'jogging' && !this._jogLoop && this._lastJogTarget)) {
+        return { sent: false, reason: 'busy', target: null, atLimit: { x: null, y: null, any: false }, feed: null };
       }
-      return { sent: moved, target: { x: t.x, y: t.y }, atLimit: t.atLimit, feed: f };
+      this._jogBusy = true;
+      try {
+        await this._raiseIfNeeded();
+        const st = this._requireTrusted('jog', await this._refreshStatus());
+        const base = st.wpos;
+        const t = this._clampTarget(base, dx, dy);
+        const f = this._jogFeed(feed);
+        const vx = t.x - base.x; const vy = t.y - base.y; // per-axis shrink only: never longer than asked
+        const moved = Math.abs(vx) > 5e-4 || Math.abs(vy) > 5e-4;
+        if (moved) {
+          this._enterJogging();
+          await this._sendJogRel(vx, vy, f, t);
+        }
+        return { sent: moved, target: { x: t.x, y: t.y }, atLimit: t.atLimit, feed: f };
+      } finally { this._jogBusy = false; }
     }
 
-    // Press-and-hold jog: repeated segments of at most 0.25 s of travel each.
+    // Press-and-hold jog. Segments are 0.15 s of travel; the commanded target never leads the
+    // reported position by more than 0.3 s. Deadman: the UI must call handle.keepAlive() at least
+    // every 350 ms or the hold is cancelled; hard cap of 8 s per hold.
     async jogContinuousStart(dir, feed) {
       this._requireManual('jogging', true);
       const mag = Math.hypot(dir.x || 0, dir.y || 0);
       if (!mag) throw new PlotterError('invalid', 'Jog direction is zero.');
       await this._raiseIfNeeded();
       this._stopJogLoop();
-      const st = await this._refreshStatus();
+      const st = this._requireTrusted('jog', await this._refreshStatus());
       const f = this._jogFeed(feed);
-      const seg = (f / 60) * 0.25;
-      const loop = { dir: { x: dir.x / mag, y: dir.y / mag }, target: { x: st.wpos.x, y: st.wpos.y }, busy: false, timer: null, stopped: false };
+      const mmPerS = f / 60;
+      const seg = mmPerS * JOG_SEGMENT_S;
+      const maxLead = mmPerS * JOG_MAX_LEAD_S;
+      const u = { x: dir.x / mag, y: dir.y / mag };
+      const loop = { dir: u, target: { x: st.wpos.x, y: st.wpos.y }, busy: false, timer: null, stopped: false, deadman: null, maxTimer: null };
       this._jogLoop = loop;
       this._enterJogging();
+      this._startPolling(); // 100 ms status while jogging
+      const stopFor = (reason) => {
+        if (loop.stopped || this._jogLoop !== loop) return;
+        this.emit('jogstop', { reason });
+        this.jogCancel().catch(() => {});
+      };
+      const keepAlive = () => {
+        if (loop.stopped) return;
+        if (loop.deadman) this.sch.clearTimeout(loop.deadman);
+        loop.deadman = this.sch.setTimeout(() => stopFor('deadman'), JOG_DEADMAN_MS);
+      };
+      keepAlive();
+      loop.maxTimer = this.sch.setTimeout(() => stopFor('max-hold'), JOG_MAX_HOLD_MS);
       const tick = async () => {
         if (loop.busy || loop.stopped) return;
         loop.busy = true;
         try {
-          const t = this._clampTarget(loop.target, loop.dir.x * seg, loop.dir.y * seg);
+          const s2 = this.status && this.status.wpos;
+          if (!s2 || this.sch.now() - this._lastStatusAt > 300) return; // stale position: do not lead blindly
+          if (this.sch.now() - this._lastStatusAt > POSITION_MAX_AGE_MS || !Number.isFinite(s2.x) || !Number.isFinite(s2.y) || this.wcoVerified === false) {
+            stopFor('untrusted'); return;
+          }
+          let lead = (loop.target.x - s2.x) * u.x + (loop.target.y - s2.y) * u.y;
+          if (lead < 0) { loop.target = { x: s2.x, y: s2.y }; lead = 0; }
+          if (lead + seg > maxLead + 1e-9) return;
+          const t = this._clampTarget(loop.target, u.x * seg, u.y * seg);
           const moved = Math.abs(t.x - loop.target.x) > 5e-4 || Math.abs(t.y - loop.target.y) > 5e-4;
           if (moved && !loop.stopped) {
+            const prev = loop.target;
             loop.target = { x: t.x, y: t.y };
-            await this._sendJog(t, f);
+            await this._sendJogRel(t.x - prev.x, t.y - prev.y, f, t);
           }
           if (t.atLimit.any) {
             this.emit('limit', { atLimit: t.atLimit });
@@ -697,9 +866,9 @@
           this._stopJogLoop();
         } finally { loop.busy = false; }
       };
-      loop.timer = this.sch.setInterval(tick, 200);
+      loop.timer = this.sch.setInterval(tick, 50);
       tick();
-      return { feed: f };
+      return { feed: f, keepAlive, stop: () => this.jogCancel() };
     }
 
     _stopJogLoop() {
@@ -707,6 +876,8 @@
       if (!loop) return;
       loop.stopped = true;
       if (loop.timer) this.sch.clearInterval(loop.timer);
+      if (loop.deadman) this.sch.clearTimeout(loop.deadman);
+      if (loop.maxTimer) this.sch.clearTimeout(loop.maxTimer);
       this._jogLoop = null;
     }
 
@@ -748,7 +919,7 @@
       await this._cmd('$H', { allowHoming: true, timeoutMs: 180000 });
       this.originSet = false;
       this.originMachine = null;
-      this.wco = { x: 0, y: 0, z: 0 };
+      this.wco = { x: 0, y: 0, z: 0 }; this._wcoPin = null; this.wcoVerified = null;
       await this._refreshStatus().catch(() => null);
       this._setState('idle');
     }
@@ -802,8 +973,11 @@
           if (hasXY) points.push({ x: cur.x, y: cur.y });
         }
       }
-      const b = S.checkJobBounds({ pens: [{ paths: [points] }] }, L.area, { originOffset: { x: this.wco.x, y: this.wco.y } });
+      const jobPens = { pens: [{ paths: [points] }] };
+      const b = S.checkJobBounds(jobPens, L.area, { originOffset: { x: this.wco.x, y: this.wco.y }, limits: this._workRange({ noBox: true }) });
       if (!b.ok) return { ok: false, code: 'out-of-bounds', reason: this._boundsMessage(b), overflow: b.overflow, bbox: b.bbox };
+      const box = this._cornerRange();
+      if (box && !S.checkJobBounds(jobPens, L.area, { limits: box }).ok) return { ok: false, code: 'corner-unconfirmed', reason: CORNER_MESSAGE, bbox: b.bbox };
       return { ok: true, bbox: b.bbox };
     }
 
@@ -856,6 +1030,7 @@
       if (startPath > 0 && startPath >= ps.length) throw new PlotterError('invalid', 'Start path ' + startPath + ' does not exist.');
       const st = await this._refreshStatus();
       if (st.state !== 'Idle') throw new PlotterError('busy', 'The plotter is not idle (' + st.state + ').');
+      this._requireTrusted('start the job', st);
       if (this.state !== 'idle') throw new PlotterError('busy', 'The plotter must be idle to start a job.');
 
       const all = lines.map((text, index) => ({ text, index }));
@@ -927,13 +1102,16 @@
       try {
         await this._penUpRaw();
         const pos = job.opts.penChangePosition;
-        const target = pos && typeof pos === 'object' ? pos : { x: 0, y: 0 };
+        const target = pos && typeof pos === 'object' ? { x: pos.x, y: pos.y } : { x: 0, y: 0 };
         await this._refreshStatus().catch(() => null);
         if (job.finished) return;
-        const r = this._workRange();
-        if (target.x < r.minX - EPS || target.x > r.maxX + EPS || target.y < r.minY - EPS || target.y > r.maxY + EPS) {
+        const r = this._workRange({ noBox: true });
+        const TOL = PS().BOUNDS_TOLERANCE_MM;
+        if (target.x < r.minX - TOL || target.x > r.maxX + TOL || target.y < r.minY - TOL || target.y > r.maxY + TOL) {
           throw new PlotterError('out-of-bounds', 'The pen-change position is outside the work area.');
         }
+        target.x = Math.min(r.maxX, Math.max(r.minX, target.x));
+        target.y = Math.min(r.maxY, Math.max(r.minY, target.y));
         const f = PS().clampFeedXY(this.profile.motion.travelFeed, this.profile, this.fw);
         await this._cmd('G1 X' + fmt(target.x) + ' Y' + fmt(target.y) + ' F' + fmt(f));
         await this._sync();
@@ -1000,6 +1178,29 @@
       this._setState('running');
     }
 
+    // ---- emergency stop ----
+    // Synchronous realtime bytes first (0x85 jog cancel, then ! feed hold), before any await, then the
+    // normal safe-stop sequence (hold settles, reset, unlock unless position lost, G92 restore, pen up).
+    // Works from any state with an open port; idempotent; never throws. Resolves like stop().
+    emergencyStop() {
+      try {
+        if (!this._open() || this.state === 'disconnected' || this.state === 'connecting') return Promise.resolve({ stopped: false });
+        const prev = this.state;
+        try { this.transport.writeRealtime(GP().REALTIME.JOG_CANCEL); } catch (e) { /* port trouble surfaces in the stop sequence */ }
+        try { this.transport.writeRealtime(GP().REALTIME.HOLD); } catch (e) { /* ditto */ }
+        this._stopJogLoop();
+        if (prev === 'stopping' && this._stopPromise) return this._stopPromise;
+        this.emit('estop', { state: prev });
+        this._estopBlock = true;
+        this._failPending(new PlotterError('stopped', 'Emergency stop.'));
+        const p = this._safeStop({ status: 'estop', message: 'Emergency stop.' });
+        p.catch(() => {});
+        return p;
+      } catch (e) {
+        return Promise.resolve({ stopped: false, error: String((e && e.message) || e) });
+      }
+    }
+
     // ---- stop (rule 7) ----
     async stop() {
       if (this.state === 'stopping') return this._stopPromise;
@@ -1031,7 +1232,8 @@
         bannerP.catch(() => {});
         this._txRealtime(GP().REALTIME.RESET);
         await bannerP; // the reset wipes G92 and the planner
-        this.wco = { x: 0, y: 0, z: 0 };
+        this._estopBlock = false;
+        this.wco = { x: 0, y: 0, z: 0 }; this._wcoPin = null; this.wcoVerified = null;
         let st = await this._refreshStatus(2000);
         if (this._stopAlarm === 3) {
           // ALARM:3 = reset while in motion: steps were lost, so machine and work
@@ -1042,6 +1244,7 @@
             + 'then reconnect and set the origin again.';
           this.originSet = false;
           this.originMachine = null;
+          this._unconfirmCorner({ x: 0, y: 0 });
           this._phase = null;
           this._alarmCode = 3;
           this._setState('alarm');
@@ -1056,6 +1259,9 @@
         if (this.originSet && this.originMachine) {
           await this._cmd('G92 X' + fmt(st.mpos.x - this.originMachine.x) + ' Y' + fmt(st.mpos.y - this.originMachine.y));
           this.wco = { x: this.originMachine.x, y: this.originMachine.y, z: 0 };
+          this._wcoPin = { x: this.originMachine.x, y: this.originMachine.y };
+          this.wcoVerified = null;
+          await this.refreshWco().catch(() => null);
           await this._refreshStatus(2000).catch(() => null);
         }
         await this._penUpRaw();
@@ -1068,6 +1274,7 @@
         return { stopped: true, status: info.status, resumePoint: rp };
       } catch (err) {
         this._phase = null;
+        this._estopBlock = false;
         if (this.state === 'disconnected') throw err;
         this.lastError = err.message;
         this._setState('error');
@@ -1113,10 +1320,12 @@
         else if (g53) t[k] = scan[a] - this.wco[k];
         else t[k] = scan[a];
       });
-      const r = this._workRange();
+      const r = this._workRange({ noBox: true });
       if (hasXY) {
-        if (t.x < r.minX - EPS || t.x > r.maxX + EPS) return 'X target ' + fmt(t.x) + ' is outside the work area (' + fmt(r.minX) + ' to ' + fmt(r.maxX) + ' mm).';
-        if (t.y < r.minY - EPS || t.y > r.maxY + EPS) return 'Y target ' + fmt(t.y) + ' is outside the work area (' + fmt(r.minY) + ' to ' + fmt(r.maxY) + ' mm).';
+        const TOL = PS().BOUNDS_TOLERANCE_MM;
+        if (t.x < r.minX - TOL || t.x > r.maxX + TOL) return 'X target ' + fmt(t.x) + ' is outside the work area (' + fmt(r.minX) + ' to ' + fmt(r.maxX) + ' mm).';
+        if (t.y < r.minY - TOL || t.y > r.maxY + TOL) return 'Y target ' + fmt(t.y) + ' is outside the work area (' + fmt(r.minY) + ' to ' + fmt(r.maxY) + ' mm).';
+        if (this._outsideCorner(t.x, t.y)) return CORNER_MESSAGE;
       }
       if (hasZ) {
         const zm = t.z + this.wco.z;
@@ -1168,6 +1377,7 @@
         }
       }
       if (sawG92) {
+        this._wcoPin = null; this.wcoVerified = null;
         const st = await this._refreshStatus().catch(() => null);
         if (st) { this.originMachine = { x: this.wco.x, y: this.wco.y }; this.originSet = true; }
       }
@@ -1177,6 +1387,12 @@
 
   PlotterController._active = null;
   PlotterController.bestEffortHold = () => (PlotterController._active ? PlotterController._active.bestEffortHold() : false);
+  PlotterController.emergencyStopActive = () => {
+    const c = PlotterController._active;
+    if (!c) return false;
+    c.emergencyStop();
+    return true;
+  };
   PlotterController.resetOwnership = () => { PlotterController._active = null; };
 
   const PLOTTER_DRIVERS = {
