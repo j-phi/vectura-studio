@@ -27,11 +27,14 @@ test.describe('Send to Plotter (simulator)', () => {
     await openPanel(page);
     await shoot(page, { path: `${dir}/connect.png` });
 
+    // v2: the simulator lives in a collapsed "Practice with the simulator" section.
+    await page.evaluate(() => { const b = document.getElementById('stp-connect-sim'); const d = b && b.closest('details'); if (d) d.open = true; });
     await page.click('#stp-connect-sim');
-    await page.waitForSelector('#stp-origin-note');
-    // The Machine tab (when present) owns Set origin; the controller call is the same operation.
-    await page.evaluate(() => window.Vectura.UI.Modals.SendToPlotter.getSession().controller.setOrigin());
-    await page.waitForSelector('#stp-origin-note', { state: 'detached' });
+    // Safety: the start-corner question comes before any motion; confirming it sets the origin
+    // (the carriage has not moved since connect).
+    await page.click('#stp-corner-yes');
+    await expect(page.locator('#stp-origin-chip')).toHaveText(/Origin set/);
+    await expect(page.locator('#stp-origin-reminder')).toBeVisible();
 
     await page.click('[data-tab="setup"]');
     await expect(page.locator('#stp-stat-paths')).not.toHaveText('0');
