@@ -170,6 +170,13 @@
   // accepted for jobs/console). Never widen this beyond what rounding noise needs.
   const BOUNDS_TOLERANCE_MM = 0.02;
 
+  // Soft-limit margin (mm) kept between manual moves/jobs and the physical frame.
+  const DEFAULT_EDGE_MARGIN_MM = 2;
+  const edgeMarginOf = (profile) => {
+    const m = profile && profile.limits && profile.limits.edgeMargin;
+    return isNum(m) && m >= 0 ? m : DEFAULT_EDGE_MARGIN_MM;
+  };
+
   // Round a machine coordinate to firmware resolution (3 decimals) and snap values within
   // tolerance of 0 or of the far edge (size) to exactly that value.
   const snapMachineCoord = (v, size) => {
@@ -202,10 +209,12 @@
     const overflow = { left: 0, right: 0, top: 0, bottom: 0 };
     if (minX === Infinity) return { ok: !invalid, overflow, bbox: null, ...(invalid ? { reason: 'Job contains invalid coordinates.' } : {}) };
     const eps = BOUNDS_TOLERANCE_MM;
-    overflow.left = Math.max(0, -ox - minX);
-    overflow.right = Math.max(0, maxX - (area.width - ox));
-    overflow.top = Math.max(0, -oy - minY);
-    overflow.bottom = Math.max(0, maxY - (area.height - oy));
+    // opts.limits (work coordinates) overrides the plain area, e.g. an edge-margin or corner box.
+    const lim = (opts && opts.limits) || { minX: -ox, maxX: area.width - ox, minY: -oy, maxY: area.height - oy };
+    overflow.left = Math.max(0, lim.minX - minX);
+    overflow.right = Math.max(0, maxX - lim.maxX);
+    overflow.top = Math.max(0, lim.minY - minY);
+    overflow.bottom = Math.max(0, maxY - lim.maxY);
     Object.keys(overflow).forEach((k) => { if (overflow[k] <= eps) overflow[k] = 0; });
     const ok = !invalid && !overflow.left && !overflow.right && !overflow.top && !overflow.bottom;
     const out = { ok, overflow, bbox: { minX, minY, maxX, maxY } };
@@ -258,6 +267,10 @@
       });
     }
 
+    if (p.limits && p.limits.edgeMargin !== undefined && (!isNum(p.limits.edgeMargin) || p.limits.edgeMargin < 0)) {
+      errors.push('limits.edgeMargin must be a number of 0 or more.');
+    }
+
     const feedLabels = [];
     ['drawFeed', 'travelFeed', 'jogFeed'].forEach((k) => feedLabels.push(['motion.' + k, (p.motion || {})[k]]));
     ['maxFeedXY', 'maxFeedZ', 'maxJogFeed'].forEach((k) => feedLabels.push(['limits.' + k, (p.limits || {})[k]]));
@@ -299,6 +312,8 @@
     clampZ,
     checkJobBounds,
     BOUNDS_TOLERANCE_MM,
+    DEFAULT_EDGE_MARGIN_MM,
+    edgeMarginOf,
     snapMachineCoord,
     validateProfile,
     normalizeProfile,

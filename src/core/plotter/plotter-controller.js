@@ -14,6 +14,8 @@
   const MANUAL_STATES = ['idle', 'jogging'];
   const PLANNER_BLOCKS = 15;
   const EPS = 1e-6;
+  const CORNER_BOX_MM = 15;
+  const CORNER_MESSAGE = 'Confirm the carriage was at its start corner when you connected. The plotter measures its limits from that point.';
   const WCO_TOLERANCE_MM = 0.05;
   const POSITION_MAX_AGE_MS = 500;
   const JOG_SEGMENT_S = 0.15;
@@ -75,6 +77,8 @@
       this._jogLoop = null;
       this._wcoPin = null;
       this.wcoVerified = null;
+      this.machineCornerConfirmed = false;
+      this._cornerCenter = { x: 0, y: 0 };
       this._lastJogTarget = null;
       this._pollTimer = null;
       this._lastStatusAt = 0;
@@ -360,6 +364,7 @@
       this.originMachine = null;
       this.wco = { x: 0, y: 0, z: 0 }; this._wcoPin = null; this.wcoVerified = null;
       this.penMustRaise = true;
+      this._unconfirmCorner({ x: 0, y: 0 });
       const rp = this._abortActive('reset', RESET_MESSAGE);
       this._failPending(new PlotterError('reset', RESET_MESSAGE));
       if (wasActive) this._setState('alarm');
@@ -458,6 +463,7 @@
         this.originMachine = null;
         this._wcoPin = null;
         this.wcoVerified = null;
+        this._unconfirmCorner(st && st.mpos && Number.isFinite(st.mpos.x) && Number.isFinite(st.mpos.y) ? { x: st.mpos.x, y: st.mpos.y } : { x: 0, y: 0 });
         this.penMustRaise = !!(st && st.mpos && st.mpos.z > this.profile.pen.up + 0.05);
         this._phase = null;
         this._startPolling();
@@ -537,9 +543,57 @@
       };
     }
 
-    _workRange() {
-      const L = this._limits();
-      return { minX: -this.wco.x, maxX: L.area.width - this.wco.x, minY: -this.wco.y, maxY: L.area.height - this.wco.y };
+    // Machine-space limits: the area shrunk by limits.edgeMargin on every side, except on a side where the
+    // work origin itself sits inside the margin (the origin and return-to-origin must stay reachable).
+    _machineLimits() {
+      const a = this._limits().area;
+      const m = PS().edgeMarginOf(this.profile);
+      const ox = this.wco.x; const oy = this.wco.y;
+      return {
+        loX: ox <= m ? 0 : m, hiX: ox >= a.width - m ? a.width : a.width - m,
+        loY: oy <= m ? 0 : m, hiY: oy >= a.height - m ? a.height : a.height - m,
+      };
+    }
+
+    // Work-coordinate range of the corner-confirmation box (null once confirmed).
+    _cornerRange() {
+      if (this.machineCornerConfirmed) return null;
+      const c = this._cornerCenter || { x: 0, y: 0 };
+      return {
+        minX: c.x - CORNER_BOX_MM - this.wco.x, maxX: c.x + CORNER_BOX_MM - this.wco.x,
+        minY: c.y - CORNER_BOX_MM - this.wco.y, maxY: c.y + CORNER_BOX_MM - this.wco.y,
+      };
+    }
+
+    // opts.noBox: the area limits only (moves that must be refused, not clamped, outside the box).
+    _workRange(opts) {
+      const l = this._machineLimits();
+      const r = { minX: l.loX - this.wco.x, maxX: l.hiX - this.wco.x, minY: l.loY - this.wco.y, maxY: l.hiY - this.wco.y };
+      const b = !(opts && opts.noBox) && this._cornerRange();
+      if (b) {
+        r.minX = Math.max(r.minX, b.minX); r.maxX = Math.min(r.maxX, b.maxX);
+        r.minY = Math.max(r.minY, b.minY); r.maxY = Math.min(r.maxY, b.maxY);
+      }
+      return r;
+    }
+
+    _outsideCorner(x, y) {
+      const b = this._cornerRange();
+      if (!b) return false;
+      const TOL = PS().BOUNDS_TOLERANCE_MM;
+      return x < b.minX - TOL || x > b.maxX + TOL || y < b.minY - TOL || y > b.maxY + TOL;
+    }
+
+    confirmMachineCorner() {
+      this.machineCornerConfirmed = true;
+      this.emit('corner', { confirmed: true });
+      return true;
+    }
+
+    _unconfirmCorner(center) {
+      this.machineCornerConfirmed = false;
+      this._cornerCenter = center || { x: 0, y: 0 };
+      this.emit('corner', { confirmed: false });
     }
 
     // True while a job is parked at a pen change (buffer drained, Idle, waiting for the user).
@@ -659,13 +713,14 @@
     }
 
     async _moveTo(x, y, feed) {
-      const r = this._workRange();
+      const r = this._workRange({ noBox: true });
       const TOL = PS().BOUNDS_TOLERANCE_MM;
       if (x < r.minX - TOL || x > r.maxX + TOL || y < r.minY - TOL || y > r.maxY + TOL) {
         throw new PlotterError('out-of-bounds', 'Target (' + fmt(x) + ', ' + fmt(y) + ') is outside the work area.');
       }
       x = Math.min(r.maxX, Math.max(r.minX, x)); // within tolerance: clamp to the edge
       y = Math.min(r.maxY, Math.max(r.minY, y));
+      if (this._outsideCorner(x, y)) throw new PlotterError('corner-unconfirmed', CORNER_MESSAGE);
       await this._penUpRaw(); // pen up before any travel, always
       const f = PS().clampFeedXY(feed || this.profile.motion.travelFeed, this.profile, this.fw);
       this._enterJogging();
@@ -923,8 +978,11 @@
           if (hasXY) points.push({ x: cur.x, y: cur.y });
         }
       }
-      const b = S.checkJobBounds({ pens: [{ paths: [points] }] }, L.area, { originOffset: { x: this.wco.x, y: this.wco.y } });
+      const jobPens = { pens: [{ paths: [points] }] };
+      const b = S.checkJobBounds(jobPens, L.area, { originOffset: { x: this.wco.x, y: this.wco.y }, limits: this._workRange({ noBox: true }) });
       if (!b.ok) return { ok: false, code: 'out-of-bounds', reason: this._boundsMessage(b), overflow: b.overflow, bbox: b.bbox };
+      const box = this._cornerRange();
+      if (box && !S.checkJobBounds(jobPens, L.area, { limits: box }).ok) return { ok: false, code: 'corner-unconfirmed', reason: CORNER_MESSAGE, bbox: b.bbox };
       return { ok: true, bbox: b.bbox };
     }
 
@@ -1052,7 +1110,7 @@
         const target = pos && typeof pos === 'object' ? { x: pos.x, y: pos.y } : { x: 0, y: 0 };
         await this._refreshStatus().catch(() => null);
         if (job.finished) return;
-        const r = this._workRange();
+        const r = this._workRange({ noBox: true });
         const TOL = PS().BOUNDS_TOLERANCE_MM;
         if (target.x < r.minX - TOL || target.x > r.maxX + TOL || target.y < r.minY - TOL || target.y > r.maxY + TOL) {
           throw new PlotterError('out-of-bounds', 'The pen-change position is outside the work area.');
@@ -1191,6 +1249,7 @@
             + 'then reconnect and set the origin again.';
           this.originSet = false;
           this.originMachine = null;
+          this._unconfirmCorner({ x: 0, y: 0 });
           this._phase = null;
           this._alarmCode = 3;
           this._setState('alarm');
@@ -1266,11 +1325,12 @@
         else if (g53) t[k] = scan[a] - this.wco[k];
         else t[k] = scan[a];
       });
-      const r = this._workRange();
+      const r = this._workRange({ noBox: true });
       if (hasXY) {
         const TOL = PS().BOUNDS_TOLERANCE_MM;
         if (t.x < r.minX - TOL || t.x > r.maxX + TOL) return 'X target ' + fmt(t.x) + ' is outside the work area (' + fmt(r.minX) + ' to ' + fmt(r.maxX) + ' mm).';
         if (t.y < r.minY - TOL || t.y > r.maxY + TOL) return 'Y target ' + fmt(t.y) + ' is outside the work area (' + fmt(r.minY) + ' to ' + fmt(r.maxY) + ' mm).';
+        if (this._outsideCorner(t.x, t.y)) return CORNER_MESSAGE;
       }
       if (hasZ) {
         const zm = t.z + this.wco.z;

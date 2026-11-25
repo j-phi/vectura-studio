@@ -33,6 +33,7 @@ describe('Send to Plotter lifecycle and gating', () => {
     await STP.connectSession('sim', STP.getPanel().profile());
     const c = STP.getSession().controller;
     await waitFor(() => c.state === 'idle');
+    c.confirmMachineCorner(); // the connect-time ±15 mm box is lifted by the UI's corner confirmation
     await c.setOrigin();
     return c;
   };

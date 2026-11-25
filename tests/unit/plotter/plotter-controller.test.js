@@ -121,10 +121,10 @@ describe('manual moves', () => {
     expect(r.atLimit).toMatchObject({ x: 'min', y: 'min', any: true });
     r = await s.run(s.ctrl.jog(1000, 0));
     expect(r.sent).toBe(true);
-    expect(r.target.x).toBe(420);
+    expect(r.target.x).toBe(418); // 2 mm edge margin
     expect(r.atLimit.x).toBe('max');
     await until(s.clock, () => s.ctrl.state === 'idle');
-    expect(s.sim.getPosition().mpos.x).toBeCloseTo(420, 3);
+    expect(s.sim.getPosition().mpos.x).toBeCloseTo(418, 3);
     expect(s.sim.getState()).toBe('Idle'); // never alarmed
     r = await s.run(s.ctrl.jog(5, 0));
     expect(r.sent).toBe(false);
@@ -138,13 +138,13 @@ describe('manual moves', () => {
     await s.run(s.ctrl.setOrigin());
     expect(s.ctrl.originMachine).toEqual({ x: 100, y: 80 });
     let r = await s.run(s.ctrl.jog(-150, 0));
-    expect(r.target.x).toBe(-100);
+    expect(r.target.x).toBe(-98); // 2 mm margin at machine zero
     expect(r.atLimit.x).toBe('min');
     await until(s.clock, () => s.ctrl.state === 'idle');
     r = await s.run(s.ctrl.jog(1000, 1000));
-    expect(r.target).toEqual({ x: 320, y: 217 });
+    expect(r.target).toEqual({ x: 318, y: 215 });
     await until(s.clock, () => s.ctrl.state === 'idle');
-    expect(s.sim.getPosition().mpos).toMatchObject({ x: 420, y: 297 });
+    expect(s.sim.getPosition().mpos).toMatchObject({ x: 418, y: 295 });
   });
 
   test('jog feed is clamped to the jog cap', async () => {
@@ -433,6 +433,7 @@ describe('run', () => {
     const s = setup();
     await expect(s.run(s.ctrl.run(makeJob(PENS)))).rejects.toThrow(/Connect/);
     await s.run(s.ctrl.connect());
+    s.ctrl.confirmMachineCorner();
     await expect(s.run(s.ctrl.run(makeJob(PENS)))).rejects.toThrow(/origin/i);
     expect(motionLog(s.sim)).toEqual([]);
     await s.run(s.ctrl.setOrigin());
@@ -456,7 +457,7 @@ describe('run', () => {
     let err;
     try { await s.run(s.ctrl.run(bad)); } catch (e) { err = e; }
     expect(err.code).toBe('out-of-bounds');
-    expect(err.message).toMatch(/right 5\.5 mm/);
+    expect(err.message).toMatch(/right 7\.5 mm/);
     expect(motionLog(s.sim)).toEqual([]);
     expect(wireLabels(s.sim).slice(before).filter((l) => l !== '?')).toEqual([]);
     expect(s.ctrl.state).toBe('idle');
@@ -467,15 +468,15 @@ describe('run', () => {
     await s.run(s.ctrl.jog(100, 0));
     await until(s.clock, () => s.ctrl.state === 'idle');
     await s.run(s.ctrl.setOrigin());
-    const ok = makeJob([[[{ x: 10, y: 10 }, { x: 320, y: 10 }]]]);
-    const bad = makeJob([[[{ x: 10, y: 10 }, { x: 321, y: 10 }]]]);
+    const ok = makeJob([[[{ x: 10, y: 10 }, { x: 318, y: 10 }]]]);
+    const bad = makeJob([[[{ x: 10, y: 10 }, { x: 319, y: 10 }]]]);
     await expect(s.run(s.ctrl.run(bad))).rejects.toThrow(/right 1 mm/);
     await expect(s.run(s.ctrl.run(ok))).resolves.toMatchObject({ status: 'done' });
   });
 
   test('bounds use the firmware work area', async () => {
     const s = await connectedWithOrigin({ sim: { settings: { 130: 100, 131: 297 } } });
-    await expect(s.run(s.ctrl.run(makeJob([[[{ x: 10, y: 10 }, { x: 150, y: 10 }]]])))).rejects.toThrow(/right 50 mm/);
+    await expect(s.run(s.ctrl.run(makeJob([[[{ x: 10, y: 10 }, { x: 150, y: 10 }]]])))).rejects.toThrow(/right 52 mm/);
   });
 
   test.each([

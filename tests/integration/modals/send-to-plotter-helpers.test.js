@@ -59,6 +59,7 @@ describe('Send to Plotter helper actions (Frame, Scale check, Test swatch)', () 
     c = STP.getSession().controller;
     sim = STP.getSession().transport;
     await waitFor(() => c.state === 'idle');
+    c.confirmMachineCorner();
     await c.setOrigin();
     click('[data-tab="plot"]');
     await waitFor(() => panel.jobReady());

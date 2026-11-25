@@ -92,6 +92,7 @@ describe('Send to Plotter panel', () => {
     expect(c.state).toBe('idle');
     expect(document.getElementById('stp-origin-note')).toBeTruthy();
     expect(document.querySelector('.stp-pill').dataset.state).toBe('idle');
+    c.confirmMachineCorner();
     await c.setOrigin();
     await waitFor(() => !document.getElementById('stp-origin-note'));
     expect(c.originSet).toBe(true);
@@ -144,6 +145,7 @@ describe('Send to Plotter panel', () => {
     click('#stp-connect-sim');
     await waitFor(() => STP.getSession().controller?.state === 'idle');
     const c = STP.getSession().controller;
+    c.confirmMachineCorner();
     await c.setOrigin();
     click('[data-tab="plot"]');
     await waitFor(() => { const s = document.getElementById('stp-start'); return s && !s.disabled; });
@@ -176,6 +178,7 @@ describe('Send to Plotter panel', () => {
     const c = STP.getSession().controller;
     if (c.state !== 'idle') await c.stop();
     await waitFor(() => c.state === 'idle');
+    c.confirmMachineCorner();
     await c.setOrigin();
     const lines = ['G21', 'G90', 'G1 Z0 F5000',
       'G1 X10 Y10 F6000', 'G1 Z3.5 F5000', 'G1 X20 Y10 F3000', 'G1 Z0 F5000',
@@ -386,6 +389,7 @@ describe('Send to Plotter panel', () => {
       await STP.connectSession('sim', panel.profile());
       await waitFor(() => STP.getSession().controller?.state === 'idle');
       const c = STP.getSession().controller;
+      c.confirmMachineCorner();
       await c.setOrigin();
       const settle = async () => {
         const t00 = Date.now();
