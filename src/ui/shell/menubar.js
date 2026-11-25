@@ -123,6 +123,7 @@
     const layers = this.app?.engine?.layers || [];
     const hasContent = layers.some((l) => l && !l.isGroup);
     setEnabled('btn-export', hasContent, 'Add a layer to enable export');
+    setEnabled('btn-send-to-plotter', hasContent, 'Add a layer to enable Send to Plotter');
 
     // Mirror the canvas context-menu enabled states onto the Object/Edit menu
     // items so the same verbs gate identically (P3 feedback: every right-click

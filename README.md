@@ -208,6 +208,22 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 ---
 
+### Send to Plotter
+
+`File > Send to Plotter...` streams the document straight to a pen plotter from Chrome or Edge using the Web Serial API, with no local server. The first supported machine is the UUNATEK 3.0 (GRBL / DrawCore). It adds per-pen speed, pen-down height, dwell, passes, brush re-dips and path order, a jog pad with calibration wizards, a bounds-checked console, and a built-in Simulator. Full guide: [docs/plotter-send.md](docs/plotter-send.md).
+
+<details>
+<summary>Full Send to Plotter feature list</summary>
+
+- Requires Chrome or Edge (Windows or macOS) over `http://localhost` or `https`; Safari and Firefox are unsupported, though the Simulator still runs
+- Tabs: Connect, Setup, Machine, Plot, Console; profile registry with read-only built-in profiles (UUNATEK 3.0 A3 tested, A2/A1/A0 and a generic GRBL servo profile untested) and user profiles via Duplicate profile
+- Setup: placement (document, fit, center, offset, scale, rotation), optimization toggles, per-pen settings saved by pen id, path order (optimized, document, reverse, random), brush re-dip, registration marks, air plot, speed by height test swatches
+- Machine: jog pad (arrow keys, Shift = x10, Alt = x0.1, PageUp / PageDown pen up / down), Set origin, Go to origin, Frame, and Axis check, Pen height, Origin and paper, and Scale check wizards
+- Plot: Start, Pause, Resume, Stop (also Escape), pen-change prompts, resume from a path after a stop or alarm
+- Safety: never writes firmware settings by default (Advanced console needs a typed `ALLOW`, `$RST` always blocked), work-area bounds, feed and Z clamps, no `G0`, no homing unless the firmware reports switches
+
+</details>
+
 ### UI & Workflow
 
 Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a **Pen / Paper** tab with the pen palette (drag-to-assign) and a realistic paper selector, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
