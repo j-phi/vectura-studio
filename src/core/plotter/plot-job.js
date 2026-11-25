@@ -505,12 +505,19 @@
     return minX === Infinity ? null : { minX, minY, maxX, maxY };
   };
 
-  const checkBounds = (pens, area, originOffset) => {
+  // Same limits as PlotterController.run: the profile's edge margin and tolerance, with the exception for a
+  // side where the origin already sits inside the margin. marginOnly: it would fit without the margin.
+  const checkBounds = (pens, area, originOffset, profile) => {
     const S = safety();
     const extra = [];
     pens.forEach((pen) => { if (pen.reload && pen.reload.everyMm > 0) extra.push([pen.reload.position]); });
-    const r = S.checkJobBounds({ pens: extra.length ? pens.concat([{ paths: extra }]) : pens }, area, { originOffset: originOffset || { x: 0, y: 0 } });
-    return { ok: r.ok, overflow: r.overflow, bbox: r.bbox, ...(r.reason ? { reason: r.reason } : {}) };
+    const all = { pens: extra.length ? pens.concat([{ paths: extra }]) : pens };
+    const off = originOffset || { x: 0, y: 0 };
+    const lim = S.workLimits(profile, area, off);
+    const r = S.checkJobBounds(all, area, { originOffset: off, limits: lim });
+    const out = { ok: r.ok, overflow: r.overflow, bbox: r.bbox, margin: lim.margin, marginOnly: false, ...(r.reason ? { reason: r.reason } : {}) };
+    if (!r.ok && !r.reason) out.marginOnly = S.checkJobBounds(all, area, { originOffset: off }).ok;
+    return out;
   };
 
   // Assemble the final job object (bbox, stats, bounds) from finished pen entries.
@@ -531,7 +538,7 @@
     };
     job.stats = estimate(job, ctx.prof);
     job.originOffset = ctx.originOffset || { x: 0, y: 0 };
-    job.bounds = checkBounds(pens, ctx.area, job.originOffset);
+    job.bounds = checkBounds(pens, ctx.area, job.originOffset, ctx.prof);
     return job;
   };
 
@@ -776,7 +783,7 @@
       const tf = lastSettings ? lastSettings.travelFeed : S.clampFeedXY(prof.motion.travelFeed, prof, null);
       add(join(['G1', word('X', 0), word('Y', 0), feedStr(tf)]));
     }
-    const bounds = o.originOffset ? checkBounds(job.pens || [], job.area || S.effectiveWorkArea(prof, null), o.originOffset) : (job.bounds || null);
+    const bounds = o.originOffset ? checkBounds(job.pens || [], job.area || S.effectiveWorkArea(prof, null), o.originOffset, prof) : (job.bounds || null);
     return {
       lines,
       penChangeIndices,

@@ -177,6 +177,17 @@
     return isNum(m) && m >= 0 ? m : DEFAULT_EDGE_MARGIN_MM;
   };
 
+  // Usable range in work coordinates: the area shrunk by the profile's edge margin on every side, except
+  // on a side where the work origin itself sits inside the margin. Shared by the controller and PlotJob.
+  const workLimits = (profile, area, origin) => {
+    const m = edgeMarginOf(profile);
+    const ox = origin && isNum(origin.x) ? origin.x : 0;
+    const oy = origin && isNum(origin.y) ? origin.y : 0;
+    const loX = ox <= m ? 0 : m; const hiX = ox >= area.width - m ? area.width : area.width - m;
+    const loY = oy <= m ? 0 : m; const hiY = oy >= area.height - m ? area.height : area.height - m;
+    return { minX: loX - ox, maxX: hiX - ox, minY: loY - oy, maxY: hiY - oy, margin: m };
+  };
+
   // Round a machine coordinate to firmware resolution (3 decimals) and snap values within
   // tolerance of 0 or of the far edge (size) to exactly that value.
   const snapMachineCoord = (v, size) => {
@@ -314,6 +325,7 @@
     BOUNDS_TOLERANCE_MM,
     DEFAULT_EDGE_MARGIN_MM,
     edgeMarginOf,
+    workLimits,
     snapMachineCoord,
     validateProfile,
     normalizeProfile,

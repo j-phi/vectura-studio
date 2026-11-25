@@ -334,7 +334,7 @@ describe('PlotJob.toGcode', () => {
   test('out-of-bounds job is reported, not thrown', () => {
     const job = build([group([[pt(10, 10), pt(500, 10)]])], RAW, a3, { width: 600, height: 50 });
     expect(job.bounds.ok).toBe(false);
-    expect(job.bounds.overflow.right).toBeCloseTo(80, 9);
+    expect(job.bounds.overflow.right).toBeCloseTo(82, 9);
     const g = J.toGcode(job, a3);
     expect(g.bounds.ok).toBe(false);
     const inb = build([group(line)], RAW);
@@ -344,7 +344,7 @@ describe('PlotJob.toGcode', () => {
   test('firmware $130/$131 shrink the area used for bounds', () => {
     const job = J.buildJob([group([[pt(10, 10), pt(300, 10)]])], { settings: RAW, profile: a3, docSize: DOC, firmware: { 130: 200, 131: 297 } });
     expect(job.bounds.ok).toBe(false);
-    expect(job.bounds.overflow.right).toBeCloseTo(100, 9);
+    expect(job.bounds.overflow.right).toBeCloseTo(102, 9);
   });
 });
 
@@ -504,5 +504,35 @@ describe('PlotJob.buildJobAsync (sliced build)', () => {
     cancelled = true;
     await flush(m);
     expect(await p).toBeNull();
+  });
+});
+
+describe('job bounds agree with the controller (edge margin)', () => {
+  const { connectedWithOrigin, until, PlotterController } = require('./plotter-test-helpers.js');
+  afterEach(() => PlotterController.resetOwnership());
+
+  test('a job ending 1 mm from the far frame is not reported as fitting and run() refuses it', async () => {
+    const poly = [[pt(10, 10), pt(419, 10)]];
+    const job = J.buildJob([group(poly)], { settings: RAW, profile: a3, docSize: { width: 420, height: 297 } });
+    expect(job.bounds.ok).toBe(false);
+    expect(job.bounds.margin).toBe(2);
+    expect(job.bounds.marginOnly).toBe(true);
+    expect(job.bounds.overflow.right).toBeCloseTo(1, 3);
+    const s = await connectedWithOrigin();
+    const g = J.toGcode(job, a3);
+    await expect(s.run(s.ctrl.run(g))).rejects.toMatchObject({ code: 'out-of-bounds' });
+  });
+
+  test('a job inside the margin is reported ok and has marginOnly false', () => {
+    const job = J.buildJob([group([[pt(10, 10), pt(417, 10)]])], { settings: RAW, profile: a3, docSize: { width: 420, height: 297 } });
+    expect(job.bounds).toMatchObject({ ok: true, margin: 2, marginOnly: false });
+  });
+
+  test('a real overflow is not marginOnly; origin inside the margin keeps that side exempt', () => {
+    const bad = J.buildJob([group([[pt(10, 10), pt(430, 10)]])], { settings: RAW, profile: a3, docSize: { width: 420, height: 297 } });
+    expect(bad.bounds.marginOnly).toBe(false);
+    const edge = J.buildJob([group([[pt(-0.5, 5), pt(10, 5)]])], { settings: RAW, profile: a3, docSize: { width: 420, height: 297 }, originOffset: { x: 1, y: 0 } });
+    expect(edge.bounds.overflow.left).toBeCloseTo(0, 3); // origin 1 mm in: near side limit is the frame (machine 0), not the margin
+    expect(edge.bounds.ok).toBe(true);
   });
 });

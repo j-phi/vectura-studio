@@ -546,13 +546,8 @@
     // Machine-space limits: the area shrunk by limits.edgeMargin on every side, except on a side where the
     // work origin itself sits inside the margin (the origin and return-to-origin must stay reachable).
     _machineLimits() {
-      const a = this._limits().area;
-      const m = PS().edgeMarginOf(this.profile);
-      const ox = this.wco.x; const oy = this.wco.y;
-      return {
-        loX: ox <= m ? 0 : m, hiX: ox >= a.width - m ? a.width : a.width - m,
-        loY: oy <= m ? 0 : m, hiY: oy >= a.height - m ? a.height : a.height - m,
-      };
+      const w = PS().workLimits(this.profile, this._limits().area, { x: this.wco.x, y: this.wco.y });
+      return { loX: w.minX + this.wco.x, hiX: w.maxX + this.wco.x, loY: w.minY + this.wco.y, hiY: w.maxY + this.wco.y };
     }
 
     // Work-coordinate range of the corner-confirmation box (null once confirmed).
