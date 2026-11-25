@@ -1465,7 +1465,7 @@
    total and a sub-resolution (min-segment / min-gap) warning. Purely a
    readout — it never affects emitted geometry. */
 [data-ui-skin] .plot-physics-readout {
-  margin-top: 8px;
+  margin-top: 0;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -4843,8 +4843,16 @@
 }
 .bottom-pane-bg-slot {
   padding: 4px 0;
+  /* Stat grid on top, Plot Physics table below, both right-aligned in one
+     column — a row layout put the table on top of the stat values. */
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.bottom-pane-bg-slot > .plot-physics-readout {
+  width: 100%;
+  max-width: 420px;
 }
 
 .pen-option {
@@ -4957,6 +4965,46 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+}
+
+/* Copy button: top-right of the formula block; copies the full model text. */
+.formula-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.formula-copy-btn:hover,
+.formula-copy-btn:focus-visible {
+  color: var(--ui-text);
+  border-color: var(--ui-border-hi);
+}
+.formula-copy-btn[data-state="copied"] {
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
+}
+.formula-copy-btn[data-state="failed"] {
+  color: var(--ui-danger);
+  border-color: var(--ui-danger);
+}
+/* Keep the first formula line clear of the button. */
+.formula-block > .formula-equation {
+  padding-right: 84px;
 }
 
 .formula-equation,
@@ -4989,11 +5037,16 @@
 
 .formula-key {
   color: var(--ui-text-2);
+  flex: 0 0 auto;
 }
 
+/* Long values (JSON blobs like N1.imageEffects) wrap inside the row instead
+   of widening the whole bottom pane. */
 .formula-val {
   color: var(--ui-formula);
   text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pendulum-list {
