@@ -104,11 +104,20 @@ test('a touch pointer drags the bottom pane, and pointercancel restores its stat
   expect((await info(page)).collapsed, 'cancel put the collapsed state back').toBe(true);
 });
 
+// A fresh page has no layer, so there is no formula block or plot-physics table yet.
+const withLayer = (page) => page.evaluate(() => {
+  if (!window.app.engine.getActiveLayer()) window.app.engine.addLayer('wavetable');
+  document.getElementById('bottom-pane').classList.remove('bottom-pane-collapsed');
+  window.app.render?.();
+  window.app.updateStats?.();
+  window.app.ui.updateFormula();
+});
+
 // Document Overview: the stat grid and the Plot Physics readout stack without overlapping.
 test('document overview stats and plot physics readout do not overlap', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await prep(page);
-  await page.evaluate(() => document.getElementById('bottom-pane').classList.remove('bottom-pane-collapsed'));
+  await withLayer(page);
   await page.waitForFunction(() => document.querySelector('#plot-physics-readout .plot-physics-row'));
   await sleep(300);
   const boxes = await page.evaluate(() => {
@@ -123,13 +132,15 @@ test('document overview stats and plot physics readout do not overlap', async ({
   });
   const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
   expect(overlap(boxes.grid, boxes.physics)).toBe(false);
+  // Stacked, not side by side: the old row layout butted the table against the stat values.
+  expect(boxes.physics.t).toBeGreaterThanOrEqual(boxes.grid.b + 4);
   for (const c of boxes.cells) expect(c.r).toBeLessThanOrEqual(boxes.slot.r + 0.5);
 });
 
 test('mathematical model copy button is visible inside the formula block', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await prep(page);
-  await page.evaluate(() => document.getElementById('bottom-pane').classList.remove('bottom-pane-collapsed'));
+  await withLayer(page);
   const btn = page.locator('#formula-display .formula-copy-btn');
   await expect(btn).toBeVisible();
 });

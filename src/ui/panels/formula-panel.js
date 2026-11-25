@@ -54,13 +54,15 @@
   // One delegated listener per #formula-display: the block is re-rendered via
   // innerHTML on every update, so the button itself can't hold the handler.
   function bindCopy(formula) {
-    if (formula.dataset.copyBound === '1') return;
-    formula.dataset.copyBound = '1';
+    // JS properties, not data-* attributes: an attribute write on every update is
+    // a DOM mutation that page-wide observers answer with frames (no-idle-rAF).
+    if (formula._vecturaCopyBound) return;
+    formula._vecturaCopyBound = true;
     formula.addEventListener('click', async (e) => {
       const btn = e.target && e.target.closest ? e.target.closest('.formula-copy-btn') : null;
       if (!btn) return;
       e.preventDefault();
-      const ok = await copyText(formula.dataset.copyText || '');
+      const ok = await copyText(formula._vecturaCopyText || '');
       const label = btn.querySelector('.formula-copy-label');
       btn.dataset.state = ok ? 'copied' : 'failed';
       if (label) label.textContent = ok ? 'Copied' : 'Copy failed';
@@ -140,8 +142,9 @@
         : '';
       // Plain-text copy of the whole model (formula, every Values row, seed),
       // read by the Copy button so the clipboard never depends on what's visible.
+      // Kept as a property; see bindCopy for why it is not a data-* attribute.
       const seedLine = usesSeed(l.type) && l.params ? `Seed: ${l.params.seed}` : '';
-      formula.dataset.copyText = [
+      formula._vecturaCopyText = [
         ...formulaLines.map((line) => line.trim()),
         ...(entries.length ? ['', 'Values', ...entries.map(([key, val]) => `${key}: ${val}`)] : []),
         ...(seedLine ? ['', seedLine] : []),
