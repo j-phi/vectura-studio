@@ -4987,7 +4987,9 @@
   border: 1px solid var(--ui-border);
   border-radius: 4px;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  /* No CSS transition: a transitionend here (e.g. on a theme/color change)
+     makes the canvas HUD schedule a frame, which breaks the Start Page's
+     no-idle-rAF budget. */
 }
 .formula-copy-btn:hover,
 .formula-copy-btn:focus-visible {
