@@ -205,6 +205,7 @@
 
     // One manual command at a time; resolves {ok, lines} on ok, rejects on error:N.
     _cmd(line, o) {
+      if (this._estopBlock && !(o && o.stopSeq)) return Promise.reject(new PlotterError('stopped', 'Emergency stop: command refused.'));
       const p = this._cmdChain.then(() => this._cmdNow(line, o || {}));
       this._cmdChain = p.catch(() => {});
       return p;
@@ -415,6 +416,7 @@
         throw new PlotterError('port-busy', 'Another plotter connection is already open in this tab.');
       }
       PlotterController._active = this;
+      this._estopBlock = false;
       this._setState('connecting');
       this._phase = 'connecting';
       this.fw = {};
@@ -1046,6 +1048,29 @@
       this._setState('running');
     }
 
+    // ---- emergency stop ----
+    // Synchronous realtime bytes first (0x85 jog cancel, then ! feed hold), before any await, then the
+    // normal safe-stop sequence (hold settles, reset, unlock unless position lost, G92 restore, pen up).
+    // Works from any state with an open port; idempotent; never throws. Resolves like stop().
+    emergencyStop() {
+      try {
+        if (!this._open() || this.state === 'disconnected' || this.state === 'connecting') return Promise.resolve({ stopped: false });
+        const prev = this.state;
+        try { this.transport.writeRealtime(GP().REALTIME.JOG_CANCEL); } catch (e) { /* port trouble surfaces in the stop sequence */ }
+        try { this.transport.writeRealtime(GP().REALTIME.HOLD); } catch (e) { /* ditto */ }
+        this._stopJogLoop();
+        if (prev === 'stopping' && this._stopPromise) return this._stopPromise;
+        this.emit('estop', { state: prev });
+        this._estopBlock = true;
+        this._failPending(new PlotterError('stopped', 'Emergency stop.'));
+        const p = this._safeStop({ status: 'estop', message: 'Emergency stop.' });
+        p.catch(() => {});
+        return p;
+      } catch (e) {
+        return Promise.resolve({ stopped: false, error: String((e && e.message) || e) });
+      }
+    }
+
     // ---- stop (rule 7) ----
     async stop() {
       if (this.state === 'stopping') return this._stopPromise;
@@ -1077,6 +1102,7 @@
         bannerP.catch(() => {});
         this._txRealtime(GP().REALTIME.RESET);
         await bannerP; // the reset wipes G92 and the planner
+        this._estopBlock = false;
         this.wco = { x: 0, y: 0, z: 0 };
         let st = await this._refreshStatus(2000);
         if (this._stopAlarm === 3) {
@@ -1114,6 +1140,7 @@
         return { stopped: true, status: info.status, resumePoint: rp };
       } catch (err) {
         this._phase = null;
+        this._estopBlock = false;
         if (this.state === 'disconnected') throw err;
         this.lastError = err.message;
         this._setState('error');
@@ -1224,6 +1251,12 @@
 
   PlotterController._active = null;
   PlotterController.bestEffortHold = () => (PlotterController._active ? PlotterController._active.bestEffortHold() : false);
+  PlotterController.emergencyStopActive = () => {
+    const c = PlotterController._active;
+    if (!c) return false;
+    c.emergencyStop();
+    return true;
+  };
   PlotterController.resetOwnership = () => { PlotterController._active = null; };
 
   const PLOTTER_DRIVERS = {
