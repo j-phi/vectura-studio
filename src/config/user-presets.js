@@ -2739,8 +2739,8 @@
           "barkWeaveFreq": 9.5,
           "barkWeaveAmplitude": 2,
           "barkWeaveAngle": 45,
-          "offsetX": -83,
-          "offsetY": 23,
+          "offsetX": 0,
+          "offsetY": 0,
           "smoothing": 0,
           "simplify": 0,
           "curves": false
@@ -2960,8 +2960,8 @@
           "barkWeaveFreq": 9.5,
           "barkWeaveAmplitude": 2,
           "barkWeaveAngle": 45,
-          "offsetX": -83,
-          "offsetY": 23,
+          "offsetX": 0,
+          "offsetY": 0,
           "smoothing": 0,
           "simplify": 0,
           "curves": false
