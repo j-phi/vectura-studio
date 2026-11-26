@@ -20,7 +20,7 @@
       "harmonograph-4-3-star": "1o5z7k6",
       "scene3d-studio-shadows": "174okid",
       "rings-old-growth-oak": "1i4eue",
-      "user-rings-1786211570394": "12znii8",
+      "user-rings-1786211570394": "ahgy3b",
       "rainfall-downpour": "1wpqgad",
       "user-spiralizer-1781359333969": "8nb606",
       "user-terrain-1781475148727": "1nxsuuf",
