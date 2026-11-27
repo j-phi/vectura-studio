@@ -145,11 +145,10 @@ describe('surface lock D5 (voronoiWeb): v2 Level S one full Voronoi web per tone
     expect(seeds[seeds.length - 1] / seeds[0]).toBeGreaterThan(3);
   });
 
-  it('perf: the bake stays within the vertex budget and 400 ms (node vm is 3-8x slower than Chromium: the budget is checked at 4x)', () => {
-    const t0 = Date.now(); const ms = W.bake(specOf({ scaleRef: 3, objectId: 'o2' })); const dt = Date.now() - t0;
+  it('the bake stays within the vertex budget (its wall-clock budget lives in tests/perf/scene3d-surface-lock-bake.test.js)', () => {
+    const ms = W.bake(specOf({ scaleRef: 3, objectId: 'o2' }));
     expect(ms.vertexCount).toBeGreaterThan(1000);
     expect(ms.vertexCount).toBeLessThanOrEqual(200000);
-    expect(dt).toBeLessThan(1600);
     const tor = W.bake(specOf({ primitive: 'torus', mode: 'torus', sizes: { sx: 34, sy: 9, sz: 9, detail: 24 } }));
     expect(tor.vertexCount).toBeGreaterThan(500);
   });
