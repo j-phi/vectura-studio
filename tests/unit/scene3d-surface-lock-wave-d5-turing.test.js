@@ -204,11 +204,10 @@ describe('surface lock D5 (turingStripe): v2 Level S, a stripe texture on the su
     expect(SL.stats.bakes).toBe(0);
   });
 
-  it('perf: the full bake of a default-size sphere / torus / box (scaleRef 1) fits the vertex budget; the first drag frame is that one bake (node vm is 3-8x slower than Chromium: checked at 4x of the 150 ms target)', () => {
+  it('the full bake of a default-size sphere / torus / box (scaleRef 1) fits the vertex budget (its wall-clock budget lives in tests/perf/scene3d-surface-lock-bake.test.js)', () => {
     [specOf({ sizes: { sx: 25, sy: 25, sz: 25 }, objectId: 'p1' }), boxSpec({ sizes: { sx: 40, sy: 40, sz: 40 }, objectId: 'p2' }), specOf({ primitive: 'torus', mode: 'torus', sizes: { sx: 34, sy: 9, sz: 9, detail: 24 }, objectId: 'p3' })].forEach((sp) => {
-      const t0 = Date.now(); const ms = W.bake(sp); const dt = Date.now() - t0;
-      expect(ms.vertexCount).toBeLessThanOrEqual(200000);
-      expect(dt, sp.primitive).toBeLessThan(600);
+      const ms = W.bake(sp);
+      expect(ms.vertexCount, sp.primitive).toBeLessThanOrEqual(200000);
     });
   });
 });
